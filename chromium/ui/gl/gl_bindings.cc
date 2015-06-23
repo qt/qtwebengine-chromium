@@ -39,6 +39,7 @@ std::string DriverWGL::GetPlatformExtensions() {
 #endif
 
 #if defined(USE_EGL)
+#if !defined(TOOLKIT_QT)
 std::string DriverEGL::GetPlatformExtensions() {
   EGLDisplay display = GLSurfaceEGL::InitializeDisplay();
   if (display == EGL_NO_DISPLAY)
@@ -46,7 +47,7 @@ std::string DriverEGL::GetPlatformExtensions() {
   const char* str = eglQueryString(display, EGL_EXTENSIONS);
   return str ? std::string(str) : "";
 }
-
+#endif
 // static
 std::string DriverEGL::GetClientExtensions() {
   const char* str = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
