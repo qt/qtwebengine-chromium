@@ -43,12 +43,14 @@ void DisplayExtensionsEGL::UpdateConditionalExtensionSettings(
 }
 
 // static
+#if !defined(TOOLKIT_QT)
 std::string DisplayExtensionsEGL::GetPlatformExtensions(EGLDisplay display) {
   if (display == EGL_NO_DISPLAY)
     return "";
   const char* str = eglQueryString(display, EGL_EXTENSIONS);
   return str ? std::string(str) : "";
 }
+#endif
 
 // static
 std::string ClientExtensionsEGL::GetClientExtensions() {
