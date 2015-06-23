@@ -21,6 +21,7 @@
 namespace gl {
 
 #if defined(USE_EGL)
+#if !defined(TOOLKIT_QT)
 std::string DriverEGL::GetPlatformExtensions() {
   EGLDisplay display = GLSurfaceEGL::GetHardwareDisplay();
   if (display == EGL_NO_DISPLAY)
@@ -28,6 +29,7 @@ std::string DriverEGL::GetPlatformExtensions() {
   const char* str = eglQueryString(display, EGL_EXTENSIONS);
   return str ? std::string(str) : "";
 }
+#endif
 
 void DriverEGL::UpdateConditionalExtensionBindings() {
   // For the moment, only two extensions can be conditionally disabled
