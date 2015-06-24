@@ -33,6 +33,10 @@ def WriteFile(contents, full_path):
   full_dir = os.path.dirname(full_path)
   fileutil.EnsureDirectoryExists(full_dir)
 
+  # This path may hit the python's 260 characters limit on Windows.
+  # Use potentially shorter absolute path as a workaround.
+  full_path = os.path.normpath(os.path.join(os.getcwd(), full_path))
+
   # Dump the data to disk.
   with open(full_path, "w+") as f:
     f.write(contents)
