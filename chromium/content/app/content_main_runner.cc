@@ -628,7 +628,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     PopulateFDsFromCommandLine();
 #endif
 
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnHeapCorruption();
+#endif
 
     // TODO(yiyaoliu, vadimt): Remove this once crbug.com/453640 is fixed.
     // Enable profiler recording right after command line is initialized so that
