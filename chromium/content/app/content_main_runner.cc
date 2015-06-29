@@ -611,7 +611,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     if (!delegate_ || delegate_->ShouldEnableTerminationOnHeapCorruption())
       base::EnableTerminationOnHeapCorruption();
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnOutOfMemory();
+#endif
 
 #if !defined(OS_IOS)
     SetProcessTitleFromCommandLine(argv);
