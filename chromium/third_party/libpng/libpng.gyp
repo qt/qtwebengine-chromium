@@ -3,6 +3,11 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'use_system_libpng%': 0,
+  },
+  'conditions' : [
+    ['use_system_libpng == 0', {
   'targets': [
     {
       'target_name': 'libpng',
@@ -108,4 +113,40 @@
       ],
     },
   ]
+  }, #  'use_system_libpng == 0'
+  {
+  'targets': [
+    {
+      'target_name': 'libpng',
+      'type': 'none',
+      'dependencies': [
+        '../zlib/zlib.gyp:zlib',
+      ],
+      'direct_dependent_settings': {
+        'cflags': [
+          '<!@(pkg-config --cflags libpng)',
+        ],
+      },
+      'link_settings': {
+        'ldflags': [
+          '<!@(pkg-config --libs-only-L --libs-only-other libpng)',
+        ],
+        'libraries': [
+          '<!@(pkg-config --libs-only-l libpng)',
+        ],
+      },
+      'variables': {
+        'headers_root_path': '.',
+        'header_filenames': [
+          'png.h',
+          'pngconf.h',
+        ],
+      },
+      'includes': [
+        '../../build/shim_headers.gypi',
+      ],
+    },
+  ],
+  }
+  ]]
 }
