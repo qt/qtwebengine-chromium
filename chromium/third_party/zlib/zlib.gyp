@@ -3,6 +3,11 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'use_system_zlib%': 0,
+  },
+  'conditions' : [
+    ['use_system_zlib == 0', {
   'targets': [
     {
       'target_name' : 'zlib_x86_simd',
@@ -145,4 +150,50 @@
       ],
     },
   ],
+  }, # 'use_system_zlib == 0'
+  {
+  'targets': [
+    {
+      'target_name': 'zlib',
+      'type': 'none',
+      'variables': {
+        'headers_root_path': '.',
+        'header_filenames': [
+          'zlib.h',
+        ],
+      },
+      'includes': [
+        '../../build/shim_headers.gypi',
+      ],
+      'direct_dependent_settings': {
+        'defines': [
+          'USE_SYSTEM_ZLIB',
+        ],
+      },
+      'link_settings': {
+        'libraries': [
+          '-lz',
+        ],
+      },
+    },
+    {
+      'target_name': 'minizip',
+      'type': 'static_library',
+      'all_dependent_settings': {
+        'defines': [
+          'USE_SYSTEM_MINIZIP',
+        ],
+      },
+      'defines': [
+        'USE_SYSTEM_MINIZIP',
+      ],
+      'link_settings': {
+        'libraries': [
+          '-lminizip',
+        ],
+      },
+    },
+  ],
+  },
+  ]]
 }
