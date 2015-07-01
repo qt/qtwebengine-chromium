@@ -73,6 +73,10 @@ def parse_args(argv):
     output_position = argv.index('--output')
     static_files_list_path = argv[static_files_list_position + 1]
     source_files = argv[:static_files_list_position]
+
+    # Workaround for python's path length limit on Windows.
+    static_files_list_path = os.path.normpath(os.path.join(os.getcwd(), static_files_list_path))
+
     with open(static_files_list_path, 'r') as static_list_file:
         source_files.extend([line.rstrip('\n') for line in static_list_file.readlines()])
     relative_path_dirs = argv[relative_path_dirs_position + 1:images_position]
