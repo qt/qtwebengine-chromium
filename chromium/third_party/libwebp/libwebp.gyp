@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'use_system_libwebp%': 0,
+  },
   'target_defaults': {
     'conditions': [
       ['os_posix==1 and (target_arch=="arm" or target_arch=="arm64")', {
@@ -11,6 +14,8 @@
       }],
     ],
   },
+  'conditions' : [
+    ['use_system_libwebp == 0', {
   'targets': [
     {
       'target_name': 'libwebp_dec',
@@ -295,4 +300,30 @@
       ],
     },
   ],
+  }, #  'use_system_libwebp == 0'
+  {
+  'targets': [
+    {
+      'target_name': 'libwebp',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'defines': [
+          'ENABLE_WEBP',
+        ],
+        'cflags': [
+          '<!@(pkg-config --cflags libwebp libwebpdemux)',
+        ],
+      },
+      'link_settings': {
+        'ldflags': [
+          '<!@(pkg-config --libs-only-L --libs-only-other libwebp libwebpdemux)',
+        ],
+        'libraries': [
+          '<!@(pkg-config --libs-only-l libwebp libwebpdemux)',
+        ],
+      },
+    }
+  ],
+  }
+  ]]
 }
