@@ -4,6 +4,11 @@
 
 {
   'variables': {
+    'use_system_opus%': 0,
+  },
+  'conditions' : [
+    ['use_system_opus == 0', {
+  'variables': {
     'conditions': [
       ['target_arch=="arm" or target_arch=="arm64"', {
         'use_opus_fixed_point%': 1,
@@ -237,4 +242,40 @@
       ],
     },  # target test_opus_padding
   ]
+  }, #  'use_system_opus == 0'
+  {
+  'targets': [
+    {
+      'target_name': 'opus',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'cflags': [
+          '<!@(pkg-config --cflags opus)',
+        ],
+      },
+      'variables': {
+        'headers_root_path': 'src/include',
+        'header_filenames': [
+          'opus_custom.h',
+          'opus_defines.h',
+          'opus_multistream.h',
+          'opus_types.h',
+          'opus.h',
+        ],
+      },
+      'includes': [
+        '../../build/shim_headers.gypi',
+      ],
+      'link_settings': {
+        'ldflags': [
+          '<!@(pkg-config --libs-only-L --libs-only-other opus)',
+        ],
+        'libraries': [
+          '<!@(pkg-config --libs-only-l opus)',
+        ],
+      },
+    },
+  ],
+  }
+  ]]
 }
