@@ -23,6 +23,7 @@
             'include_dirs': [  # need by Neteq audio classifier.
               '<(opus_dir)/src/src',
               '<(opus_dir)/src/celt',
+              '<(opus_dir)/src/include',
             ],
           },
         }, {
