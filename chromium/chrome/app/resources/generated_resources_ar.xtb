@@ -16,7 +16,7 @@
 <translation id="8996941253935762404">تحتوي مقدمة الموقع على برامج ضارة</translation>
 <translation id="3595596368722241419">البطارية ممتلئة</translation>
 <translation id="8098352321677019742">إشعارات <ph name="PRODUCT_NAME"/></translation>
-<translation id="5186650237607254032">حدّث قفل الشاشة في هاتفك بحيث يتم إيقاف التشغيل عندما تكون بالقرب منه. ستتمكن من إلغاء قفل الهاتف بشكل أسرع والتمتع بتجربة &quot;القفل الذكي&quot; على جهاز <ph name="DEVICE_TYPE"/>.</translation>
+<translation id="5186650237607254032">‏حدّث قفل الشاشة في هاتفك بحيث يتم إيقاف التشغيل عندما تكون بالقرب منه. ستتمكن من إلغاء قفل الهاتف بشكل أسرع والتمتع بتجربة Smart Lock على جهاز <ph name="DEVICE_TYPE"/>.</translation>
 <translation id="3566021033012934673">اتصالك ليس خاصًا</translation>
 <translation id="3751522270321808809">قد يحاول هذا الموقع الاحتيال عليك لسرقة معلوماتك (أمثلة: كلمات المرور أو الرسائل أو بطاقات الائتمان).</translation>
 <translation id="3228679360002431295">جارٍ الاتصال والتحقق<ph name="ANIMATED_ELLIPSIS"/></translation>
@@ -280,7 +280,7 @@
 <translation id="558170650521898289">‏التحقق من برنامج تشغيل الأجهزة لـ Microsoft Windows</translation>
 <translation id="4395129973926795186"><ph name="START_DATE"/> إلى <ph name="END_DATE"/></translation>
 <translation id="98515147261107953">أفقي</translation>
-<translation id="7334190995941642545">القفل الذكي غير متاح حاليًا. يُرجى المحاولة مرة أخرى في وقت لاحق.</translation>
+<translation id="7334190995941642545">‏Smart Lock غير متاح حاليًا. يُرجى المحاولة مرة أخرى في وقت لاحق.</translation>
 <translation id="1303101771013849280">‏لوضع إشارة مرجعية لملف HTML</translation>
 <translation id="8974161578568356045">اكتشاف تلقائي</translation>
 <translation id="1549045574060481141">تأكيد التنزيل</translation>
@@ -582,7 +582,7 @@
 <translation id="715487527529576698">الوضع الأولي للغة الصينية هو الصينية المبسطة.</translation>
 <translation id="6522350652862471760">‏تمكين اسم الملف الشخصي في Google ورمزه</translation>
 <translation id="2164862903024139959">‏لوحة المفاتيح الفيتنامية (TCVN)</translation>
-<translation id="8885197664446363138">القفل الذكي غير متاح</translation>
+<translation id="8885197664446363138">‏Smart Lock غير متاح</translation>
 <translation id="1697532407822776718">أنت الآن على أتم استعداد.</translation>
 <translation id="8373553483208508744">تجاهل علامات التبويب</translation>
 <translation id="8703575177326907206">الاتصال بالموقع <ph name="DOMAIN"/> غير محميّ بنظام تشفير.</translation>
@@ -686,6 +686,7 @@
 <translation id="4847468520816441019">المقاييس المطلوب عرضها</translation>
 <translation id="5098647635849512368">لا يمكن العثور على المسار المطلق للدليل للحزمة.</translation>
 <translation id="5859272821192576954">‏الآن أنت مُعّد تمامًا للمتابعة إلى Hangouts</translation>
+<translation id="5855756842026516189">‏حماية معلومات الدفع باستخدام Google Payments</translation>
 <translation id="8565650234829130278">محاولة الرجوع إلى الإصدار السابق من التطبيق.</translation>
 <translation id="6380224340023442078">إعدادات المحتوى...</translation>
 <translation id="1612129875274679969">تشغيل هذا الجهاز في وضع الكشك دائمًا.</translation>
@@ -733,6 +734,7 @@
 <translation id="5759728514498647443">يمكن قراءة المستندات التي ترسلها إلى الطباعة عبر <ph name="APP_NAME"/> بواسطة <ph name="APP_NAME"/>.</translation>
 <translation id="2401053206567162910">‏هذا التطبيق ليس متوافقًا حاليًا مع هذا الجهاز ولكن يسعى المختصون في Chrome جاهدين لجعله متوافقًا قريبًا.</translation>
 <translation id="3273410961255278341">الإرسال إلى:</translation>
+<translation id="4255096080864111471">حدد الحد الأقصى لعدد الأجزاء لمنطقة الاهتمامات.</translation>
 <translation id="5136529877787728692">F7</translation>
 <translation id="5233638681132016545">علامة تبويب جديدة</translation>
 <translation id="6567688344210276845">تعذر تحميل الرمز '<ph name="ICON"/>' لإجراء المتصفح.</translation>
@@ -826,6 +828,7 @@
 <translation id="1547297114045837579">مكِّن المسح المجالي لوحدة معالجة الرسومات.</translation>
 <translation id="3241680850019875542">حدد الدليل الجذر للإضافة المراد إنشاء حزمة لها، ولتحديث إضافة، حدد أيضًا ملف المفتاح الخاص لإعادة استخدامه.</translation>
 <translation id="7845849068167576533">‏حتى لو سبق لك زيارة موقع الويب هذا، فهو ليس آمنًا الآن. اكتشف التصفح الآمن من Google‬ مؤخرًا <ph name="BEGIN_LINK"/>برامج ضارة<ph name="END_LINK"/> على <ph name="SITE"/>. أحيانًا تصاب مواقع الويب الآمنة في الوضع العادي ببرامج ضارة . مصدر محتوى البرامج الضارة <ph name="SUBRESOURCE_HOST"/>، وهو ناشر معروف للبرامج الضارة.</translation>
+<translation id="9137356749601179867">عارض مربّع الاختيار لعرض الحفظ المحلي لبطاقة الائتمان المنزلة من الخادم.</translation>
 <translation id="7986295104073916105">قراءة وتغيير إعدادات كلمة المرور المحفوظة</translation>
 <translation id="5711983031544731014">يتعذر إلغاء القفل. أدخل كلمة المرور.</translation>
 <translation id="2149850907588596975">كلمات المرور والنماذج</translation>
@@ -856,7 +859,7 @@
 <translation id="1274997165432133392">ملفات تعريف الارتباط وبيانات الموقع الأخرى</translation>
 <translation id="4299729908419173967">البرازيلية</translation>
 <translation id="375841316537350618">جارٍ تنزيل النص البرمجي للخادم الوكيل...</translation>
-<translation id="7988930390477596403">سيتم التنشيط عندما تقوم بإلغاء قفل جهاز <ph name="DEVICE_TYPE"/> هذا في المرة القادمة. باستخدام &quot;القفل الذكي&quot;، سيتمكن هاتفك من إلغاء قفل هذا الجهاز - بدون كلمة مرور. سيتم تشغيل البلوتوث لتمكين &quot;القفل الذكي&quot;.</translation>
+<translation id="7988930390477596403">‏سيتم التنشيط عندما تقوم بإلغاء قفل جهاز <ph name="DEVICE_TYPE"/> هذا في المرة القادمة. باستخدام &quot;القفل الذكي&quot;، سيتمكن هاتفك من إلغاء قفل هذا الجهاز - بدون كلمة مرور. سيتم تشغيل البلوتوث لتمكين Smart Lock</translation>
 <translation id="45400070127195133">‏يؤدي تمكين هذا الخيار إلى السماح لتطبيقات الويب بالدخول إلى إضافات WebGL والتي لا تزال في حالة المسودة.</translation>
 <translation id="9169664750068251925">الحظر دومًا على هذا الموقع</translation>
 <translation id="6406303162637086258">محاكاة إعادة تشغيل المتصفح</translation>
@@ -1037,6 +1040,7 @@
 <translation id="2678063897982469759">إعادة تمكين</translation>
 <translation id="1779766957982586368">إغلاق النافذة</translation>
 <translation id="4850886885716139402">عرض</translation>
+<translation id="3075066926036244931">‏لا يمكن حفظ البيانات إلى Google Payments.</translation>
 <translation id="89217462949994770">لقد أدخلت رقم التعريف الشخصي غير الصحيح مرات كثيرة جدًا. الرجاء الاتصال بـ <ph name="CARRIER_ID"/> للحصول على مفتاح إلغاء تأمين جديد لرقم التعريف الشخصي مكون من 8 أرقام.</translation>
 <translation id="2776441542064982094">يبدو أنه لا توجد أجهزة متوفرة للتسجيل على الشبكة. فإذا كان جهازك قيد التشغيل ومتصلاً بالإنترنت، فحاول التسجيل متبعًا الإرشادات الواردة في الدليل.</translation>
 <translation id="8659716501582523573">‏عنوان IP:</translation>
@@ -1118,6 +1122,7 @@
 <translation id="7549584377607005141">تتطلب صفحة الويب هذه البيانات التي أدخلتها في وقت سابق لعرضها بشكل صحيح. يمكنك إرسال هذه المعلومات مرة أخرى ولكن بذلك ستكرر أي إجراء اتخذته هذه الصفحة في وقت سابق.</translation>
 <translation id="6954850746343724854">‏تمكين Native Client لجميع تطبيقات الويب، حتى التطبيقات التي لم يتم تثبيتها من سوق Chrome الإلكتروني.</translation>
 <translation id="9043242398268815112">لمعرفة موقع الجهاز</translation>
+<translation id="1596174774107741586">‏استخدام خوادم وضع الحماية لـ Google Payments</translation>
 <translation id="9068931793451030927">المسار:</translation>
 <translation id="4289540628985791613">نظرة عامة</translation>
 <translation id="283278805979278081">التقاط صورة</translation>
@@ -1203,6 +1208,7 @@
 <translation id="2971213274238188218">خفوت</translation>
 <translation id="473546211690256853">تتم إدارة هذا الحساب من خلال <ph name="DOMAIN"/></translation>
 <translation id="288024221176729610">التشيكية</translation>
+<translation id="5493905423961633717">‏يمكنك حفظ تفاصيلك وحمايتها باستخدام Google Payments.</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="4839122884004914586">تجاوز قائمة عرض البرامج</translation>
 <translation id="6305012486838822927">لوحة مفاتيح لغة لاو</translation>
@@ -1322,6 +1328,7 @@
 <translation id="813082847718468539">عرض معلومات الموقع</translation>
 <translation id="127353061808977798">الخطوط والتشفير</translation>
 <translation id="3122464029669770682">وحدة المعالجة المركزية</translation>
+<translation id="4518677423782794009">‏هل يظهر تعطّل Chrome صفحات بدء تشغيل أو أشرطة أدوات غير معتادة، أو إعلانات غير متوقعة لا يمكنك التخلص منها، أو تغييرًا آخر في تجربة التصفح؟ قد تتمكن من إصلاح المشكلة من خلال تشغيل أداة تنظيف Chrome.</translation>
 <translation id="6080689532560039067">تحقق من وقت النظام</translation>
 <translation id="6092270396854197260">MSPY</translation>
 <translation id="6802031077390104172"><ph name="USAGE"/> (<ph name="OID"/>)</translation>
@@ -1512,6 +1519,8 @@
 <translation id="2869742291459757746">‏السماح للمستخدم بتمكين Chrome من إنشاء كلمات مرور عند اكتشاف صفحات إنشاء حسابات.</translation>
 <translation id="7079038783243627996">ستتمكن الإضافة &quot;<ph name="EXTENSION"/>&quot; من قراءة وحذف ملفات الصور ومقاطع الفيديو والملفات الصوتية في المجلدات المحددة.</translation>
 <translation id="1737968601308870607">الإبلاغ عن خطأ</translation>
+<translation id="3831688386498123870">‏سجِّل الدخول للدفع باستخدام Google Payments</translation>
+<translation id="852605377609758011">‏ستتم هذه المعاملة باستخدام بطاقة Google Payments الظاهرية. وتُعدّ البطاقة الظاهرية رقم بطاقة جديدًا يحول دون إطلاع البائع على رقم بطاقة الائتمان الفعلي.</translation>
 <translation id="2594056015203442344">عند تمكين هذه الخاصية، تتضاعف مؤشرات الصوت في شريط علامات التبويب بالإضافة إلى وحدات التحكم لكتم الصوت بعلامة التبويب . كما يضيف ذلك أيضًا الأوامر في قائمة سياق التبويب لسرعة كتم علامات التبويب المتعددة المختارة.</translation>
 <translation id="5316588172263354223">البحث الصوتي في أي وقت</translation>
 <translation id="1389297115360905376">لا يمكن إضافة ذلك إلا من خلال <ph name="CHROME_WEB_STORE"/>.</translation>
@@ -1616,6 +1625,7 @@
 <translation id="3574210789297084292">تسجيل الدخول</translation>
 <translation id="5254480569305195883">‏تمكين الدعم لحدث مزامنة خلفية ServiceWorker.</translation>
 <translation id="2134149231879627725">‏دع Google تساعدك في قفل جهازك، ومحو بياناته، وتحديد موقعه عن بُعد.</translation>
+<translation id="5151034238407558331">‏للأسف، لا يُمكن استخدام Google Payments مع هذا التاجر سوى عن طريق العملاء ممن لديهم عنوان بالولايات المتحدة. فإذا كنت من قاطني الولايات المتحدة، يُرجى |تغيير عنوان المنزل المستخدم مع Google Payments| أو الدفع بدون استخدام Google Payments.</translation>
 <translation id="1146204723345436916">‏استيراد الإشارات المرجعية من ملف HTML...</translation>
 <translation id="2113921862428609753">الدخول إلى معلومات الصلاحية</translation>
 <translation id="9190063653747922532">‏L2TP/IPSec + المفتاح المشترك مسبقًا</translation>
@@ -1671,6 +1681,7 @@
 <translation id="4811502511369621968">عنوان بريد إلكتروني غير صالح. الرجاء التحقق وإعادة المحاولة.</translation>
 <translation id="175196451752279553">إ&amp;عادة فتح علامة التبويب المغلقة</translation>
 <translation id="8602851771975208551">‏أضاف برنامج آخر بجهاز الكمبيوتر تطبيقًا قد يؤدي إلى تغيير طريقة عمل Chrome.</translation>
+<translation id="9154967591629748964">الحد الأقصى لعدد الأجزاء لمنطقة الاهتمامات</translation>
 <translation id="2655386581175833247">شهادة المستخدم:</translation>
 <translation id="5039804452771397117">سماح</translation>
 <translation id="5435964418642993308">‏اضغط على مفتاح enter للرجوع، ومفتاح قائمة السياقات لعرض السجلّ</translation>
@@ -1846,8 +1857,10 @@
 <translation id="1901377140875308934">تسجيل الدخول إلى <ph name="SHORT_PRODUCT_NAME"/>...</translation>
 <translation id="5529098031581368697">الخلفية الحالية من إعداد &quot;<ph name="APP_NAME"/>&quot;</translation>
 <translation id="5074318175948309511">قد تحتاج هذه الصفحة إلى إعادة التحميل قبل تنفيذ الإعدادات الجديدة.</translation>
+<translation id="7664333939334980398">64</translation>
 <translation id="3740150184898623344">إظهار زر وضع القارئ في جميع الصفحات</translation>
 <translation id="3947376313153737208">لم يتم التحديد</translation>
+<translation id="6405640832764359650">‏تمكين مربع اختيار حفظ Google Payments</translation>
 <translation id="1346104802985271895">‏أسلوب الإدخال الفيتنامي (TELEX)</translation>
 <translation id="7896906914454843592">لوحة المفاتيح الأمريكية الموسعة</translation>
 <translation id="2242603986093373032">ليست هناك أجهزة</translation>
@@ -1880,6 +1893,7 @@
 <translation id="2592884116796016067">‏تعطل جزء من هذه الصفحة (HTML WebWorker)، لذا قد لا يعمل هذا الجزء بشكل صحيح.</translation>
 <translation id="2529133382850673012">لوحة المفاتيح الأمريكية</translation>
 <translation id="4352850459590683051">إبطال الوصول للملف والجهاز</translation>
+<translation id="3176592269865293091">‏واجه Google Payments خطأً.</translation>
 <translation id="4411578466613447185">موقّع الشفرة</translation>
 <translation id="1354868058853714482">‏برنامج Adobe Reader غير محدث وقد يكون غير آمن.</translation>
 <translation id="6200903742087665630">تمكين الأطر المدمجة خارج المعالجة</translation>
@@ -2069,13 +2083,15 @@
 <translation id="3326821416087822643">جارٍ ضغط <ph name="FILE_NAME"/>...</translation>
 <translation id="3081104028562135154">زيادة</translation>
 <translation id="3734816294831429815">ستتم إعادة تشغيل <ph name="PRODUCT_NAME"/> في غضون <ph name="SECONDS"/> ثوانٍ.</translation>
+<translation id="881450003165101303">‏لا يتوافق Google Payments مع هذا التاجر.</translation>
 <translation id="8732030010853991079">استخدم هذه الإضافة بالنقر على هذا الرمز.</translation>
 <translation id="32330993344203779">لقد تم تسجيل جهازك بنجاح لإدارة المؤسسة.</translation>
+<translation id="6269540072308453256">‏Google Payments غير متاح حاليًا.</translation>
 <translation id="9177483892433212068">مدير التركيز التجريبي لإدخال النص</translation>
 <translation id="158917669717260118">تعذر تحميل صفحة الويب نظرًا لدخول الجهاز في وضع السكون أو السبات. عندما يحدث ذلك، يتم إيقاف تشغيل اتصالات الشبكة وتخفق الطلبات الجديدة المرسلة إلى الشبكة. ستؤدي إعادة تحميل الصفحة إلى حل هذه المشكلة.</translation>
 <translation id="6316671927443834085">أخفق قطع الاتصال بـ &quot;<ph name="DEVICE_NAME"/>&quot;.</translation>
 <translation id="1962233722219655970">‏هذه الصفحة تستخدم تطبيق Native Client وهو لا يعمل على جهاز الكمبيوتر التابع لك.</translation>
-<translation id="5458733660263868683">‏لا تستخدم القفل الذكي، والذي يسمح لك بإلغاء قفل جهاز Chromebook عندما تكون بالقرب من هاتفك. إذا كنت صاحب الجهاز، وهذا أيضا يعمل على إيقاف القفل الذكي على شاشة تسجيل الدخول.</translation>
+<translation id="5458733660263868683">‏لا تستخدم Smart Lock، والذي يسمح لك بإلغاء قفل جهاز Chromebook عندما تكون بالقرب من هاتفك. إذا كنت صاحب الجهاز، وهذا أيضا يعمل على إيقاف Smart Lock على شاشة تسجيل الدخول.</translation>
 <translation id="1108685299869803282">يختار أكثر من 80% من الأشخاص الذين يرون هذا التحذير التوقف عن المتابعة من أجل السلامة بدلاً من التعرض لخطر البرامج الضارة. ولكن إذا كنت على دراية بالمخاطر على أمنك، يمكنك <ph name="BEGIN_LINK"/>زيارة هذا الموقع غير الآمن<ph name="END_LINK"/> قبل أن تتم إزالة البرامج الخطيرة.</translation>
 <translation id="219008588003277019">وحدة البرنامج العميل الأصلي: <ph name="NEXE_NAME"/></translation>
 <translation id="8228447825257396644">تعطيل لوحة مفاتيح عرض المدخلات في التصميم متعدد الأبعاد</translation>
@@ -2092,6 +2108,7 @@
         <ph name="HOST_NAME"/>
         للوصول إلى موقع داخلي في وقت سابق، فاتصل بمشرف
         الشبكة.</translation>
+<translation id="6938162839153260184">‏لا يتوافق Google Payments مع هذا الإصدار من Chrome أو لم يتعرف على مفتاح Google API.</translation>
 <translation id="7130561729700538522">‏تعذر التسجيل في مدير أجهزة Google.</translation>
 <translation id="4991420928586866460">معالجة مفاتيح الصف العلوي باعتبارها مفاتيح الوظائف</translation>
 <translation id="4350019051035968019">لا يمكن تسجيل هذا الجهاز في النطاق الذي ينتمي له حسابك نظرًا لأنه تم تصنيف الجهاز للعمل تحت إدارة نطاق آخر.</translation>
@@ -2345,6 +2362,7 @@
 <translation id="389589731200570180">مشاركة مع الضيوف</translation>
 <translation id="1510200760579344855">تم قفل هذا الجهاز من قبل مسؤول <ph name="SAML_DOMAIN"/>.</translation>
 <translation id="7205869271332034173">SSID:</translation>
+<translation id="3335561837873115802">‏الحصول على أداة تنظيف Chrome</translation>
 <translation id="4731351517694976331">‏السماح لخدمات Google بالدخول إلى الموقع</translation>
 <translation id="5815645614496570556">‏عنوان X.400</translation>
 <translation id="1223853788495130632">يوصي المشرف بقيمة محددة لهذا الإعداد.</translation>
@@ -2368,6 +2386,7 @@
 <translation id="8580634710208701824">إعادة تحميل الإطار</translation>
 <translation id="1018656279737460067">تم الإلغاء</translation>
 <translation id="7606992457248886637">الصلاحيات</translation>
+<translation id="5953603475187800576">‏عرض العناوين وبطاقات الائتمان من Google Payments</translation>
 <translation id="4197674956721858839">تحديد ملف مضغوط</translation>
 <translation id="2672142220933875349">‏ملف CRX غير صالح. تعذر فك الحزمة.</translation>
 <translation id="707392107419594760">تحديد لوحة المفاتيح:</translation>
@@ -2535,6 +2554,7 @@
 <translation id="409579654357498729">إضافة إلى الطباعة في السحاب</translation>
 <translation id="2120316813730635488">المرات التي تم فيها تثبيت الإضافة</translation>
 <translation id="8398877366907290961">المتابعة على كلّ حال</translation>
+<translation id="2797019681257472009">تم اكتشاف سلوك غير معتاد</translation>
 <translation id="5063180925553000800">رقم التعريف الشخصي الجديد:</translation>
 <translation id="4883178195103750615">‏تصدير الإشارات المرجعية إلى ملف HTML...</translation>
 <translation id="2496540304887968742">يجب أن تكون سعة الجهاز 4 غيغابايت أو أكثر.</translation>
@@ -2607,7 +2627,7 @@
 <translation id="7314244761674113881">‏مضيف SOCKS</translation>
 <translation id="4630590996962964935">حرف غير صالح: $1</translation>
 <translation id="7709980197120276510">يُعد النقر على &quot;متابعة&quot; بمثابة موافقة منك على <ph name="LEGAL_DOC_LINK_TEXT_1"/>، و<ph name="LEGAL_DOC_LINK_TEXT_2"/>، و<ph name="LEGAL_DOC_LINK_TEXT_3"/>، و<ph name="LEGAL_DOC_LINK_TEXT_4"/>، و<ph name="LEGAL_DOC_LINK_TEXT_5"/>.</translation>
-<translation id="8556377764941071135">يمكنك تمكين اكتشاف التقارب في &quot;القفل الذكي&quot;.</translation>
+<translation id="8556377764941071135">‏يمكنك تمكين اكتشاف التقارب في Smart Lock.</translation>
 <translation id="7533451546919522717">محو ملفات تعريف الارتباط وبيانات الموقع والمكونات الإضافية الأخرى عند الخروج</translation>
 <translation id="8382645631174981738">تم تثبيت <ph name="EXTENSION_NAME"/> عن بُعد</translation>
 <translation id="542872847390508405">أنت تتصفح كضيف</translation>
@@ -2907,7 +2927,7 @@
 <translation id="1122960773616686544">اسم الإشارة</translation>
 <translation id="5966707198760109579">الأسبوع</translation>
 <translation id="7854323427075506422">‏تعطيل تدفق أداة فتح ملفات ZIP الجديدة، استنادًا إلى مزود نظام الملفات.</translation>
-<translation id="4635114802498986446">‏يُمكّن إعداد &quot;القفل الذكي&quot; الذي يقيد إلغاء القفل بحيث لا يعمل إلا عندما يكون هاتفك قريبًا جدًا من (تقريبًا، ضمن مسافة ذراع) جهاز Chrome.</translation>
+<translation id="4635114802498986446">‏يُمكّن إعداد Smart Lock الذي يقيد إلغاء القفل بحيث لا يعمل إلا عندما يكون هاتفك قريبًا جدًا من (تقريبًا، ضمن مسافة ذراع) جهاز Chrome.</translation>
 <translation id="7371490661692457119">عرض جزء الصورة الافتراضي</translation>
 <translation id="5148652308299789060">تعطيل أداة تحويل البرنامج ثلاثي الأبعاد</translation>
 <translation id="9205143043463108573">‏لوضع Launcher تطبيقات في وسط الشاشة باتجاه أفقي.</translation>
@@ -3050,6 +3070,7 @@
 <translation id="7382160026931194400">‏لن تُمحى |content settings| ولا #search engines# وقد تعكس عاداتك في الصفح.</translation>
 <translation id="7503821294401948377">تعذر تحميل رمز '<ph name="ICON"/>' لإجراء المتصفح.</translation>
 <translation id="4809190954660909198">تفاصيل فوترة جديدة...</translation>
+<translation id="6016640600871825812">‏تتطلب Google Payments إدخال الاسم الأول واسم العائلة على الأقل.</translation>
 <translation id="3722396466546931176">أضف اللغات واسحبها لترتيبها حسب تفضيلك.</translation>
 <translation id="3857466062686943799">إضافة إلى شريط المهام</translation>
 <translation id="7396845648024431313">سيتم تشغيل <ph name="APP_NAME"/> عند بدء تشغيل النظام وسيستمر تشغيله في الخلفية حتى بعد إغلاق كل نوافذ <ph name="PRODUCT_NAME"/> الأخرى.</translation>
@@ -3059,6 +3080,7 @@
 <translation id="662607201886173483">DSA</translation>
 <translation id="8275863942928500239">تعطيل تعليقات اللمس الإضافية على مكونات واجهة المستخدم.</translation>
 <translation id="2391419135980381625">الخط القياسي</translation>
+<translation id="8066238397346344588">‏تعطيل Google Payments</translation>
 <translation id="8652139471850419555">الشبكات المفضلة</translation>
 <translation id="7893393459573308604"><ph name="ENGINE_NAME"/> (الافتراضي)</translation>
 <translation id="5392544185395226057">‏تمكين دعم Native Client.</translation>
@@ -3089,7 +3111,6 @@
 <translation id="3858678421048828670">لوحة المفاتيح الإيطالية</translation>
 <translation id="1436784010935106834">تمت الإزالة</translation>
 <translation id="3730639321086573427">الوجهات المحلية</translation>
-<translation id="399856887277429830">تشغيل أداة إزالة البرامج</translation>
 <translation id="7918257978052780342">تسجيل</translation>
 <translation id="2863937263901630331">‏تتوفر البيانات الأولية من خلال NetLog. يمكنك الاطلاع على المساعدة لمزيد من التفاصيل.</translation>
 <translation id="4195814663415092787">المتابعة من حيث توقفت</translation>
@@ -3297,6 +3318,7 @@
 <translation id="4853020600495124913">فتح في &amp;نافذة جديدة</translation>
 <translation id="6847758263950452722">‏حفظ الصفحة كـ MHTML</translation>
 <translation id="3563432852173030730">‏تعذر تنزيل تطبيق Kiosk.</translation>
+<translation id="324743268744517458">‏تحذير: أنت غير متصل بخوادم Google Payments للإنتاج. لن تكون البطاقات الصادرة صالحة.</translation>
 <translation id="4711094779914110278">التركية</translation>
 <translation id="2572032849266859634">تم منح إذن دخول للقراءة فقط إلى <ph name="VOLUME_NAME"/>.</translation>
 <translation id="8193362611902704788">‏تمكينLauncher تطبيقات. بعد التمكين، يتم إنشاء اختصارات نظام التشغيل لـ Launcher تطبيقات.</translation>
@@ -3398,6 +3420,7 @@
     <ph name="LINE_BREAK1"/>
     جاهز لإجراء نسخ احتياطي في <ph name="BEGIN_LINK"/>Google Drive<ph name="END_LINK"/></translation>
 <translation id="2677924368525077324">تمكين تعديل النص المستند إلى اللمس</translation>
+<translation id="9213566138414731677">‏عفوًا، <ph name="WALLET_ERROR"/> يمكنك إكمال هذه المعاملة بدون استخدام Google Payments.</translation>
 <translation id="283669119850230892">لاستخدام الشبكة <ph name="NETWORK_ID"/>، أكمل أولاً اتصالك بالإنترنت أدناه.</translation>
 <translation id="7513996269498582533">كشف عن طريقك</translation>
 <translation id="9073281213608662541">‏بروتوكول مصادقة كلمات المرور (PAP)</translation>
@@ -3604,7 +3627,7 @@
 <translation id="4756388243121344051">ال&amp;سجل</translation>
 <translation id="7614030880636783720">‏لا تتوفر شبكة Wi-Fi وبيانات الجوال. يمكن تحميل الصفحة بعد اتصال الجهاز بشبكة.</translation>
 <translation id="1146673768181266552">معرِّف العطل <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
-<translation id="3544347428588533940">&quot;القفل الذكي&quot; جاهز تقريبًا</translation>
+<translation id="3544347428588533940">‏Smart Lock جاهز تقريبًا</translation>
 <translation id="8044899503464538266">بطيء</translation>
 <translation id="3789841737615482174">تثبيت</translation>
 <translation id="4782449893814226250">لقد سألت والديك ما إذا كان مناسبًا لك زيارة هذه الصفحة.</translation>
@@ -3647,7 +3670,7 @@
 <translation id="1464258312790801189">حساباتك</translation>
 <translation id="163309982320328737">العرض الأولي للحرف هو عرض بالكامل</translation>
 <translation id="6596092346130528198">هل هذه هي صفحة علامة التبويب الجديدة التي كنت تتوقع ظهورها؟</translation>
-<translation id="3926002189479431949">تم تغيير هاتف القفل الذكي</translation>
+<translation id="3926002189479431949">‏تم تغيير هاتف Smart Lock</translation>
 <translation id="6965648386495488594">المنفذ</translation>
 <translation id="7631887513477658702">فت&amp;ح هذا النوع من الملفات دومًا</translation>
 <translation id="3858027520442213535">تحديث التاريخ والوقت</translation>
@@ -3676,6 +3699,7 @@
 <translation id="4633945134722448536">عند التمكين، يؤدي الجلب المسبق لنتائج البحث لطلبات بحث المربع متعدد الاستخدامات المكتوبة وإعادة استخدام صفحة قاعدة البحث المعروضة مسبقًا لجلب أي طلب بحث (وليس الجلب المسبق لطلب البحث فقط).</translation>
 <translation id="8755376271068075440">أ&amp;كبر</translation>
 <translation id="8132793192354020517">تم الاتصال بالموقع <ph name="NAME"/></translation>
+<translation id="949382280525592713">‏<ph name="LEGAL_DOC_AGREEMENT"/> لحمايتك من التعرض للاحتيال، ستتم مشاركة معلومات تخص جهاز الكمبيوتر التابع لك (بما في ذلك معلومات الموقع) مع Google Payments.</translation>
 <translation id="4316850752623536204">موقع الويب لمطوّر البرامج</translation>
 <translation id="7052914147756339792">تعيين خلفية...</translation>
 <translation id="5865597920301323962">سيتم محو ملفات تعريف الارتباط من <ph name="DOMAIN"/> عند الخروج.</translation>
@@ -3750,6 +3774,7 @@
 <translation id="6325191661371220117">تعطيل التشغيل التلقائي</translation>
 <translation id="6817358880000653228">كلمات المرور المحفوظة لهذا الموقع:</translation>
 <translation id="4613271546271159013">لقد غيّرت الإضافة الصفحة المعروضة عندما فتحت علامة تبويب جديدة.</translation>
+<translation id="3378630551672149129">‏سجل الدخول واضغط على مفتاح Tab للتفاعل مع عناصر الإدخال.</translation>
 <translation id="351152300840026870">خط ثابت العرض</translation>
 <translation id="4301786491084298653">تعطيل في <ph name="DOMAIN"/></translation>
 <translation id="5827266244928330802">Safari</translation>
@@ -3840,7 +3865,6 @@
 <translation id="4871308555310586478">‏لم يتم التثبيت من سوق Chrome الإلكتروني</translation>
 <translation id="3578594933904494462">تجري مشاركة محتوى علامة التبويب هذه.</translation>
 <translation id="7423080529544781027">لاستخدام المكونات الإضافية</translation>
-<translation id="3401079963003821207">الحصول على أداة إزالة البرامج</translation>
 <translation id="4243835228168841140">يريد <ph name="FULLSCREEN_ORIGIN"/> تعطيل مؤشر الماوس.</translation>
 <translation id="5473075389972733037">IBM</translation>
 <translation id="7807711621188256451">السماح دائمًا لـ <ph name="HOST"/> بالدخول إلى الكاميرا</translation>
@@ -4061,6 +4085,7 @@
 <translation id="5264252276333215551">يُرجى الاتصال بالإنترنت لتشغيل التطبيق في وضع الكشك.</translation>
 <translation id="7180865173735832675">تخصيص</translation>
 <translation id="7054808953701320293">أعي ذلك، عدم الإظهار لي مرة أخرى.</translation>
+<translation id="4903369323166982260">‏تشغيل أداة تنظيف Chrome</translation>
 <translation id="144932861331386147">‏الرجاء الاتصال بالإنترنت لتحديث جهاز Chromebook.</translation>
 <translation id="2938685643439809023">المنغولية</translation>
 <translation id="4530494379350999373">الأصل</translation>
@@ -4146,6 +4171,7 @@
 <translation id="1792705092719258158">تمكين وضع الشاشة المنعكس.</translation>
 <translation id="6982896539684144327">تم اكتشاف طابعة من <ph name="VENDOR_NAME"/></translation>
 <translation id="8050038245906040378">‏التوقيع بالرمز التجاري لـ Microsoft</translation>
+<translation id="8684255857039823328">تم حفظ كلمة المرور. يمكنك الوصول إلى كلمات المرور من أي جهاز في <ph name="MANAGEMENT_LINK"/></translation>
 <translation id="3031557471081358569">اختيار العناصر المراد استيرادها:</translation>
 <translation id="6728144975495880845">‏إذا تم تمكينه، تكتب السلاسل النقطية في ذاكرة وحدة معالجة الرسومات (GPU).</translation>
 <translation id="1368832886055348810">من اليسار لليمين</translation>
@@ -4160,7 +4186,7 @@
 <translation id="249113932447298600">عذرًا، لا يتوفر الجهاز <ph name="DEVICE_LABEL"/> في الوقت الحالي.</translation>
 <translation id="6401445054534215853">بند الرف 1</translation>
 <translation id="6113134669445407638">‏تعطيل Delay Agnostic AEC في WebRTC. تُستخدم إذا كانت تأخيرات النظام المُبلغ عنها موثوقًا بها للغاية، أو إذا واجه الآخرون صدى من جهازك.</translation>
-<translation id="2365626167708453863">‏اختيار حساب من القفل الذكي من Google</translation>
+<translation id="2365626167708453863">‏اختيار حساب من Smart Lock من Google</translation>
 <translation id="232562464593865424">‏دعنا ندرب جهاز Chromebook</translation>
 <translation id="2351520734632194850"><ph name="MHZ"/> ميغا هرتز</translation>
 <translation id="2799223571221894425">إعادة تشغيل</translation>
@@ -4173,7 +4199,7 @@
 <translation id="5469954281417596308">مدير الإشارات</translation>
 <translation id="106153153543631784">‏يُرجى إعادة إدخال كلمة المرور لتحديث ملف التعريف الشخصي في Chromebook.</translation>
 <translation id="3064388234319122767">‏التحويل الصوتي (ذدرافو ← здраво)</translation>
-<translation id="5425722269016440406">يجب أن تكون متصلاً بالإنترنت لإيقاف تشغيل القفل الذكي لأن هذا الإعداد متزامن مع هاتفك وأجهزة أخرى. يُرجى الاتصال بإحدى الشبكات أولاً.</translation>
+<translation id="5425722269016440406">‏يجب أن تكون متصلاً بالإنترنت لإيقاف تشغيل Smart Lock لأن هذا الإعداد متزامن مع هاتفك وأجهزة أخرى. يُرجى الاتصال بإحدى الشبكات أولاً.</translation>
 <translation id="5288481194217812690"><ph name="FILENAME"/></translation>
 <translation id="7730494089396812859">عرض تفاصيل النسخ الاحتياطي عبر السحاب</translation>
 <translation id="1143142264369994168">الموقّع على الشهادات</translation>
@@ -4256,6 +4282,7 @@
 <translation id="2885378588091291677">إدارة المهام</translation>
 <translation id="7412226954991670867">‏ذاكرة GPU</translation>
 <translation id="4916679969857390442">العدسة</translation>
+<translation id="8688644143607459122">‏يُعد النقر على &quot;متابعة&quot; بمثابة موافقة منك على استخدام Google Payments. ولحمايتك من التعرض للاحتيال، ستتم مشاركة معلومات تخص جهاز الكمبيوتر التابع لك (بما في ذلك معلومات الموقع) مع Google Payments.</translation>
 <translation id="2080796051686842158">‏تعطيل الرسوم المتحركة التي تظهر في الخلفية عند بدء التشغيل (باستثناء في حالة  OOBE).</translation>
 <translation id="305932878998873762">‏ذاكرة التخزين المؤقت البسيطة لبروتوكول HTTP هي ذاكرة تخزين مؤقتة جديدة، حيث تعتمد على نظام الملفات لتوزيع مساحة القرص.</translation>
 <translation id="8962083179518285172">إخفاء التفاصيل</translation>
@@ -4265,6 +4292,7 @@
 <translation id="7863133010182113457">‏محو حفظ البيانات التي تم الحصول عليها باستخدام الخادم الوكيل لخفض البيانات عند بدء تشغيل Chrome.</translation>
 <translation id="4235200303672858594">الشاشة بالكامل</translation>
 <translation id="5951823343679007761">ليست هناك بطارية مركبة</translation>
+<translation id="806705617346045388">تم اكتشاف سلوك غير معتاد</translation>
 <translation id="2518024842978892609">استخدام شهادات العملاء لديك</translation>
 <translation id="479555359673800162">تعطيل إعادة مصادقة مدير كلمات المرور</translation>
 <translation id="8569682776816196752">لم يتم العثور على أية وجهات</translation>
@@ -4543,6 +4571,7 @@
 <translation id="131461803491198646">الشبكة الرئيسية، بلا تجوال</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/>‏ - <ph name="FULL_DATE"/></translation>
 <translation id="1830259362126610548">إرسال علامة التبويب هذه (المحسّنة للصوت)</translation>
+<translation id="3660127367837350905">‏تحمي Google Payments بطاقتك</translation>
 <translation id="1285320974508926690">عدم ترجمة هذا الموقع مطلقًا</translation>
 <translation id="3613422051106148727">&amp;فتح في علامة تبويب جديدة</translation>
 <translation id="8954894007019320973">(يتبع)</translation>
@@ -4590,6 +4619,7 @@
 <translation id="4285498937028063278">إزالة تثبيت</translation>
 <translation id="8734073480934656039">يتيح تمكين هذا الإعداد تشغيل تطبيقات الكشك تلقائيًا عند بدء التشغيل.</translation>
 <translation id="2588322182880276190">‏شعار Chrome</translation>
+<translation id="3957769504621887787">‏استخدام Google Payments</translation>
 <translation id="6700480081846086223">إرسال <ph name="HOST_NAME"/></translation>
 <translation id="316307797510303346">تحكم في مواقع الويب التي يزورها هذا الشخص من <ph name="CUSTODIAN_EMAIL"/> واعرضها.
     تفاصيل تسجيل الدخول إلى حسابك قديمة.</translation>
@@ -4627,7 +4657,7 @@
 <translation id="9203478404496196495">إلغاء تجاهل علامة التبويب</translation>
 <translation id="2143778271340628265">تهيئة يدوية للخادم الوكيل</translation>
 <translation id="8888432776533519951">اللون:</translation>
-<translation id="5247176778442128277">تعطيل القفل الذكي</translation>
+<translation id="5247176778442128277">‏تعطيل Smart Lock</translation>
 <translation id="5294529402252479912">‏تحديث Adobe Reader الآن</translation>
 <translation id="79962507603257656">تنزيل الحالة في مركز الإشعارات</translation>
 <translation id="2231990265377706070">علامة تعجب</translation>
@@ -4732,6 +4762,7 @@
 <translation id="6016809788585079594">‏قل &quot;Ok Google&quot; للمرة الأخيرة</translation>
 <translation id="7792122566227574447">الأكثر زيارة فيما عدا صفحات البحث</translation>
 <translation id="4839303808932127586">حف&amp;ظ مقطع الفيديو باسم...</translation>
+<translation id="78196818692136852">‏لا يمكن لـ Google Payments التعامل مع هذه المعاملة.</translation>
 <translation id="317583078218509884">ستسري إعدادات أذونات الموقع بعد إعادة تحميل الصفحة.</translation>
 <translation id="3135204511829026971">تدوير الشاشة</translation>
 <translation id="1317502925920562130">هل هذه هي الصفحة الرئيسية التي كنت تتوقع ظهورها؟</translation>
@@ -4862,6 +4893,7 @@
 <translation id="4447465454292850432">البطارية:</translation>
 <translation id="2752805177271551234">استخدام سجل الإدخال</translation>
 <translation id="7268365133021434339">إغلاق علامات التبويب</translation>
+<translation id="5531274207066050939">Google Payments</translation>
 <translation id="9131598836763251128">تحديد ملف واحد أو أكثر</translation>
 <translation id="6221345481584921695">‏اكتشف التصفح الآمن من Google‬ مؤخرًا <ph name="BEGIN_LINK"/>برامج ضارة<ph name="END_LINK"/> على <ph name="SITE"/>. أحيانًا تصاب مواقع الويب الآمنة في الوضع العادي ببرامج ضارة. مصدر محتوى البرامج الضارة <ph name="SUBRESOURCE_HOST"/>، وهو ناشر معروف للبرامج الضارة.</translation>
 <translation id="4589268276914962177">علامة تبويب طرفية جديدة</translation>
@@ -4882,7 +4914,6 @@
 <translation id="9149866541089851383">تعديل...</translation>
 <translation id="8735794438432839558">‏الرجاء الاتصال بالإنترنت لتسجيل الدخول إلى Chromebook.</translation>
 <translation id="3356395591469757189">اقتراحات الملء التلقائي كعرض ملحقات للوحة المفاتيح</translation>
-<translation id="2194802420977819330">على سبيل المثال، يتسبب في تعطُّلات، أو ظهور أشرطة أدوات أو صفحات بدء تشغيل غير المعتادة، أو إعلانات غير متوقعة لا يمكنك التخلص منها، أو تغيير تجربة التصفح؟ قد تتمكن من حل المشكلة عن طريق تشغيل أداة إزالة البرامج.</translation>
 <translation id="7939412583708276221">المتابعة على أية حال</translation>
 <translation id="8579285237314169903">جارٍ مزامنة <ph name="NUMBER_OF_FILES"/> من البنود...</translation>
 <translation id="8140778357236808512">استيراد مستخدم حالي يخضع للإشراف</translation>
@@ -4908,6 +4939,7 @@
 <translation id="7003257528951459794">فترة التكرار:</translation>
 <translation id="5710406368443808765">عفوًا! فشل النظام في تخزين رمز الجهاز والمعرّف.</translation>
 <translation id="1248269069727746712">يستخدم <ph name="PRODUCT_NAME"/> إعدادات وكيل النظام في جهازك للاتصال بالشبكة.</translation>
+<translation id="4573096868619592038">‏تم تعطيل Google Payments</translation>
 <translation id="3467267818798281173">‏طلب اقتراحات Google</translation>
 <translation id="8408402540408758445">الجلب المسبق لنتائج البحث</translation>
 <translation id="5486275809415469523">يشارك <ph name="APP_NAME"/> شاشتك مع <ph name="TAB_NAME"/>.</translation>
@@ -4979,6 +5011,7 @@
 <translation id="7484964289312150019">فتح كل الإشارات المرجعية في &amp;نافذة جديدة</translation>
 <translation id="1731346223650886555">فاصلة منقوطة</translation>
 <translation id="917861274483335838">إدارة حظر المكوّن الإضافي...</translation>
+<translation id="7968728703861615399">‏هناك خطأ ما في حساب Google Payments.</translation>
 <translation id="3678559383040232393">لوحة المفاتيح المالطية</translation>
 <translation id="4450974146388585462">التشخيص</translation>
 <translation id="7339763383339757376">‏حفظ شهادة واحدة بتشفير PKCS #7</translation>
@@ -5145,7 +5178,7 @@
 <translation id="169515659049020177">Shift</translation>
 <translation id="4800132727771399293">‏تحقق من تاريخ انتهاء الصلاحية ورمز التحقق من البطاقة (CVC) وأعد المحاولة مرة أخرى.</translation>
 <translation id="3551117997325569860">لتغيير الخادم الوكيل، مكّن الإعداد &quot;<ph name="USE_SHARED_PROXIES"/>&quot;.</translation>
-<translation id="2810731435681289055">في المرة القادمة عند إلغاء قفل هذا <ph name="DEVICE_TYPE"/>، سيتم تحديث القفل الذكي حتى يُمكنك النقر فقط على صورتك للدخول.</translation>
+<translation id="2810731435681289055">‏في المرة القادمة عند إلغاء قفل هذا <ph name="DEVICE_TYPE"/>، سيتم تحديث Smart Lock حتى يُمكنك النقر فقط على صورتك للدخول.</translation>
 <translation id="6110413515502722199">‏إذا تم التعيين، فسيتم تنفيذ تسجيل الدخول باستخدام تدفق GAIA بدلاً من التدفق الجديد القائم على WebView.</translation>
 <translation id="6268747994388690914">‏استيراد الإشارات المرجعية من ملف HTML...</translation>
 <translation id="6096047740730590436">فتح في وضع التكبير</translation>
@@ -5338,7 +5371,7 @@
 <translation id="9003647077635673607">السماح على جميع مواقع الويب</translation>
 <translation id="6837930996380214191">الأذونات الحالية</translation>
 <translation id="8689341121182997459">تاريخ انتهاء الصلاحية:</translation>
-<translation id="236128817791440714">‏مُقترح: إعداد &quot;القفل الذكي&quot; لجهاز Android</translation>
+<translation id="236128817791440714">‏مُقترح: إعداد Smart Lock لجهاز Android</translation>
 <translation id="899403249577094719">‏عنوان URL الأساسي لشهادة Netscape</translation>
 <translation id="2737363922397526254">تصغير...</translation>
 <translation id="8605428685123651449">‏ذاكرة SQLite</translation>
@@ -5429,6 +5462,7 @@
 <translation id="2453576648990281505">الملف موجود فعلاً</translation>
 <translation id="6972929256216826630">السماح لجميع المواقع بتنزيل عدة ملفات تلقائيًا</translation>
 <translation id="3127589841327267804">PYJJ</translation>
+<translation id="8609432254184257462">‏لقد تمت حماية بطاقتك باستخدام بطاقة Google Payments الظاهرية <ph name="FRONTING_CREDIT_CARD"/> وسيظهر هذا الرقم على إيصال الاستلام. سيتم تحصيل رسوم عملية الشراء هذه من <ph name="BACKING_CREDIT_CARD"/>.</translation>
 <translation id="3668823961463113931">المعالجات</translation>
 <translation id="8808478386290700967">السوق الإلكتروني</translation>
 <translation id="1732215134274276513">إزالة تثبيت علامات التبويب</translation>
@@ -5645,6 +5679,7 @@
 <translation id="7885283703487484916">قصير جدًا</translation>
 <translation id="5238278114306905396">تمت إزالة التطبيق &quot;<ph name="EXTENSION_NAME"/>&quot; تلقائيًا.</translation>
 <translation id="4538792345715658285">تمّ التثبيت بموجب سياسة المؤسسة.</translation>
+<translation id="7982740804274085295">‏بالنسبة لمطوِّري البرامج: يمكن استخدام خدمة وضع الحماية مع مكالمات واجهة برمجة تطبيقات Google Payments لـ requestAutocomplete().</translation>
 <translation id="6307493301326177172">ربما اخترق المهاجمون هذا الموقع، وقد يحاولون تثبيت برامج على جهازك تسرق أو تحذف معلوماتك (أمثلة: الصور وكلمات المرور والرسائل وبطاقات الائتمان).</translation>
 <translation id="6129953537138746214">مسافة</translation>
 <translation id="2626799779920242286">الرجاء إعادة المحاولة لاحقًا.</translation>
@@ -5815,7 +5850,7 @@
 <translation id="9111742992492686570">تنزيل تحديث الأمان الضروري</translation>
 <translation id="1979280758666859181">أنت الآن تُجري تغييرًا إلى قناة ذات إصدار سابق من <ph name="PRODUCT_NAME"/>. وسيسري تغيير القناة عند تطابق إصدار القناة مع الإصدار المثبت حاليًا على الجهاز.</translation>
 <translation id="304009983491258911">‏تغيير رقم التعريف الشخصي لبطاقة SIM</translation>
-<translation id="7556033326131260574">لم يتمكن القفل الذكي من التحقق من حسابك. اكتب كلمة المرور للدخول.</translation>
+<translation id="7556033326131260574">‏لم يتمكن Smart Lock من التحقق من حسابك. اكتب كلمة المرور للدخول.</translation>
 <translation id="8600929685092827187">تنشيط لدى وصول الحزم</translation>
 <translation id="2045969484888636535">متابعة حظر تشغيل ملفات تعريف الارتباط</translation>
 <translation id="8131740175452115882">التأكيد</translation>
@@ -5870,7 +5905,7 @@
 <translation id="7685049629764448582">ذاكرة جافا سكريبت</translation>
 <translation id="6398765197997659313">إنهاء وضع ملء الشاشة</translation>
 <translation id="4641635164232599739"><ph name="FILE_NAME"/> لا يتم تنزيله بشكل شائع وربما يكون خطرًا.</translation>
-<translation id="7974067550340408553">الحصول على إشعار على هاتفك في كل مرة يلغي فيها &quot;القفل الذكي&quot; قفل جهاز <ph name="DEVICE_TYPE"/>.</translation>
+<translation id="7974067550340408553">‏الحصول على إشعار على هاتفك في كل مرة يلغي فيها Smart Lock قفل جهاز <ph name="DEVICE_TYPE"/>.</translation>
 <translation id="6059652578941944813">التسلسل الهرمي للشهادة</translation>
 <translation id="3153094071447713741">الميزات التجريبية لنافذة الإدخال.</translation>
 <translation id="5729712731028706266">&amp;عرض</translation>
@@ -5908,6 +5943,7 @@
 <translation id="5832830184511718549">استخدام سلسلة رسائل ثانوية لتنفيذ إنشاء صفحة الويب. يسمح هذا بالتمرير السلس، حتى إذا كانت سلسلة الرسائل الرئيسية لا تستجيب.</translation>
 <translation id="7943385054491506837">‏الأمريكية Colemak</translation>
 <translation id="8203365863660628138">تأكيد التثبيت</translation>
+<translation id="4316693445078347518">‏جارٍ إنشاء بطاقة ظاهرية لـ Google Payments...</translation>
 <translation id="5457858494714903578">لا يمكن تثبيت إضافة غير موثوق فيها تتضمن المعرف &quot;<ph name="IMPORT_ID"/>.&quot;</translation>
 <translation id="7025325401470358758">الجزء التالي</translation>
 <translation id="3397561538744706497">9x16</translation>

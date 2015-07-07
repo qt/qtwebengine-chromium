@@ -7,7 +7,7 @@ License File: nss/COPYING
 Security Critical: yes
 
 Description:
-NSS 3.18 with NSPR 4.10.8
+NSS 3.19 with NSPR 4.10.8
 
 This copy of NSS has been customized for Chromium.  NSPR is also put here
 rather than in a separate directory to emphasize the fact that Chromium is
@@ -21,7 +21,7 @@ Linux.
 
 The source code was checked out from the mozilla.org CVS or hg repository using
 the nspr-checkout.sh and nss-checkout.sh scripts in the scripts directory.
-The current source code was checked out with the hg tag NSS_3_18_RTM
+The current source code was checked out with the hg tag NSS_3_19_RTM
 and the hg tag NSPR_4_10_8_RTM.
 
 Local Modifications:
@@ -43,6 +43,8 @@ We made the following local changes to NSPR.
   to use PR_GetHostByName.  Removing _PR_INET6_PROBE will prevent it from
   creating an IPv6 socket to probe if IPv6 is there.
   DO NOT upstream this patch.
+- patches/nspr-unused-variable.patch: Remove an unused variable. See NSPR
+  bug 1126408 (https://bugzilla.mozilla.org/show_bug.cgi?id=1126408).
 
 We made the following local changes to NSS.
 - nss/exports_win.def: The list of exports to use when building nss as a
@@ -69,5 +71,4 @@ We made the following local changes to NSS.
   libpkix (the new certification path validation library) and
   softoken/legacydb (support for the old Berkeley DB databases).  See NSS
   bug 534471 (https://bugzilla.mozilla.org/show_bug.cgi?id=534471).
-- patches/nspr-unused-variable.patch: Remove an unused variable. See NSPR
-  bug 1126408 (https://bugzilla.mozilla.org/show_bug.cgi?id=1126408).
+

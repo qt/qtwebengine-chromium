@@ -284,7 +284,7 @@
 <translation id="558170650521898289">Microsoft Windows Hardware Driver Verification</translation>
 <translation id="4395129973926795186"><ph name="START_DATE"/> से <ph name="END_DATE"/> तक</translation>
 <translation id="98515147261107953">भू-दृश्य</translation>
-<translation id="7334190995941642545">स्‍मार्ट लॉक वर्तमान में अनुपलब्‍ध है. कृपया बाद में पुन: प्रयास करें.</translation>
+<translation id="7334190995941642545">Smart Lock वर्तमान में अनुपलब्‍ध है. कृपया बाद में पुन: प्रयास करें.</translation>
 <translation id="1303101771013849280">HTML फ़ाइल को बुकमार्क करता है</translation>
 <translation id="8974161578568356045">स्वत: पता लगाएं</translation>
 <translation id="1549045574060481141">डाउनलोड की दुबारा पूछें</translation>
@@ -584,7 +584,7 @@
 <translation id="715487527529576698">आरंभिक चीनी मोड सरलीकृत चीनी है</translation>
 <translation id="6522350652862471760">Google प्रोफ़ाइल नाम और आइकन सक्षम करें</translation>
 <translation id="2164862903024139959">वियतनामी कीबोर्ड (TCVN)</translation>
-<translation id="8885197664446363138">स्‍मार्ट लॉक अनुपलब्‍ध है</translation>
+<translation id="8885197664446363138">Smart Lock अनुपलब्‍ध है</translation>
 <translation id="1697532407822776718">आप बिल्कुल तैयार हैं!</translation>
 <translation id="8373553483208508744">टैब म्‍यूट करें</translation>
 <translation id="8703575177326907206"><ph name="DOMAIN"/> से आपके कनेक्शन को एन्क्रिप्ट नहीं किया गया है.</translation>
@@ -698,6 +698,7 @@
 <translation id="4847468520816441019">दिखाए जाने वाले मेट्रिक्स</translation>
 <translation id="5098647635849512368">पैक करने के लिए निर्देशिका का निरपेक्ष पथ नहीं ढूंढा जा सकता.</translation>
 <translation id="5859272821192576954">Hangouts पर जारी रखने के लिए आप बिल्कुल तैयार हैं</translation>
+<translation id="5855756842026516189">Google पेमेंट्स के साथ अपने भुगतान की सुरक्षा करें.</translation>
 <translation id="8565650234829130278">ऐप्स  को डाउनग्रेड करने का प्रयास किया गया.</translation>
 <translation id="6380224340023442078">सामग्री सेटिंग...</translation>
 <translation id="1612129875274679969">इस डिवाइस को स्थायी रूप से कियोस्क मोड में रखें.</translation>
@@ -745,6 +746,7 @@
 <translation id="5759728514498647443">आपके द्वारा <ph name="APP_NAME"/> के माध्‍यम से प्रिंट करने के लिए भेजे जाने वाले दस्‍तावेज़ <ph name="APP_NAME"/> द्वारा पढ़े जा सकते हैं.</translation>
 <translation id="2401053206567162910">यह ऐप्स  वर्तमान में इस डिवाइस पर समर्थित नहीं है लेकिन यह जल्दी ही काम करने लगे इसके लिए Chrome gnome इसके लिए कठोर मेहनत कर रहे हैं.</translation>
 <translation id="3273410961255278341">इसके लिए भेजें:</translation>
+<translation id="4255096080864111471">रूचि क्षेत्र के लिए अधिकतम टाइल निर्दिष्ट करें.</translation>
 <translation id="5136529877787728692">F7</translation>
 <translation id="5233638681132016545">नया टैब</translation>
 <translation id="6567688344210276845">पृष्ठ कार्रवाई के लिए '<ph name="ICON"/>' आइकन लोड नहीं कर सका.</translation>
@@ -844,6 +846,7 @@
 <translation id="1547297114045837579">GPU रेस्टराइज़ेशन सक्षम करें.</translation>
 <translation id="3241680850019875542">पैक के एक्सटेंशनकी मूल निर्देशिका को चुनें. किसी एक्स्टेंशन को अपडेट करने के लिए, पुन: उपयोग के लिए निजी कुंजी फ़ाइल का भी चुनें.</translation>
 <translation id="7845849068167576533">भले ही आप पहले इस वेबसाइट पर जा चुके हैं, फिर भी यह इस समय सुरक्षित नहीं है. Google सुरक्षित ब्राउज़िंग को <ph name="SITE"/> पर हाल ही में <ph name="BEGIN_LINK"/>मैलवेयर का पता चला<ph name="END_LINK"/> है. आमतौर पर सुरक्षित रहने वाली वेबसाइटें मैलवेयर से संक्रमित होती हैं. दुर्भावनापूर्ण सामग्री <ph name="SUBRESOURCE_HOST"/> से आती है, जो कि एक ज्ञात मैलवेयर वितरक है.</translation>
+<translation id="9137356749601179867">सर्वर से डाउनलोड किए गए क्रेडिट कार्ड को स्‍थानीय रूप से सहेजना ऑफ़र करने वाला चेकबॉक्‍स दिखाएं.</translation>
 <translation id="7986295104073916105">सहेजे गए पासवर्ड सेटिंग को पढ़ें और बदलें</translation>
 <translation id="5711983031544731014">अनलॉक करने में असमर्थ है. अपना पासवर्ड डालें.</translation>
 <translation id="2149850907588596975">पासवर्ड और फ़ॉर्म</translation>
@@ -1054,6 +1057,7 @@
 <translation id="2678063897982469759">फिर से-सक्षम करें</translation>
 <translation id="1779766957982586368">विंडो बंद करें</translation>
 <translation id="4850886885716139402">देखें</translation>
+<translation id="3075066926036244931">Google पेमेंट्स में डेटा नहीं सहेजा जा सका.</translation>
 <translation id="89217462949994770">आपने बहुत अधिक बार गलत पिन दर्ज किया है. कृपया नई 8 अंकों की पिन अनलॉकिंग कुंजी प्राप्त करने के लिए <ph name="CARRIER_ID"/> से संपर्क करें.</translation>
 <translation id="2776441542064982094">ऐसा लगता है कि नेटवर्क पर पंजीकृत करने के लिए कोई डिवाइस उपलब्ध नहीं हैं. यदि आपका डिवाइस चालू है और इंटरनेट से कनेक्ट है, तो उसके निर्देश मैन्युअल में दिए गए निर्देशों का उपयोग करके उसे पंजीकृत करने का प्रयास करें.</translation>
 <translation id="8659716501582523573">IP पता:</translation>
@@ -1135,6 +1139,7 @@
 <translation id="7549584377607005141">इस वेबपृष्ठ को आपके द्वारा पहले दर्ज किए गए डेटा की आवश्यकता है, ताकि इसे सही रूप में प्रदर्शित किया जा सके. आप यह डेटा पुन: भेज सकते हैं, लेकिन ऐसा करके आप इस पृष्ठ द्वारा पहले की जा चुकी कोई कार्यवाही दोहराएंगे.</translation>
 <translation id="6954850746343724854">सभी वेब ऐप्स  के लिए स्‍थानीय क्‍लाइंट सक्षम करें, यहां तक कि वे भी जिन्‍हें Chrome वेब स्‍टोर से इंस्‍टॉल नहीं किया गया था.</translation>
 <translation id="9043242398268815112">डिवाइस स्‍थान जानता है</translation>
+<translation id="1596174774107741586">Google पेमेंट्स सैंडबॉक्स सर्वर का उपयोग करना</translation>
 <translation id="9068931793451030927">पथ:</translation>
 <translation id="4289540628985791613">संक्षिप्त विवरण</translation>
 <translation id="283278805979278081">चित्र लें.</translation>
@@ -1219,6 +1224,7 @@
 <translation id="2971213274238188218">स्‍क्रीन की रोशनी कम करें</translation>
 <translation id="473546211690256853">यह खाता <ph name="DOMAIN"/> द्वारा प्रबंधित किया जाता है</translation>
 <translation id="288024221176729610">चेक</translation>
+<translation id="5493905423961633717">Google पेमेंट्स के साथ अपने विवरण सहेजें और सुरक्षित करें.</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="4839122884004914586">सॉफ़्टवेयर रेंडरिंग सूची ओवरराइड करें</translation>
 <translation id="6305012486838822927">लाओ कीबोर्ड</translation>
@@ -1338,6 +1344,7 @@
 <translation id="813082847718468539">साइट जानकारी देखें</translation>
 <translation id="127353061808977798">फ़ॉन्ट और एन्कोडिंग</translation>
 <translation id="3122464029669770682">CPU</translation>
+<translation id="4518677423782794009">क्‍या Chrome क्रैश हो रहा है, असामान्‍य स्‍टार्टअप पृष्‍ठ, टूलबार या ऐसे अनपेक्षित विज्ञापन दिखा रहा है जिनसे आपको छुटकारा नहीं मिल रहा है या आपके ब्राउज़िंग अनुभव में अन्‍यथा बदलाव आ रहा है? तो हो सकता है कि आप Chrome क्‍लीनअप टूल को चलाकर समस्‍या को ठीक कर पाएं.</translation>
 <translation id="6080689532560039067">अपने सिस्टम के समय की जांच करें</translation>
 <translation id="6092270396854197260">MSPY</translation>
 <translation id="6802031077390104172"><ph name="USAGE"/> (<ph name="OID"/>)</translation>
@@ -1529,6 +1536,8 @@
 <translation id="2869742291459757746">खाता निर्माण पृष्ठ का पता चलने पर उपयोगकर्ता को Chrome जनरेट पासवर्ड प्राप्त करने दें.</translation>
 <translation id="7079038783243627996">&quot;<ph name="EXTENSION"/>&quot; चेक किए हुए फ़ोल्‍डर में चित्र, वीडियो और ध्वनि फ़ाइलों को पढ़ने और हटाने में सक्षम हो जाएगा.</translation>
 <translation id="1737968601308870607">बग की सूचना दें</translation>
+<translation id="3831688386498123870">Google पेमेंट्स से भुगतान करने के लिए प्रवेश करें</translation>
+<translation id="852605377609758011">इस लेन-देन के लिए Google पेमेंट्स आभासी कार्ड का उपयोग किया जाएगा. आभासी कार्ड एक नया कार्ड नंबर है जिससे विक्रेता को आपका वास्तविक क्रेडिट कार्ड नंबर कभी भी दिखाई नहीं देता है.</translation>
 <translation id="2594056015203442344">सक्षम होने पर, टैब स्ट्रिप में ऑडियो संकेतक टैब ऑडियो म्‍यूट नियंत्रण के रूप में दोहरा होता है.  यह चुने गए एकाधिक टैब को त्वरित रूप से म्‍यूट करने के लिए टैब प्रसंग मेनू में आदेश भी जोड़ता है.</translation>
 <translation id="5316588172263354223">किसी भी समय बोलकर खोजें</translation>
 <translation id="1389297115360905376">इसे केवल <ph name="CHROME_WEB_STORE"/> से ही जोड़ा जा सकता है.</translation>
@@ -1633,6 +1642,7 @@
 <translation id="3574210789297084292">प्रवेश करें</translation>
 <translation id="5254480569305195883">ServiceWorker पृष्ठभूमि समन्वयन ईवेंट के लिए सहायता सक्षम करें.</translation>
 <translation id="2134149231879627725">Google को अपने डिवाइस को दूरस्थ तरीके से लॉक करने दें, मिटाने और उसका पता लगाने दें.</translation>
+<translation id="5151034238407558331">दुर्भाग्य से, Google पेमेंट्स का केवल इस व्यापारी पर यूएस के पते वाले खरीदारों द्वारा उपयोग किया जा सकता है. यदि आप यूएस के निवासी हैं, तो कृपया |Google पेमेंट्स वाला अपना घर का पता बदलें| या Google पेमेंट्स का उपयोग किए बिना भुगतान करें.</translation>
 <translation id="1146204723345436916">HTML फ़ाइल से बुकमार्क आयात करें...</translation>
 <translation id="2113921862428609753">प्राधिकारी जानकारी पहुंच</translation>
 <translation id="9190063653747922532">L2TP/IPsec + पूर्व-साझा कुंजी</translation>
@@ -1688,6 +1698,7 @@
 <translation id="4811502511369621968">अमान्य ईमेल पता. कृपया जांचें और पुन: प्रयास करें.</translation>
 <translation id="175196451752279553">बंद किए गए टैब पु&amp;न: खोलें</translation>
 <translation id="8602851771975208551">आपके कंप्यूटर पर किसी अन्य प्रोग्राम ने ऐप्स  जोड़ा है, जो Chrome के काम करने के तरीके को बदल सकता है.</translation>
+<translation id="9154967591629748964">रूचि क्षेत्र के लिए अधिकतम टाइल</translation>
 <translation id="2655386581175833247">उपयोगकर्ता प्रमाणपत्र:</translation>
 <translation id="5039804452771397117">अनुमति दें</translation>
 <translation id="5435964418642993308">वापस जाने के लिए enter दबाएं, इतिहास देखने के लिए प्रसंग मेनू कुंजी दबाएं</translation>
@@ -1863,8 +1874,10 @@
 <translation id="1901377140875308934"><ph name="SHORT_PRODUCT_NAME"/> में प्रवेश करें...</translation>
 <translation id="5529098031581368697">वर्तमान वॉलपेपर '<ph name="APP_NAME"/>' द्वारा सेट किया गया है</translation>
 <translation id="5074318175948309511">नई सेटिंग के प्रभावी होने से पहले इस पृष्‍ठ को रीलोड करने की आवश्‍यकता हो सकती है.</translation>
+<translation id="7664333939334980398">64</translation>
 <translation id="3740150184898623344">सभी पृष्ठों पर रीडर मोड बटन दिखाएं</translation>
 <translation id="3947376313153737208">कोई चयन नहीं</translation>
+<translation id="6405640832764359650">Google पेमेंट्स कार्ड सहेजने का चेकबॉक्स सक्षम करें</translation>
 <translation id="1346104802985271895">वियतनामी इनपुट विधि (TELEX)</translation>
 <translation id="7896906914454843592">यूएस विस्‍तारित कीबोर्ड</translation>
 <translation id="2242603986093373032">कोई डिवाइस नहीं</translation>
@@ -1897,6 +1910,7 @@
 <translation id="2592884116796016067">इस पृष्ठ का एक भाग (HTML WebWorker) क्रैश हो गया है, इसलिए यह सही तरीके से कार्य नहीं भी कर सकता है.</translation>
 <translation id="2529133382850673012">यूएस कीबोर्ड</translation>
 <translation id="4352850459590683051">फ़ाइल और डिवाइस एक्सेस निरस्‍त करें</translation>
+<translation id="3176592269865293091">Google पेमेंट्स में कोई त्रुटि हुई.</translation>
 <translation id="4411578466613447185">कोड हस्ताक्षरकर्ता</translation>
 <translation id="1354868058853714482">Adobe Reader पुराना हो चुका है और असुरक्षित हो सकता है.</translation>
 <translation id="6200903742087665630">प्रक्रिया से बाहर के iframes सक्षम करें</translation>
@@ -2085,8 +2099,10 @@
 <translation id="3326821416087822643"><ph name="FILE_NAME"/> ज़िप कर रहा है...</translation>
 <translation id="3081104028562135154">बढ़ाएं</translation>
 <translation id="3734816294831429815"><ph name="PRODUCT_NAME"/> <ph name="SECONDS"/> सेकंड में पुन: प्रारंभ हो जाएगा.</translation>
+<translation id="881450003165101303">Google पेमेंट्स इस व्यापारी के साथ समर्थित नहीं है.</translation>
 <translation id="8732030010853991079">इस आइकन पर क्लिक करके इस एक्सटेंशन का उपयोग करें.</translation>
 <translation id="32330993344203779">आपका डिवाइस सफलतापूर्वक एंटरप्राइज़ प्रबंधन के लिए नामांकित हो गया है.</translation>
+<translation id="6269540072308453256">Google पेमेंट्स वर्तमान में अनुपलब्ध है.</translation>
 <translation id="9177483892433212068">प्रयोगात्‍मक लेख इनुपट फ़ोकस प्रबंधक.</translation>
 <translation id="158917669717260118">वेबपृष्ठ लोड करने में असमर्थ है क्‍योंकि आपका मोबाइल डिवाइस सुप्त या
           हाइबरनेट मोड में चला गया है. जब ऐसा होता है, तो नेटवर्क कनेक्‍शन बंद
@@ -2094,7 +2110,7 @@
           हो जाना चाहिए.</translation>
 <translation id="6316671927443834085">&quot;<ph name="DEVICE_NAME"/>&quot; से डिस्‍कनेक्‍ट करने में विफल.</translation>
 <translation id="1962233722219655970">यह पृष्ठ एक ऐसे स्थानीय क्लाइंट का उपयोग करता है जो आपके कंप्यूटर पर काम नहीं करता.</translation>
-<translation id="5458733660263868683">ऐसे स्‍मार्ट लॉक का उपयोग न करें, जो आपके फ़ोन के पास होने पर आपको अपने Chromebook को अनलॉक करने देता है. यदि आप डिवाइस के स्‍वामी हैं, तो इससे प्रवेश स्‍क्रीन पर भी स्‍मार्ट लॉक बंद हो जाता है.</translation>
+<translation id="5458733660263868683">ऐसे Smart Lock का उपयोग न करें, जो आपके फ़ोन के पास होने पर आपको अपने Chromebook को अनलॉक करने देता है. यदि आप डिवाइस के स्‍वामी हैं, तो इससे प्रवेश स्‍क्रीन पर भी Smart Lock बंद हो जाता है.</translation>
 <translation id="1108685299869803282">इस चेतावनी को देखने वाले 80% से अधिक लोग मैलवेयर के जोखिम में पड़ने की बजाय सुरक्षा पर वापस जाते हैं. हालांकि, यदि आप अपनी सुरक्षा में होने वाले जोखिमों को समझते हैं, तो आप खतरनाक प्रोग्राम निकाले जाने से पहले <ph name="BEGIN_LINK"/>इस असुरक्षित साइट पर विज़िट<ph name="END_LINK"/> कर सकते हैं.</translation>
 <translation id="219008588003277019">नेटिव क्लाइंट मॉड्यूल: <ph name="NEXE_NAME"/></translation>
 <translation id="8228447825257396644">मटीरियल डिज़ाइन में इनपुट व्‍यू कीबोर्ड अक्षम करें.</translation>
@@ -2111,6 +2127,7 @@
         <ph name="HOST_NAME"/>
         का उपयोग पूर्व में किसी आंतरिक साइट को ऐक्‍सेस करने के लिए किया है, तो अपने नेटवर्क
         नियंत्रक से संपर्क करें.</translation>
+<translation id="6938162839153260184">Google पेमेंट्स, Chrome के इस वर्शन का समर्थन नहीं करता है या आपकी Google API कुंजी को नहीं पहचानता है.</translation>
 <translation id="7130561729700538522">Google डिवाइस प्रबंधक में नामांकन सफल नहीं रहा.</translation>
 <translation id="4991420928586866460">शीर्ष पंक्ति कुंजियों को फ़ंक्शन कुंजियों के रूप में मानें</translation>
 <translation id="4350019051035968019">इस डिवाइस को उस डोमेन पर नामांकित नहीं किया जा सकता जिससे आपका खाता संबंधित है क्योंकि डिवाइस को भिन्न डोमेन द्वारा प्रबंधित करने के लिए चिह्नित किया गया है.</translation>
@@ -2377,6 +2394,7 @@
 <translation id="389589731200570180">अतिथियों से साझा करें</translation>
 <translation id="1510200760579344855">यह डिवाइस <ph name="SAML_DOMAIN"/> नियंत्रक द्वारा लॉक किया गया था.</translation>
 <translation id="7205869271332034173">SSID:</translation>
+<translation id="3335561837873115802">Chrome क्‍लीनअप टूल प्राप्‍त करें</translation>
 <translation id="4731351517694976331">Google सेवाओं को अपना स्थान एक्सेस करने दें</translation>
 <translation id="5815645614496570556">X.400 पता</translation>
 <translation id="1223853788495130632">आपका व्‍यवस्‍थापक इस सेटिंग के लिए किसी विशिष्ट मान की अनुशंसा करता है.</translation>
@@ -2400,6 +2418,7 @@
 <translation id="8580634710208701824">फ़्रेम फिर से लोड करें</translation>
 <translation id="1018656279737460067">रद्द</translation>
 <translation id="7606992457248886637">प्राधिकारी</translation>
+<translation id="5953603475187800576">Google पेमेंट्स से पते और क्रेडिट कार्ड दिखाएं</translation>
 <translation id="4197674956721858839">ज़िप चयन</translation>
 <translation id="2672142220933875349">खराब crx फ़ाइल, अनपैक करना विफल.</translation>
 <translation id="707392107419594760">अपने कीबोर्ड को चुनें:</translation>
@@ -2488,7 +2507,7 @@
 <translation id="691024665142758461">एकाधिक फ़ाइलें डाउनलोड करें</translation>
 <translation id="1166359541137214543">ABC</translation>
 <translation id="3227137524299004712">माइक्रोफ़ोन</translation>
-<translation id="5528368756083817449">बुकमार्क प्रबंधक</translation>
+<translation id="5528368756083817449">Bookmark manager</translation>
 <translation id="7705600705238488017">इसके बजाय <ph name="BEGIN_LINK"/>Chrome वेब स्‍टोर ब्राउज़ करना<ph name="END_LINK"/> चाहते हैं?</translation>
 <translation id="2826760142808435982">कनेक्शन को <ph name="CIPHER"/> का उपयोग करके एन्क्रिप्ट और प्रमाणित किया गया है और यह कुंजी विनिमय तकनीक के रूप में <ph name="KX"/> का उपयोग करता है.</translation>
 <translation id="215753907730220065">पूर्ण स्क्रीन से बाहर निकलें</translation>
@@ -2567,6 +2586,7 @@
 <translation id="409579654357498729">क्लाउड प्रिंट में जोड़ें</translation>
 <translation id="2120316813730635488">एक्सटेंशन इंस्टॉल किए जाने की पुनरावृत्तियां</translation>
 <translation id="8398877366907290961">फिर भी आगे बढ़ें</translation>
+<translation id="2797019681257472009">असामान्‍य व्‍यवहार का पता चला</translation>
 <translation id="5063180925553000800">नया पिन:</translation>
 <translation id="4883178195103750615">HTML फ़ाइल में बुकमार्क नि‍र्यात करें...</translation>
 <translation id="2496540304887968742">डिवाइस की क्षमता 4GB या इससे अधिक होनी चाहिए.</translation>
@@ -3089,6 +3109,7 @@
 <translation id="7382160026931194400">सहेजी गई |सामग्री सेटिंग| और #खोज इंजन# साफ़ नहीं किए जाएंगे और वे आपकी ब्राउज़िंग की आदतों को प्रदर्शित कर सकते हैं</translation>
 <translation id="7503821294401948377">ब्राउज़र कार्य के लिए '<ph name="ICON"/>' आइकन लोड नहीं कर सका.</translation>
 <translation id="4809190954660909198">नए बिलिंग विवरण...</translation>
+<translation id="6016640600871825812">Google पेमेंट्स के लिए कम से कम एक नाम और उपनाम आवश्यक है.</translation>
 <translation id="3722396466546931176">भाषाएं जोड़ें और अपनी प्राथमिकता के अनुसार क्रमित करने के लिए खींचें.</translation>
 <translation id="3857466062686943799">टास्‍कबार पर जोड़ें</translation>
 <translation id="7396845648024431313">सिस्‍टम प्रारंभ होने पर <ph name="APP_NAME"/> लॉन्‍च होगा और आपके द्वारा सभी अन्‍य <ph name="PRODUCT_NAME"/> विंडो बंद कर देने के बाद भी पृष्‍ठभूमि में चलता रहेगा.</translation>
@@ -3098,6 +3119,7 @@
 <translation id="662607201886173483">DSA</translation>
 <translation id="8275863942928500239">UI घटकों पर अतिरिक्‍त स्‍पर्श फ़ीडबैक को अक्षम करें.</translation>
 <translation id="2391419135980381625">मानक फ़ॉन्ट</translation>
+<translation id="8066238397346344588">Google पेमेंट्स अक्षम करें</translation>
 <translation id="8652139471850419555">पसंदीदा नेटवर्क</translation>
 <translation id="7893393459573308604"><ph name="ENGINE_NAME"/> (सामान्य)</translation>
 <translation id="5392544185395226057">स्‍थानीय क्‍लाइंट के लिए समर्थन सक्षम करें.</translation>
@@ -3128,7 +3150,6 @@
 <translation id="3858678421048828670">इटैलियन कीबोर्ड</translation>
 <translation id="1436784010935106834">निकाला गया</translation>
 <translation id="3730639321086573427">स्थानीय गंतव्य</translation>
-<translation id="399856887277429830">सॉफ़्टवेयर निष्‍कासन टूल चलाएं</translation>
 <translation id="7918257978052780342">नामांकित करें</translation>
 <translation id="2863937263901630331">अपरिष्कृत डेटा, NetLog के माध्यम से उपलब्ध है. अधिक विवरण के लिए सहायता देखें.</translation>
 <translation id="4195814663415092787">वहीं से जारी रखें जहां आपने छोड़ा था</translation>
@@ -3343,6 +3364,7 @@
 <translation id="4853020600495124913">&amp;नई विंडो में खोलें</translation>
 <translation id="6847758263950452722">MHTML के रूप में पृष्ठ सहेजें</translation>
 <translation id="3563432852173030730">कियोस्क ऐप्लिकेशन डाउनलोड नहीं किया जा सकता.</translation>
+<translation id="324743268744517458">चेतावनी: आप उत्पादन Google पेमेंट्स सर्वर से कनेक्ट नहीं हैं. जारी किए गए कार्ड अमान्य होंगे.</translation>
 <translation id="4711094779914110278">तुर्की</translation>
 <translation id="2572032849266859634"><ph name="VOLUME_NAME"/> को केवल पढ़ने के लिए ऐक्‍सेस दे दी गई है.</translation>
 <translation id="8193362611902704788">ऐप्लिकेशन लॉन्चर सक्षम करें. सक्षम करने पर, ऐप्लिकेशन लॉन्चर के लिए ऑपरेटिंग सिस्टम शॉर्टकट बना देता है.</translation>
@@ -3443,6 +3465,7 @@
     <ph name="LINE_BREAK1"/>
     <ph name="BEGIN_LINK"/>Google डिस्‍क<ph name="END_LINK"/> पर बैक अप लेने के लिए तैयार</translation>
 <translation id="2677924368525077324">स्पर्श आधारित लेख संपादन सक्षम करें</translation>
+<translation id="9213566138414731677">ओह, <ph name="WALLET_ERROR"/> आप इस लेन-देन को Google पेमेंट्स के बिना भी पूर्ण कर सकते हैं.</translation>
 <translation id="283669119850230892">नेटवर्क <ph name="NETWORK_ID"/> का उपयोग करने के लिए, सबसे पहले नीचे इंटरनेट से अपना कनेक्‍शन पूर्ण करें.</translation>
 <translation id="7513996269498582533">आपके द्वारा पता लगाया गया</translation>
 <translation id="9073281213608662541">PAP</translation>
@@ -3721,6 +3744,7 @@
 <translation id="4633945134722448536">यदि सक्षम हो, तो लिखी गई ऑम्निबॉक्स क्वेरी के खोज परिणामों को प्रीफ़ेच करता है और कोई भी खोज क्वेरी करने के लिए पहले से रेंडर किए गए खोज आधार पृष्ठ का उपयोग करता है (न कि केवल प्रीफ़ेच की गई क्वेरी का).</translation>
 <translation id="8755376271068075440">&amp;बड़ा</translation>
 <translation id="8132793192354020517"><ph name="NAME"/> से कनेक्ट है</translation>
+<translation id="949382280525592713"><ph name="LEGAL_DOC_AGREEMENT"/> धोखाध़ड़ी से आपकी सुरक्षा करने के लिए, आपके कंप्यूटर के बारे में जानकारी को (उसके स्थान सहित) Google पेमेंट्स के साथ साझा किया जाएगा.</translation>
 <translation id="4316850752623536204">डेवलपर वेबसाइट</translation>
 <translation id="7052914147756339792">वॉलपेपर सेट करें...</translation>
 <translation id="5865597920301323962">बाहर निकलने पर <ph name="DOMAIN"/> की कुकी साफ़ कर दी जाएंगी.</translation>
@@ -3797,6 +3821,7 @@
 <translation id="6325191661371220117">स्वत: लॉन्च अक्षम करें</translation>
 <translation id="6817358880000653228">इस साइट के लिए सहेजे गए पासवर्ड:</translation>
 <translation id="4613271546271159013">आपके द्वारा नया टैब खोले जाने पर, दिखाई देने वाले पृष्ठ का एक्सटेंशन बदल दिया गया है.</translation>
+<translation id="3378630551672149129">इनपुट तत्वों के साथ सहभागिता करने के लिए प्रवेश करें, टैब कुंजी को दबाएं</translation>
 <translation id="351152300840026870">निश्चित-चौड़ाई फ़ॉन्ट</translation>
 <translation id="4301786491084298653"><ph name="DOMAIN"/> पर अक्षम करें</translation>
 <translation id="5827266244928330802">Safari</translation>
@@ -3887,7 +3912,6 @@
 <translation id="4871308555310586478">Chrome वेब स्टोर से नहीं.</translation>
 <translation id="3578594933904494462">इस टैब की सामग्री को साझा किया जा रहा है.</translation>
 <translation id="7423080529544781027">प्‍लगइन का उपयोग करती है</translation>
-<translation id="3401079963003821207">सॉफ़्टवेयर निष्‍कासन टूल प्राप्त करें</translation>
 <translation id="4243835228168841140"><ph name="FULLSCREEN_ORIGIN"/> आपका माउस कर्सर अक्षम करना चाहता है.</translation>
 <translation id="5473075389972733037">IBM</translation>
 <translation id="7807711621188256451"><ph name="HOST"/> को हमेशा अपने कैमरे को एक्सेस करने की अनुमति दें</translation>
@@ -3915,7 +3939,7 @@
 <translation id="2478176599153288112">&quot;<ph name="EXTENSION"/>&quot; के लिए मीडिया-फ़ाइल अनुमतियां</translation>
 <translation id="3473479545200714844">स्क्रीन आवर्द्धक</translation>
 <translation id="6759193508432371551">फैक्टरी रीसेट करें</translation>
-<translation id="5557991081552967863">निष्‍क्रिय रहने के दौरान वाई-फ़ाई चालू रखें</translation>
+<translation id="5557991081552967863">प्रयोग में नहीं रहने के दौरान वाई-फ़ाई चालू रखें</translation>
 <translation id="6439776357918534023">हमेशा चलाएं</translation>
 <translation id="4254689404087172933">बैटरी का <ph name="USAGE"/>%</translation>
 <translation id="3627588569887975815">&amp;गुप्त विंडो में लिंक खोलें</translation>
@@ -4108,6 +4132,7 @@
 <translation id="5264252276333215551">किओस्क मोड में अपने ऐप्लिकेशन लॉन्च करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
 <translation id="7180865173735832675">कस्टमाइज़ करें</translation>
 <translation id="7054808953701320293">समझ लिया, मुझे फिर से न दिखाएं.</translation>
+<translation id="4903369323166982260">Chrome क्‍लीनअप टूल चलाएं</translation>
 <translation id="144932861331386147">अपने Chrome बुक को अपडेट करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
 <translation id="2938685643439809023">मंगोलियाई</translation>
 <translation id="4530494379350999373">मूल</translation>
@@ -4194,6 +4219,7 @@
 <translation id="1792705092719258158">मिरर किया गया स्‍क्रीन मोड सक्षम करें.</translation>
 <translation id="6982896539684144327"><ph name="VENDOR_NAME"/> के प्रिंटर का पता चला</translation>
 <translation id="8050038245906040378">Microsoft Commercial Code Signing</translation>
+<translation id="8684255857039823328">पासवर्ड सहेजा गया. अपने पासवर्ड को किसी भी डिवाइस से <ph name="MANAGEMENT_LINK"/> पर ऐक्सेस करें.</translation>
 <translation id="3031557471081358569">आयात करने के लिए आइटम को चुनें:</translation>
 <translation id="6728144975495880845">सक्षम होने पर, रास्टर थ्रेड GPU मेमोरी पर लिखते हैं.</translation>
 <translation id="1368832886055348810">बाएं से दाएं</translation>
@@ -4208,7 +4234,7 @@
 <translation id="249113932447298600">क्षमा करें, डिवाइस <ph name="DEVICE_LABEL"/> इस समय समर्थित नहीं है.</translation>
 <translation id="6401445054534215853">शेल्फ़ आइटम 1</translation>
 <translation id="6113134669445407638">WebRTC में Delay Agnostic AEC को अक्षम करें. यदि रिपोर्ट किए गए सिस्टम विलंब बहुत विश्वसनीय हों या यदि आपकी मशीन से अन्य अनुभव सामने आते हों तो इसका उपयोग करें.</translation>
-<translation id="2365626167708453863">अपने Google स्‍मार्ट लॉक से कोई खाता चुनें</translation>
+<translation id="2365626167708453863">अपने Google Smart Lock से कोई खाता चुनें</translation>
 <translation id="232562464593865424">आइए आपके Chromebook को प्रशिक्षण दें</translation>
 <translation id="2351520734632194850"><ph name="MHZ"/> MHz</translation>
 <translation id="2799223571221894425">पुन: लॉन्‍च करें</translation>
@@ -4218,10 +4244,10 @@
 <translation id="890308499387283275">Chrome यह फ़ाइल डाउनलोड नहीं कर सकता.</translation>
 <translation id="6557565812667414268">केवल उच्च-DPI प्रदर्शनों के लिए सक्षम</translation>
 <translation id="7331991248529612614">रीडर मोड बटन एनिमेशन सक्षम करें</translation>
-<translation id="5469954281417596308">बुकमार्क प्रबंधक</translation>
+<translation id="5469954281417596308">Bookmark manager</translation>
 <translation id="106153153543631784">अपनी Chromebook प्रोफ़ाइल को अपडेट करने के लिए कृपया अपना पासवर्ड पुनः डालें.</translation>
 <translation id="3064388234319122767">लिप्यंतरण (zdravo → здраво)</translation>
-<translation id="5425722269016440406">स्‍मार्ट लॉक बंद करने के लिए आपको ऑनलाइन होना होगा क्‍योंकि यह सेटिंग आपके फ़ोन और अन्‍य डिवाइस से समन्‍वयित की जाती है. कृपया पहले किसी नेटवर्क से कनेक्‍ट करें.</translation>
+<translation id="5425722269016440406">Smart Lock बंद करने के लिए आपको ऑनलाइन होना होगा क्‍योंकि यह सेटिंग आपके फ़ोन और अन्‍य डिवाइस से समन्‍वयित की जाती है. कृपया पहले किसी नेटवर्क से कनेक्‍ट करें.</translation>
 <translation id="5288481194217812690"><ph name="FILENAME"/></translation>
 <translation id="7730494089396812859">क्‍लाउड बैकअप विवरण दिखाएं</translation>
 <translation id="1143142264369994168">प्रमाणपत्र हस्ताक्षरकर्ता</translation>
@@ -4306,6 +4332,7 @@
 <translation id="2885378588091291677">कार्य प्रबंधक</translation>
 <translation id="7412226954991670867">GPU मेमोरी</translation>
 <translation id="4916679969857390442">लैंस</translation>
+<translation id="8688644143607459122">जारी रखें क्लिक करके आप Google पेमेंट्स का उपयोग करने के लिए सहमत होते हैं. धोखाधड़ी से आपकी सुरक्षा करने के लिए, आपके कंप्यूटर के बारे में जानकारी को (उसके स्थान सहित) Google पेमेंट्स के साथ साझा किया जाएगा.</translation>
 <translation id="2080796051686842158">वॉलपेपर बूट एनिमेशन अक्षम करता है (OOBE स्थिति को छोड़कर).</translation>
 <translation id="305932878998873762">HTTP के लिए सरल संचय एक नया संचय है. डिस्क स्थान आवंटन के लिए यह फ़ाइल सिस्टम पर निर्भर करता है.</translation>
 <translation id="8962083179518285172">विवरण छुपाएं</translation>
@@ -4315,6 +4342,7 @@
 <translation id="7863133010182113457">chrome के प्रारंभ होने पर डेटा में कमी लाने वाले प्रॉक्‍सी का उपयोग करके प्राप्‍त हुई डेटा बचत को साफ़ करता है.</translation>
 <translation id="4235200303672858594">संपूर्ण स्क्रीन</translation>
 <translation id="5951823343679007761">कोई बैटरी नहीं</translation>
+<translation id="806705617346045388">असामान्‍य व्‍यवहार का पता चला</translation>
 <translation id="2518024842978892609">अपने क्‍लाइंट प्रमाणपत्रों का उपयोग करें</translation>
 <translation id="479555359673800162">पासवर्ड प्रबंधक पुन: प्रमाणीकरण अक्षम करें</translation>
 <translation id="8569682776816196752">कोई गंतव्य नहीं मिला</translation>
@@ -4594,6 +4622,7 @@
 <translation id="131461803491198646">होम नेटवर्क, रोमिंग नहीं</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> - <ph name="FULL_DATE"/></translation>
 <translation id="1830259362126610548">इस टैब (ऑडियो के लिए अनुकूलित) को कास्ट करें</translation>
+<translation id="3660127367837350905">Google पेमेंट्स आपके कार्ड की सुरक्षा कर रहा है</translation>
 <translation id="1285320974508926690">कभी भी इस साइट का अनुवाद न करें</translation>
 <translation id="3613422051106148727">नए टैब में &amp;खोलें</translation>
 <translation id="8954894007019320973">(जारी.)</translation>
@@ -4641,6 +4670,7 @@
 <translation id="4285498937028063278">अनपिन करें</translation>
 <translation id="8734073480934656039">इस सेटिंग को सक्षम करने से किओस्क ऐप्लिकेशन स्टार्टअप पर अपने आप लॉन्च हो जाते हैं.</translation>
 <translation id="2588322182880276190">Chrome लोगो</translation>
+<translation id="3957769504621887787">Google पेमेंट्स का उपयोग करना</translation>
 <translation id="6700480081846086223"><ph name="HOST_NAME"/> को कास्ट करें</translation>
 <translation id="316307797510303346">इस व्‍यक्‍ति द्वारा <ph name="CUSTODIAN_EMAIL"/> से देखी जाने वाली वेबसाइटों को नियंत्रित करें और देखें.
     आपके खाता प्रवेश विवरण पुराने हो चुके हैं.</translation>
@@ -4678,7 +4708,7 @@
 <translation id="9203478404496196495">टैब अनम्‍यूट करें</translation>
 <translation id="2143778271340628265">मैन्‍युअल प्रॉक्सी कॉन्फ़िगरेशन</translation>
 <translation id="8888432776533519951">रंग:</translation>
-<translation id="5247176778442128277">स्‍मार्ट लॉक अक्षम करें</translation>
+<translation id="5247176778442128277">Smart Lock अक्षम करें</translation>
 <translation id="5294529402252479912">Adobe Reader अभी अपडेट करें</translation>
 <translation id="79962507603257656">नोटिफिकेशन केंद्र में डाउनलोड स्‍िथति</translation>
 <translation id="2231990265377706070">विस्मयाधिबोधक</translation>
@@ -4783,6 +4813,7 @@
 <translation id="6016809788585079594">एक आखिरी बार &quot;Ok Google&quot; बोलें</translation>
 <translation id="7792122566227574447">सर्वाधिक देखे गए विशिष्‍ट खोज पृष्‍ठ</translation>
 <translation id="4839303808932127586">इस रूप में वीडियो स&amp;हेजें...</translation>
+<translation id="78196818692136852">Google पेमेंट्स इस लेन-देन का प्रबंधन नहीं कर सकता.</translation>
 <translation id="317583078218509884">पृष्ठ को पुन: लोड करने के बाद नई साइट अनुमतियां सेटिंग प्रभावी हो जाएंगी.</translation>
 <translation id="3135204511829026971">स्क्रीन को घुमाएं</translation>
 <translation id="1317502925920562130">क्या यह वही मुख्यपृष्ठ है जिसकी आप अपेक्षा कर रहे थे?</translation>
@@ -4913,6 +4944,7 @@
 <translation id="4447465454292850432">बैटरी:</translation>
 <translation id="2752805177271551234">इनपुट इतिहास का उपयोग करें</translation>
 <translation id="7268365133021434339">टैब बंद करें</translation>
+<translation id="5531274207066050939">Google पेमेंट्स</translation>
 <translation id="9131598836763251128">एक या अधिक फ़ाइल को चुनें</translation>
 <translation id="6221345481584921695">Google सुरक्षित ब्राउज़िंग को <ph name="SITE"/> पर हाल ही में <ph name="BEGIN_LINK"/>मैलवेयर का पता चला<ph name="END_LINK"/> है. आमतौर पर सुरक्षित रहने वाली वेबसाइटें कभी-कभी मैलेवयर से संक्रमित हो जाती हैं. दुर्भावनापूर्ण सामग्री <ph name="SUBRESOURCE_HOST"/> से आती है, जो कि एक ज्ञात मैलवेयर वितरक है.</translation>
 <translation id="4589268276914962177">नया टर्मिनल</translation>
@@ -4933,7 +4965,6 @@
 <translation id="9149866541089851383">संपादित करें...</translation>
 <translation id="8735794438432839558">अपने Chrome बुक में प्रवेश करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
 <translation id="3356395591469757189">कीबोर्ड एक्सेसरी दृश्य के रूप में स्वतः-भरण सुझाव</translation>
-<translation id="2194802420977819330">उदाहरण के लिए, क्रैश होना, असामान्‍य स्टार्टअप पृष्‍ठ या टूलबार, अनपेक्षित विज्ञापन जिनसे आपको छुटकारा नहीं मिल रहा है या अन्‍यथा जिनके कारण आपका ब्राउज़िंग अनुभव बदल रहा है? हो सकता है आप सॉफ़्टवेयर निकालने का टूल चलाकर समस्‍या को ठीक कर सकें.</translation>
 <translation id="7939412583708276221">फिर भी रखें</translation>
 <translation id="8579285237314169903"><ph name="NUMBER_OF_FILES"/> आइटम समन्‍वयित कर रहा है...</translation>
 <translation id="8140778357236808512">कोई मौजूदा पर्यवेक्षित उपयोगकर्ता आयात करें</translation>
@@ -4959,6 +4990,7 @@
 <translation id="7003257528951459794">आवृत्ति:</translation>
 <translation id="5710406368443808765">ओह!  डिवाइस टोकन और आईडी संग्रहीत करने में सिस्टम विफल रहा.</translation>
 <translation id="1248269069727746712">नेटवर्क से कनेक्‍ट करने के लिए, <ph name="PRODUCT_NAME"/> आपके डिवाइस की प्रॉक्‍सी सेटिंग का उपयोग कर रहा है.</translation>
+<translation id="4573096868619592038">Google पेमेंट्स अक्षम किया गया</translation>
 <translation id="3467267818798281173">सुझावों के लिए Google से पूछें</translation>
 <translation id="8408402540408758445">खोज परिणामों को प्रीफ़ेच करें</translation>
 <translation id="5486275809415469523"><ph name="APP_NAME"/> आपकी स्क्रीन <ph name="TAB_NAME"/> के साथ साझा कर रहा है.</translation>
@@ -5030,6 +5062,7 @@
 <translation id="7484964289312150019">सभी बुकमार्क &amp;नई विंडो में खोलें</translation>
 <translation id="1731346223650886555">अल्पविराम</translation>
 <translation id="917861274483335838">प्‍लग इन अवरुद्ध करना प्रबंधित करें...</translation>
+<translation id="7968728703861615399">आपके Google पेमेंट्स खाते में कुछ गलत है.</translation>
 <translation id="3678559383040232393">माल्‍टीज़ कीबोर्ड</translation>
 <translation id="4450974146388585462">निदान करें</translation>
 <translation id="7339763383339757376">PKCS #7, एकल प्रमाणपत्र</translation>
@@ -5197,7 +5230,7 @@
 <translation id="169515659049020177">Shift</translation>
 <translation id="4800132727771399293">अपना अवधि समाप्‍ति दिनांक और CVC जांचें और पुन: प्रयास करें</translation>
 <translation id="3551117997325569860">प्रॉक्‍सी बदलने के लिए, &quot;<ph name="USE_SHARED_PROXIES"/>&quot; सेटिंग सक्षम करें.</translation>
-<translation id="2810731435681289055">अगली बार जब आप इस <ph name="DEVICE_TYPE"/> को अनलॉक करेंगे, तो स्‍मार्ट लॉक अपडेट हो जाएगा जिससे आप अपने चित्र पर बस क्‍लिक करके प्रवेश कर सकेंगे.</translation>
+<translation id="2810731435681289055">अगली बार जब आप इस <ph name="DEVICE_TYPE"/> को अनलॉक करेंगे, तो Smart Lock अपडेट हो जाएगा जिससे आप अपने चित्र पर बस क्‍लिक करके प्रवेश कर सकेंगे.</translation>
 <translation id="6110413515502722199">सेट होने पर, प्रवेश को नए WebView-आधारित प्रवाह के बजाय पुराने GAIA प्रवाह का उपयोग करके निष्‍पादित किया जाएगा.</translation>
 <translation id="6268747994388690914">HTML फ़ाइल से बुकमार्क आयात करें...</translation>
 <translation id="6096047740730590436">बड़े दृश्‍य में खोलें</translation>
@@ -5481,6 +5514,7 @@
 <translation id="2453576648990281505">फ़ाइल पहले से मौजूद है</translation>
 <translation id="6972929256216826630">सभी साइटों को एकाधिक फ़ाइलें स्वचालित रूप से डाउनलोड करने दें</translation>
 <translation id="3127589841327267804">PYJJ</translation>
+<translation id="8609432254184257462">आपका कार्ड Google पेमेंट्स आभासी कार्ड (<ph name="FRONTING_CREDIT_CARD"/>) के साथ सुरक्षित कर लिया गया है और यह नंबर आपकी रसीद पर दिखाई देगा. इस खरीदारी का अब भी आपके <ph name="BACKING_CREDIT_CARD"/> पर शुल्क लिया जाएगा.</translation>
 <translation id="3668823961463113931">हैंडलर</translation>
 <translation id="8808478386290700967">वेब स्टोर</translation>
 <translation id="1732215134274276513">टैब अनपिन करें</translation>
@@ -5699,6 +5733,7 @@
 <translation id="7885283703487484916">बहुत कम</translation>
 <translation id="5238278114306905396">&quot;<ph name="EXTENSION_NAME"/>&quot; को अपने आप निकाल दिया गया था.</translation>
 <translation id="4538792345715658285">एंटरप्राइज़ नीति द्वारा इंस्टॉल किया गया.</translation>
+<translation id="7982740804274085295">डेवलपर के लिए: requestAutocomplete() के लिए Google पेमेंट्स API कॉल की सैंडबॉक्स सेवा का उपयोग करें.</translation>
 <translation id="6307493301326177172">हो सकता है कि हमलावरों ने इस साइट से छेड़छाड की हो और वे आपके डिवाइस पर ऐसे खतरनाक प्रोग्राम इंस्‍टॉल करने का प्रयास कर सकते हैं जो आपकी जानकारी चुराते हैं या उसे हटा देते हैं (उदाहरण: फ़ोटो, पासवर्ड, संदेश और क्रेडिट कार्ड).</translation>
 <translation id="6129953537138746214">Space</translation>
 <translation id="2626799779920242286">कृपया बाद में फिर से प्रयास करें.</translation>
@@ -5962,6 +5997,7 @@
 <translation id="5832830184511718549">वेब पृष्ठ कंपो‍ज़िटिंग निष्‍पादित करने के लिए द्वितीयक थ्रेड का उपयोग करता है. इससे स्‍क्रॉल करना सरल हो जाता है, भले ही मुख्‍य थ्रेड अनुत्तरदायी हो.</translation>
 <translation id="7943385054491506837">यूएस कोलमैक</translation>
 <translation id="8203365863660628138">स्थापना की दुबारा पूछें</translation>
+<translation id="4316693445078347518">Google पेमेंट्स आभासी कार्ड जनरेट कर रहा है...</translation>
 <translation id="5457858494714903578">&quot;<ph name="IMPORT_ID"/>&quot; आईडी वाले अविश्वसनीय एक्सटेंशन इंस्टॉल नहीं किया जा सकता.</translation>
 <translation id="7025325401470358758">अगला फलक</translation>
 <translation id="3397561538744706497">9x16</translation>

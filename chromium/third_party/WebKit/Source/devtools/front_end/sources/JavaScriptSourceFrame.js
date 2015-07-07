@@ -225,14 +225,21 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             WebInspector.ConsoleModel.evaluateCommandInConsole(currentExecutionContext, expression);
     },
 
-    // View events
+    /**
+     * @override
+     */
     wasShown: function()
     {
         WebInspector.UISourceCodeFrame.prototype.wasShown.call(this);
-        if (this._executionLocation && this.loaded)
-            this._generateValuesInSource();
+        if (this._executionLocation && this.loaded) {
+            // We need CodeMirrorTextEditor to be initialized prior to this call. @see crbug.com/499889
+            setImmediate(this._generateValuesInSource.bind(this));
+        }
     },
 
+    /**
+     * @override
+     */
     willHide: function()
     {
         WebInspector.UISourceCodeFrame.prototype.willHide.call(this);
@@ -352,20 +359,21 @@ WebInspector.JavaScriptSourceFrame.prototype = {
          */
         function liveEditCallback(error, errorData, script)
         {
+            this._scriptsPanel.setIgnoreExecutionLineEvents(false);
             if (error) {
                 liveEditError = error;
                 liveEditErrorData = errorData;
                 contextScript = script;
-                failedEdits++;
-            } else
-                succeededEdits++;
+                ++failedEdits;
+            } else {
+                ++succeededEdits;
+            }
 
             if (succeededEdits + failedEdits !== scriptFiles.length)
                 return;
 
             if (failedEdits)
                 logLiveEditError.call(this, liveEditError, liveEditErrorData, contextScript);
-            this._scriptsPanel.setIgnoreExecutionLineEvents(false);
         }
 
         /**

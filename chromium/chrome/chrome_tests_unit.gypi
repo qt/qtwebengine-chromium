@@ -646,6 +646,7 @@
       'browser/apps/drive/drive_app_mapping_unittest.cc',
       'browser/apps/ephemeral_app_service_unittest.cc',
       'browser/autocomplete/keyword_extensions_delegate_impl_unittest.cc',
+      'browser/drive/drive_api_service_unittest.cc',
       'browser/drive/drive_api_util_unittest.cc',
       'browser/drive/drive_app_registry_unittest.cc',
       'browser/drive/drive_uploader_unittest.cc',
@@ -2389,14 +2390,6 @@
             'browser/ui/views/app_list/linux/app_list_linux_unittest.cc',
             'browser/ui/views/frame/opaque_browser_frame_view_layout_unittest.cc',
             'browser/ui/views/sync/one_click_signin_bubble_view_unittest.cc',
-          ],
-          'conditions': [
-            ['use_ozone==1', {
-              'sources!': [
-                # crbug.com/354036
-                'browser/chromeos/events/event_rewriter_unittest.cc',
-              ],
-            }],
           ],
         }],
         ['use_x11==1', {

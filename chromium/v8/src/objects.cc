@@ -2571,7 +2571,7 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
 
   ElementsKind from_kind = root_map->elements_kind();
   ElementsKind to_kind = old_map->elements_kind();
-  if (from_kind != to_kind &&
+  if (from_kind != to_kind && to_kind != DICTIONARY_ELEMENTS &&
       !(IsTransitionableFastElementsKind(from_kind) &&
         IsMoreGeneralElementsKindTransition(from_kind, to_kind))) {
     return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
@@ -2706,6 +2706,9 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                  target_descriptors->GetFieldType(modify_index)));
     }
 #endif
+    if (*target_map != *old_map) {
+      old_map->NotifyLeafMapLayoutChange();
+    }
     return target_map;
   }
 
@@ -2959,13 +2962,6 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
       split_kind, old_descriptors->GetKey(split_nof), split_attributes,
       *new_descriptors, *new_layout_descriptor);
 
-  if (from_kind != to_kind) {
-    // There was an elements kind change in the middle of transition tree and
-    // we reconstructed the tree so that all elements kind transitions are
-    // done at the beginning, therefore the |old_map| is no longer stable.
-    old_map->NotifyLeafMapLayoutChange();
-  }
-
   // If |transition_target_deprecated| is true then the transition array
   // already contains entry for given descriptor. This means that the transition
   // could be inserted regardless of whether transitions array is full or not.
@@ -2975,6 +2971,8 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                                             new_kind, new_attributes,
                                             "GenAll_CantHaveMoreTransitions");
   }
+
+  old_map->NotifyLeafMapLayoutChange();
 
   if (FLAG_trace_generalization && modify_index >= 0) {
     PropertyDetails old_details = old_descriptors->GetDetails(modify_index);
@@ -3035,6 +3033,15 @@ MaybeHandle<Map> Map::TryUpdate(Handle<Map> old_map) {
   // Check the state of the root map.
   Map* root_map = old_map->FindRootMap();
   if (!old_map->EquivalentToForTransition(root_map)) return MaybeHandle<Map>();
+
+  ElementsKind from_kind = root_map->elements_kind();
+  ElementsKind to_kind = old_map->elements_kind();
+  if (from_kind != to_kind) {
+    // Try to follow existing elements kind transitions.
+    root_map = root_map->LookupElementsTransitionMap(to_kind);
+    if (root_map == NULL) return MaybeHandle<Map>();
+    // From here on, use the map with correct elements kind as root map.
+  }
   int root_nof = root_map->NumberOfOwnDescriptors();
 
   int old_nof = old_map->NumberOfOwnDescriptors();
@@ -17091,10 +17098,11 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
   void* backing_store =
       isolate->array_buffer_allocator()->AllocateUninitialized(
           fixed_typed_array->DataSize());
-  isolate->heap()->RegisterNewArrayBuffer(backing_store,
-                                          fixed_typed_array->DataSize());
   buffer->set_backing_store(backing_store);
   buffer->set_is_external(false);
+  isolate->heap()->RegisterNewArrayBuffer(isolate->heap()->InNewSpace(*buffer),
+                                          backing_store,
+                                          fixed_typed_array->DataSize());
   memcpy(buffer->backing_store(),
          fixed_typed_array->DataPtr(),
          fixed_typed_array->DataSize());

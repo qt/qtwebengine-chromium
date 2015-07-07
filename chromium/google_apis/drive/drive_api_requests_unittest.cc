@@ -479,10 +479,11 @@ class DriveApiRequestsTest : public testing::Test {
         "--BOUNDARY\r\n"
         "Content-Type: application/http\r\n"
         "\r\n"
-        "HTTP/1.1 503 Service Unavailable\r\n"
+        "HTTP/1.1 403 Forbidden\r\n"
         "Content-Type: application/json; charset=UTF-8\r\n"
         "\r\n"
-        "{}\r\n"
+        "{\"error\":{\"errors\": ["
+        " {\"reason\": \"userRateLimitExceeded\"}]}}\r\n"
         "\r\n"
         "--BOUNDARY--\r\n");
     return response.Pass();
@@ -2008,7 +2009,8 @@ TEST_F(DriveApiRequestsTest, BatchUploadRequest) {
         test_util::CreateCopyResultCallback(&errors[i], &file_resources[i]));
     drive::MultipartUploadNewFileDelegate* const child_request =
         new drive::MultipartUploadNewFileDelegate(
-            request_sender_.get(), base::StringPrintf("new file title %d", i),
+            request_sender_->blocking_task_runner(),
+            base::StringPrintf("new file title %d", i),
             "parent_resource_id", kTestContentType, kTestContent.size(),
             base::Time(), base::Time(), kTestFilePath, drive::Properties(),
             *url_generator_, callback, ProgressCallback());

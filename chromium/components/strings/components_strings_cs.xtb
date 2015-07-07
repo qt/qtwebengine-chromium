@@ -58,6 +58,7 @@
 <translation id="4506176782989081258">Chyba ověřování: <ph name="VALIDATION_ERROR"/>.</translation>
 <translation id="7108649287766967076">Překlad do jazyka <ph name="TARGET_LANGUAGE"/> se nezdařil.</translation>
 <translation id="4103249731201008433">Sériové číslo zařízení je neplatné</translation>
+<translation id="59107663811261420">Tento typ karty ve službě Google Payments u tohoto obchodníka není podporován. Vyberte prosím jinou kartu.</translation>
 <translation id="3667681724235208644">Zobrazit originál</translation>
 <translation id="4079302484614802869">Proxy je nastaveno na používání adresy URL skriptu PAC, nikoliv pevně daných serverů proxy.</translation>
 <translation id="5540224163453853">Požadovaný článek nebyl nalezen.</translation>
@@ -85,6 +86,7 @@
 <translation id="7977590112176369853">&lt;zadat dotaz&gt;</translation>
 <translation id="552553974213252141">Byl text extrahován správně?</translation>
 <translation id="5317780077021120954">Uložit</translation>
+<translation id="8530504477309582336">Služba Google Payments tento typ karty nepodporuje. Vyberte prosím jinou kartu.</translation>
 <translation id="7610193165460212391">Hodnota <ph name="VALUE"/> je mimo rozsah.</translation>
 <translation id="3739623965217189342">Zkopírovaný odkaz</translation>
 <translation id="8790007591277257123">&amp;Opakovat smazání</translation>
@@ -211,7 +213,7 @@
 <translation id="4269787794583293679">(Žádné uživatelské jméno)</translation>
 <translation id="7988324688042446538">Záložky v PC</translation>
 <translation id="8488350697529856933">Platí pro</translation>
-<translation id="6165508094623778733">Další informace</translation>
+<translation id="6165508094623778733">Další informace</translation>
 <translation id="5565735124758917034">Aktivní</translation>
 <translation id="7568593326407688803">Tato stránka je v jazyce<ph name="ORIGINAL_LANGUAGE"/>Chcete ji přeložit?</translation>
 <translation id="8876793034577346603">Analýza konfigurace sítě se nezdařila.</translation>

@@ -69,6 +69,7 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState(const CanvasRenderi
     , m_shadowAndForegroundImageFilter(other.m_shadowAndForegroundImageFilter)
     , m_globalAlpha(other.m_globalAlpha)
     , m_transform(other.m_transform)
+    , m_lineDash(other.m_lineDash)
     , m_lineDashOffset(other.m_lineDashOffset)
     , m_unparsedFont(other.m_unparsedFont)
     , m_font(other.m_font)
@@ -117,6 +118,7 @@ CanvasRenderingContext2DState& CanvasRenderingContext2DState::operator=(const Ca
     m_shadowAndForegroundImageFilter = other.m_shadowAndForegroundImageFilter;
     m_globalAlpha = other.m_globalAlpha;
     m_transform = other.m_transform;
+    m_lineDash = other.m_lineDash;
     m_lineDashOffset = other.m_lineDashOffset;
     m_unparsedFont = other.m_unparsedFont;
     m_font = other.m_font;

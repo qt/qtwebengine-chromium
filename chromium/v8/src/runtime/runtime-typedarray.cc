@@ -27,14 +27,15 @@ void Runtime::SetupArrayBuffer(Isolate* isolate,
   array_buffer->set_is_external(is_external);
   array_buffer->set_is_neuterable(true);
 
+  if (data && !is_external) {
+    isolate->heap()->RegisterNewArrayBuffer(
+        isolate->heap()->InNewSpace(*array_buffer), data, allocated_length);
+  }
+
   Handle<Object> byte_length =
       isolate->factory()->NewNumberFromSize(allocated_length);
   CHECK(byte_length->IsSmi() || byte_length->IsHeapNumber());
   array_buffer->set_byte_length(*byte_length);
-
-  if (data && !is_external) {
-    isolate->heap()->RegisterNewArrayBuffer(data, allocated_length);
-  }
 }
 
 
@@ -143,7 +144,8 @@ RUNTIME_FUNCTION(Runtime_ArrayBufferNeuter) {
   size_t byte_length = NumberToSize(isolate, array_buffer->byte_length());
   array_buffer->set_is_external(true);
   Runtime::NeuterArrayBuffer(array_buffer);
-  isolate->heap()->UnregisterArrayBuffer(backing_store);
+  isolate->heap()->UnregisterArrayBuffer(
+      isolate->heap()->InNewSpace(*array_buffer), backing_store);
   isolate->array_buffer_allocator()->Free(backing_store, byte_length);
   return isolate->heap()->undefined_value();
 }

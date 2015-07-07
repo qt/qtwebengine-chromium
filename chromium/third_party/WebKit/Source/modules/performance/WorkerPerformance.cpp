@@ -44,7 +44,6 @@ WorkerPerformance::WorkerPerformance()
 
 DEFINE_TRACE(WorkerPerformance)
 {
-    visitor->trace(m_memoryInfo);
 }
 
 double WorkerPerformance::now(ExecutionContext* context) const
@@ -57,10 +56,7 @@ double WorkerPerformance::now(ExecutionContext* context) const
 
 MemoryInfo* WorkerPerformance::memory()
 {
-    if (!m_memoryInfo)
-        m_memoryInfo = MemoryInfo::create();
-
-    return m_memoryInfo.get();
+    return MemoryInfo::create();
 }
 
 } // namespace blink

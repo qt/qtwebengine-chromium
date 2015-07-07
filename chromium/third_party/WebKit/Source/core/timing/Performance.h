@@ -117,8 +117,6 @@ private:
     PerformanceEntryVector m_resourceTimingBuffer;
     unsigned m_resourceTimingBufferSize;
     double m_referenceTime;
-
-    Member<MemoryInfo> m_memoryInfo;
     Member<UserTiming> m_userTiming;
 };
 

@@ -77,9 +77,7 @@ ExecutionContext* Performance::executionContext() const
 
 MemoryInfo* Performance::memory()
 {
-    if (!m_memoryInfo)
-        m_memoryInfo = MemoryInfo::create();
-    return m_memoryInfo.get();
+    return MemoryInfo::create();
 }
 
 PerformanceNavigation* Performance::navigation() const
@@ -354,7 +352,6 @@ DEFINE_TRACE(Performance)
     visitor->trace(m_timing);
     visitor->trace(m_frameTimingBuffer);
     visitor->trace(m_resourceTimingBuffer);
-    visitor->trace(m_memoryInfo);
     visitor->trace(m_userTiming);
     EventTargetWithInlineData::trace(visitor);
     DOMWindowProperty::trace(visitor);
