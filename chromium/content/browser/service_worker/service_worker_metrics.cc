@@ -95,6 +95,15 @@ void ServiceWorkerMetrics::RecordStartWorkerTime(const base::TimeDelta& time,
     UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.StartNewWorker.Time", time);
 }
 
+void ServiceWorkerMetrics::RecordStopWorkerStatus(StopWorkerStatus status) {
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.StopWorker.Status", status,
+                            NUM_STOP_STATUS_TYPES);
+}
+
+void ServiceWorkerMetrics::RecordStopWorkerTime(const base::TimeDelta& time) {
+  UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.StopWorker.Time", time);
+}
+
 void ServiceWorkerMetrics::RecordActivateEventStatus(
     ServiceWorkerStatusCode status) {
   UMA_HISTOGRAM_ENUMERATION("ServiceWorker.ActivateEventStatus", status,
@@ -114,6 +123,30 @@ void ServiceWorkerMetrics::RecordEventStatus(size_t fired_events,
   int unhandled_ratio = (fired_events - handled_events) * 100 / fired_events;
   UMA_HISTOGRAM_PERCENTAGE("ServiceWorker.UnhandledEventRatio",
                            unhandled_ratio);
+}
+
+void ServiceWorkerMetrics::RecordFetchEventStatus(
+    bool is_main_resource,
+    ServiceWorkerStatusCode status) {
+  if (is_main_resource) {
+    UMA_HISTOGRAM_ENUMERATION("ServiceWorker.FetchEvent.MainResource.Status",
+                              status, SERVICE_WORKER_ERROR_MAX_VALUE);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("ServiceWorker.FetchEvent.Subresource.Status",
+                              status, SERVICE_WORKER_ERROR_MAX_VALUE);
+  }
+}
+
+void ServiceWorkerMetrics::RecordURLRequestJobResult(
+    bool is_main_resource,
+    URLRequestJobResult result) {
+  if (is_main_resource) {
+    UMA_HISTOGRAM_ENUMERATION("ServiceWorker.URLRequestJob.MainResource.Result",
+                              result, NUM_REQUEST_JOB_RESULT_TYPES);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("ServiceWorker.URLRequestJob.Subresource.Result",
+                              result, NUM_REQUEST_JOB_RESULT_TYPES);
+  }
 }
 
 }  // namespace content

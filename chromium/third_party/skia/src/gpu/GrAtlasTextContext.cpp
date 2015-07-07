@@ -53,7 +53,11 @@ static const int kSmallDFFontLimit = 32;
 static const int kMediumDFFontSize = 72;
 static const int kMediumDFFontLimit = 72;
 static const int kLargeDFFontSize = 162;
+#ifdef SK_BUILD_FOR_ANDROID
+static const int kLargeDFFontLimit = 384;
+#else
 static const int kLargeDFFontLimit = 2 * kLargeDFFontSize;
+#endif
 
 SkDEBUGCODE(static const int kExpectedDistanceAdjustTableSize = 8;)
 static const int kDistanceAdjustLumShift = 5;
@@ -1580,7 +1584,8 @@ public:
             TextInfo& info = run.fSubRunInfo[args.fSubRun];
 
             uint64_t currentAtlasGen = fFontCache->atlasGeneration(fMaskFormat);
-            bool regenerateTextureCoords = info.fAtlasGeneration != currentAtlasGen;
+            bool regenerateTextureCoords = info.fAtlasGeneration != currentAtlasGen ||
+                                           run.fStrike->isAbandoned();
             bool regenerateColors;
             if (fUseDistanceFields) {
                 regenerateColors = !fUseLCDText && run.fColor != args.fColor;

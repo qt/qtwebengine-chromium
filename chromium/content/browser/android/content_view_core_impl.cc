@@ -272,6 +272,13 @@ ContentViewCoreImpl::GetWebContentsAndroid(JNIEnv* env, jobject obj) {
   return web_contents_->GetJavaWebContents();
 }
 
+base::android::ScopedJavaLocalRef<jobject>
+ContentViewCoreImpl::GetJavaWindowAndroid(JNIEnv* env, jobject obj) {
+  if (!window_android_)
+    return ScopedJavaLocalRef<jobject>();
+  return window_android_->GetJavaObject();
+}
+
 void ContentViewCoreImpl::OnJavaContentViewCoreDestroyed(JNIEnv* env,
                                                          jobject obj) {
   DCHECK(env->IsSameObject(java_ref_.get(env).obj(), obj));
@@ -390,6 +397,8 @@ void ContentViewCoreImpl::UpdateFrameInfo(
 
   window_android_->set_content_offset(
       gfx::ScaleVector2d(content_offset, dpi_scale_));
+
+  page_scale_ = page_scale_factor;
 
   Java_ContentViewCore_updateFrameInfo(
       env, obj.obj(),
@@ -1379,6 +1388,10 @@ void ContentViewCoreImpl::OnShowUnhandledTapUIIfNeeded(int x_dip, int y_dip) {
   Java_ContentViewCore_onShowUnhandledTapUIIfNeeded(
       env, obj.obj(), static_cast<jint>(x_dip * dpi_scale()),
       static_cast<jint>(y_dip * dpi_scale()));
+}
+
+float ContentViewCoreImpl::GetScaleFactor() const {
+  return page_scale_ * dpi_scale_;
 }
 
 void ContentViewCoreImpl::OnSmartClipDataExtracted(

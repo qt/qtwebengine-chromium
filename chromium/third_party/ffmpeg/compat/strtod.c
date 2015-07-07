@@ -22,6 +22,10 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#if defined(_MSC_VER)
+#include "compat/msvcrt/strtod.h"
+#endif
+
 #include "libavutil/avstring.h"
 #include "libavutil/mathematics.h"
 

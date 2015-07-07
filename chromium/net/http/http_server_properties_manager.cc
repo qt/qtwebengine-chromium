@@ -245,8 +245,15 @@ bool HttpServerPropertiesManager::WasAlternativeServiceRecentlyBroken(
 void HttpServerPropertiesManager::ConfirmAlternativeService(
     const AlternativeService& alternative_service) {
   DCHECK(network_task_runner_->RunsTasksOnCurrentThread());
+  bool old_value = http_server_properties_impl_->IsAlternativeServiceBroken(
+      alternative_service);
   http_server_properties_impl_->ConfirmAlternativeService(alternative_service);
-  ScheduleUpdatePrefsOnNetworkThread(CONFIRM_ALTERNATIVE_SERVICE);
+  bool new_value = http_server_properties_impl_->IsAlternativeServiceBroken(
+      alternative_service);
+  // For persisting, we only care about the value returned by
+  // IsAlternativeServiceBroken. If that value changes, then call persist.
+  if (old_value != new_value)
+    ScheduleUpdatePrefsOnNetworkThread(CONFIRM_ALTERNATIVE_SERVICE);
 }
 
 void HttpServerPropertiesManager::ClearAlternativeService(
@@ -329,16 +336,29 @@ void HttpServerPropertiesManager::SetSupportsQuic(
     bool used_quic,
     const IPAddressNumber& address) {
   DCHECK(network_task_runner_->RunsTasksOnCurrentThread());
+  IPAddressNumber old_last_quic_addr;
+  http_server_properties_impl_->GetSupportsQuic(&old_last_quic_addr);
   http_server_properties_impl_->SetSupportsQuic(used_quic, address);
-  ScheduleUpdatePrefsOnNetworkThread(SET_SUPPORTS_QUIC);
+  IPAddressNumber new_last_quic_addr;
+  http_server_properties_impl_->GetSupportsQuic(&new_last_quic_addr);
+  if (old_last_quic_addr != new_last_quic_addr)
+    ScheduleUpdatePrefsOnNetworkThread(SET_SUPPORTS_QUIC);
 }
 
 void HttpServerPropertiesManager::SetServerNetworkStats(
     const HostPortPair& host_port_pair,
     ServerNetworkStats stats) {
   DCHECK(network_task_runner_->RunsTasksOnCurrentThread());
+  ServerNetworkStats old_stats;
+  const ServerNetworkStats* old_stats_ptr =
+      http_server_properties_impl_->GetServerNetworkStats(host_port_pair);
+  if (http_server_properties_impl_->GetServerNetworkStats(host_port_pair))
+    old_stats = *old_stats_ptr;
   http_server_properties_impl_->SetServerNetworkStats(host_port_pair, stats);
-  ScheduleUpdatePrefsOnNetworkThread(SET_SERVER_NETWORK_STATS);
+  ServerNetworkStats new_stats =
+      *(http_server_properties_impl_->GetServerNetworkStats(host_port_pair));
+  if (old_stats != new_stats)
+    ScheduleUpdatePrefsOnNetworkThread(SET_SERVER_NETWORK_STATS);
 }
 
 const ServerNetworkStats* HttpServerPropertiesManager::GetServerNetworkStats(

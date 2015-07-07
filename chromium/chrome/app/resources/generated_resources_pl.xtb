@@ -13,7 +13,7 @@
 <translation id="166179487779922818">Hasło jest zbyt krótkie.</translation>
 <translation id="2345460471437425338">Nieprawidłowy certyfikat hosta</translation>
 <translation id="3688507211863392146">Zapisywać dane w plikach i folderach otwieranych w aplikacji</translation>
-<translation id="226269835214688456">Jeśli wyłączysz Smart Lock na Chromebooki, nie odblokujesz urządzenia z Chrome, używając telefonu. Będziesz musiał wpisać hasło.</translation>
+<translation id="226269835214688456">Jeśli wyłączysz Smart Lock na Chromebooki, nie odblokujesz urządzenia z Chrome, używając telefonu. Trzeba będzie wpisać hasło.</translation>
 <translation id="8996941253935762404">Na następnej stronie znajdują się szkodliwe programy</translation>
 <translation id="3595596368722241419">Bateria naładowana</translation>
 <translation id="8098352321677019742"><ph name="PRODUCT_NAME"/> – powiadomienia</translation>
@@ -281,7 +281,7 @@
 <translation id="558170650521898289">Weryfikacja sprzętowych sterowników systemu Microsoft Windows</translation>
 <translation id="4395129973926795186">Od <ph name="START_DATE"/> do <ph name="END_DATE"/></translation>
 <translation id="98515147261107953">Poziomo</translation>
-<translation id="7334190995941642545">Inteligentna blokada jest obecnie niedostępna. Spróbuj ponownie później.</translation>
+<translation id="7334190995941642545">Smart Lock jest obecnie niedostępny. Spróbuj ponownie później.</translation>
 <translation id="1303101771013849280">Plik HTML z zakładkami</translation>
 <translation id="8974161578568356045">Wykrywaj automatycznie</translation>
 <translation id="1549045574060481141">Potwierdź pobranie</translation>
@@ -579,7 +579,7 @@
 <translation id="715487527529576698">Początkowy tryb wprowadzania języka chińskiego: chiński uproszczony</translation>
 <translation id="6522350652862471760">Włącz nazwę profilu i ikonę Google</translation>
 <translation id="2164862903024139959">Klawiatura wietnamska (TCVN)</translation>
-<translation id="8885197664446363138">Inteligentna blokada jest niedostępna</translation>
+<translation id="8885197664446363138">Smart Lock jest niedostępny</translation>
 <translation id="1697532407822776718">Wszystko gotowe.</translation>
 <translation id="8373553483208508744">Wycisz karty</translation>
 <translation id="8703575177326907206">Połączenie z witryną <ph name="DOMAIN"/> nie jest szyfrowane.</translation>
@@ -693,6 +693,7 @@
 <translation id="4847468520816441019">Miary do wyświetlenia</translation>
 <translation id="5098647635849512368">Nie można określić ścieżki bezwzględnej pakowanego katalogu.</translation>
 <translation id="5859272821192576954">Wszystko gotowe do korzystania z Hangouts</translation>
+<translation id="5855756842026516189">Chroń swoją płatność przy użyciu Google Payments.</translation>
 <translation id="8565650234829130278">Próbowano zmienić wersję aplikacji na starszą.</translation>
 <translation id="6380224340023442078">Ustawienia treści...</translation>
 <translation id="1612129875274679969">Trwale utrzymuj to urządzenie w trybie kiosku.</translation>
@@ -740,6 +741,7 @@ Aby kontynuować, wszyscy użytkownicy muszą się wylogować.</translation>
 <translation id="5759728514498647443">Dokumenty wysłane do drukowania z aplikacji <ph name="APP_NAME"/> można odczytać w aplikacji <ph name="APP_NAME"/>.</translation>
 <translation id="2401053206567162910">Ta aplikacja nie jest obecnie obsługiwana na tym urządzeniu, ale krasnoludki w Chrome już nad tym pracują.</translation>
 <translation id="3273410961255278341">Wyślij do:</translation>
+<translation id="4255096080864111471">Określ maksymalną liczbę kafelków obszaru zainteresowań.</translation>
 <translation id="5136529877787728692">F7</translation>
 <translation id="5233638681132016545">Nowa karta</translation>
 <translation id="6567688344210276845">Nie można wczytać ikony „<ph name="ICON"/>” dla czynności wykonywanej na stronie.</translation>
@@ -833,6 +835,7 @@ Aby kontynuować, wszyscy użytkownicy muszą się wylogować.</translation>
 <translation id="1547297114045837579">Włącz rasteryzację GPU.</translation>
 <translation id="3241680850019875542">Wybierz główny katalog rozszerzenia, które chcesz umieścić w pakiecie. Aby zaktualizować rozszerzenie, wybierz również plik kluczy prywatnych do ponownego użycia.</translation>
 <translation id="7845849068167576533">Nawet jeśli wcześniej odwiedzałeś tę stronę, teraz nie jest ona bezpieczna. Bezpieczne przeglądanie Google <ph name="BEGIN_LINK"/>wykryło ostatnio złośliwe oprogramowanie<ph name="END_LINK"/> na <ph name="SITE"/>. Strony, które zazwyczaj są bezpieczne, zostają czasem zainfekowane destrukcyjnym oprogramowaniem. Źródłem złośliwej zawartości jest <ph name="SUBRESOURCE_HOST"/> – znany dystrybutor złośliwego oprogramowania.</translation>
+<translation id="9137356749601179867">Pokaż pole, które umożliwia lokalne zapisanie danych karty kredytowej po ich pobraniu z serwera.</translation>
 <translation id="7986295104073916105">Odczytywanie i zmienianie ustawień zapisanych haseł</translation>
 <translation id="5711983031544731014">Nie można odblokować. Wpisz hasło.</translation>
 <translation id="2149850907588596975">Hasła i formularze</translation>
@@ -897,7 +900,7 @@ Aby kontynuować, wszyscy użytkownicy muszą się wylogować.</translation>
 <translation id="5538092967727216836">Załaduj ponownie ramkę</translation>
 <translation id="4813345808229079766">Połączenie</translation>
 <translation id="8257950718085972371">Nadal blokuj dostęp do kamery</translation>
-<translation id="5390284375844109566">Zaindeksowana baza danych</translation>
+<translation id="5390284375844109566">Zindeksowana baza danych</translation>
 <translation id="411666854932687641">Pamięć prywatna</translation>
 <translation id="2415294094132942411">Dodaj do pulpitu...</translation>
 <translation id="119944043368869598">Wyczyść wszystko</translation>
@@ -1043,6 +1046,7 @@ Aby kontynuować, wszyscy użytkownicy muszą się wylogować.</translation>
 <translation id="2678063897982469759">Włącz ponownie</translation>
 <translation id="1779766957982586368">Zamknij okno</translation>
 <translation id="4850886885716139402">Widok</translation>
+<translation id="3075066926036244931">Nie udało się zapisać danych w Google Payments.</translation>
 <translation id="89217462949994770">Zbyt wiele razy wprowadzono nieprawidłowy kod PIN. Skontaktuj się z operatorem <ph name="CARRIER_ID"/>, aby otrzymać nowy, 8-cyfrowy klucz odblokowania kodu PIN.</translation>
 <translation id="2776441542064982094">Wygląda na to, że nie ma żadnych dostępnych urządzeń do zarejestrowania w sieci. Jeśli Twoje urządzenie jest włączone i ma połączenie z internetem, spróbuj je zarejestrować zgodnie z opisem zawartym w jego instrukcji.</translation>
 <translation id="8659716501582523573">Adres IP:</translation>
@@ -1124,6 +1128,7 @@ Aby kontynuować, wszyscy użytkownicy muszą się wylogować.</translation>
 <translation id="7549584377607005141">Do poprawnego wyświetlenia tej strony internetowej wymagane są dane wpisane przez Ciebie wcześniej. Możesz wysłać je ponownie, ale spowoduje to powtórzenie wszystkich działań wykonanych poprzednio przez stronę.</translation>
 <translation id="6954850746343724854">Włącz klienta natywnego dla wszystkich aplikacji internetowych – nawet tych, które nie pochodzą z Chrome Web Store.</translation>
 <translation id="9043242398268815112">Zna lokalizację urządzenia</translation>
+<translation id="1596174774107741586">Użyj serwerów piaskownicy Google Payments</translation>
 <translation id="9068931793451030927">Ścieżka:</translation>
 <translation id="4289540628985791613">Omówienie</translation>
 <translation id="283278805979278081">Zrób zdjęcie.</translation>
@@ -1209,6 +1214,7 @@ Psst! Następnym razem możesz użyć trybu incognito <ph name="SHORTCUT_KEY"/>.
 <translation id="2971213274238188218">zmniejsz jasność</translation>
 <translation id="473546211690256853">To konto jest zarządzane w domenie <ph name="DOMAIN"/></translation>
 <translation id="288024221176729610">Czeski</translation>
+<translation id="5493905423961633717">Zapisz i chroń swoje dane w Google Payments.</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="4839122884004914586">Zastąp listę renderowania programowego</translation>
 <translation id="6305012486838822927">Klawiatura laotańska</translation>
@@ -1328,6 +1334,7 @@ Psst! Następnym razem możesz użyć trybu incognito <ph name="SHORTCUT_KEY"/>.
 <translation id="813082847718468539">Wyświetl informacje o witrynie</translation>
 <translation id="127353061808977798">Czcionki i kodowanie</translation>
 <translation id="3122464029669770682">Procesor</translation>
+<translation id="4518677423782794009">Czy masz w Chrome problemy z awariami, nietypowymi stronami startowymi, paskami narzędzi, nieoczekiwanymi reklamami, których nie możesz się pozbyć, lub innymi elementami, które utrudniają przeglądanie? Możesz to rozwiązać, korzystając z narzędzia Chrome Cleanup Tool.</translation>
 <translation id="6080689532560039067">Sprawdź czas systemowy</translation>
 <translation id="6092270396854197260">MSPY</translation>
 <translation id="6802031077390104172"><ph name="USAGE"/> (<ph name="OID"/>)</translation>
@@ -1518,6 +1525,8 @@ Psst! Następnym razem możesz użyć trybu incognito <ph name="SHORTCUT_KEY"/>.
 <translation id="2869742291459757746">Umożliwia użytkownikowi pozwolenie Chrome na wygenerowanie hasła po wykryciu stron tworzenia konta.</translation>
 <translation id="7079038783243627996">„<ph name="EXTENSION"/>” będzie mieć możliwość odczytywania i usuwania plików graficznych, wideo i dźwiękowych w zaznaczonych folderach.</translation>
 <translation id="1737968601308870607">Zgłoś błąd</translation>
+<translation id="3831688386498123870">Zaloguj się, by zapłacić przez Google Payments</translation>
+<translation id="852605377609758011">Do zrealizowania tej transakcji zostanie użyta wirtualna karta Google Payments. Ma ona nowy numer, więc sprzedawca nie pozna prawdziwego numeru Twojej karty kredytowej.</translation>
 <translation id="2594056015203442344">Po włączeniu tej funkcji wskaźniki dźwięku na pasku kart pozwalają wyciszać dźwięk z karty. W menu kontekstowym kart pojawiają się też polecenia do szybkiego wyciszania wielu wybranych kart.</translation>
 <translation id="5316588172263354223">Wyszukuj głosowo w dowolnej chwili</translation>
 <translation id="1389297115360905376">Możesz to pobrać tylko z <ph name="CHROME_WEB_STORE"/>.</translation>
@@ -1622,6 +1631,7 @@ Psst! Następnym razem możesz użyć trybu incognito <ph name="SHORTCUT_KEY"/>.
 <translation id="3574210789297084292">zaloguj się</translation>
 <translation id="5254480569305195883">Włącz obsługę zdarzenia synchronizacji w tle (ServiceWorker).</translation>
 <translation id="2134149231879627725">Zezwól Google na pomoc w zdalnym odblokowaniu, wymazaniu i zlokalizowaniu Twojego urządzenia.</translation>
+<translation id="5151034238407558331">W przypadku tego sprzedawcy z Google Payments mogą skorzystać tylko kupujący, którzy mają adres w USA. Jeśli mieszkasz w USA, |zmień swój adres domowy w Google Payments|. Możesz też zapłacić, nie korzystając z tej usługi.</translation>
 <translation id="1146204723345436916">Importuj zakładki z pliku HTML...</translation>
 <translation id="2113921862428609753">Dostęp do informacji o urzędzie</translation>
 <translation id="9190063653747922532">L2TP/IPSec + klucz wstępny</translation>
@@ -1677,6 +1687,7 @@ Psst! Następnym razem możesz użyć trybu incognito <ph name="SHORTCUT_KEY"/>.
 <translation id="4811502511369621968">Nieprawidłowy adres e-mail. Sprawdź wpisane informacje i spróbuj ponownie.</translation>
 <translation id="175196451752279553">Prz&amp;ywróć zamkniętą kartę</translation>
 <translation id="8602851771975208551">Inny program na Twoim komputerze dodał aplikację, która może zmienić działanie Chrome.</translation>
+<translation id="9154967591629748964">Maksymalna liczba kafelków obszaru zainteresowań</translation>
 <translation id="2655386581175833247">Certyfikat użytkownika:</translation>
 <translation id="5039804452771397117">Zezwalaj</translation>
 <translation id="5435964418642993308">Naciśnij klawisz Enter, aby przejść z powrotem, lub klawisz menu kontekstowego, aby wyświetlić historię</translation>
@@ -1851,8 +1862,10 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="1901377140875308934">Zaloguj się w <ph name="SHORT_PRODUCT_NAME"/>...</translation>
 <translation id="5529098031581368697">Aktualna tapeta została ustawiona przez aplikację „<ph name="APP_NAME"/>”</translation>
 <translation id="5074318175948309511">Aby nowe ustawienia zaczęły działać, być może trzeba odświeżyć tę stronę.</translation>
+<translation id="7664333939334980398">64</translation>
 <translation id="3740150184898623344">Pokazuj przycisk trybu czytnika na wszystkich stronach</translation>
 <translation id="3947376313153737208">Nie wybrano</translation>
+<translation id="6405640832764359650">Włącz pole zapisywania kart w Google Payments</translation>
 <translation id="1346104802985271895">wietnamski (TELEX)</translation>
 <translation id="7896906914454843592">Klawiatura rozszerzona USA</translation>
 <translation id="2242603986093373032">Brak urządzeń</translation>
@@ -1878,6 +1891,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="2592884116796016067">Część tej strony (HTML WebWorker) spowodowała błąd, może więc nie działać prawidłowo.</translation>
 <translation id="2529133382850673012">Klawiatura amerykańska</translation>
 <translation id="4352850459590683051">Anuluj dostęp do plików i urządzeń</translation>
+<translation id="3176592269865293091">W Google Payments wystąpił błąd.</translation>
 <translation id="4411578466613447185">Certyfikat do podpisywania kodu</translation>
 <translation id="1354868058853714482">Program Adobe Reader jest nieaktualny i może mieć luki w zabezpieczeniach.</translation>
 <translation id="6200903742087665630">Włącz elementy iframe poza procesem</translation>
@@ -2066,13 +2080,15 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="3326821416087822643">Pakuję <ph name="FILE_NAME"/>...</translation>
 <translation id="3081104028562135154">Zwiększ</translation>
 <translation id="3734816294831429815"><ph name="PRODUCT_NAME"/> zostanie uruchomiony ponownie za <ph name="SECONDS"/> s.</translation>
+<translation id="881450003165101303">Usługa Google Payments nie jest obsługiwana u tego sprzedawcy.</translation>
 <translation id="8732030010853991079">Aby użyć tego rozszerzenia, kliknij jego ikonę.</translation>
 <translation id="32330993344203779">Urządzenie zostało zarejestrowane do użytku w firmie.</translation>
+<translation id="6269540072308453256">Usługa Google Payments jest aktualnie niedostępna.</translation>
 <translation id="9177483892433212068">Eksperymentalny menedżer fokusa wpisywania tekstu.</translation>
 <translation id="158917669717260118">Nie można wczytać strony internetowej, ponieważ komputer przeszedł w tryb uśpienia lub hibernacji. Gdy to następuje, połączenia sieciowe są zamykane, a nowe żądania kończą się niepowodzeniem. Ponowne załadowanie strony powinno rozwiązać problem.</translation>
 <translation id="6316671927443834085">Nie można odłączyć od urządzenia „<ph name="DEVICE_NAME"/>”.</translation>
 <translation id="1962233722219655970">Ta strona używa aplikacji klienta natywnego, która nie działa na Twoim komputerze.</translation>
-<translation id="5458733660263868683">Jeśli Twój telefon znajduje się w pobliżu, nie używaj inteligentnej blokady, która umożliwia odblokowanie Chromebooka. Jeśli jesteś właścicielem urządzenia, inteligentna blokada zostanie wyłączona również na ekranie logowania.</translation>
+<translation id="5458733660263868683">Jeśli Twój telefon znajduje się w pobliżu, nie używaj funkcji Smart Lock, która umożliwia odblokowanie Chromebooka. Jeśli jesteś właścicielem urządzenia, Smart Lock zostanie wyłączony również na ekranie logowania.</translation>
 <translation id="1108685299869803282">Ponad 80% osób, które widzą to ostrzeżenie, wybiera bezpieczeństwo zamiast ryzykować narażenie się na działanie złośliwego oprogramowania. Jeśli jednak rozumiesz zagrożenie, możesz <ph name="BEGIN_LINK"/>odwiedzić tę niebezpieczną stronę<ph name="END_LINK"/>, zanim niebezpieczne programy zostaną usunięte.</translation>
 <translation id="219008588003277019">Moduł klienta natywnego: <ph name="NEXE_NAME"/></translation>
 <translation id="8228447825257396644">Wyłącz klawiaturę z widokiem wprowadzania w stylu Material Design.</translation>
@@ -2089,6 +2105,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
         <ph name="HOST_NAME"/>
         umożliwiał dostęp do witryny wewnętrznej, skontaktuj się
         z administratorem sieci.</translation>
+<translation id="6938162839153260184">Google Payments nie obsługuje tej wersji Chrome lub nie rozpoznaje klucza interfejsu API Google.</translation>
 <translation id="7130561729700538522">Nie udało się zarejestrować w Menedżerze urządzeń Google.</translation>
 <translation id="4991420928586866460">Traktuj klawisze z górnego rzędu jak klawisze funkcyjne</translation>
 <translation id="4350019051035968019">To urządzenie jest oznaczone jako zarządzane przez inną domenę i nie można go przypisać do domeny, do której należy Twoje konto.</translation>
@@ -2349,6 +2366,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="389589731200570180">Udostępnij gościom</translation>
 <translation id="1510200760579344855">To urządzenie zostało zablokowane przez administratora domeny <ph name="SAML_DOMAIN"/>.</translation>
 <translation id="7205869271332034173">SSID:</translation>
+<translation id="3335561837873115802">Pobierz Chrome Cleanup Tool</translation>
 <translation id="4731351517694976331">Zezwalaj usługom Google na dostęp do danych o mojej lokalizacji</translation>
 <translation id="5815645614496570556">Adres X.400</translation>
 <translation id="1223853788495130632">Administrator zaleca konkretną wartość dla tego ustawienia.</translation>
@@ -2372,6 +2390,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="8580634710208701824">Załaduj ponownie ramkę</translation>
 <translation id="1018656279737460067">Anulowano</translation>
 <translation id="7606992457248886637">Urzędy</translation>
+<translation id="5953603475187800576">Pokaż adresy i karty kredytowe z Google Payments</translation>
 <translation id="4197674956721858839">Spakuj wybrane do pliku ZIP</translation>
 <translation id="2672142220933875349">Nieprawidłowy plik CRX. Nie udało się go rozpakować.</translation>
 <translation id="707392107419594760">Wybierz klawiaturę:</translation>
@@ -2539,6 +2558,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="409579654357498729">Dodaj do Cloud Print</translation>
 <translation id="2120316813730635488">Instalacje rozszerzenia</translation>
 <translation id="8398877366907290961">Kontynuuj mimo wszystko</translation>
+<translation id="2797019681257472009">Wykryto nietypowe zachowanie</translation>
 <translation id="5063180925553000800">Nowy kod PIN:</translation>
 <translation id="4883178195103750615">Eksportuj zakładki do pliku HTML...</translation>
 <translation id="2496540304887968742">Urządzenie musi mieć pojemność 4 GB lub większą.</translation>
@@ -2906,12 +2926,12 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="1122960773616686544">Nazwa zakładki</translation>
 <translation id="5966707198760109579">Tydzień</translation>
 <translation id="7854323427075506422">Wyłącz proces programu do rozpakowywania plików ZIP używającego interfejsu API dostawcy systemu plików.</translation>
-<translation id="4635114802498986446">Włącza ustawienie funkcji Smart Lock, które umożliwia odblokowane urządzenia tylko wtedy, gdy Twój telefon znajduje się bardzo blisko (mniej więcej na długość ramienia) urządzenia z Chrome.</translation>
+<translation id="4635114802498986446">Włącza ustawienie funkcji Smart Lock, które umożliwia odblokowane urządzenia tylko wtedy, gdy Twój telefon znajduje się bardzo blisko (mniej więcej na długość ramienia) urządzenia z systemem Chrome.</translation>
 <translation id="7371490661692457119">Domyślna szerokość kafelków</translation>
 <translation id="5148652308299789060">Wyłącz programowy rasteryzator 3D</translation>
 <translation id="9205143043463108573">Umieszcza Menu z aplikacjami na środku ekranu i nadaje mu orientację poziomą.</translation>
 <translation id="7996005831155352675">Włącz autouzupełnianie po jednym kliknięciu</translation>
-<translation id="870112442358620996">Proponuj zapisywanie haseł w Smart Lock Google do haseł.</translation>
+<translation id="870112442358620996">Proponuj zapisywanie haseł w Google Smart Lock na hasła.</translation>
 <translation id="1414648216875402825">Aktualizujesz <ph name="PRODUCT_NAME"/> do niestabilnej wersji zawierającej funkcje, nad którymi wciąż pracujemy. Będą występować awarie i nieoczekiwane błędy. Zachowaj ostrożność.</translation>
 <translation id="8382913212082956454">Kopiuj adres &amp;e-mail</translation>
 <translation id="7887192723714330082">Reaguje na „Ok Google”, gdy ekran jest włączony i odblokowany</translation>
@@ -3057,6 +3077,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="7382160026931194400">Zapisane |ustawienia treści| oraz #wyszukiwarki# nie zostaną wyczyszczone i mogą odzwierciedlać Twoje nawyki związane z korzystaniem z przeglądarki.</translation>
 <translation id="7503821294401948377">Nie można wczytać ikony „<ph name="ICON"/>” dla czynności wykonywanej w przeglądarce.</translation>
 <translation id="4809190954660909198">Nowe szczegóły płatności...</translation>
+<translation id="6016640600871825812">Google Payments wymaga podania przynajmniej imienia i nazwiska.</translation>
 <translation id="3722396466546931176">Dodaj języki i przeciągnij je w celu uporządkowania ich w preferowany sposób.</translation>
 <translation id="3857466062686943799">Dodaj do paska zadań</translation>
 <translation id="7396845648024431313">Aplikacja <ph name="APP_NAME"/> zostanie włączona podczas uruchamiania systemu i będzie działać w tle nawet po zamknięciu wszystkich pozostałych okien przeglądarki <ph name="PRODUCT_NAME"/>.</translation>
@@ -3066,6 +3087,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="662607201886173483">DSA</translation>
 <translation id="8275863942928500239">Wyłącz dodatkowe potwierdzenia po dotknięciu elementów interfejsu.</translation>
 <translation id="2391419135980381625">Czcionka standardowa</translation>
+<translation id="8066238397346344588">Wyłącz Google Payments</translation>
 <translation id="8652139471850419555">Preferowane sieci</translation>
 <translation id="7893393459573308604"><ph name="ENGINE_NAME"/> (domyślna)</translation>
 <translation id="5392544185395226057">Włącz obsługę klienta natywnego.</translation>
@@ -3096,7 +3118,6 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="3858678421048828670">Klawiatura włoska</translation>
 <translation id="1436784010935106834">Usunięto</translation>
 <translation id="3730639321086573427">Lokalne urządzenia docelowe</translation>
-<translation id="399856887277429830">Uruchom narzędzie do usuwania oprogramowania</translation>
 <translation id="7918257978052780342">Zarejestruj</translation>
 <translation id="2863937263901630331">Nieprzetworzone dane są dostępne przez NetLog. Więcej szczegółowych informacji znajdziesz w Pomocy.</translation>
 <translation id="4195814663415092787">Kontynuuj tam, gdzie skończyłem</translation>
@@ -3203,7 +3224,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="8534579021159131403">Minuty</translation>
 <translation id="4883993111890464517">Rozszerzenie może być uszkodzone. Zainstaluj je ponownie.</translation>
 <translation id="1767519210550978135">Hsu</translation>
-<translation id="2090165459409185032">Aby odzyskać informacje o koncie, wejdź na google.com/accounts/recovery</translation>
+<translation id="2090165459409185032">Aby odzyskać dane konta, wejdź na google.com/accounts/recovery</translation>
 <translation id="3223445644493024689">Kliknij z naciśniętym klawiszem Control, by uruchomić <ph name="PLUGIN_NAME"/>.</translation>
 <translation id="2498539833203011245">Zminimalizuj</translation>
 <translation id="7410344089573941623">Pytaj, gdy witryna <ph name="HOST"/> chce mieć dostęp do kamery i mikrofonu</translation>
@@ -3302,6 +3323,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4853020600495124913">Otwórz w &amp;nowym oknie</translation>
 <translation id="6847758263950452722">Zapisz stronę jako MHTML</translation>
 <translation id="3563432852173030730">Nie można pobrać aplikacji kiosku.</translation>
+<translation id="324743268744517458">Ostrzeżenie: nie masz połączenia z oficjalnymi serwerami Google Payments. Wydane karty będą nieprawidłowe.</translation>
 <translation id="4711094779914110278">Turecki</translation>
 <translation id="2572032849266859634">Uprawnienia tylko do odczytu dysku <ph name="VOLUME_NAME"/> zostały przyznane.</translation>
 <translation id="8193362611902704788">Włącza Menu z aplikacjami. Są wtedy tworzone do niego skróty systemu operacyjnego.</translation>
@@ -3402,6 +3424,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
     <ph name="LINE_BREAK1"/>
     Gotowe do utworzenia kopii zapasowej na <ph name="BEGIN_LINK"/>Dysku Google<ph name="END_LINK"/></translation>
 <translation id="2677924368525077324">Włącz dotykową edycję tekstu</translation>
+<translation id="9213566138414731677">Ups, <ph name="WALLET_ERROR"/> Możesz zrealizować tę transakcję bez Google Payments.</translation>
 <translation id="283669119850230892">Aby korzystać z sieci <ph name="NETWORK_ID"/>, zakończ poniższe połączenie z internetem.</translation>
 <translation id="7513996269498582533">Wykrywane przez użytkownika</translation>
 <translation id="9073281213608662541">PAP</translation>
@@ -3608,7 +3631,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4756388243121344051">&amp;Historia</translation>
 <translation id="7614030880636783720">Wi-Fi i komórkowa transmisja danych są niedostępne. Strona wczyta się po połączeniu z siecią.</translation>
 <translation id="1146673768181266552">Identyfikator awarii: <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
-<translation id="3544347428588533940">Funkcja Smart Lock jest prawie gotowa do użycia</translation>
+<translation id="3544347428588533940">Smart Lock jest prawie gotowy do użycia</translation>
 <translation id="8044899503464538266">Powoli</translation>
 <translation id="3789841737615482174">Zainstaluj</translation>
 <translation id="4782449893814226250">Zapytałeś rodziców, czy możesz wejść na tę stronę.</translation>
@@ -3651,7 +3674,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="1464258312790801189">Twoje konta</translation>
 <translation id="163309982320328737">Początkowa szerokość znaków: pełna</translation>
 <translation id="6596092346130528198">Czy to oczekiwana strona nowej karty?</translation>
-<translation id="3926002189479431949">Telefon powiązany z funkcją Smart Lock został zmieniony</translation>
+<translation id="3926002189479431949">Telefon z funkcją Smart Lock został zmieniony</translation>
 <translation id="6965648386495488594">Port</translation>
 <translation id="7631887513477658702">&amp;Zawsze otwieraj pliki tego typu</translation>
 <translation id="3858027520442213535">Zaktualizuj datę i godzinę</translation>
@@ -3680,6 +3703,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4633945134722448536">Po włączeniu pobiera wstępnie wyniki wyszukiwania hasła wpisanego w omniboksie i wykorzystuje wstępnie wyrenderowaną podstawową stronę wyszukiwania do wykonywania wszystkich zapytań (nie tylko wstępnie pobieranych).</translation>
 <translation id="8755376271068075440">&amp;Większy</translation>
 <translation id="8132793192354020517">Połączono z <ph name="NAME"/></translation>
+<translation id="949382280525592713"><ph name="LEGAL_DOC_AGREEMENT"/> Aby chronić Cię przed oszustwami, usłudze Google Payments zostaną udostępnione informacje o Twoim komputerze (w tym o lokalizacji).</translation>
 <translation id="4316850752623536204">Witryna programisty</translation>
 <translation id="7052914147756339792">Ustaw tapetę...</translation>
 <translation id="5865597920301323962">Pliki cookie z witryny <ph name="DOMAIN"/> będą czyszczone przy zamykaniu.</translation>
@@ -3756,6 +3780,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="6325191661371220117">Wyłącz automatyczne uruchamianie</translation>
 <translation id="6817358880000653228">Zapisane hasła do tej witryny:</translation>
 <translation id="4613271546271159013">Rozszerzenie zmieniło stronę pokazywaną po otwarciu nowej karty.</translation>
+<translation id="3378630551672149129">Zaloguj się i naciśnij klawisz TAB, by rozpocząć interakcję z elementami wejściowymi</translation>
 <translation id="351152300840026870">Czcionka o stałej szerokości znaku</translation>
 <translation id="4301786491084298653">Wyłącz w domenie <ph name="DOMAIN"/></translation>
 <translation id="5827266244928330802">Safari</translation>
@@ -3846,7 +3871,6 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4871308555310586478">Nie pochodzi z Chrome Web Store.</translation>
 <translation id="3578594933904494462">Treść tej karty jest udostępniana.</translation>
 <translation id="7423080529544781027">Korzysta z wtyczek</translation>
-<translation id="3401079963003821207">Pobierz Narzędzie do usuwania oprogramowania</translation>
 <translation id="4243835228168841140">Witryna <ph name="FULLSCREEN_ORIGIN"/> chce wyłączyć kursor myszy.</translation>
 <translation id="5473075389972733037">IBM</translation>
 <translation id="7807711621188256451">Zawsze zezwalaj witrynie <ph name="HOST"/> na dostęp do kamery</translation>
@@ -4026,12 +4050,12 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="1859234291848436338">Kierunek pisania</translation>
 <translation id="5038625366300922036">Zobacz więcej...</translation>
 <translation id="8437209419043462667">amerykański</translation>
-<translation id="3172213052701798825">Smart Lock Google do haseł</translation>
+<translation id="3172213052701798825">Smart Lock Google na hasła</translation>
 <translation id="5045550434625856497">Nieprawidłowe hasło</translation>
 <translation id="6397592254427394018">Otwórz wszystkie zakładki w oknie &amp;incognito</translation>
 <translation id="8155481074575809396">Po włączeniu tekst jest renderowany z podpisanymi polami odległości, a nie z użyciem masek alfa map bitowych.</translation>
 <translation id="2453860139492968684">Zakończ</translation>
-<translation id="2168409157521005492">Logowanie się za pomocą Google Smart Lock jako „<ph name="FULL_NAME"/>”</translation>
+<translation id="2168409157521005492">Logowanie za pomocą Google Smart Lock jako „<ph name="FULL_NAME"/>”</translation>
 <translation id="756445078718366910">Otwórz okno przeglądarki</translation>
 <translation id="6132383530370527946">Przeczytaj umowę</translation>
 <translation id="9033780830059217187">Serwer proxy jest egzekwowany przez rozszerzenie.</translation>
@@ -4067,6 +4091,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="5264252276333215551">Aby uruchomić aplikację w trybie kiosku, połącz się z internetem.</translation>
 <translation id="7180865173735832675">Dostosuj</translation>
 <translation id="7054808953701320293">Rozumiem. Nie pokazuj tego więcej.</translation>
+<translation id="4903369323166982260">Uruchom Chrome Cleanup Tool</translation>
 <translation id="144932861331386147">Połącz się z internetem, by zaktualizować Chromebooka.</translation>
 <translation id="2938685643439809023">Mongolski</translation>
 <translation id="4530494379350999373">Pochodzenie</translation>
@@ -4152,6 +4177,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="1792705092719258158">Włącz tryb lustrzanego odbicia ekranu.</translation>
 <translation id="6982896539684144327">Wykryta drukarka <ph name="VENDOR_NAME"/></translation>
 <translation id="8050038245906040378">Podpisywanie kodu handlowego firmy Microsoft</translation>
+<translation id="8684255857039823328">Hasło zostało zapisane. Swoje hasła możesz przeglądać z dowolnego urządzenia na stronie <ph name="MANAGEMENT_LINK"/>.</translation>
 <translation id="3031557471081358569">Wybierz elementy do zaimportowania:</translation>
 <translation id="6728144975495880845">Po włączeniu tej opcji wątki rastrowania zapisują dane w pamięci GPU.</translation>
 <translation id="1368832886055348810">Od lewej do prawej</translation>
@@ -4179,7 +4205,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="5469954281417596308">Menedżer zakładek</translation>
 <translation id="106153153543631784">Wpisz ponownie hasło, by zaktualizować swój profil na Chromebooku.</translation>
 <translation id="3064388234319122767">Transliteracja (zdravo → здраво)</translation>
-<translation id="5425722269016440406">Inteligentna blokada jest synchronizowana z Twoim telefonem i innymi urządzeniami, dlatego by wyłączyć to ustawienie, musisz być online. Połącz się z siecią.</translation>
+<translation id="5425722269016440406">Smart Lock jest synchronizowany z Twoim telefonem i innymi urządzeniami, dlatego by wyłączyć to ustawienie, musisz być online. Połącz się z siecią.</translation>
 <translation id="5288481194217812690"><ph name="FILENAME"/></translation>
 <translation id="7730494089396812859">Pokaż szczegóły kopii zapasowej w chmurze</translation>
 <translation id="1143142264369994168">Podmiot podpisujący certyfikat</translation>
@@ -4262,6 +4288,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="2885378588091291677">Menedżer zadań</translation>
 <translation id="7412226954991670867">Pamięć GPU</translation>
 <translation id="4916679969857390442">Lupa</translation>
+<translation id="8688644143607459122">Klikając Kontynuuj, zgadzasz się na używanie Google Payments. Aby chronić Cię przed oszustwami, usłudze zostaną udostępnione informacje o Twoim komputerze (w tym o jego lokalizacji).</translation>
 <translation id="2080796051686842158">Wyłącza animację tapety podczas rozruchu (z wyjątkiem przypadku OOBE).</translation>
 <translation id="305932878998873762">Prosta pamięć podręczna dla HTTP to nowa pamięć podręczna. Korzysta z systemu plików dla przydziału miejsca na dysku.</translation>
 <translation id="8962083179518285172">Ukryj szczegóły</translation>
@@ -4271,6 +4298,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="7863133010182113457">Zeruje po uruchomieniu Chrome wynik oszczędzania danych osiągnięty dzięki korzystaniu z serwera proxy zmniejszającego rozmiar danych.</translation>
 <translation id="4235200303672858594">Cały ekran</translation>
 <translation id="5951823343679007761">Brak baterii</translation>
+<translation id="806705617346045388">Wykryto nietypowe zachowanie</translation>
 <translation id="2518024842978892609">Użyj certyfikatów klienta</translation>
 <translation id="479555359673800162">Wyłącz ponowne uwierzytelnianie w menedżerze haseł</translation>
 <translation id="8569682776816196752">Nie znaleziono urządzeń docelowych</translation>
@@ -4551,6 +4579,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="131461803491198646">Sieć macierzysta, nie w roamingu</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE"/> – <ph name="FULL_DATE"/></translation>
 <translation id="1830259362126610548">Prześlij tę kartę (zoptymalizowaną pod kątem dźwięku)</translation>
+<translation id="3660127367837350905">Google Payments chroni Twoją kartę</translation>
 <translation id="1285320974508926690">Nigdy nie tłumacz tej witryny</translation>
 <translation id="3613422051106148727">&amp;Otwórz w nowej karcie</translation>
 <translation id="8954894007019320973">(cd.)</translation>
@@ -4586,7 +4615,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="8434480141477525001">Port debugowania NaCl</translation>
 <translation id="8957210676456822347">Autoryzacja portalu przechwytującego</translation>
 <translation id="1979444449436715782">Zrzut karty z niższą rozdzielczością.</translation>
-<translation id="7002055706763150362">Aby skonfigurować Smart Lock na Chromebooki, Google musi mieć pewność, że jesteś tym, za kogo się podajesz. Najpierw wpisz hasło.</translation>
+<translation id="7002055706763150362">Aby skonfigurować Smart Lock na Chromebooki, Google musi mieć pewność, że jesteś osobą, za którą się podajesz. Najpierw wpisz hasło.</translation>
 <translation id="8579549103199280730">Pytaj (domyślnie)</translation>
 <translation id="1330145147221172764">Włącz klawiaturę ekranową</translation>
 <translation id="8925458182817574960">&amp;Ustawienia</translation>
@@ -4598,6 +4627,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4285498937028063278">Odepnij</translation>
 <translation id="8734073480934656039">Jeśli włączysz to ustawienie, możliwe będzie automatyczne uruchamianie aplikacji kiosku po włączeniu komputera.</translation>
 <translation id="2588322182880276190">Logo Chrome</translation>
+<translation id="3957769504621887787">Użyj Google Payments</translation>
 <translation id="6700480081846086223">Prześlij <ph name="HOST_NAME"/></translation>
 <translation id="316307797510303346">Używaj adresu <ph name="CUSTODIAN_EMAIL"/> do kontrolowania i wyświetlania stron, na które wchodzi ta osoba.
   Twoje dane logowania na konto są nieaktualne.</translation>
@@ -4635,7 +4665,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="9203478404496196495">Wyłącz wyciszenie karty</translation>
 <translation id="2143778271340628265">Ręczna konfiguracja serwera proxy</translation>
 <translation id="8888432776533519951">Kolor:</translation>
-<translation id="5247176778442128277">Wyłącz inteligentną blokadę</translation>
+<translation id="5247176778442128277">Wyłącz funkcję Smart Lock</translation>
 <translation id="5294529402252479912">Aktualizuj program Adobe Reader teraz</translation>
 <translation id="79962507603257656">Stan pobierania w Centrum powiadomień</translation>
 <translation id="2231990265377706070">Wykrzyknik</translation>
@@ -4738,6 +4768,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="6016809788585079594">Powiedz „Ok Google” ostatni raz</translation>
 <translation id="7792122566227574447">Najczęściej odwiedzane z wyjątkiem stron wyszukiwania</translation>
 <translation id="4839303808932127586">Za&amp;pisz film wideo jako...</translation>
+<translation id="78196818692136852">Google Payments nie może obsłużyć tej transakcji.</translation>
 <translation id="317583078218509884">Nowe ustawienia pozwoleń dla stron zostaną zastosowane po ponownym załadowaniu strony.</translation>
 <translation id="3135204511829026971">Obróć ekran</translation>
 <translation id="1317502925920562130">Czy to oczekiwana strona startowa?</translation>
@@ -4868,6 +4899,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="4447465454292850432">Bateria:</translation>
 <translation id="2752805177271551234">Użyj historii wprowadzania</translation>
 <translation id="7268365133021434339">Zamknij karty</translation>
+<translation id="5531274207066050939">Google Payments</translation>
 <translation id="9131598836763251128">Wybierz jeden lub kilka plików</translation>
 <translation id="6221345481584921695">Bezpieczne przeglądanie Google <ph name="BEGIN_LINK"/>wykryło ostatnio złośliwe oprogramowanie<ph name="END_LINK"/> na <ph name="SITE"/>. Strony, które zazwyczaj są bezpieczne, zostają czasem zainfekowane destrukcyjnym oprogramowaniem. Źródłem złośliwej zawartości jest <ph name="SUBRESOURCE_HOST"/> – znany dystrybutor złośliwego oprogramowania.</translation>
 <translation id="4589268276914962177">Nowy terminal</translation>
@@ -4888,7 +4920,6 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="9149866541089851383">Edytuj...</translation>
 <translation id="8735794438432839558">Aby zalogować się do Chromebooka, połącz się z internetem.</translation>
 <translation id="3356395591469757189">Sugestie autouzupełniania jako widok akcesorium klawiatury</translation>
-<translation id="2194802420977819330">Masz problemy z przeglądaniem? Na przykład występują awarie, wyświetlają się nietypowe strony startowe, paski narzędzi lub nieoczekiwane reklamy, których nie możesz się pozbyć? Może Ci pomóc Narzędzie do usuwania oprogramowania.</translation>
 <translation id="7939412583708276221">Zachowaj mimo to</translation>
 <translation id="8579285237314169903">Synchronizuję elementy – <ph name="NUMBER_OF_FILES"/>...</translation>
 <translation id="8140778357236808512">Importuj istniejącego użytkownika nadzorowanego</translation>
@@ -4914,6 +4945,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="7003257528951459794">Częstotliwość:</translation>
 <translation id="5710406368443808765">Ups. Systemowi nie udało się zapisać tokenu ani identyfikatora urządzenia.</translation>
 <translation id="1248269069727746712"><ph name="PRODUCT_NAME"/> łączy się z siecią, korzystając z ustawień serwera proxy określonych w systemie Twojego urządzenia.</translation>
+<translation id="4573096868619592038">Usługa Google Payments wyłączona</translation>
 <translation id="3467267818798281173">Pytaj Google o sugestie</translation>
 <translation id="8408402540408758445">Wstępnie pobierz wyniki wyszukiwania</translation>
 <translation id="5486275809415469523"><ph name="APP_NAME"/> udostępnia Twój ekran karcie <ph name="TAB_NAME"/>.</translation>
@@ -4984,6 +5016,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="7484964289312150019">Otwórz wszystkie zakładki w &amp;nowym oknie</translation>
 <translation id="1731346223650886555">Średnik</translation>
 <translation id="917861274483335838">Zarządzaj blokowaniem wtyczek...</translation>
+<translation id="7968728703861615399">Coś jest nie tak z Twoim kontem Google Payments.</translation>
 <translation id="3678559383040232393">Klawiatura maltańska</translation>
 <translation id="4450974146388585462">Diagnozuj</translation>
 <translation id="7339763383339757376">PKCS #7, jeden certyfikat</translation>
@@ -5151,7 +5184,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="169515659049020177">Shift</translation>
 <translation id="4800132727771399293">Sprawdź datę ważności i kod CVC, a potem spróbuj ponownie</translation>
 <translation id="3551117997325569860">Aby zmienić proxy, włącz ustawienie „<ph name="USE_SHARED_PROXIES"/>”.</translation>
-<translation id="2810731435681289055">Gdy następnym razem ten <ph name="DEVICE_TYPE"/> zostanie odblokowany, inteligentna blokada się zaktualizuje. Dzięki temu, gdy zechcesz odblokować urządzenie, wystarczy, że klikniesz swoje zdjęcie.</translation>
+<translation id="2810731435681289055">Gdy następnym razem ten <ph name="DEVICE_TYPE"/> zostanie odblokowany, Smart Lock się zaktualizuje. Dzięki temu, gdy zechcesz odblokować urządzenie, wystarczy, że klikniesz swoje zdjęcie.</translation>
 <translation id="6110413515502722199">Po ustawieniu tej opcji logowanie odbywa się za pomocą starszego procesu GAIA zamiast nowego, opartego na WebView.</translation>
 <translation id="6268747994388690914">Importuj zakładki z pliku HTML</translation>
 <translation id="6096047740730590436">Otwórz zmaksymalizowane</translation>
@@ -5434,6 +5467,7 @@ Po utworzeniu nowego nadzorowanego użytkownika w każdej chwili możesz zarzą
 <translation id="2453576648990281505">Plik już istnieje.</translation>
 <translation id="6972929256216826630">Zezwalaj wszystkim witrynom na automatyczne pobieranie wielu plików</translation>
 <translation id="3127589841327267804">PYJJ</translation>
+<translation id="8609432254184257462">Twoją kartę chroni wirtualna karta Google Payments (<ph name="FRONTING_CREDIT_CARD"/>) i na potwierdzeniu będzie widoczny jej numer. Kosztami tego zakupu zostanie jednak obciążona karta <ph name="BACKING_CREDIT_CARD"/>.</translation>
 <translation id="3668823961463113931">Moduły obsługi</translation>
 <translation id="8808478386290700967">Chrome Web Store</translation>
 <translation id="1732215134274276513">Odpinanie kart</translation>
@@ -5647,6 +5681,7 @@ Naciśnij dowolny klawisz, by kontynuować przeglądanie.</translation>
 <translation id="7885283703487484916">bardzo krótkie</translation>
 <translation id="5238278114306905396">Aplikacja „<ph name="EXTENSION_NAME"/>” została automatycznie usunięta.</translation>
 <translation id="4538792345715658285">Zainstalowane na podstawie zasad przedsiębiorstwa.</translation>
+<translation id="7982740804274085295">Programiści: w przypadku wywołań requestAutocomplete() interfejsu API Google Payments należy używać usługi piaskownicy.</translation>
 <translation id="6307493301326177172">Osoby dokonujące ataków mogły przejąć tę stronę, by spróbować zainstalować na Twoim urządzeniu niebezpieczne programy, które wykradają lub usuwają Twoje informacje (np. zdjęcia, hasła, wiadomości lub dane kart kredytowych).</translation>
 <translation id="6129953537138746214">Spacja</translation>
 <translation id="2626799779920242286">Spróbuj ponownie później.</translation>
@@ -5685,7 +5720,7 @@ Naciśnij dowolny klawisz, by kontynuować przeglądanie.</translation>
 <translation id="1434886155212424586">Strona główna jest stroną nowej karty</translation>
 <translation id="2966598748518102999">Zwiększ jakość wyszukiwania głosowego, przesyłając do Google nagranie słów „OK Google” i kilku wcześniejszych sekund.</translation>
 <translation id="7566723889363720618">F12</translation>
-<translation id="5916664084637901428">Włącz</translation>
+<translation id="5916664084637901428">Włączone</translation>
 <translation id="7844992432319478437">Aktualizowanie zmian</translation>
 <translation id="7713320380037170544">Zezwól wszystkim witrynom na używanie wiadomości zarezerwowanych dla systemu w celu uzyskania dostępu do urządzeń MIDI</translation>
 <translation id="4093955363990068916">Plik lokalny:</translation>
@@ -5817,7 +5852,7 @@ Naciśnij dowolny klawisz, by kontynuować przeglądanie.</translation>
 <translation id="9111742992492686570">Pobierz krytyczną aktualizację zabezpieczeń</translation>
 <translation id="1979280758666859181">Przechodzisz na kanał, w którym <ph name="PRODUCT_NAME"/> jest w starszej wersji. Zmiana nastąpi wtedy, gdy wersja na wybranym kanale będzie zgodna z tą zainstalowaną na Twoim urządzeniu.</translation>
 <translation id="304009983491258911">Zmień PIN karty SIM</translation>
-<translation id="7556033326131260574">Inteligentna blokada nie mogła zweryfikować Twojego konta. Wpisz hasło, by uzyskać dostęp do urządzenia.</translation>
+<translation id="7556033326131260574">Smart Lock nie mógł zweryfikować Twojego konta. Wpisz hasło, by uzyskać dostęp do urządzenia.</translation>
 <translation id="8600929685092827187">Wybudzanie pakietami</translation>
 <translation id="2045969484888636535">Nadal blokuj pliki cookie</translation>
 <translation id="8131740175452115882">Potwierdź</translation>
@@ -5910,6 +5945,7 @@ Przechowuj plik klucza w bezpiecznym miejscu. Będzie on potrzebny do utworzenia
 <translation id="5832830184511718549">Korzysta z dodatkowego wątku, by wykonać kompozycję stron WWW. Pozwala to na płynne przewijanie, nawet gdy główny wątek nie odpowiada.</translation>
 <translation id="7943385054491506837">amerykańska klawiatura Colemak</translation>
 <translation id="8203365863660628138">Potwierdź instalację</translation>
+<translation id="4316693445078347518">Generuję wirtualną kartę Google Payments...</translation>
 <translation id="5457858494714903578">Nie można zainstalować niezaufanego rozszerzenia o identyfikatorze „<ph name="IMPORT_ID"/>”.</translation>
 <translation id="7025325401470358758">Następny panel</translation>
 <translation id="3397561538744706497">9 x 16</translation>

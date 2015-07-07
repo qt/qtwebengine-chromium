@@ -636,10 +636,7 @@ void RenderThreadImpl::Init() {
 
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
-  base::FilePath media_path;
-  PathService::Get(DIR_MEDIA_LIBS, &media_path);
-  if (!media_path.empty())
-    media::InitializeMediaLibrary(media_path);
+  media::InitializeMediaLibrary();
 
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
@@ -683,12 +680,11 @@ void RenderThreadImpl::Init() {
     }
   }
 
-  // In single process, browser main loop set up the discardable memory
-  // allocator.
-  if (!command_line.HasSwitch(switches::kSingleProcess)) {
-    base::DiscardableMemoryAllocator::SetInstance(
-        ChildThreadImpl::discardable_shared_memory_manager());
-  }
+  // TODO(boliu): In single process, browser main loop should set up the
+  // discardable memory manager, and should skip this if kSingleProcess.
+  // See crbug.com/503724.
+  base::DiscardableMemoryAllocator::SetInstance(
+      ChildThreadImpl::discardable_shared_memory_manager());
 
   service_registry()->AddService<RenderFrameSetup>(
       base::Bind(CreateRenderFrameSetup));
@@ -1097,10 +1093,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   EnableBlinkPlatformLogChannels(
       command_line.GetSwitchValueASCII(switches::kBlinkPlatformLogChannels));
-
-  if (!media::IsMediaLibraryInitialized()) {
-    WebRuntimeFeatures::enableWebAudio(false);
-  }
 
   RenderMediaClient::Initialize();
 

@@ -75,8 +75,13 @@ bool ShouldCreateDevToolsFor(RenderFrameHost* rfh) {
 scoped_refptr<DevToolsAgentHost>
 DevToolsAgentHost::GetOrCreateFor(WebContents* web_contents) {
   RenderFrameDevToolsAgentHost* result = FindAgentHost(web_contents);
-  if (!result)
+  if (!result) {
+    // TODO(dgozman): this check should not be necessary. See
+    // http://crbug.com/489664.
+    if (!web_contents->GetMainFrame())
+      return nullptr;
     result = new RenderFrameDevToolsAgentHost(web_contents->GetMainFrame());
+  }
   return result;
 }
 
@@ -315,6 +320,10 @@ void RenderFrameDevToolsAgentHost::FrameDeleted(RenderFrameHost* rfh) {
     return;
   DestroyOnRenderFrameGone();
   // |this| may be deleted at this point.
+}
+
+void RenderFrameDevToolsAgentHost::RenderFrameDeleted(RenderFrameHost* rfh) {
+  FrameDeleted(rfh);
 }
 
 void RenderFrameDevToolsAgentHost::DestroyOnRenderFrameGone() {
