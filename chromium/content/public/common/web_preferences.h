@@ -262,6 +262,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool embedded_media_experience_enabled;
   bool page_popups_suppressed;
 #else  // defined(OS_ANDROID)
+  bool fullscreen_supported;
 #endif  // defined(OS_ANDROID)
 
   // Default (used if the page or UA doesn't override these) values for page

@@ -211,6 +211,8 @@ WebPreferences::WebPreferences()
       video_fullscreen_detection_enabled(false),
       embedded_media_experience_enabled(false),
       page_popups_suppressed(false),
+#else   // defined(OS_ANDROID)
+      fullscreen_supported(false),
 #endif  // defined(OS_ANDROID)
 #if defined(OS_ANDROID)
       default_minimum_page_scale_factor(0.25f),

@@ -1041,6 +1041,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetPagePopupsSuppressed(prefs.page_popups_suppressed);
   settings->SetDoNotUpdateSelectionOnMutatingSelectionRange(
       prefs.do_not_update_selection_on_mutating_selection_range);
+#else   // defined(OS_ANDROID)
+  settings->SetFullscreenSupported(prefs.fullscreen_supported);
 #endif  // defined(OS_ANDROID)
 
   switch (prefs.autoplay_policy) {
