@@ -1109,6 +1109,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setShrinksViewportContentToFit(true);
   settings->setUseMobileViewportStyle(true);
+#elif defined(TOOLKIT_QT)
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
