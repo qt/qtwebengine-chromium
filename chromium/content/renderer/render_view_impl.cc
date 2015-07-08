@@ -883,6 +883,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   WebRuntimeFeatures::EnableCSSHexAlphaColor(prefs.css_hex_alpha_color_enabled);
   WebRuntimeFeatures::EnableScrollTopLeftInterop(
       prefs.scroll_top_left_interop_enabled);
+#else   // defined(OS_ANDROID)
+  settings->SetFullscreenSupported(prefs.fullscreen_supported);
 #endif  // defined(OS_ANDROID)
 
   switch (prefs.autoplay_policy) {
