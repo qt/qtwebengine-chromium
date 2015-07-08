@@ -272,6 +272,7 @@ struct CONTENT_EXPORT WebPreferences {
   // (http://crbug.com/761016).
   bool scroll_top_left_interop_enabled;
 #else  // defined(OS_ANDROID)
+  bool fullscreen_supported;
 #endif  // defined(OS_ANDROID)
 
   // Enable forcibly modifying content rendering to result in a light on dark

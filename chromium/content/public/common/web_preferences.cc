@@ -185,6 +185,7 @@ WebPreferences::WebPreferences()
 #endif
 #if !defined(OS_ANDROID)
       text_autosizing_enabled(false),
+      fullscreen_supported(false),
 #else
       text_autosizing_enabled(true),
       font_scale_factor(1.0f),
