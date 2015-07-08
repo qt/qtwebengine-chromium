@@ -214,6 +214,7 @@ WebPreferences::WebPreferences()
       embedded_media_experience_enabled(false),
 #else  // defined(OS_ANDROID)
       cross_origin_media_playback_requires_user_gesture(false),
+      fullscreen_supported(false),
 #endif  // defined(OS_ANDROID)
 #if defined(OS_ANDROID)
       default_minimum_page_scale_factor(0.25f),

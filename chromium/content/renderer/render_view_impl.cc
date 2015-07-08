@@ -1080,6 +1080,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 #else   // defined(OS_ANDROID)
   settings->setCrossOriginMediaPlaybackRequiresUserGesture(
       prefs.cross_origin_media_playback_requires_user_gesture);
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif  // defined(OS_ANDROID)
 
   settings->setViewportEnabled(prefs.viewport_enabled);

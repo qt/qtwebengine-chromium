@@ -256,6 +256,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool embedded_media_experience_enabled;
 #else  // defined(OS_ANDROID)
   bool cross_origin_media_playback_requires_user_gesture;
+  bool fullscreen_supported;
 #endif  // defined(OS_ANDROID)
 
   // Default (used if the page or UA doesn't override these) values for page
