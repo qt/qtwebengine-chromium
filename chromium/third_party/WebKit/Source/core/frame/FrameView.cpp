@@ -4549,7 +4549,7 @@ bool FrameView::UpdateAfterCompositingChange() {
 
 bool FrameView::UserInputScrollable(ScrollbarOrientation orientation) const {
   Document* document = GetFrame().GetDocument();
-  Element* fullscreen_element = Fullscreen::FullscreenElementFrom(*document);
+  Element* fullscreen_element = Fullscreen::CurrentFullScreenElementFrom(*document);
   if (fullscreen_element && fullscreen_element != document->documentElement())
     return false;
 
