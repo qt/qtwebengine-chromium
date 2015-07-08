@@ -186,6 +186,8 @@ WebPreferences::WebPreferences()
       ignore_main_frame_overflow_hidden_quirk(false),
       report_screen_size_in_physical_pixels_quirk(false),
       resue_global_for_unowned_main_frame(false),
+#elif defined(TOOLKIT_QT)
+      fullscreen_supported(false),
 #endif
 #if defined(OS_ANDROID)
       default_minimum_page_scale_factor(0.25f),

@@ -228,6 +228,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(report_screen_size_in_physical_pixels_quirk)
   IPC_STRUCT_TRAITS_MEMBER(resue_global_for_unowned_main_frame)
   IPC_STRUCT_TRAITS_MEMBER(autoplay_experiment_mode)
+#elif defined(TOOLKIT_QT)
+  IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
 #endif
   IPC_STRUCT_TRAITS_MEMBER(default_minimum_page_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(default_maximum_page_scale_factor)

@@ -1090,6 +1090,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setUseMobileViewportStyle(true);
   settings->setAutoplayExperimentMode(
       blink::WebString::fromUTF8(prefs.autoplay_experiment_mode));
+#elif defined(TOOLKIT_QT)
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif
 
   settings->setViewportEnabled(prefs.viewport_enabled);

@@ -223,6 +223,8 @@ struct CONTENT_EXPORT WebPreferences {
   // a top-level initial empty document and expect it to persist on navigation.
   bool resue_global_for_unowned_main_frame;
   std::string autoplay_experiment_mode;
+#elif defined(TOOLKIT_QT)
+  bool fullscreen_supported;
 #endif
 
   // Default (used if the page or UA doesn't override these) values for page
