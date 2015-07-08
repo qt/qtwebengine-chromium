@@ -214,6 +214,8 @@ struct CONTENT_EXPORT WebPreferences {
   bool report_screen_size_in_physical_pixels_quirk;
   bool record_whole_document;
   std::string autoplay_experiment_mode;
+#elif defined(TOOLKIT_QT)
+  bool fullscreen_supported;
 #endif
 
   // Default (used if the page or UA doesn't override these) values for page
