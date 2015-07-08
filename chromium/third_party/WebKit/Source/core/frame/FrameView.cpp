@@ -3768,7 +3768,7 @@ void FrameView::positionScrollbarLayers()
 bool FrameView::userInputScrollable(ScrollbarOrientation orientation) const
 {
     Document* document = frame().document();
-    Element* fullscreenElement = Fullscreen::fullscreenElementFrom(*document);
+    Element* fullscreenElement = Fullscreen::currentFullScreenElementFrom(*document);
     if (fullscreenElement && fullscreenElement != document->documentElement())
         return false;
 
