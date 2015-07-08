@@ -191,6 +191,7 @@ WebPreferences::WebPreferences()
 #if !defined(OS_ANDROID)
       text_autosizing_enabled(false),
       double_tap_to_zoom_enabled(false),
+      fullscreen_supported(false),
 #else
       text_autosizing_enabled(true),
       double_tap_to_zoom_enabled(true),
