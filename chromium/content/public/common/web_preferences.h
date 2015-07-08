@@ -240,6 +240,8 @@ struct CONTENT_EXPORT WebPreferences {
   bool resue_global_for_unowned_main_frame;
   bool autoplay_muted_videos_enabled;
   ProgressBarCompletion progress_bar_completion;
+#elif defined(TOOLKIT_QT)
+  bool fullscreen_supported;
 #endif
 
   // String that describes how media element autoplay behavior should be

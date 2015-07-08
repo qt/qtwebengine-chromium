@@ -1122,6 +1122,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setPreferHiddenVolumeControls(true);
   WebRuntimeFeatures::enableAutoplayMutedVideos(
       prefs.autoplay_muted_videos_enabled);
+#elif defined(TOOLKIT_QT)
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif
 
   settings->setAutoplayExperimentMode(
