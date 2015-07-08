@@ -1154,6 +1154,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   WebRuntimeFeatures::enableAutoplayMutedVideos(
       prefs.autoplay_muted_videos_enabled && !is_low_end_device);
   settings->setSpellCheckEnabledByDefault(prefs.spellcheck_enabled_by_default);
+#elif defined(TOOLKIT_QT)
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
 #endif
 
   settings->setAutoplayExperimentMode(

@@ -242,6 +242,8 @@ struct CONTENT_EXPORT WebPreferences {
   // Specifies default setting for spellcheck when the spellcheck attribute is
   // not explicitly specified.
   bool spellcheck_enabled_by_default;
+#elif defined(TOOLKIT_QT)
+  bool fullscreen_supported;
 #endif
 
   // String that describes how media element autoplay behavior should be

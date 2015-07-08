@@ -237,6 +237,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(autoplay_muted_videos_enabled)
   IPC_STRUCT_TRAITS_MEMBER(progress_bar_completion)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled_by_default)
+#elif defined(TOOLKIT_QT)
+  IPC_STRUCT_TRAITS_MEMBER(fullscreen_supported)
 #endif
   IPC_STRUCT_TRAITS_MEMBER(autoplay_experiment_mode)
   IPC_STRUCT_TRAITS_MEMBER(default_minimum_page_scale_factor)
