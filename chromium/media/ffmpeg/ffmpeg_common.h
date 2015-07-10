@@ -19,6 +19,7 @@
 
 // Include FFmpeg header files.
 extern "C" {
+#if !defined(USE_SYSTEM_FFMPEG)
 // Disable deprecated features which result in spammy compile warnings.  This
 // list of defines must mirror those in the 'defines' section of the ffmpeg.gyp
 // file or the headers below will generate different structures.
@@ -26,13 +27,16 @@ extern "C" {
 #define FF_API_OLD_DECODE_AUDIO 0
 #define FF_API_DESTRUCT_PACKET 0
 #define FF_API_GET_BUFFER 0
+#endif
 
 // Temporarily disable possible loss of data warning.
 // TODO(scherkus): fix and upstream the compiler warnings.
 MSVC_PUSH_DISABLE_WARNING(4244);
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#if !defined(USE_SYSTEM_FFMPEG)
 #include <libavformat/internal.h>
+#endif
 #include <libavformat/avio.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
