@@ -38,7 +38,9 @@ extern "C" {
 MSVC_PUSH_DISABLE_WARNING(4244);
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#if !defined(USE_SYSTEM_FFMPEG)
 #include <libavformat/internal.h>
+#endif
 #include <libavformat/avio.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
