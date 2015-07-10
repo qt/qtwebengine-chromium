@@ -1106,6 +1106,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   // If no estimate is found, the stream entry will be kInfiniteDuration().
   std::vector<base::TimeDelta> start_time_estimates(format_context->nb_streams,
                                                     kInfiniteDuration());
+#if !defined(USE_SYSTEM_FFMPEG)
   const AVFormatInternal* internal = format_context->internal;
   if (internal && internal->packet_buffer &&
       format_context->start_time != static_cast<int64_t>(AV_NOPTS_VALUE)) {
@@ -1124,6 +1125,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       packet_buffer = packet_buffer->next;
     }
   }
+#endif
 
   std::unique_ptr<MediaTracks> media_tracks(new MediaTracks());
   AVStream* audio_stream = NULL;
