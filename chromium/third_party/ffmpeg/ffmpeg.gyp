@@ -406,14 +406,6 @@
                     '_snprintf=avpriv_snprintf',
                     'vsnprintf=avpriv_vsnprintf',
                   ],
-                }],
-                ['target_arch == "x64"', {
-                  # TODO(wolenetz): We should fix this.  http://crbug.com/171009
-                  'msvs_disabled_warnings' : [
-                    4267
-                  ],
-                }],
-                ['ffmpeg_component == "shared_library"', {
                   # Fix warnings about a local symbol being inefficiently imported.
                   'msvs_settings': {
                     'VCCLCompilerTool': {
@@ -423,6 +415,14 @@
                       ],
                     },
                   },
+                }],
+                ['target_arch == "x64"', {
+                  # TODO(wolenetz): We should fix this.  http://crbug.com/171009
+                  'msvs_disabled_warnings' : [
+                    4267
+                  ],
+                }],
+                ['ffmpeg_component == "shared_library"', {
                   'sources': [
                     '<(shared_generated_dir)/ffmpeg.def',
                   ],
