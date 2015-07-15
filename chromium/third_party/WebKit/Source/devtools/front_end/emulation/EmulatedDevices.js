@@ -424,6 +424,7 @@ WebInspector.EmulatedDevice.Images.prototype = {
 WebInspector.EmulatedDevicesList = function()
 {
     WebInspector.Object.call(this);
+    WebInspector.settings.createSetting("standardEmulatedDeviceList", []).remove();
 
     /**
      * @param {!Array.<*>} list

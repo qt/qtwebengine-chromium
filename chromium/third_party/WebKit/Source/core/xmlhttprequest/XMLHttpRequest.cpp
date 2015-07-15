@@ -665,6 +665,9 @@ void XMLHttpRequest::dispatchReadyStateChangeEvent()
     if (!executionContext())
         return;
 
+    // We need this protection because dispatchReadyStateChangeEvent may
+    // dispatch multiple events.
+    ScopedEventDispatchProtect protect(&m_eventDispatchRecursionLevel);
     if (m_async || (m_state <= OPENED || m_state == DONE)) {
         TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "XHRReadyStateChange", "data", InspectorXhrReadyStateChangeEvent::data(executionContext(), this));
         XMLHttpRequestProgressEventThrottle::DeferredEventAction action = XMLHttpRequestProgressEventThrottle::Ignore;

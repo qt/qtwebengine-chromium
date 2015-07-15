@@ -36,7 +36,7 @@
 namespace blink {
 
 class Event;
-class EventTarget;
+class XMLHttpRequest;
 
 // This class implements the XHR2 ProgressEvent dispatching:
 //   "dispatch a progress event named progress about every 50ms or for every
@@ -58,7 +58,7 @@ public:
         Flush,
     };
 
-    explicit XMLHttpRequestProgressEventThrottle(EventTarget*);
+    explicit XMLHttpRequestProgressEventThrottle(XMLHttpRequest*);
     virtual ~XMLHttpRequestProgressEventThrottle();
 
     // Dispatches a ProgressEvent.
@@ -93,7 +93,7 @@ private:
     // the one holding us. With Oilpan, a simple strong Member can be used -
     // this XMLHttpRequestProgressEventThrottle (part) object dies together
     // with the XMLHttpRequest object.
-    RawPtrWillBeMember<EventTarget> m_target;
+    RawPtrWillBeMember<XMLHttpRequest> m_target;
 
     // A slot for the deferred "progress" ProgressEvent. When multiple events
     // arrive, only the last one is stored and others are discarded.

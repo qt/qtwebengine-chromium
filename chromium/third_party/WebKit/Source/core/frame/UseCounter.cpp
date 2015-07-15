@@ -884,7 +884,7 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'SVGSVGElement.unsuspendRedrawAll()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedrawAll).";
 
     case ServiceWorkerClientPostMessage:
-        return "'Client.postMessage()' is an experimental API and may change. See https://github.com/slightlyoff/ServiceWorker/issues/609.";
+        return "'Client.postMessage()' will change to fire an event on 'navigator.serviceWorker' instead of 'window' in M45 (see: https://www.chromestatus.com/feature/5163630974730240).";
 
     case AttrChildAccess:
     case AttrChildChange:
