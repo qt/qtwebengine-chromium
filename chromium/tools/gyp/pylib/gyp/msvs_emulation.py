@@ -622,6 +622,7 @@ class MsvsSettings(object):
       ldflags.append('/NXCOMPAT')
 
     have_def_file = filter(lambda x: x.startswith('/DEF:'), ldflags)
+    build_dir = os.path.normpath(build_dir)
     manifest_flags, intermediate_manifest, manifest_files = \
         self._GetLdManifestFlags(config, manifest_base_name, gyp_to_build_path,
                                  is_executable and not have_def_file, build_dir)
