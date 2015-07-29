@@ -207,9 +207,7 @@ class FileSystemBytecodeCache(BytecodeCache):
         self.pattern = pattern
 
     def _get_cache_filename(self, bucket):
-        # Relative path might be longer than 260 characters (MAX_PATH) especially when
-        # shadow building on Windows. To avoid errors use potentially shorter absolute paths.
-        return path.join(path.abspath(self.directory), self.pattern % bucket.key)
+        return path.join(self.directory, self.pattern % bucket.key)
 
     def load_bytecode(self, bucket):
         f = open_if_exists(self._get_cache_filename(bucket), 'rb')
