@@ -43,7 +43,7 @@ void CSSParser::parseSelector(const CSSParserContext& context, const String& sel
 PassRefPtrWillBeRawPtr<StyleRuleBase> CSSParser::parseRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled())
-        return CSSParserImpl::parseRule(rule, context, CSSParserImpl::AllowImportRules);
+        return CSSParserImpl::parseRule(rule, context, styleSheet, CSSParserImpl::AllowImportRules);
     return BisonCSSParser(context).parseRule(styleSheet, rule);
 }
 
@@ -109,7 +109,7 @@ PassOwnPtr<Vector<double>> CSSParser::parseKeyframeKeyList(const String& keyList
 PassRefPtrWillBeRawPtr<StyleRuleKeyframe> CSSParser::parseKeyframeRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled()) {
-        RefPtrWillBeRawPtr<StyleRuleBase> keyframe = CSSParserImpl::parseRule(rule, context, CSSParserImpl::KeyframeRules);
+        RefPtrWillBeRawPtr<StyleRuleBase> keyframe = CSSParserImpl::parseRule(rule, context, nullptr, CSSParserImpl::KeyframeRules);
         return toStyleRuleKeyframe(keyframe.get());
     }
     return BisonCSSParser(context).parseKeyframeRule(styleSheet, rule);

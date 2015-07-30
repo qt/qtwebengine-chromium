@@ -6,7 +6,7 @@ vars = {
   'boringssl_revision':
     'a07c0fc8f2181d086b1118712e2ceb0d1496fa0b',
   'buildspec_platforms':
-    'all',
+    'android,',
   'buildtools_revision':
     'b73e5f70d7ac6be98fb2555461f631afc90216ce',
   'chromium_git':
@@ -84,7 +84,7 @@ deps = {
   'src/testing/gtest':
     (Var("chromium_git")) + '/external/googletest.git@23574bf2333f834ff665f894c97bef8a5b33a0a9',
   'src/third_party/WebKit':
-    (Var("chromium_git")) + '/chromium/blink.git@9efa5a2a3268eb19abfb6ef748267617cdd6adc4',
+    (Var("chromium_git")) + '/chromium/blink.git@2a6ea957194f0008cc4ab0763e0d35d29fe18310',
   'src/third_party/angle':
     (Var("chromium_git")) + '/angle/angle.git@fa9744b09e2478c75a25fd1b497469d429e81591',
   'src/third_party/bidichecker':
@@ -140,7 +140,7 @@ deps = {
   'src/third_party/opus/src':
     (Var("chromium_git")) + '/chromium/deps/opus.git@cae696156f1e60006e39821e79a1811ae1933c69',
   'src/third_party/pdfium':
-    (Var("pdfium_git")) + '/pdfium.git@a967306a353cce18b2276e9d8f653e989c6fa6e5',
+    (Var("pdfium_git")) + '/pdfium.git@12d0f7b4eae9c2b40433500b15955f61050132aa',
   'src/third_party/py_trace_event/src':
     (Var("chromium_git")) + '/external/py_trace_event.git@dd463ea9e2c430de2b9e53dea57a77b4c3ac9b30',
   'src/third_party/pyftpdlib/src':
@@ -154,7 +154,7 @@ deps = {
   'src/third_party/sfntly/cpp/src':
     (Var("chromium_git")) + '/external/sfntly/cpp/src.git@1bdaae8fc788a5ac8936d68bf24f37d977a13dac',
   'src/third_party/skia':
-    (Var("chromium_git")) + '/skia.git@31cd6a030218373587a7ba943e4d76e96a71f207',
+    (Var("chromium_git")) + '/skia.git@ee68678f0051e71efeb6affc3f4a071b7ac1c1bd',
   'src/third_party/smhasher/src':
     (Var("chromium_git")) + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
   'src/third_party/snappy/src':
@@ -170,7 +170,7 @@ deps = {
   'src/third_party/webpagereplay':
     (Var("chromium_git")) + '/external/github.com/chromium/web-page-replay.git@e53550b73e8e098938a651bc8ceb3681e5980567',
   'src/third_party/webrtc':
-    (Var("chromium_git")) + '/external/webrtc/trunk/webrtc.git@1cb9d1223356c551a92bd9da41a3eddce15bee64',
+    (Var("chromium_git")) + '/external/webrtc/trunk/webrtc.git@e725d9de25a3809bce4626831f385830e91695ff',
   'src/third_party/yasm/source/patched-yasm':
     (Var("chromium_git")) + '/chromium/deps/yasm/patched-yasm.git@4671120cd8558ce62ee8672ebf3eb6f5216f909b',
   'src/tools/deps2git':
@@ -184,7 +184,7 @@ deps = {
   'src/tools/swarming_client':
     (Var("chromium_git")) + '/external/swarming.client.git@b39a448d8522392389b28f6997126a6ab04bfe87',
   'src/v8':
-    (Var("chromium_git")) + '/v8/v8.git@d30aacbd824b9a10afc352417c70e2ea3004cd68'
+    (Var("chromium_git")) + '/v8/v8.git@3809b683c9c90d7b9a9020ea0118417e8b13e6ad'
 }
 
 deps_os = {
