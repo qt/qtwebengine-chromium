@@ -138,6 +138,11 @@ class GrdPartContentHandler(xml.sax.handler.ContentHandler):
     self.parent.ignorableWhitespace(whitespace)
 
 
+def maybeRelativePath(path, start):
+    if os.path.splitdrive(path)[0] == os.path.splitdrive(start)[0]:
+        return os.path.relpath(path, start)
+    return path
+
 def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
           debug=False, defines=None, tags_to_ignore=None, target_platform=None):
   '''Parses a GRD file into a tree of nodes (from grit.node).
@@ -207,7 +212,7 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
       GRIT_DIR_PREFIX = 'GRIT_DIR'
       if not (first_ids_file.startswith(GRIT_DIR_PREFIX)
           and first_ids_file[len(GRIT_DIR_PREFIX)] in ['/', '\\']):
-        rel_dir = os.path.relpath(os.getcwd(), dir)
+        rel_dir = maybeRelativePath(os.getcwd(), dir)
         first_ids_file = util.normpath(os.path.join(rel_dir, first_ids_file))
       handler.root.attrs['first_ids_file'] = first_ids_file
     # Assign first ids to the nodes that don't have them.

@@ -83,9 +83,18 @@ def parse_options():
 # Computations
 ################################################################################
 
+def maybeRelativePath(path, start):
+    if os.path.splitdrive(path)[0] == os.path.splitdrive(start)[0]:
+        return os.path.relpath(path, start)
+    return path
+
 def relative_dir_posix(idl_filename):
-    """Returns relative path to the directory of idl_file in POSIX format."""
-    relative_path_local = os.path.relpath(idl_filename, source_path)
+    """Returns relative path to the directory of idl_file in POSIX format.
+
+    On Windows, the absolute path to the directory is returned if source_path
+    and idl_filename are on different drives.
+    """
+    relative_path_local = maybeRelativePath(idl_filename, source_path)
     relative_dir_local = os.path.dirname(relative_path_local)
     return relative_dir_local.replace(os.path.sep, posixpath.sep)
 
