@@ -39,6 +39,7 @@
     # GN version: //third_party/WebKit/Source/modules:modules
     'target_name': 'modules',
     'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
       '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
       '../config.gyp:config',

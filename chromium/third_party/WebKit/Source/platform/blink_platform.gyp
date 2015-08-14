@@ -40,6 +40,7 @@
     'type': '<(component)',
     'variables': { 'enable_wexit_time_destructors': 1 },
     'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       # FIXME: Can we remove the dependency on Skia?
@@ -176,6 +177,7 @@
     'target_name': 'blink_platform',
     'type': '<(component)',
     'dependencies': [
+      '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       'blink_common',
@@ -436,6 +438,7 @@
       ['target_arch=="arm"', {
         'type': 'static_library',
         'dependencies': [
+          '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
           'blink_common',
         ],
         'hard_dependency': 1,
