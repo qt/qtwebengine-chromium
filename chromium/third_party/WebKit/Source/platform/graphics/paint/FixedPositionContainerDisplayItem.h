@@ -7,47 +7,28 @@
 
 #include "platform/geometry/LayoutSize.h"
 #include "platform/graphics/paint/DisplayItem.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
 class PLATFORM_EXPORT BeginFixedPositionContainerDisplayItem : public PairedBeginDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(BeginFixedPositionContainerDisplayItem);
 public:
-    static PassOwnPtr<BeginFixedPositionContainerDisplayItem> create(const DisplayItemClientWrapper& client)
-    {
-        return adoptPtr(new BeginFixedPositionContainerDisplayItem(client));
-    }
+    BeginFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client) : PairedBeginDisplayItem(client, BeginFixedPositionContainer) { }
 
-    BeginFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client)
-        : PairedBeginDisplayItem(client, BeginFixedPositionContainer)
-    {
-    }
-
-    virtual void replay(GraphicsContext&) override final { }
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override final;
+    void replay(GraphicsContext&) final { }
+    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
 };
 
 class PLATFORM_EXPORT EndFixedPositionContainerDisplayItem : public PairedEndDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(EndFixedPositionContainerDisplayItem);
 public:
-    static PassOwnPtr<EndFixedPositionContainerDisplayItem> create(const DisplayItemClientWrapper& client)
-    {
-        return adoptPtr(new EndFixedPositionContainerDisplayItem(client));
-    }
+    EndFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client) : PairedEndDisplayItem(client, EndFixedPositionContainer) { }
 
-    EndFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client)
-        : PairedEndDisplayItem(client, EndFixedPositionContainer)
-    {
-    }
-
-    virtual void replay(GraphicsContext&) override final { }
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override final;
+    void replay(GraphicsContext&) final { }
+    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
 
 private:
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const override final { return other.type() == BeginFixedPositionContainer; }
+    bool isEndAndPairedWith(DisplayItem::Type otherType) const final { return otherType == BeginFixedPositionContainer; }
 #endif
 };
 

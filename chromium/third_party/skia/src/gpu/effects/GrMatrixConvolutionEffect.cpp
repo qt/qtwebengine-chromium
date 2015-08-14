@@ -6,7 +6,6 @@
  */
 #include "GrMatrixConvolutionEffect.h"
 #include "gl/GrGLProcessor.h"
-#include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
@@ -139,7 +138,8 @@ void GrGLMatrixConvolutionEffect::setData(const GrGLProgramDataManager& pdman,
     fDomain.setData(pdman, conv.domain(), texture.origin());
 }
 
-GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(GrTexture* texture,
+GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(GrProcessorDataManager* procDataManager,
+                                                     GrTexture* texture,
                                                      const SkIRect& bounds,
                                                      const SkISize& kernelSize,
                                                      const SkScalar* kernel,
@@ -148,7 +148,7 @@ GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(GrTexture* texture,
                                                      const SkIPoint& kernelOffset,
                                                      GrTextureDomain::Mode tileMode,
                                                      bool convolveAlpha)
-  : INHERITED(texture, GrCoordTransform::MakeDivByTextureWHMatrix(texture)),
+  : INHERITED(procDataManager, texture, GrCoordTransform::MakeDivByTextureWHMatrix(texture)),
     fKernelSize(kernelSize),
     fGain(SkScalarToFloat(gain)),
     fBias(SkScalarToFloat(bias) / 255.0f),
@@ -188,7 +188,8 @@ bool GrMatrixConvolutionEffect::onIsEqual(const GrFragmentProcessor& sBase) cons
 
 // Static function to create a 2D convolution
 GrFragmentProcessor*
-GrMatrixConvolutionEffect::CreateGaussian(GrTexture* texture,
+GrMatrixConvolutionEffect::CreateGaussian(GrProcessorDataManager* procDataManager,
+                                          GrTexture* texture,
                                           const SkIRect& bounds,
                                           const SkISize& kernelSize,
                                           SkScalar gain,
@@ -224,7 +225,8 @@ GrMatrixConvolutionEffect::CreateGaussian(GrTexture* texture,
     for (int i = 0; i < width * height; ++i) {
         kernel[i] *= scale;
     }
-    return SkNEW_ARGS(GrMatrixConvolutionEffect, (texture,
+    return SkNEW_ARGS(GrMatrixConvolutionEffect, (procDataManager,
+                                                  texture,
                                                   bounds,
                                                   kernelSize,
                                                   kernel,
@@ -237,30 +239,29 @@ GrMatrixConvolutionEffect::CreateGaussian(GrTexture* texture,
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrMatrixConvolutionEffect);
 
-GrFragmentProcessor* GrMatrixConvolutionEffect::TestCreate(SkRandom* random,
-                                                           GrContext* context,
-                                                           const GrDrawTargetCaps&,
-                                                           GrTexture* textures[]) {
-    int texIdx = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                      GrProcessorUnitTest::kAlphaTextureIdx;
-    int width = random->nextRangeU(1, MAX_KERNEL_SIZE);
-    int height = random->nextRangeU(1, MAX_KERNEL_SIZE / width);
+GrFragmentProcessor* GrMatrixConvolutionEffect::TestCreate(GrProcessorTestData* d) {
+    int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
+                                          GrProcessorUnitTest::kAlphaTextureIdx;
+    int width = d->fRandom->nextRangeU(1, MAX_KERNEL_SIZE);
+    int height = d->fRandom->nextRangeU(1, MAX_KERNEL_SIZE / width);
     SkISize kernelSize = SkISize::Make(width, height);
     SkAutoTDeleteArray<SkScalar> kernel(new SkScalar[width * height]);
     for (int i = 0; i < width * height; i++) {
-        kernel.get()[i] = random->nextSScalar1();
+        kernel.get()[i] = d->fRandom->nextSScalar1();
     }
-    SkScalar gain = random->nextSScalar1();
-    SkScalar bias = random->nextSScalar1();
-    SkIPoint kernelOffset = SkIPoint::Make(random->nextRangeU(0, kernelSize.width()),
-                                           random->nextRangeU(0, kernelSize.height()));
-    SkIRect bounds = SkIRect::MakeXYWH(random->nextRangeU(0, textures[texIdx]->width()),
-                                       random->nextRangeU(0, textures[texIdx]->height()),
-                                       random->nextRangeU(0, textures[texIdx]->width()),
-                                       random->nextRangeU(0, textures[texIdx]->height()));
-    GrTextureDomain::Mode tileMode = static_cast<GrTextureDomain::Mode>(random->nextRangeU(0, 2));
-    bool convolveAlpha = random->nextBool();
-    return GrMatrixConvolutionEffect::Create(textures[texIdx],
+    SkScalar gain = d->fRandom->nextSScalar1();
+    SkScalar bias = d->fRandom->nextSScalar1();
+    SkIPoint kernelOffset = SkIPoint::Make(d->fRandom->nextRangeU(0, kernelSize.width()),
+                                           d->fRandom->nextRangeU(0, kernelSize.height()));
+    SkIRect bounds = SkIRect::MakeXYWH(d->fRandom->nextRangeU(0, d->fTextures[texIdx]->width()),
+                                       d->fRandom->nextRangeU(0, d->fTextures[texIdx]->height()),
+                                       d->fRandom->nextRangeU(0, d->fTextures[texIdx]->width()),
+                                       d->fRandom->nextRangeU(0, d->fTextures[texIdx]->height()));
+    GrTextureDomain::Mode tileMode =
+            static_cast<GrTextureDomain::Mode>(d->fRandom->nextRangeU(0, 2));
+    bool convolveAlpha = d->fRandom->nextBool();
+    return GrMatrixConvolutionEffect::Create(d->fProcDataManager,
+                                             d->fTextures[texIdx],
                                              bounds,
                                              kernelSize,
                                              kernel.get(),

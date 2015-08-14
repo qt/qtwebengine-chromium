@@ -13,9 +13,11 @@ namespace blink {
 
 class CORE_EXPORT DoubleStyleInterpolation : public StyleInterpolation {
 public:
+    typedef void NonInterpolableType;
+
     static PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> create(const CSSValue& start, const CSSValue& end, CSSPropertyID id, CSSPrimitiveValue::UnitType type, InterpolationRange clamp)
     {
-        return adoptRefWillBeNoop(new DoubleStyleInterpolation(doubleToInterpolableValue(start), doubleToInterpolableValue(end), id, type == CSSPrimitiveValue::CSS_NUMBER, clamp, false));
+        return adoptRefWillBeNoop(new DoubleStyleInterpolation(doubleToInterpolableValue(start), doubleToInterpolableValue(end), id, type == CSSPrimitiveValue::CSS_NUMBER || type == CSSPrimitiveValue::CSS_INTEGER, clamp, false));
     }
 
     static PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> maybeCreateFromMotionRotation(const CSSValue& start, const CSSValue& end, CSSPropertyID);
@@ -25,6 +27,9 @@ public:
     virtual void apply(StyleResolverState&) const override;
 
     DECLARE_VIRTUAL_TRACE();
+
+    static PassOwnPtrWillBeRawPtr<InterpolableValue> toInterpolableValue(const CSSValue&, CSSPropertyID = CSSPropertyInvalid);
+    static PassRefPtrWillBeRawPtr<CSSValue> fromInterpolableValue(const InterpolableValue&, InterpolationRange);
 
 private:
     DoubleStyleInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, CSSPropertyID id, bool isNumber, InterpolationRange clamp, bool flag)
@@ -37,7 +42,7 @@ private:
     static PassOwnPtrWillBeRawPtr<InterpolableValue> doubleToInterpolableValue(const CSSValue&);
     static PassOwnPtrWillBeRawPtr<InterpolableValue> motionRotationToInterpolableValue(const CSSValue&);
 
-    static PassRefPtrWillBeRawPtr<CSSValue> interpolableValueToDouble(InterpolableValue*, bool, InterpolationRange);
+    static PassRefPtrWillBeRawPtr<CSSValue> interpolableValueToDouble(const InterpolableValue*, bool, InterpolationRange);
     static PassRefPtrWillBeRawPtr<CSSValue> interpolableValueToMotionRotation(InterpolableValue*, bool);
 
     bool m_isNumber;

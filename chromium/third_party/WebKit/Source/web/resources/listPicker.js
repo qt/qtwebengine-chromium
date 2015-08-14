@@ -45,6 +45,8 @@ function ListPicker(element, config) {
     this._selectElement = createElement("select");
     this._selectElement.size = 20;
     this._element.appendChild(this._selectElement);
+    this._delayedChildrenConfig = null;
+    this._delayedChildrenConfigIndex = 0;
     this._layout();
     this._selectElement.addEventListener("mouseup", this._handleMouseUp.bind(this), false);
     this._selectElement.addEventListener("touchstart", this._handleTouchStart.bind(this), false);
@@ -77,6 +79,7 @@ ListPicker.prototype._handleWindowDidHide = function() {
 ListPicker.prototype._handleWindowMessage = function(event) {
     eval(event.data);
     if (window.updateData.type === "update") {
+        this._config.baseStyle = window.updateData.baseStyle;
         this._config.children = window.updateData.children;
         this._update();
     }
@@ -166,13 +169,6 @@ ListPicker.prototype._handleKeyDown = function(event) {
             window.pagePopupController.closePopup();
         }, 0);
         event.preventDefault();
-    } else {
-        // After a key press, we need to call setValue to reflect the selection
-        // to the owner element. We can handle most cases with the change
-        // event. But we need to call setValue even when the selection hasn't
-        // changed. So we call it here too. setValue will be called twice for
-        // some key presses but it won't matter.
-        window.pagePopupController.setValue(this._selectElement.value);
     }
 };
 
@@ -229,7 +225,13 @@ ListPicker.prototype._listItemCount = function() {
 ListPicker.prototype._layout = function() {
     if (this._config.isRTL)
         this._element.classList.add("rtl");
-    this._selectElement.style.backgroundColor = this._config.backgroundColor;
+    this._selectElement.style.backgroundColor = this._config.baseStyle.backgroundColor;
+    this._selectElement.style.color = this._config.baseStyle.color;
+    this._selectElement.style.textTransform = this._config.baseStyle.textTransform;
+    this._selectElement.style.fontSize = this._config.baseStyle.fontSize + "px";
+    this._selectElement.style.fontFamily = this._config.baseStyle.fontFamily.join(",");
+    this._selectElement.style.fontStyle = this._config.baseStyle.fontStyle;
+    this._selectElement.style.fontVariant = this._config.baseStyle.fontVariant;
     this._updateChildren(this._selectElement, this._config);
 };
 
@@ -252,6 +254,8 @@ ListPicker.prototype._update = function() {
     this.dispatchEvent("didUpdate");
 };
 
+ListPicker.DelayedLayoutThreshold = 1000;
+
 /**
  * @param {!Element} parent Select element or optgroup element.
  * @param {!Object} config
@@ -260,10 +264,16 @@ ListPicker.prototype._updateChildren = function(parent, config) {
     var outOfDateIndex = 0;
     var fragment = null;
     var inGroup = parent.tagName === "OPTGROUP";
-    for (var i = 0; i < config.children.length; ++i) {
+    var lastListIndex = -1;
+    var limit = Math.max(this._config.selectedIndex, ListPicker.DelayedLayoutThreshold);
+    var i;
+    for (i = 0; i < config.children.length; ++i) {
+        if (!inGroup && lastListIndex >= limit)
+            break;
         var childConfig = config.children[i];
         var item = this._findReusableItem(parent, childConfig, outOfDateIndex) || this._createItemElement(childConfig);
         this._configureItem(item, childConfig, inGroup);
+        lastListIndex = item.value ? Number(item.value) : -1;
         if (outOfDateIndex < parent.children.length) {
             parent.insertBefore(item, parent.children[outOfDateIndex]);
         } else {
@@ -275,12 +285,37 @@ ListPicker.prototype._updateChildren = function(parent, config) {
     }
     if (fragment) {
         parent.appendChild(fragment);
+    } else {
+        var unused = parent.children.length - outOfDateIndex;
+        for (var j = 0; j < unused; j++) {
+            parent.removeChild(parent.lastElementChild);
+        }
+    }
+    if (i < config.children.length) {
+        // We don't bind |config.children| and |i| to _updateChildrenLater
+        // because config.children can get invalid before _updateChildrenLater
+        // is called.
+        this._delayedChildrenConfig = config.children;
+        this._delayedChildrenConfigIndex = i;
+        // Needs some amount of delay to kick the first paint.
+        setTimeout(this._updateChildrenLater.bind(this), 100);
+    }
+};
+
+ListPicker.prototype._updateChildrenLater = function(timeStamp) {
+    if (!this._delayedChildrenConfig)
         return;
+    var fragment = document.createDocumentFragment();
+    var startIndex = this._delayedChildrenConfigIndex;
+    for (; this._delayedChildrenConfigIndex < this._delayedChildrenConfig.length; ++this._delayedChildrenConfigIndex) {
+        var childConfig = this._delayedChildrenConfig[this._delayedChildrenConfigIndex];
+        var item = this._createItemElement(childConfig);
+        this._configureItem(item, childConfig, false);
+        fragment.appendChild(item);
     }
-    var unused = parent.children.length - outOfDateIndex;
-    for (var i = 0; i < unused; i++) {
-        parent.removeChild(parent.lastElementChild);
-    }
+    this._selectElement.appendChild(fragment);
+    this._selectElement.classList.add("wrap");
+    this._delayedChildrenConfig = null;
 };
 
 ListPicker.prototype._findReusableItem = function(parent, config, startIndex) {
@@ -302,7 +337,7 @@ ListPicker.prototype._findReusableItem = function(parent, config, startIndex) {
 
 ListPicker.prototype._createItemElement = function(config) {
     var element;
-    if (config.type === "option")
+    if (!config.type || config.type === "option")
         element = createElement("option");
     else if (config.type === "optgroup")
         element = createElement("optgroup");
@@ -315,29 +350,33 @@ ListPicker.prototype._applyItemStyle = function(element, styleConfig) {
     if (!styleConfig)
         return;
     var style = element.style;
-    style.visibility = styleConfig.visibility;
-    style.display = styleConfig.display;
-    style.direction = styleConfig.direction;
-    style.unicodeBidi = styleConfig.unicodeBidi;
-    if (!styleConfig.color)
-        return;
-    style.color = styleConfig.color;
-    style.backgroundColor = styleConfig.backgroundColor;
-    style.fontSize = styleConfig.fontSize + "px";
-    style.fontWeight = styleConfig.fontWeight;
-    style.fontFamily = styleConfig.fontFamily.join(",");
-    style.fontStyle = styleConfig.fontStyle;
-    style.fontVariant = styleConfig.fontVariant;
-    style.textTransform = styleConfig.textTransform;
+    style.visibility = styleConfig.visibility ? styleConfig.visibility : "";
+    style.display = styleConfig.display ? styleConfig.display : "";
+    style.direction = styleConfig.direction ? styleConfig.direction : "";
+    style.unicodeBidi = styleConfig.unicodeBidi ? styleConfig.unicodeBidi : "";
+    style.color = styleConfig.color ? styleConfig.color : "";
+    style.backgroundColor = styleConfig.backgroundColor ? styleConfig.backgroundColor : "";
+    style.fontSize = styleConfig.fontSize ? styleConfig.fontSize + "px" : "";
+    style.fontWeight = styleConfig.fontWeight ? styleConfig.fontWeight : "";
+    style.fontFamily = styleConfig.fontFamily ? styleConfig.fontFamily.join(",") : "";
+    style.fontStyle = styleConfig.fontStyle ? styleConfig.fontStyle : "";
+    style.fontVariant = styleConfig.fontVariant ? styleConfig.fontVariant : "";
+    style.textTransform = styleConfig.textTransform ? styleConfig.textTransform : "";
 };
 
 ListPicker.prototype._configureItem = function(element, config, inGroup) {
-    if (config.type === "option") {
+    if (!config.type || config.type === "option") {
         element.label = config.label;
         element.value = config.value;
-        element.title = config.title;
-        element.disabled = config.disabled;
-        element.setAttribute("aria-label", config.ariaLabel);
+        if (config.title)
+            element.title = config.title;
+        else
+            element.removeAttribute("title");
+        element.disabled = !!config.disabled
+        if (config.ariaLabel)
+            element.setAttribute("aria-label", config.ariaLabel);
+        else
+            element.removeAttribute("aria-label");
         element.style.webkitPaddingStart = this._config.paddingStart + "px";
         if (inGroup) {
             element.style.webkitMarginStart = (- this._config.paddingStart) + "px";

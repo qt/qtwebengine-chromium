@@ -300,7 +300,7 @@ bool X509Certificate::IsSameOSCert(X509Certificate::OSCertHandle a,
 X509Certificate::OSCertHandle X509Certificate::CreateOSCertHandleFromBytes(
     const char* data, int length) {
   CSSM_DATA cert_data;
-  cert_data.Data = const_cast<uint8*>(reinterpret_cast<const uint8*>(data));
+  cert_data.Data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(data));
   cert_data.Length = length;
 
   OSCertHandle cert_handle = NULL;
@@ -464,8 +464,8 @@ CFMutableArrayRef X509Certificate::CreateOSCertChainForCert() const {
 }
 
 // static
-X509Certificate::OSCertHandle
-X509Certificate::ReadOSCertHandleFromPickle(PickleIterator* pickle_iter) {
+X509Certificate::OSCertHandle X509Certificate::ReadOSCertHandleFromPickle(
+    base::PickleIterator* pickle_iter) {
   const char* data;
   int length;
   if (!pickle_iter->ReadData(&data, &length))
@@ -476,7 +476,7 @@ X509Certificate::ReadOSCertHandleFromPickle(PickleIterator* pickle_iter) {
 
 // static
 bool X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
-                                                Pickle* pickle) {
+                                                base::Pickle* pickle) {
   CSSM_DATA cert_data;
   OSStatus status = SecCertificateGetData(cert_handle, &cert_data);
   if (status)

@@ -17,10 +17,6 @@
 #include "third_party/webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
 #include "ui/gfx/geometry/size.h"
 
-namespace base {
-class MessageLoopProxy;
-}  // namespace base
-
 namespace media {
 class GpuVideoAcceleratorFactories;
 }  // namespace media
@@ -52,7 +48,7 @@ class CONTENT_EXPORT RTCVideoEncoder
                      int32_t number_of_cores,
                      size_t max_payload_size) override;
   int32_t Encode(
-      const webrtc::I420VideoFrame& input_image,
+      const webrtc::VideoFrame& input_image,
       const webrtc::CodecSpecificInfo* codec_specific_info,
       const std::vector<webrtc::VideoFrameType>* frame_types) override;
   int32_t RegisterEncodeCompleteCallback(

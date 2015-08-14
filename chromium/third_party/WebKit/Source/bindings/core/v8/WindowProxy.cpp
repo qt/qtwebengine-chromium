@@ -50,6 +50,7 @@
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/MainThreadDebugger.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -254,6 +255,7 @@ bool WindowProxy::initialize()
     }
     if (m_frame->isLocalFrame()) {
         LocalFrame* frame = toLocalFrame(m_frame);
+        MainThreadDebugger::initializeContext(context, m_world->worldId());
         InspectorInstrumentation::didCreateScriptContext(frame, m_scriptState.get(), origin, m_world->worldId());
         frame->loader().client()->didCreateScriptContext(context, m_world->extensionGroup(), m_world->worldId());
     }
@@ -322,6 +324,7 @@ bool WindowProxy::installDOMWindow()
         return false;
     if (!V8ObjectConstructor::newInstance(m_isolate, constructor).ToLocal(&windowWrapper))
         return false;
+    windowWrapper = V8DOMWrapper::associateObjectWithWrapper(m_isolate, window, wrapperTypeInfo, windowWrapper);
 
     V8DOMWrapper::setNativeInfo(v8::Local<v8::Object>::Cast(windowWrapper->GetPrototype()), wrapperTypeInfo, window);
 
@@ -332,6 +335,7 @@ bool WindowProxy::installDOMWindow()
     //   -- has prototype --> innerGlobalObject (Holds global variables, changes during navigation)
     //   -- has prototype --> DOMWindow instance
     //   -- has prototype --> Window.prototype
+    //   -- has prototype --> EventTarget.prototype
     //   -- has prototype --> Object.prototype
     //
     // Note: Much of this prototype structure is hidden from web content. The
@@ -342,7 +346,9 @@ bool WindowProxy::installDOMWindow()
     V8DOMWrapper::setNativeInfo(innerGlobalObject, wrapperTypeInfo, window);
     if (!v8CallBoolean(innerGlobalObject->SetPrototype(context, windowWrapper)))
         return false;
-    V8DOMWrapper::associateObjectWithWrapper(m_isolate, window, wrapperTypeInfo, windowWrapper);
+
+    // TODO(keishi): Remove installPagePopupController and implement
+    // PagePopupController in another way.
     V8PagePopupControllerBinding::installPagePopupController(context, windowWrapper);
     return true;
 }
@@ -374,6 +380,8 @@ void WindowProxy::updateDocumentProperty()
     checkDocumentWrapper(m_document.newLocal(m_isolate), frame->document());
 
     ASSERT(documentWrapper->IsObject());
+    // TODO(bashi): Avoid using ForceSet(). When we use accessors to implement
+    // attributes, we may be able to remove updateDocumentProperty().
     if (!v8CallBoolean(context->Global()->ForceSet(context, v8AtomicString(m_isolate, "document"), documentWrapper, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete))))
         return;
 

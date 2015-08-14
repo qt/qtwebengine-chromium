@@ -12,7 +12,7 @@
 #include "base/time/time.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace chromecast {
@@ -58,7 +58,7 @@ class CastMetricsHelper {
   static CastMetricsHelper* GetInstance();
 
   explicit CastMetricsHelper(
-      scoped_refptr<base::MessageLoopProxy> message_loop_proxy);
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   virtual ~CastMetricsHelper();
 
   // This function updates the info and stores the startup time of the current
@@ -78,10 +78,6 @@ class CastMetricsHelper {
 
   // Logs UMA record of the time the app made its first paint.
   virtual void LogTimeToFirstPaint();
-
-  // Logs UMA record of the elapsed time from the app launch
-  // to the time first video frame is displayed.
-  virtual void LogTimeToDisplayVideo();
 
   // Logs UMA record of the time needed to re-buffer A/V.
   virtual void LogTimeToBufferAv(BufferingType buffering_type,
@@ -112,8 +108,8 @@ class CastMetricsHelper {
   virtual void SetRecordActionCallback(const RecordActionCallback& callback);
 
  protected:
-  // Creates a CastMetricsHelper instance with no MessageLoopProxy. This should
-  // only be used by tests, since invoking any non-overridden methods on this
+  // Creates a CastMetricsHelper instance with no task runner. This should only
+  // be used by tests, since invoking any non-overridden methods on this
   // instance will cause a failure.
   CastMetricsHelper();
 
@@ -134,7 +130,7 @@ class CastMetricsHelper {
   void LogMediumTimeHistogramEvent(const std::string& name,
                                    const base::TimeDelta& value);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Start time of the most recent app.
   base::TimeTicks app_start_time_;
@@ -143,11 +139,6 @@ class CastMetricsHelper {
   std::string app_id_;
   std::string session_id_;
   std::string sdk_version_;
-
-  // Whether a new app start time has been stored but not recorded.
-  // After the startup time has been used to generate an UMA event,
-  // this is set to false.
-  bool new_startup_time_;
 
   base::TimeTicks previous_video_stat_sample_time_;
 

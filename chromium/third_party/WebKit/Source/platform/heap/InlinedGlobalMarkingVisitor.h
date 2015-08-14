@@ -19,7 +19,7 @@ public:
     explicit InlinedGlobalMarkingVisitor(Visitor* visitor)
         : m_visitor(visitor)
     {
-        ASSERT(visitor->isGlobalMarkingVisitor());
+        ASSERT(visitor->markingMode() == Visitor::GlobalMarking);
     }
 
     // Hack to unify interface to visitor->trace().
@@ -29,7 +29,6 @@ public:
 
     using Impl::mark;
     using Impl::ensureMarked;
-    using Impl::isMarked;
     using Impl::registerDelayedMarkNoTracing;
     using Impl::registerWeakTable;
     using Impl::registerWeakMembers;
@@ -59,22 +58,16 @@ protected:
         return true;
     }
 
-#if ENABLE(GC_PROFILING)
-    inline void recordObjectGraphEdge(const void* objectPointer)
+    inline Visitor::MarkingMode markingMode() const
     {
-        m_visitor->recordObjectGraphEdge(objectPointer);
+        return m_visitor->markingMode();
     }
-#endif
 
 private:
     static InlinedGlobalMarkingVisitor fromHelper(Helper* helper)
     {
         return *static_cast<InlinedGlobalMarkingVisitor*>(helper);
     }
-
-#if ENABLE(ASSERT)
-    inline void checkMarkingAllowed() { m_visitor->checkMarkingAllowed(); }
-#endif
 
     Visitor* m_visitor;
 };

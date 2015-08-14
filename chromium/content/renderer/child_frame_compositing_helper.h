@@ -20,9 +20,13 @@ class SharedMemory;
 }
 
 namespace cc {
+struct SurfaceId;
+struct SurfaceSequence;
+
 class CompositorFrame;
 class Layer;
 class SolidColorLayer;
+class SurfaceLayer;
 class DelegatedFrameProvider;
 class DelegatedFrameResourceCollection;
 class DelegatedRendererLayer;
@@ -48,6 +52,7 @@ namespace content {
 class BrowserPlugin;
 class BrowserPluginManager;
 class RenderFrameProxy;
+class ThreadSafeSender;
 
 class CONTENT_EXPORT ChildFrameCompositingHelper
     : public base::RefCounted<ChildFrameCompositingHelper>,
@@ -66,6 +71,10 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
                                 uint32 output_surface_id,
                                 int host_id,
                                 base::SharedMemoryHandle handle);
+  void OnSetSurface(const cc::SurfaceId& surface_id,
+                    const gfx::Size& frame_size,
+                    float scale_factor,
+                    const cc::SurfaceSequence& sequence);
   void UpdateVisibility(bool);
   void ChildFrameGone();
 
@@ -98,6 +107,24 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
                                          float device_scale_factor,
                                          cc::Layer* layer);
   void SendReturnedDelegatedResources();
+  static void SatisfyCallback(scoped_refptr<ThreadSafeSender> sender,
+                              int host_routing_id,
+                              cc::SurfaceSequence sequence);
+  static void SatisfyCallbackBrowserPlugin(
+      scoped_refptr<ThreadSafeSender> sender,
+      int host_routing_id,
+      int browser_plugin_instance_id,
+      cc::SurfaceSequence sequence);
+  static void RequireCallback(scoped_refptr<ThreadSafeSender> sender,
+                              int host_routing_id,
+                              cc::SurfaceId id,
+                              cc::SurfaceSequence sequence);
+  static void RequireCallbackBrowserPlugin(
+      scoped_refptr<ThreadSafeSender> sender,
+      int host_routing_id,
+      int browser_plugin_instance_id,
+      cc::SurfaceId id,
+      cc::SurfaceSequence sequence);
 
   int host_routing_id_;
   int last_route_id_;
@@ -116,6 +143,9 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
 
   scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection_;
   scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
+
+  // For cc::Surface support.
+  scoped_refptr<cc::SurfaceLayer> surface_layer_;
 
   scoped_refptr<cc::SolidColorLayer> background_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_layer_;

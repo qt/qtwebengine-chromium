@@ -43,6 +43,7 @@ public:
 
     LocalFrame* frame() const { return m_frame; }
 
+    EAGERLY_FINALIZE_WILL_BE_REMOVED();
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -62,4 +63,4 @@ private:
 
 } // namespace blink
 
-#endif
+#endif // DOMWindowProperty_h

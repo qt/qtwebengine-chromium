@@ -25,17 +25,19 @@
 #ifndef Font_h
 #define Font_h
 
+#include "platform/LayoutUnit.h"
 #include "platform/PlatformExport.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFallbackList.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/TextBlob.h"
+#include "platform/text/TabSize.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/TextPath.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/MathExtras.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 // "X11/X.h" defines Complex to 0 and conflicts
 // with Complex value in CodePath enum.
@@ -61,28 +63,6 @@ struct TextRunPaintInfo;
 
 struct GlyphData;
 
-struct GlyphOverflow {
-    GlyphOverflow()
-        : left(0)
-        , right(0)
-        , top(0)
-        , bottom(0)
-        , computeBounds(false)
-    {
-    }
-
-    bool isZero() const
-    {
-        return !left && !right && !top && !bottom;
-    }
-
-    int left;
-    int right;
-    int top;
-    int bottom;
-    bool computeBounds;
-};
-
 class PLATFORM_EXPORT Font {
 public:
     Font();
@@ -104,7 +84,9 @@ public:
     void drawBidiText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, CustomFontNotReadyAction, float deviceScaleFactor, const SkPaint&) const;
     void drawEmphasisMarks(SkCanvas*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
 
-    float width(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
+    // Glyph bounds will be the minimum rect containing all glyph strokes, in coordinates using
+    // (<text run x position>, <baseline position>) as the origin.
+    float width(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = nullptr, FloatRect* glyphBounds = nullptr) const;
 
     int offsetForPosition(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForText(const TextRun&, const FloatPoint&, int h, int from = 0, int to = -1, bool accountForGlyphBounds = false) const;
@@ -123,9 +105,18 @@ public:
     const FontData* fontDataAt(unsigned) const;
 
     GlyphData glyphDataForCharacter(UChar32&, bool mirror, bool normalizeSpace = false, FontDataVariant = AutoVariant) const;
-    bool primaryFontHasGlyphForCharacter(UChar32) const;
-
     CodePath codePath(const TextRunPaintInfo&) const;
+
+    // Whether the font supports shaping word by word instead of shaping the
+    // full run in one go. Allows better caching for fonts where space cannot
+    // participate in kerning and/or ligatures.
+    bool canShapeWordByWord() const;
+
+    void setCanShapeWordByWordForTesting(bool b)
+    {
+        m_canShapeWordByWord = b;
+        m_shapeWordByWordComputed = true;
+    }
 
 private:
     enum ForTextEmphasisOrNot { NotForTextEmphasis, ForTextEmphasis };
@@ -141,15 +132,17 @@ private:
         const FloatPoint&, const FloatRect& textRect, float deviceScaleFactor) const;
     void drawTextBlob(SkCanvas*, const SkPaint&, const SkTextBlob*, const SkPoint& origin) const;
     void drawGlyphBuffer(SkCanvas*, const SkPaint&, const TextRunPaintInfo&, const GlyphBuffer&, const FloatPoint&, float deviceScaleFactor) const;
-    float floatWidthForSimpleText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, IntRectOutsets* glyphBounds = 0) const;
+    float floatWidthForSimpleText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, FloatRect* glyphBounds = 0) const;
     int offsetForPositionForSimpleText(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForSimpleText(const TextRun&, const FloatPoint&, int h, int from, int to, bool accountForGlyphBounds) const;
 
     bool getEmphasisMarkGlyphData(const AtomicString&, GlyphData&) const;
 
-    float floatWidthForComplexText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts, IntRectOutsets* glyphBounds) const;
+    float floatWidthForComplexText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts, FloatRect* glyphBounds) const;
     int offsetForPositionForComplexText(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForComplexText(const TextRun&, const FloatPoint&, int h, int from, int to) const;
+
+    bool computeCanShapeWordByWord() const;
 
     friend struct SimpleShaper;
 
@@ -169,6 +162,8 @@ private:
 
     FontDescription m_fontDescription;
     mutable RefPtr<FontFallbackList> m_fontFallbackList;
+    mutable unsigned m_canShapeWordByWord : 1;
+    mutable unsigned m_shapeWordByWordComputed : 1;
 };
 
 inline Font::~Font()
@@ -199,9 +194,9 @@ inline float Font::tabWidth(const SimpleFontData& fontData, const TabSize& tabSi
         return fontDescription().letterSpacing();
     float distanceToTabStop = baseTabWidth - fmodf(position, baseTabWidth);
 
-    // The smallest allowable tab space is letterSpacing(); if the distance
-    // to the next tab stop is less than that, advance an additional tab stop.
-    if (distanceToTabStop < fontDescription().letterSpacing())
+    // The smallest allowable tab space is letterSpacing() (but must be at least one layout unit).
+    // if the distance to the next tab stop is less than that, advance an additional tab stop.
+    if (distanceToTabStop < std::max(fontDescription().letterSpacing(), LayoutUnit::epsilon()))
         distanceToTabStop += baseTabWidth;
 
     return distanceToTabStop;

@@ -103,6 +103,7 @@ enum AccessibilityRole {
     ImageMapRole, // No mapping to ARIA role
     ImageRole,
     InlineTextBoxRole, // No mapping to ARIA role
+    InputTimeRole, // No mapping to ARIA role
     LabelRole,
     LegendRole, // No mapping to ARIA role
     LinkRole,
@@ -113,6 +114,7 @@ enum AccessibilityRole {
     ListRole,
     LogRole,
     MainRole,
+    MarkRole, // No mapping to ARIA role
     MarqueeRole,
     MathRole,
     MenuBarRole,
@@ -212,21 +214,36 @@ enum AccessibilityState {
     AXVisitedState
 };
 
-struct AccessibilityText {
-    String text;
-    AccessibilityTextSource textSource;
-    RefPtr<AXObject> textElement;
+class AccessibilityText final : public NoBaseWillBeGarbageCollectedFinalized<AccessibilityText> {
+public:
+    static PassOwnPtrWillBeRawPtr<AccessibilityText> create(const String& text, const AccessibilityTextSource& source)
+    {
+        return adoptPtrWillBeNoop(new AccessibilityText(text, source, nullptr));
+    }
+    static PassOwnPtrWillBeRawPtr<AccessibilityText> create(const String& text, const AccessibilityTextSource& source, const RefPtrWillBeRawPtr<AXObject> element)
+    {
+        return adoptPtrWillBeNoop(new AccessibilityText(text, source, nullptr));
+    }
 
-    AccessibilityText(const String& t, const AccessibilityTextSource& s)
-    : text(t)
-    , textSource(s)
+    String text() const { return m_text; }
+    AccessibilityTextSource textSource() const { return m_textSource; }
+    AXObject* textElement() const { return m_textElement.get(); }
+
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_textElement);
+    }
+
+private:
+    AccessibilityText(const String& text, const AccessibilityTextSource& source, const RefPtrWillBeRawPtr<AXObject> element)
+    : m_text(text)
+    , m_textSource(source)
+    , m_textElement(element)
     { }
 
-    AccessibilityText(const String& t, const AccessibilityTextSource& s, const RefPtr<AXObject> element)
-    : text(t)
-    , textSource(s)
-    , textElement(element)
-    { }
+    String m_text;
+    AccessibilityTextSource m_textSource;
+    RefPtrWillBeMember<AXObject> m_textElement;
 };
 
 enum AccessibilityOrientation {
@@ -349,9 +366,9 @@ struct IgnoredReason {
     { }
 };
 
-class MODULES_EXPORT AXObject : public RefCounted<AXObject> {
+class MODULES_EXPORT AXObject : public RefCountedWillBeGarbageCollectedFinalized<AXObject> {
 public:
-    typedef Vector<RefPtr<AXObject>> AccessibilityChildrenVector;
+    typedef WillBeHeapVector<RefPtrWillBeMember<AXObject>> AccessibilityChildrenVector;
 
     struct PlainTextRange {
 
@@ -372,10 +389,13 @@ public:
     };
 
 protected:
-    AXObject(AXObjectCacheImpl*);
+    AXObject(AXObjectCacheImpl&);
 
 public:
     virtual ~AXObject();
+    DECLARE_VIRTUAL_TRACE();
+
+    static unsigned numberOfLiveAXObjects() { return s_numberOfLiveAXObjects; }
 
     // After constructing an AXObject, it must be given a
     // unique ID, then added to AXObjectCacheImpl, and finally init() must
@@ -392,7 +412,11 @@ public:
     virtual void setParent(AXObject* parent) { m_parent = parent; }
 
     // The AXObjectCacheImpl that owns this object, and its unique ID within this cache.
-    AXObjectCacheImpl* axObjectCache() const { return m_axObjectCache; }
+    AXObjectCacheImpl& axObjectCache() const
+    {
+        ASSERT(m_axObjectCache);
+        return *m_axObjectCache;
+    }
 
     AXID axObjectID() const { return m_id; }
 
@@ -513,8 +537,8 @@ public:
     virtual bool deprecatedExposesTitleUIElement() const { return true; }
     virtual AXObject* deprecatedTitleUIElement() const { return 0; }
     virtual String deprecatedPlaceholder() const { return String(); }
-    virtual void deprecatedAriaDescribedbyElements(AccessibilityChildrenVector& describedby) const { };
-    virtual void deprecatedAriaLabelledbyElements(AccessibilityChildrenVector& labelledby) const { };
+    virtual void deprecatedAriaDescribedbyElements(AccessibilityChildrenVector& describedby) const { }
+    virtual void deprecatedAriaLabelledbyElements(AccessibilityChildrenVector& labelledby) const { }
     virtual String deprecatedAccessibilityDescription() const { return String(); }
     virtual String deprecatedTitle(TextUnderElementMode mode = TextUnderElementAll) const { return String(); }
     virtual String deprecatedHelpText() const { return String(); }
@@ -526,13 +550,13 @@ public:
 
     // Retrieves the accessible name of the object, an enum indicating where the name
     // was derived from, and a list of objects that were used to derive the name, if any.
-    virtual String name(AXNameFrom&, Vector<AXObject*>& nameObjects);
+    virtual String name(AXNameFrom&, WillBeHeapVector<RawPtrWillBeMember<AXObject>>& nameObjects);
 
     // Takes the result of nameFrom from calling |name|, above, and retrieves the
     // accessible description of the object, which is secondary to |name|, an enum indicating
     // where the description was derived from, and a list of objects that were used to
     // derive the description, if any.
-    virtual String description(AXNameFrom, AXDescriptionFrom&, Vector<AXObject*>& descriptionObjects) { return String(); }
+    virtual String description(AXNameFrom, AXDescriptionFrom&, WillBeHeapVector<RawPtrWillBeMember<AXObject>>& descriptionObjects) { return String(); }
 
     // Takes the result of nameFrom and descriptionFrom from calling |name| and |description|,
     // above, and retrieves the placeholder of the object, if present and if it wasn't already
@@ -540,7 +564,7 @@ public:
     virtual String placeholder(AXNameFrom, AXDescriptionFrom) { return String(); }
 
     // Internal function used by name and description, above.
-    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, HashSet<AXObject*>& visited, AXNameFrom*, Vector<AXObject*>* nameObjects) { return String(); }
+    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, WillBeHeapHashSet<RawPtrWillBeMember<AXObject>>& visited, AXNameFrom*, WillBeHeapVector<RawPtrWillBeMember<AXObject>>* nameObjects) { return String(); }
 
     // Returns result of Accessible Name Calculation algorithm.
     // This is a simpler high-level interface to |name| used by Inspector.
@@ -594,23 +618,21 @@ public:
     virtual float maxValueForRange() const { return 0.0f; }
     virtual float minValueForRange() const { return 0.0f; }
     virtual String stringValue() const { return String(); }
-    virtual const AtomicString& textInputType() const { return nullAtom; }
 
     // ARIA attributes.
     virtual AXObject* activeDescendant() const { return 0; }
     virtual String ariaAutoComplete() const { return String(); }
     virtual String ariaDescribedByAttribute() const { return String(); }
-    virtual const AtomicString& ariaDropEffect() const { return nullAtom; }
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
     virtual void ariaControlsElements(AccessibilityChildrenVector&) const { }
-    virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { };
+    virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { }
     virtual bool ariaHasPopup() const { return false; }
     bool isMultiline() const;
+    virtual bool isRichlyEditable() const { return false; }
     virtual String ariaLabeledByAttribute() const { return String(); }
     bool ariaPressedIsPresent() const;
     virtual AccessibilityRole ariaRoleAttribute() const { return UnknownRole; }
     virtual bool ariaRoleHasPresentationalChildren() const { return false; }
-    virtual AccessibilityOptionalBool isAriaGrabbed() const { return OptionalBoolUndefined; }
     virtual AXObject* ancestorForWhichThisIsAPresentationalChild() const { return 0; }
     virtual bool shouldFocusActiveDescendant() const { return false; }
     bool supportsARIAAttributes() const;
@@ -770,7 +792,7 @@ protected:
 
     bool m_detached;
 
-    mutable AXObject* m_parent;
+    mutable RawPtrWillBeMember<AXObject> m_parent;
 
     // The following cached attribute values (the ones starting with m_cached*)
     // are only valid if m_lastModificationCount matches AXObjectCacheImpl::modificationCount().
@@ -781,9 +803,9 @@ protected:
     mutable bool m_cachedIsDescendantOfDisabledNode : 1;
     mutable bool m_cachedHasInheritedPresentationalRole : 1;
     mutable bool m_cachedIsPresentationalChild : 1;
-    mutable const AXObject* m_cachedLiveRegionRoot;
+    mutable RawPtrWillBeMember<const AXObject> m_cachedLiveRegionRoot;
 
-    AXObjectCacheImpl* m_axObjectCache;
+    RawPtrWillBeMember<AXObjectCacheImpl> m_axObjectCache;
 
     // Updates the cached attribute values. This may be recursive, so to prevent deadlocks,
     // functions called here may only search up the tree (ancestors), not down.
@@ -792,6 +814,8 @@ protected:
 private:
     static bool includesARIAWidgetRole(const String&);
     static bool hasInteractiveARIAAttribute(const Element&);
+
+    static unsigned s_numberOfLiveAXObjects;
 };
 
 #define DEFINE_AX_OBJECT_TYPE_CASTS(thisType, predicate) \

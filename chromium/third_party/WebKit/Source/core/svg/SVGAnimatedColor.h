@@ -42,26 +42,22 @@ class SVGAnimationElement;
 // FIXME: WebAnimations: Replacable with AnimatableColor once SMIL animations are implemented in WebAnimations.
 class SVGColorProperty final : public SVGPropertyBase {
 public:
-    static PassRefPtrWillBeRawPtr<SVGColorProperty> create(StyleColor styleColor)
+    static PassRefPtrWillBeRawPtr<SVGColorProperty> create(const String& colorString)
     {
-        return adoptRefWillBeNoop(new SVGColorProperty(styleColor));
+        return adoptRefWillBeNoop(new SVGColorProperty(colorString));
     }
 
-    virtual PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
-    virtual String valueAsString() const override;
+    PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
+    String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
-    virtual float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*) override;
+    void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*) override;
 
     static AnimatedPropertyType classType() { return AnimatedColor; }
 
 private:
-    explicit SVGColorProperty(StyleColor styleColor)
-        : SVGPropertyBase(classType())
-        , m_styleColor(styleColor)
-    {
-    }
+    explicit SVGColorProperty(const String&);
 
     StyleColor m_styleColor;
 };

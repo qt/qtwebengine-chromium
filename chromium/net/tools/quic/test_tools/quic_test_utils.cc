@@ -32,22 +32,6 @@ QuicAckFrame MakeAckFrameWithNackRanges(
   return ack;
 }
 
-TestSession::TestSession(QuicConnection* connection, const QuicConfig& config)
-    : QuicSession(connection, config),
-      crypto_stream_(nullptr) {
-  InitializeSession();
-}
-
-TestSession::~TestSession() {}
-
-void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
-  crypto_stream_ = stream;
-}
-
-QuicCryptoStream* TestSession::GetCryptoStream() {
-  return crypto_stream_;
-}
-
 MockPacketWriter::MockPacketWriter() {
 }
 
@@ -109,10 +93,8 @@ WriteResult TestWriterFactory::PerConnectionPacketWriter::WritePacket(
   // in a different way, so TestWriterFactory::OnPacketSent might never be
   // called.
   factory_->current_writer_ = this;
-  return QuicPerConnectionPacketWriter::WritePacket(buffer,
-                                                    buf_len,
-                                                    self_address,
-                                                    peer_address);
+  return QuicPerConnectionPacketWriter::WritePacket(buffer, buf_len,
+                                                    self_address, peer_address);
 }
 
 MockTimeWaitListManager::MockTimeWaitListManager(

@@ -458,9 +458,9 @@ bool LayoutThemeMac::isControlStyled(const ComputedStyle& style, const AuthorSty
     return LayoutTheme::isControlStyled(style, authorStyle);
 }
 
-void LayoutThemeMac::adjustPaintInvalidationRect(const LayoutObject* o, IntRect& r)
+void LayoutThemeMac::addVisualOverflow(const LayoutObject& object, IntRect& rect)
 {
-    ControlPart part = o->style()->appearance();
+    ControlPart part = object.style()->appearance();
 
 #if USE(NEW_THEME)
     switch (part) {
@@ -470,22 +470,22 @@ void LayoutThemeMac::adjustPaintInvalidationRect(const LayoutObject* o, IntRect&
     case SquareButtonPart:
     case ButtonPart:
     case InnerSpinButtonPart:
-        return LayoutTheme::adjustPaintInvalidationRect(o, r);
+        return LayoutTheme::addVisualOverflow(object, rect);
     default:
         break;
     }
 #endif
 
-    float zoomLevel = o->style()->effectiveZoom();
+    float zoomLevel = object.style()->effectiveZoom();
 
     if (part == MenulistPart) {
-        setPopupButtonCellState(o, r);
+        setPopupButtonCellState(&object, rect);
         IntSize size = popupButtonSizes()[[popupButton() controlSize]];
         size.setHeight(size.height() * zoomLevel);
-        size.setWidth(r.width());
-        r = ThemeMac::inflateRect(r, size, popupButtonMargins(), zoomLevel);
+        size.setWidth(rect.width());
+        rect = ThemeMac::inflateRect(rect, size, popupButtonMargins(), zoomLevel);
     } else if (part == SliderThumbHorizontalPart || part == SliderThumbVerticalPart) {
-        r.setHeight(r.height() + sliderThumbShadowBlur);
+        rect.setHeight(rect.height() + sliderThumbShadowBlur);
     }
 }
 
@@ -599,8 +599,10 @@ void LayoutThemeMac::setFontFromControlSize(ComputedStyle& style, NSControlSize 
     // Reset line height.
     style.setLineHeight(ComputedStyle::initialLineHeight());
 
+    // TODO(esprehn): The fontSelector manual management is buggy and error prone.
+    FontSelector* fontSelector = style.font().fontSelector();
     if (style.setFontDescription(fontDescription))
-        style.font().update(nullptr);
+        style.font().update(fontSelector);
 }
 
 NSControlSize LayoutThemeMac::controlSizeForSystemFont(const ComputedStyle& style) const
@@ -866,21 +868,20 @@ void LayoutThemeMac::adjustMenuListButtonStyle(ComputedStyle& style, Element*) c
     style.setLineHeight(ComputedStyle::initialLineHeight());
 }
 
-void LayoutThemeMac::setPopupButtonCellState(const LayoutObject* o, const IntRect& r)
+void LayoutThemeMac::setPopupButtonCellState(const LayoutObject* object, const IntRect& rect)
 {
     NSPopUpButtonCell* popupButton = this->popupButton();
 
     // Set the control size based off the rectangle we're painting into.
-    setControlSize(popupButton, popupButtonSizes(), r.size(), o->style()->effectiveZoom());
+    setControlSize(popupButton, popupButtonSizes(), rect.size(), object->style()->effectiveZoom());
 
     // Update the various states we respond to.
-    updateActiveState(popupButton, o);
-    updateCheckedState(popupButton, o);
-    updateEnabledState(popupButton, o);
-    updatePressedState(popupButton, o);
-#if BUTTON_CELL_DRAW_WITH_FRAME_DRAWS_FOCUS_RING
-    updateFocusedState(popupButton, o);
-#endif
+    updateActiveState(popupButton, object);
+    updateCheckedState(popupButton, object);
+    updateEnabledState(popupButton, object);
+    updatePressedState(popupButton, object);
+    if (ThemeMac::drawWithFrameDrawsFocusRing())
+        updateFocusedState(popupButton, object);
 }
 
 const IntSize* LayoutThemeMac::menuListSizes() const

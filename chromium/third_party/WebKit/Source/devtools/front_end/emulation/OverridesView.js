@@ -35,6 +35,7 @@
 WebInspector.OverridesView = function()
 {
     WebInspector.VBox.call(this);
+    this.setMinimumSize(0, 30);
     this.registerRequiredCSS("emulation/overrides.css");
     this.element.classList.add("overrides-view");
 
@@ -56,26 +57,15 @@ WebInspector.OverridesView = function()
     resetButtonElement.id = "overrides-reset-button";
     this._tabbedPane.appendAfterTabStrip(resetButtonElement);
 
-    if (!WebInspector.overridesSupport.responsiveDesignAvailable()) {
-        var disableButtonElement = createTextButton(WebInspector.UIString("Disable"), this._toggleEmulationEnabled.bind(this), "overrides-disable-button");
-        disableButtonElement.id = "overrides-disable-button";
-        this._tabbedPane.appendAfterTabStrip(disableButtonElement);
-    }
+    var disableButtonElement = createTextButton(WebInspector.UIString("Disable"), this._toggleEmulationEnabled.bind(this), "overrides-disable-button");
+    disableButtonElement.id = "overrides-disable-button";
+    this._tabbedPane.appendAfterTabStrip(disableButtonElement);
 
     this._splashScreenElement = this.element.createChild("div", "overrides-splash-screen");
+    this._splashScreenElement.appendChild(createTextButton(WebInspector.UIString("Enable emulation"), this._toggleEmulationEnabled.bind(this), "overrides-enable-button"));
+
     this._unavailableSplashScreenElement = this.element.createChild("div", "overrides-splash-screen");
     this._unavailableSplashScreenElement.createTextChild(WebInspector.UIString("Emulation is not available."));
-
-    if (WebInspector.overridesSupport.responsiveDesignAvailable()) {
-        this._splashScreenElement.createTextChild(WebInspector.UIString("Emulation is currently disabled. Toggle "));
-        var toolbar = new WebInspector.Toolbar(this._splashScreenElement);
-        var toggleEmulationButton = new WebInspector.ToolbarButton("", "emulation-toolbar-item");
-        toggleEmulationButton.addEventListener("click", this._toggleEmulationEnabled, this);
-        toolbar.appendToolbarItem(toggleEmulationButton);
-        this._splashScreenElement.createTextChild(WebInspector.UIString("in the main toolbar to enable it."));
-    } else {
-        this._splashScreenElement.appendChild(createTextButton(WebInspector.UIString("Enable emulation"), this._toggleEmulationEnabled.bind(this), "overrides-enable-button"));
-    }
 
     this._warningFooter = this.element.createChild("div", "overrides-footer");
     this._overridesWarningUpdated();
@@ -209,7 +199,10 @@ WebInspector.OverridesView.DeviceTab.prototype = {
         var deviceModelElement = fieldsetElement.createChild("p", "overrides-device-model-section");
         deviceModelElement.createChild("span").textContent = WebInspector.UIString("Model:");
 
-        deviceModelElement.appendChild(WebInspector.OverridesUI.createDeviceSelect());
+        var rotateButton = createElement("button");
+        rotateButton.textContent = " \u21C4 ";
+        var deviceSelect = new WebInspector.DeviceSelect(rotateButton, null);
+        deviceModelElement.appendChild(deviceSelect.element);
 
         var emulateResolutionCheckbox = WebInspector.SettingsUI.createSettingCheckbox(WebInspector.UIString("Emulate screen resolution"), WebInspector.overridesSupport.settings.emulateResolution, true);
         fieldsetElement.appendChild(emulateResolutionCheckbox);
@@ -224,11 +217,6 @@ WebInspector.OverridesView.DeviceTab.prototype = {
 
         var widthOverrideInput = WebInspector.SettingsUI.createSettingInputField("", WebInspector.overridesSupport.settings.deviceWidth, true, 4, "80px", WebInspector.OverridesSupport.deviceSizeValidator, true, true, WebInspector.UIString("\u2013"));
         cellElement.appendChild(widthOverrideInput);
-        this._swapDimensionsElement = cellElement.createChild("button", "overrides-swap");
-        this._swapDimensionsElement.createTextChild(" \u21C4 "); // RIGHTWARDS ARROW OVER LEFTWARDS ARROW.
-        this._swapDimensionsElement.title = WebInspector.UIString("Swap dimensions");
-        this._swapDimensionsElement.addEventListener("click", WebInspector.overridesSupport.swapDimensions.bind(WebInspector.overridesSupport), false);
-        this._swapDimensionsElement.tabIndex = -1;
         var heightOverrideInput = WebInspector.SettingsUI.createSettingInputField("", WebInspector.overridesSupport.settings.deviceHeight, true, 4, "80px", WebInspector.OverridesSupport.deviceSizeValidator, true, true, WebInspector.UIString("\u2013"));
         cellElement.appendChild(heightOverrideInput);
 
@@ -312,31 +300,12 @@ WebInspector.OverridesView.MediaTab.prototype = {
  */
 WebInspector.OverridesView.NetworkTab = function()
 {
-    WebInspector.OverridesView.Tab.call(this, "network", WebInspector.UIString("Network"), [], [this._userAgentOverrideEnabled.bind(this), this._networkThroughputIsLimited.bind(this)]);
+    WebInspector.OverridesView.Tab.call(this, "network", WebInspector.UIString("Network"), [], [this._userAgentOverrideEnabled.bind(this)]);
     this.element.classList.add("overrides-network");
-    this._createNetworkConditionsElement();
     this._createUserAgentSection();
 }
 
 WebInspector.OverridesView.NetworkTab.prototype = {
-    /**
-     * @return {boolean}
-     */
-    _networkThroughputIsLimited: function()
-    {
-        return WebInspector.overridesSupport.networkThroughputIsLimited();
-    },
-
-    _createNetworkConditionsElement: function()
-    {
-        var fieldsetElement = this.element.createChild("fieldset");
-        fieldsetElement.createChild("span").textContent = WebInspector.UIString("Limit network throughput:");
-        fieldsetElement.createChild("br");
-        fieldsetElement.appendChild(WebInspector.OverridesUI.createNetworkConditionsSelect());
-
-        WebInspector.overridesSupport.settings.networkConditions.addChangeListener(this.updateActiveState, this);
-    },
-
     /**
      * @return {boolean}
      */

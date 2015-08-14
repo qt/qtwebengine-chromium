@@ -27,6 +27,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+.panel.timeline > .toolbar {
+    border-bottom: 1px solid #dadada;
+}
+
 #timeline-overview-panel {
     flex: none;
     position: relative;
@@ -38,7 +42,7 @@
 }
 
 .timeline-records-title, .timeline-records-list {
-    background-color: #eee;
+    background-color: #f3f3f3;
 }
 
 .timeline-records-title {
@@ -56,8 +60,8 @@
 }
 
 .timeline-overview-frames-mode #timeline-overview-grid,
-.timeline-overview-frames-mode .overview-grid-window-area,
-.timeline-overview-frames-mode .overview-grid-current-position {
+.timeline-overview-frames-mode .overview-grid-cursor-area,
+.timeline-overview-frames-mode .overview-grid-cursor-position {
     display: none;
 }
 
@@ -136,7 +140,7 @@
     display: inline-block;
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 144px;
+    -webkit-mask-size: 352px 144px;
     width: 10px;
     height: 10px;
     content: "";
@@ -162,7 +166,7 @@
 
 .timeline-expandable-arrow {
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
+    background-size: 352px 144px;
     opacity: 0.5;
     width: 10px;
     height: 10px;
@@ -212,7 +216,7 @@
 .timeline-tree-item-warning {
     display: block;
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
+    background-size: 352px 144px;
     width: 10px;
     height: 10px;
     float: right;
@@ -246,13 +250,67 @@
     background-color: white;
 }
 
-#timeline-overview-events,
-#timeline-overview-memory,
-#timeline-overview-power {
-    flex: 0 0 59px;
-    z-index: 160;
-    width: 100%;
-    margin-bottom: 1px;
+#timeline-overview-panel .overview-strip {
+    margin-top: 2px;
+    justify-content: center;
+}
+
+#timeline-overview-panel .overview-strip .timeline-overview-strip-placeholder {
+    color: #ccc;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    z-index: -100;
+    margin-left: 10px;
+}
+
+#timeline-overview-network {
+    flex-basis: 25px;
+}
+
+#timeline-overview-main-thread,
+#timeline-overview-framerate {
+    flex-basis: 21px;
+}
+
+#timeline-overview-filmstrip {
+    flex-basis: 81px;
+}
+
+.overview-strip::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    color: #888;
+    text-align: right;
+    padding: 1px 4px;
+    font-size: 9px;
+    border-bottom: 1px solid hsla(0, 0%, 0%, 0.06);
+    z-index: -200;
+}
+
+#timeline-overview-responsiveness::before {
+    display: none;
+}
+
+#timeline-overview-main-thread::before {
+    content: "100%";
+}
+
+#timeline-overview-framerate::before {
+    content: "60 fps";
+}
+
+#timeline-overview-responsiveness {
+    flex-basis: 6px;
+    margin-top: 1px !important;
+}
+
+#timeline-overview-input {
+    flex-basis: 6px;
 }
 
 #timeline-overview-memory {
@@ -260,7 +318,7 @@
 }
 
 #timeline-overview-frames {
-    flex-basis: 80px;
+    flex-basis: 100px;
 }
 
 #timeline-overview-pane {
@@ -512,11 +570,6 @@
     color: white;
 }
 
-#timeline-grid-header {
-    pointer-events: none;
-    height: 20px;
-}
-
 #timeline-graph-records-header {
     pointer-events: none;
     height: 19px;
@@ -585,8 +638,8 @@
 }
 
 .timeline-filters-header {
-    flex: 0 0 23px;
     overflow: hidden;
+    flex: none;
 }
 
 .timeline-details {
@@ -620,7 +673,7 @@
     flex: auto;
     overflow: auto;
     position: relative;
-    background-color: #eee;
+    background-color: #f3f3f3;
 }
 
 .timeline-details-view-block {
@@ -641,6 +694,18 @@
     line-height: 24px;
     padding-left: 10px;
     flex: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.timeline-details-view-row-title .timeline-details-warning-marker {
+    width: 16px;
+    height: 16px;
+    background-color: red;
+    position: absolute;
+    right: -8px;
+    top: -8px;
+    transform: rotate(45deg);
 }
 
 .timeline-details-view-row-value {
@@ -691,6 +756,7 @@
 
 .timeline-details-view-row-stack-trace {
     padding: 4px 0 4px 20px;
+    line-height: inherit;
 }
 
 .timeline-details-view-row-stack-trace div {
@@ -715,25 +781,27 @@
     overflow: hidden;
 }
 
-.timeline-progress-pane {
+.timeline-status-pane {
     color: #777;
-    background-color: rgba(255, 255, 255, 0.8);
+    background-color: white;
     font-size: 30px;
     z-index: 500;
     display: flex;
     justify-content: center;
     align-items: center;
+    text-align: center;
+    padding: 20px;
+    overflow: hidden;
 }
 
+.timeline-status-pane .recording-hint {
+    font-size: 14px;
+    text-align: left;
+}
 
 .layer-tree,
 .profiler-log-view {
     overflow: auto;
-}
-
-.layer-tree::shadow .dimmed {
-    opacity: 0.6;
-    padding-left: 5px;
 }
 
 .layers-3d-view {
@@ -743,6 +811,21 @@
 
 .layers-3d-view canvas {
     flex: 1 1;
+}
+
+.layers-3d-view .fail-banner {
+    position: absolute;
+    font-size: 24px;
+    color: rgb(75%, 75%, 75%);
+    font-weight: bold;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.layers-3d-view .fail-banner a {
+    color: inherit;
 }
 
 .transform-control-panel {
@@ -873,4 +956,12 @@
     max-width: 200px;
     max-height: 200px;
     cursor: pointer;
+}
+
+.timeline-overview-popover .frame .time {
+    display: none;
+}
+
+.timeline-overview-popover .frame .thumbnail img {
+    max-width: 200px;
 }

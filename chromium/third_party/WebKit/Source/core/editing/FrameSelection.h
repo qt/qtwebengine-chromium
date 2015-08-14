@@ -30,6 +30,7 @@
 #include "core/dom/Range.h"
 #include "core/editing/Caret.h"
 #include "core/editing/EditingStyle.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/layout/ScrollAlignment.h"
 #include "platform/Timer.h"
@@ -108,7 +109,10 @@ public:
     const VisibleSelection& selection() const { return m_selection; }
     void setSelection(const VisibleSelection&, SetSelectionOptions = CloseTyping | ClearTypingStyle, CursorAlignOnScroll = AlignCursorOnScrollIfNeeded, TextGranularity = CharacterGranularity);
     void setSelection(const VisibleSelection& selection, TextGranularity granularity) { setSelection(selection, CloseTyping | ClearTypingStyle, AlignCursorOnScrollIfNeeded, granularity); }
+    // TODO(yosin) We should get rid of |Range| version of |setSelectedRagne()|
+    // for Oilpan.
     bool setSelectedRange(Range*, EAffinity, DirectoinalOption directional = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
+    bool setSelectedRange(const EphemeralRange&, EAffinity, DirectoinalOption directional = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
     void selectAll();
     void clear();
     void prepareForDestruction();
@@ -228,7 +232,7 @@ public:
     void setShouldShowBlockCursor(bool);
 
     // VisibleSelection::ChangeObserver interface.
-    virtual void didChangeVisibleSelection() override;
+    void didChangeVisibleSelection() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -236,6 +240,12 @@ private:
     explicit FrameSelection(LocalFrame*);
 
     enum EPositionType { START, END, BASE, EXTENT };
+
+    template <typename Strategy>
+    bool containsAlgorithm(const LayoutPoint&);
+
+    template <typename Strategy>
+    void setNonDirectionalSelectionIfNeededAlgorithm(const VisibleSelection&, TextGranularity, EndPointsAdjustmentMode);
 
     void respondToNodeModification(Node&, bool baseRemoved, bool extentRemoved, bool startRemoved, bool endRemoved);
     TextDirection directionOfEnclosingBlock();
@@ -296,6 +306,7 @@ private:
 
     RefPtrWillBeMember<Node> m_previousCaretNode; // The last node which painted the caret. Retained for clearing the old caret when it moves.
     LayoutRect m_previousCaretRect;
+    CaretVisibility m_previousCaretVisibility;
 
     RefPtrWillBeMember<EditingStyle> m_typingStyle;
 

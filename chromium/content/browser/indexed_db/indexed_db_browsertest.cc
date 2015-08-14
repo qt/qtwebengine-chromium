@@ -9,8 +9,9 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/thread_test_helper.h"
 #include "content/browser/browser_main_loop.h"
@@ -142,8 +143,7 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
                    GURL("file:///")),
         base::Bind(&IndexedDBBrowserTest::DidGetDiskUsage, this));
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
-        BrowserMainLoop::GetInstance()->indexed_db_thread()->
-            message_loop_proxy()));
+        BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
     EXPECT_TRUE(helper->Run());
     // Wait for DidGetDiskUsage to be called.
     base::MessageLoop::current()->RunUntilIdle();
@@ -156,10 +156,8 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
         base::Bind(&IndexedDBContextImpl::GetOriginBlobFileCount, GetContext(),
                    GURL("file:///")),
         base::Bind(&IndexedDBBrowserTest::DidGetBlobFileCount, this));
-    scoped_refptr<base::ThreadTestHelper> helper(
-        new base::ThreadTestHelper(BrowserMainLoop::GetInstance()
-                                       ->indexed_db_thread()
-                                       ->message_loop_proxy()));
+    scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
+        BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
     EXPECT_TRUE(helper->Run());
     // Wait for DidGetBlobFileCount to be called.
     base::MessageLoop::current()->RunUntilIdle();
@@ -323,8 +321,7 @@ class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
         base::Bind(
             &CopyLevelDBToProfile, shell(), context, EnclosingLevelDBDir()));
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
-        BrowserMainLoop::GetInstance()->indexed_db_thread()->
-            message_loop_proxy()));
+        BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
     ASSERT_TRUE(helper->Run());
   }
 
@@ -443,7 +440,8 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, EmptyBlob) {
   EXPECT_EQ(2, RequestBlobFileCount());
 }
 
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed, BlobDidAck) {
+// Very flaky on many bots. See crbug.com/459835
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed, DISABLED_BlobDidAck) {
   SimpleTest(GetTestUrl("indexeddb", "blob_did_ack.html"));
   // Wait for idle so that the blob ack has time to be received/processed by
   // the browser process.
@@ -477,10 +475,8 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DeleteForOriginDeletesBlobs) {
   GetContext()->TaskRunner()->PostTask(
       FROM_HERE, base::Bind(&IndexedDBContextImpl::DeleteForOrigin,
                             GetContext(), GURL("file:///")));
-  scoped_refptr<base::ThreadTestHelper> helper(
-      new base::ThreadTestHelper(BrowserMainLoop::GetInstance()
-                                     ->indexed_db_thread()
-                                     ->message_loop_proxy()));
+  scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
+      BrowserMainLoop::GetInstance()->indexed_db_thread()->task_runner()));
   ASSERT_TRUE(helper->Run());
   EXPECT_EQ(0, RequestDiskUsage());
 }
@@ -492,22 +488,14 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DiskFullOnCommit) {
   //       => IndexedDBBackingStore::SetUpMetadata
   //   #2: IndexedDBBackingStore::OpenBackingStore
   //       => IndexedDBBackingStore::CleanUpBlobJournal (no-op)
-  // * Then deletes the database:
-  //   #3: IndexedDBFactoryImpl::DeleteDatabase
-  //       => IndexedDBDatabase::Create
-  //       => IndexedDBBackingStore::CreateIDBDatabaseMetaData
-  //   #4: IndexedDBFactoryImpl::DeleteDatabase
-  //       => IndexedDBDatabase::DeleteDatabase
-  //       => IndexedDBBackingStore::DeleteDatabase
-  //       => IndexedDBBackingStore::CleanUpBlobJournal (no-op)
   // * The test calls open(), to create a new database:
-  //   #5: IndexedDBFactoryImpl::Open
+  //   #3: IndexedDBFactoryImpl::Open
   //       => IndexedDBDatabase::Create
   //       => IndexedDBBackingStore::CreateIDBDatabaseMetaData
-  //   #6: IndexedDBTransaction::Commit - initial "versionchange" transaction
+  //   #4: IndexedDBTransaction::Commit - initial "versionchange" transaction
   // * Once the connection is opened, the test runs:
-  //   #7: IndexedDBTransaction::Commit - the test's "readwrite" transaction)
-  const int instance_num = 7;
+  //   #5: IndexedDBTransaction::Commit - the test's "readwrite" transaction)
+  const int instance_num = 5;
   const int call_num = 1;
   FailOperation(FAIL_CLASS_LEVELDB_TRANSACTION, FAIL_METHOD_COMMIT_DISK_FULL,
                 instance_num, call_num);
@@ -693,7 +681,14 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
 
 class IndexedDBBrowserCorruptionTest
     : public IndexedDBBrowserTest,
-      public ::testing::WithParamInterface<const char*> {};
+      public ::testing::WithParamInterface<const char*> {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    // Experimental for IDBObjectStore.getAll()
+    command_line->AppendSwitch(
+        switches::kEnableExperimentalWebPlatformFeatures);
+  }
+};
 
 IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
                        OperationOnCorruptedOpenDatabase) {
@@ -719,6 +714,7 @@ INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                         IndexedDBBrowserCorruptionTest,
                         ::testing::Values("failGetBlobJournal",
                                           "get",
+                                          "getAll",
                                           "failWebkitGetDatabaseNames",
                                           "iterate",
                                           "failTransactionCommit",

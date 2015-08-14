@@ -117,6 +117,12 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
   MockRenderWidgetHostDelegate() {}
   ~MockRenderWidgetHostDelegate() override {}
+
+ private:
+  void Cut() override {}
+  void Copy() override {}
+  void Paste() override {}
+  void SelectAll() override {}
 };
 
 class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
@@ -700,6 +706,7 @@ TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
   TestBrowserContext browser_context;
   MockRenderProcessHost* process_host =
       new MockRenderProcessHost(&browser_context);
+  process_host->Init();
   MockRenderWidgetHostDelegate delegate;
   MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
@@ -711,9 +718,8 @@ TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
   ASSERT_EQ(1U, process_host->sink().message_count());
 
   // Send an ACK for the first wheel event, so that the queue will be flushed.
-  InputHostMsg_HandleInputEvent_ACK_Params ack;
-  ack.type = blink::WebInputEvent::MouseWheel;
-  ack.state = INPUT_EVENT_ACK_STATE_CONSUMED;
+  InputEventAck ack(blink::WebInputEvent::MouseWheel,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
   scoped_ptr<IPC::Message> response(
       new InputHostMsg_HandleInputEvent_ACK(0, ack));
   host->OnMessageReceived(*response);
@@ -740,6 +746,7 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   TestBrowserContext browser_context;
   MockRenderProcessHost* process_host =
       new MockRenderProcessHost(&browser_context);
+  process_host->Init();
   MockRenderWidgetHostDelegate delegate;
   MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
@@ -757,9 +764,8 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   process_host->sink().ClearMessages();
 
   // Indicate that the wheel event was unhandled.
-  InputHostMsg_HandleInputEvent_ACK_Params unhandled_ack;
-  unhandled_ack.type = blink::WebInputEvent::MouseWheel;
-  unhandled_ack.state = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+  InputEventAck unhandled_ack(blink::WebInputEvent::MouseWheel,
+                              INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
   scoped_ptr<IPC::Message> response1(
       new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response1);
@@ -849,9 +855,9 @@ TEST_F(RenderWidgetHostViewMacTest, Background) {
   set_background = process_host->sink().GetUniqueMessageMatching(
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
-  Tuple<bool> sent_background;
+  base::Tuple<bool> sent_background;
   ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
-  EXPECT_FALSE(get<0>(sent_background));
+  EXPECT_FALSE(base::get<0>(sent_background));
 
   // Try setting it back.
   process_host->sink().ClearMessages();
@@ -862,7 +868,7 @@ TEST_F(RenderWidgetHostViewMacTest, Background) {
       ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
   ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
-  EXPECT_TRUE(get<0>(sent_background));
+  EXPECT_TRUE(base::get<0>(sent_background));
 
   host->Shutdown();
 }
@@ -887,9 +893,9 @@ class RenderWidgetHostViewMacPinchTest : public RenderWidgetHostViewMacTest {
         break;
     }
     DCHECK(message);
-    Tuple<IPC::WebInputEventPointer, ui::LatencyInfo, bool> data;
+    base::Tuple<IPC::WebInputEventPointer, ui::LatencyInfo, bool> data;
     InputMsg_HandleInputEvent::Read(message, &data);
-    IPC::WebInputEventPointer ipc_event = get<0>(data);
+    IPC::WebInputEventPointer ipc_event = base::get<0>(data);
     const blink::WebGestureEvent* gesture_event =
         static_cast<const blink::WebGestureEvent*>(ipc_event);
     return gesture_event->data.pinchUpdate.zoomDisabled;
@@ -908,15 +914,15 @@ TEST_F(RenderWidgetHostViewMacPinchTest, PinchThresholding) {
   // out |OnMessageReceived()|.
   TestBrowserContext browser_context;
   process_host_ = new MockRenderProcessHost(&browser_context);
+  process_host_->Init();
   MockRenderWidgetHostDelegate delegate;
   MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
       &delegate, process_host_, MSG_ROUTING_NONE);
   RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host, false);
 
   // We'll use this IPC message to ack events.
-  InputHostMsg_HandleInputEvent_ACK_Params ack;
-  ack.type = blink::WebInputEvent::GesturePinchUpdate;
-  ack.state = INPUT_EVENT_ACK_STATE_CONSUMED;
+  InputEventAck ack(blink::WebInputEvent::GesturePinchUpdate,
+                    INPUT_EVENT_ACK_STATE_CONSUMED);
   scoped_ptr<IPC::Message> response(
       new InputHostMsg_HandleInputEvent_ACK(0, ack));
 

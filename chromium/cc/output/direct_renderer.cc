@@ -10,6 +10,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/output/bsp_tree.h"
@@ -132,8 +133,7 @@ DirectRenderer::DirectRenderer(RendererClient* client,
     : Renderer(client, settings),
       output_surface_(output_surface),
       resource_provider_(resource_provider),
-      overlay_processor_(
-          new OverlayProcessor(output_surface, resource_provider)) {
+      overlay_processor_(new OverlayProcessor(output_surface)) {
   overlay_processor_->Initialize();
 }
 
@@ -193,8 +193,9 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                const gfx::Rect& device_clip_rect,
                                bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
-  UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount",
-                       render_passes_in_draw_order->size());
+  UMA_HISTOGRAM_COUNTS(
+      "Renderer4.renderPassCount",
+      base::saturated_cast<int>(render_passes_in_draw_order->size()));
 
   const RenderPass* root_render_pass = render_passes_in_draw_order->back();
   DCHECK(root_render_pass);
@@ -309,8 +310,8 @@ bool DirectRenderer::ShouldSkipQuad(const DrawQuad& quad,
   if (render_pass_scissor.IsEmpty())
     return true;
 
-  if (quad.isClipped()) {
-    gfx::Rect r = quad.clipRect();
+  if (quad.shared_quad_state->is_clipped) {
+    gfx::Rect r = quad.shared_quad_state->clip_rect;
     r.Intersect(render_pass_scissor);
     return r.IsEmpty();
   }
@@ -325,12 +326,12 @@ void DirectRenderer::SetScissorStateForQuad(
     bool use_render_pass_scissor) {
   if (use_render_pass_scissor) {
     gfx::Rect quad_scissor_rect = render_pass_scissor;
-    if (quad.isClipped())
-      quad_scissor_rect.Intersect(quad.clipRect());
+    if (quad.shared_quad_state->is_clipped)
+      quad_scissor_rect.Intersect(quad.shared_quad_state->clip_rect);
     SetScissorTestRectInDrawSpace(frame, quad_scissor_rect);
     return;
-  } else if (quad.isClipped()) {
-    SetScissorTestRectInDrawSpace(frame, quad.clipRect());
+  } else if (quad.shared_quad_state->is_clipped) {
+    SetScissorTestRectInDrawSpace(frame, quad.shared_quad_state->clip_rect);
     return;
   }
 
@@ -461,7 +462,8 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
     // polygons to go into the BSP tree.
     if (quad.shared_quad_state->sorting_context_id != 0) {
       scoped_ptr<DrawPolygon> new_polygon(new DrawPolygon(
-          *it, quad.visible_rect, quad.quadTransform(), next_polygon_id++));
+          *it, quad.visible_rect,
+          quad.shared_quad_state->quad_to_target_transform, next_polygon_id++));
       if (new_polygon->points().size() > 2u) {
         poly_list.push_back(new_polygon.Pass());
       }

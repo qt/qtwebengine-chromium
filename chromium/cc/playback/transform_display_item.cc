@@ -20,13 +20,13 @@ TransformDisplayItem::~TransformDisplayItem() {
 void TransformDisplayItem::SetNew(const gfx::Transform& transform) {
   transform_ = transform;
 
-  size_t memory_usage = sizeof(gfx::Transform);
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 1 /* op_count */,
-                      memory_usage);
+                      0 /* external_memory_usage */);
 }
 
 void TransformDisplayItem::Raster(SkCanvas* canvas,
-                                  SkDrawPictureCallback* callback) const {
+                                  const gfx::Rect& canvas_target_playback_rect,
+                                  SkPicture::AbortCallback* callback) const {
   canvas->save();
   if (!transform_.IsIdentity())
     canvas->concat(transform_.matrix());
@@ -40,14 +40,16 @@ void TransformDisplayItem::AsValueInto(
 
 EndTransformDisplayItem::EndTransformDisplayItem() {
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 0 /* op_count */,
-                      0 /* memory_usage */);
+                      0 /* external_memory_usage */);
 }
 
 EndTransformDisplayItem::~EndTransformDisplayItem() {
 }
 
-void EndTransformDisplayItem::Raster(SkCanvas* canvas,
-                                     SkDrawPictureCallback* callback) const {
+void EndTransformDisplayItem::Raster(
+    SkCanvas* canvas,
+    const gfx::Rect& canvas_target_playback_rect,
+    SkPicture::AbortCallback* callback) const {
   canvas->restore();
 }
 

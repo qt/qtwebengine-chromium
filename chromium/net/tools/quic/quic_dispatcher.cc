@@ -69,7 +69,9 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
     return false;
   }
   void OnError(QuicFramer* framer) override {
-    DVLOG(1) << QuicUtils::ErrorToString(framer->error());
+    QuicErrorCode error = framer->error();
+    dispatcher_->SetLastError(error);
+    DVLOG(1) << QuicUtils::ErrorToString(error);
   }
 
   bool OnProtocolVersionMismatch(QuicVersion /*received_version*/) override {
@@ -79,9 +81,11 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
     return true;
   }
 
-  // The following methods should never get called because we always return
-  // false from OnUnauthenticatedHeader().  As a result, we never process the
-  // payload of the packet.
+  // The following methods should never get called because
+  // OnUnauthenticatedPublicHeader() or OnUnauthenticatedHeader() (whichever was
+  // called last), will return false and prevent a subsequent invocation of
+  // these methods.  Thus, the payload of the packet is never processed in the
+  // dispatcher.
   void OnPublicResetPacket(const QuicPublicResetPacket& /*packet*/) override {
     DCHECK(false);
   }
@@ -181,7 +185,8 @@ QuicDispatcher::QuicDispatcher(const QuicConfig& config,
       framer_(supported_versions,
               /*unused*/ QuicTime::Zero(),
               Perspective::IS_SERVER),
-      framer_visitor_(new QuicFramerVisitor(this)) {
+      framer_visitor_(new QuicFramerVisitor(this)),
+      last_error_(QUIC_NO_ERROR) {
   framer_.set_visitor(framer_visitor_.get());
 }
 
@@ -465,8 +470,9 @@ QuicServerSession* QuicDispatcher::CreateQuicSession(
       /* owns_writer= */ true, Perspective::IS_SERVER,
       crypto_config_->HasProofSource(), supported_versions_);
 
-  QuicServerSession* session = new QuicServerSession(config_, connection, this);
-  session->InitializeSession(crypto_config_);
+  QuicServerSession* session =
+      new QuicServerSession(config_, connection, this, crypto_config_);
+  session->Initialize();
   if (FLAGS_quic_session_map_threshold_for_stateless_rejects != -1 &&
       session_map_.size() >=
           static_cast<size_t>(
@@ -477,8 +483,12 @@ QuicServerSession* QuicDispatcher::CreateQuicSession(
 }
 
 QuicTimeWaitListManager* QuicDispatcher::CreateQuicTimeWaitListManager() {
-  return new QuicTimeWaitListManager(
-      writer_.get(), this, helper_.get(), supported_versions());
+  // TODO(rjshade): The QuicTimeWaitListManager should take ownership of the
+  // per-connection packet writer.
+  time_wait_list_writer_.reset(
+      packet_writer_factory_->Create(writer_.get(), nullptr));
+  return new QuicTimeWaitListManager(time_wait_list_writer_.get(), this,
+                                     helper_.get(), supported_versions());
 }
 
 bool QuicDispatcher::HandlePacketForTimeWait(
@@ -496,6 +506,10 @@ bool QuicDispatcher::HandlePacketForTimeWait(
   // Continue parsing the packet to extract the sequence number.  Then
   // send it to the time wait manager in OnUnathenticatedHeader.
   return true;
+}
+
+void QuicDispatcher::SetLastError(QuicErrorCode error) {
+  last_error_ = error;
 }
 
 }  // namespace tools

@@ -133,7 +133,8 @@ bool AXTree::Unserialize(const AXTreeUpdate& update) {
             AXTreeDelegate::Change(node, AXTreeDelegate::NODE_CHANGED));
       }
     }
-    delegate_->OnAtomicUpdateFinished(root_->id() != old_root_id, changes);
+    delegate_->OnAtomicUpdateFinished(
+        this, root_->id() != old_root_id, changes);
   }
 
   return true;
@@ -147,7 +148,7 @@ AXNode* AXTree::CreateNode(AXNode* parent, int32 id, int32 index_in_parent) {
   AXNode* new_node = new AXNode(parent, id, index_in_parent);
   id_map_[new_node->id()] = new_node;
   if (delegate_)
-    delegate_->OnNodeCreated(new_node);
+    delegate_->OnNodeCreated(this, new_node);
   return new_node;
 }
 
@@ -165,7 +166,8 @@ bool AXTree::UpdateNode(const AXNodeData& src,
     update_state->pending_nodes.erase(node);
     node->SetData(src);
   } else {
-    if (src.role != AX_ROLE_ROOT_WEB_AREA) {
+    if (src.role != AX_ROLE_ROOT_WEB_AREA &&
+        src.role != AX_ROLE_DESKTOP) {
       error_ = base::StringPrintf(
           "%d is not in the tree and not the new root", src.id);
       return false;
@@ -182,7 +184,7 @@ bool AXTree::UpdateNode(const AXNodeData& src,
   }
 
   if (delegate_)
-    delegate_->OnNodeChanged(node);
+    delegate_->OnNodeChanged(this, node);
 
   // First, delete nodes that used to be children of this node but aren't
   // anymore.
@@ -200,7 +202,7 @@ bool AXTree::UpdateNode(const AXNodeData& src,
   node->SwapChildren(new_children);
 
   // Update the root of the tree if needed.
-  if (src.role == AX_ROLE_ROOT_WEB_AREA &&
+  if ((src.role == AX_ROLE_ROOT_WEB_AREA || src.role == AX_ROLE_DESKTOP) &&
       (!root_ || root_->id() != src.id)) {
     if (root_)
       DestroySubtree(root_, update_state);
@@ -213,7 +215,7 @@ bool AXTree::UpdateNode(const AXNodeData& src,
 void AXTree::DestroySubtree(AXNode* node,
                             AXTreeUpdateState* update_state) {
   if (delegate_)
-    delegate_->OnSubtreeWillBeDeleted(node);
+    delegate_->OnSubtreeWillBeDeleted(this, node);
   DestroyNodeAndSubtree(node, update_state);
 }
 
@@ -223,7 +225,7 @@ void AXTree::DestroyNodeAndSubtree(AXNode* node,
   for (int i = 0; i < node->child_count(); ++i)
     DestroyNodeAndSubtree(node->ChildAtIndex(i), update_state);
   if (delegate_)
-    delegate_->OnNodeWillBeDeleted(node);
+    delegate_->OnNodeWillBeDeleted(this, node);
   if (update_state) {
     update_state->pending_nodes.erase(node);
   }

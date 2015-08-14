@@ -10,7 +10,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
@@ -383,19 +383,17 @@ int TransportConnectJob::DoTransportConnectComplete(int result) {
     }
 
     SetSocket(transport_socket_.Pass());
-    fallback_timer_.Stop();
   } else {
     // Failure will be returned via |GetAdditionalErrorState|, so save
     // connection attempts from both sockets for use there.
     CopyConnectionAttemptsFromSockets();
 
-    // Be a bit paranoid and kill off the fallback members to prevent reuse.
-    fallback_transport_socket_.reset();
-    fallback_addresses_.reset();
+    transport_socket_.reset();
   }
 
-  // N.B.: The owner of the ConnectJob will delete it after the callback is
-  // called, so the fallback socket, if any, won't stick around for long.
+  fallback_timer_.Stop();
+  fallback_transport_socket_.reset();
+  fallback_addresses_.reset();
 
   return result;
 }
@@ -456,19 +454,16 @@ void TransportConnectJob::DoIPv6FallbackTransportConnectComplete(int result) {
         TransportConnectJobHelper::CONNECTION_LATENCY_IPV4_WINS_RACE);
     SetSocket(fallback_transport_socket_.Pass());
     helper_.set_next_state(TransportConnectJobHelper::STATE_NONE);
-    transport_socket_.reset();
   } else {
     // Failure will be returned via |GetAdditionalErrorState|, so save
     // connection attempts from both sockets for use there.
     CopyConnectionAttemptsFromSockets();
 
-    // Be a bit paranoid and kill off the fallback members to prevent reuse.
     fallback_transport_socket_.reset();
     fallback_addresses_.reset();
   }
 
-  // N.B.: The owner of the ConnectJob will delete it after the callback is
-  // called, so the main socket, if any, won't stick around for long.
+  transport_socket_.reset();
 
   NotifyDelegateOfCompletion(result);  // Deletes |this|
 }
@@ -609,7 +604,7 @@ LoadState TransportClientSocketPool::GetLoadState(
   return base_.GetLoadState(group_name, handle);
 }
 
-base::DictionaryValue* TransportClientSocketPool::GetInfoAsValue(
+scoped_ptr<base::DictionaryValue> TransportClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
     bool include_nested_pools) const {

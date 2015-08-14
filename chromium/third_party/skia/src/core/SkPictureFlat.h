@@ -57,9 +57,9 @@ enum DrawType {
     SKEW,
     TRANSLATE,
     NOOP,
-    BEGIN_COMMENT_GROUP,
-    COMMENT,
-    END_COMMENT_GROUP,
+    BEGIN_COMMENT_GROUP, // deprecated (M44)
+    COMMENT,             // deprecated (M44)
+    END_COMMENT_GROUP,   // deprecated (M44)
 
     // new ops -- feel free to re-alphabetize on next version bump
     DRAW_DRRECT,
@@ -69,8 +69,12 @@ enum DrawType {
     DRAW_PATCH, // could not add in aphabetical order
     DRAW_PICTURE_MATRIX_PAINT,
     DRAW_TEXT_BLOB,
+    DRAW_IMAGE,
+    DRAW_IMAGE_RECT,
+    DRAW_ATLAS,
+    DRAW_IMAGE_NINE,
 
-    LAST_DRAWTYPE_ENUM = DRAW_TEXT_BLOB
+    LAST_DRAWTYPE_ENUM = DRAW_IMAGE_NINE
 };
 
 // In the 'match' method, this constant will match any flavor of DRAW_BITMAP*
@@ -81,6 +85,11 @@ enum DrawVertexFlags {
     DRAW_VERTICES_HAS_COLORS  = 0x02,
     DRAW_VERTICES_HAS_INDICES = 0x04,
     DRAW_VERTICES_HAS_XFER    = 0x08,
+};
+
+enum DrawAtlasFlags {
+    DRAW_ATLAS_HAS_COLORS   = 1 << 0,
+    DRAW_ATLAS_HAS_CULL     = 1 << 1,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -173,7 +182,7 @@ class SkFlatData;
 
 class SkFlatController : public SkRefCnt {
 public:
-    SK_DECLARE_INST_COUNT(SkFlatController)
+    
 
     SkFlatController(uint32_t writeBufferFlags = 0);
     virtual ~SkFlatController();

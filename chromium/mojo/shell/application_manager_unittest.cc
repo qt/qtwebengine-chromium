@@ -40,6 +40,7 @@ class TestMimeTypeFetcher : public Fetcher {
   // Fetcher:
   const GURL& GetURL() const override { return url_; }
   GURL GetRedirectURL() const override { return GURL("yyy"); }
+  GURL GetRedirectReferer() const override { return GURL(); }
   URLResponsePtr AsURLResponse(base::TaskRunner* task_runner,
                                uint32_t skip) override {
     return URLResponse::New().Pass();
@@ -145,7 +146,6 @@ class TestApplicationLoader : public ApplicationLoader,
 
   void set_context(TestContext* context) { context_ = context; }
   int num_loads() const { return num_loads_; }
-  const std::vector<std::string>& GetArgs() const { return test_app_->args(); }
   const GURL& last_requestor_url() const { return last_requestor_url_; }
 
  private:
@@ -286,7 +286,9 @@ class TestAImpl : public TestA {
             TesterContext* test_context,
             InterfaceRequest<TestA> request)
       : test_context_(test_context), binding_(this, request.Pass()) {
-    app_impl->ConnectToApplication(kTestBURLString)->ConnectToService(&b_);
+    mojo::URLRequestPtr request2(mojo::URLRequest::New());
+    request2->url = mojo::String::From(kTestBURLString);
+    app_impl->ConnectToApplication(request2.Pass())->ConnectToService(&b_);
   }
 
   ~TestAImpl() override {
@@ -519,22 +521,6 @@ TEST_F(ApplicationManagerTest, Basic) {
   test_client_->Test("test");
   loop_.Run();
   EXPECT_EQ(std::string("test"), context_.last_test_string);
-}
-
-// Confirm that no arguments are sent to an application by default.
-TEST_F(ApplicationManagerTest, NoArgs) {
-  ApplicationManager am(&test_delegate_);
-  GURL test_url("test:test");
-  TestApplicationLoader* loader = new TestApplicationLoader;
-  loader->set_context(&context_);
-  am.SetLoaderForURL(scoped_ptr<ApplicationLoader>(loader), test_url);
-  TestServicePtr test_service;
-  am.ConnectToService(test_url, &test_service);
-  TestClient test_client(test_service.Pass());
-  test_client.Test("test");
-  loop_.Run();
-  std::vector<std::string> app_args = loader->GetArgs();
-  EXPECT_EQ(0U, app_args.size());
 }
 
 // Confirm that url mappings are respected.
@@ -784,8 +770,10 @@ TEST_F(ApplicationManagerTest, TestEndApplicationClosure) {
       scoped_ptr<ApplicationLoader>(loader), "test");
 
   bool called = false;
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From("test:test");
   application_manager_->ConnectToApplication(
-      GURL("test:test"), GURL(), nullptr, nullptr,
+      request.Pass(), std::string(), GURL(), nullptr, nullptr,
       base::Bind(&QuitClosure, base::Unretained(&called)));
   loop_.Run();
   EXPECT_TRUE(called);
@@ -809,8 +797,10 @@ TEST(ApplicationManagerTest2, ContentHandlerConnectionGetsRequestorURL) {
                                       content_handler_url);
 
   bool called = false;
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From("test:test");
   application_manager.ConnectToApplication(
-      GURL("test:test"), requestor_url, nullptr, nullptr,
+      request.Pass(), std::string(), requestor_url, nullptr, nullptr,
       base::Bind(&QuitClosure, base::Unretained(&called)));
   loop.Run();
   EXPECT_TRUE(called);

@@ -218,6 +218,9 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
   // Create an internal ADM if the user has not added an external
   // ADM implementation as input to Init().
   if (external_adm == nullptr) {
+#if !defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
+    return -1;
+#else
     // Create the internal ADM implementation.
     shared_->set_audio_device(AudioDeviceModuleImpl::Create(
         VoEId(shared_->instance_id(), -1), shared_->audio_device_layer()));
@@ -227,6 +230,7 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
                             "Init() failed to create the ADM");
       return -1;
     }
+#endif  // WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE
   } else {
     // Use the already existing external ADM implementation.
     shared_->set_audio_device(external_adm);
@@ -568,7 +572,7 @@ int VoEBaseImpl::StopSend(int channel) {
 }
 
 int VoEBaseImpl::GetVersion(char version[1024]) {
-  assert(kVoiceEngineVersionMaxMessageSize == 1024);
+  static_assert(kVoiceEngineVersionMaxMessageSize == 1024, "");
 
   if (version == nullptr) {
     shared_->SetLastError(VE_INVALID_ARGUMENT, kTraceError);

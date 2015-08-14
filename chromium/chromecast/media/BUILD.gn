@@ -12,18 +12,20 @@ group("media") {
   ]
 }
 
-test("unittests") {
+test("cast_media_unittests") {
   sources = [
-    "//media/base",
     "cma/backend/audio_video_pipeline_device_unittest.cc",
     "cma/base/balanced_media_task_runner_unittest.cc",
     "cma/base/buffering_controller_unittest.cc",
     "cma/base/buffering_frame_provider_unittest.cc",
     "cma/filters/demuxer_stream_adapter_unittest.cc",
+    "cma/filters/multi_demuxer_stream_adapter_unittest.cc",
     "cma/ipc/media_message_fifo_unittest.cc",
     "cma/ipc/media_message_unittest.cc",
     "cma/ipc_streamer/av_streamer_unittest.cc",
     "cma/pipeline/audio_video_pipeline_impl_unittest.cc",
+    "cma/test/demuxer_stream_for_test.cc",
+    "cma/test/demuxer_stream_for_test.h",
     "cma/test/frame_generator_for_test.cc",
     "cma/test/frame_generator_for_test.h",
     "cma/test/frame_segmenter_for_test.cc",
@@ -37,17 +39,19 @@ test("unittests") {
     "cma/test/run_all_unittests.cc",
   ]
 
+  configs += [ "//chromecast:config" ]
+
   deps = [
     ":media",
     "//base",
     "//base:i18n",
     "//base/test:test_support",
     "//chromecast/base/metrics:test_support",
+    "//chromecast/public",
     "//media",
     "//media/base:test_support",
     "//testing/gmock",
     "//testing/gtest",
+    "//ui/gfx/geometry",
   ]
-
-  configs += [ "//chromecast:config" ]
 }

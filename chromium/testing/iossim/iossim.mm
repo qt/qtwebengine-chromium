@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import <Foundation/Foundation.h>
 #include <asl.h>
+#import <Foundation/Foundation.h>
 #include <libgen.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -28,16 +28,11 @@
 #import "DVTFoundation.h"
 #endif  // IOSSIM_USE_XCODE_6
 
-@protocol OS_dispatch_queue
-@end
-@protocol OS_dispatch_source
-@end
 // TODO(lliabraa): Once all builders are on Xcode 6 this ifdef can be removed
 // (crbug.com/385030).
 #if defined(IOSSIM_USE_XCODE_6)
-@protocol OS_xpc_object
-@end
 @protocol SimBridge;
+@class DVTSimulatorApplication;
 @class SimDeviceSet;
 @class SimDeviceType;
 @class SimRuntime;
@@ -637,7 +632,18 @@ DTiPhoneSimulatorApplicationSpecifier* BuildAppSpec(NSString* appPath) {
 // valid.
 DTiPhoneSimulatorSystemRoot* BuildSystemRoot(NSString* sdkVersion) {
   Class systemRootClass = FindClassByName(@"DTiPhoneSimulatorSystemRoot");
+#if defined(IOSSIM_USE_XCODE_6)
+  Class simRuntimeClass = FindClassByName(@"SimRuntime");
+  NSArray* sorted =
+      [[simRuntimeClass supportedRuntimes] sortedArrayUsingDescriptors:@[
+        [NSSortDescriptor sortDescriptorWithKey:@"version" ascending:YES]
+      ]];
+  NSString* versionString = [[sorted lastObject] versionString];
+  DTiPhoneSimulatorSystemRoot* systemRoot =
+      [systemRootClass rootWithSDKVersion:versionString];
+#else
   DTiPhoneSimulatorSystemRoot* systemRoot = [systemRootClass defaultRoot];
+#endif
   if (sdkVersion)
     systemRoot = [systemRootClass rootWithSDKVersion:sdkVersion];
 
@@ -671,7 +677,7 @@ DTiPhoneSimulatorSessionConfig* BuildSessionConfig(
 #if defined(IOSSIM_USE_XCODE_6)
     Class simDeviceTypeClass = FindClassByName(@"SimDeviceType");
     id simDeviceType =
-        [simDeviceTypeClass supportedDeviceTypesByName][deviceName];
+        [simDeviceTypeClass supportedDeviceTypesByAlias][deviceName];
     Class simRuntimeClass = FindClassByName(@"SimRuntime");
     NSString* identifier = systemRoot.runtime.identifier;
     id simRuntime = [simRuntimeClass supportedRuntimesByIdentifier][identifier];
@@ -961,7 +967,7 @@ int main(int argc, char* const argv[]) {
   if (IsRunningWithXcode6OrLater()) {
 #if defined(IOSSIM_USE_XCODE_6)
     Class simDeviceTypeClass = FindClassByName(@"SimDeviceType");
-    if ([simDeviceTypeClass supportedDeviceTypesByName][deviceName] == nil) {
+    if ([simDeviceTypeClass supportedDeviceTypesByAlias][deviceName] == nil) {
       LogError(@"Invalid device name: %@.", deviceName);
       PrintSupportedDevices();
       exit(kExitInvalidArguments);

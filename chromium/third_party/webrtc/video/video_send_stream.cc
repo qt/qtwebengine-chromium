@@ -19,8 +19,8 @@
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
+#include "webrtc/video/video_capture_input.h"
 #include "webrtc/video_engine/encoder_state_feedback.h"
-#include "webrtc/video_engine/vie_capturer.h"
 #include "webrtc/video_engine/vie_channel.h"
 #include "webrtc/video_engine/vie_channel_group.h"
 #include "webrtc/video_engine/vie_defines.h"
@@ -119,7 +119,8 @@ VideoSendStream::VideoSendStream(
       channel_id_(channel_id),
       use_config_bitrate_(true),
       stats_proxy_(Clock::GetRealTimeClock(), config) {
-  CHECK(channel_group->CreateSendChannel(channel_id_, 0, num_cpu_cores, true));
+  CHECK(channel_group->CreateSendChannel(channel_id_, 0, &transport_adapter_,
+                                         num_cpu_cores, true));
   vie_channel_ = channel_group_->GetChannel(channel_id_);
   vie_encoder_ = channel_group_->GetEncoder(channel_id_);
 
@@ -171,19 +172,15 @@ VideoSendStream::VideoSendStream(
 
   ConfigureSsrcs();
 
-  char rtcp_cname[RTCP_CNAME_SIZE];
-  DCHECK_LT(config_.rtp.c_name.length(), sizeof(rtcp_cname));
-  strncpy(rtcp_cname, config_.rtp.c_name.c_str(), sizeof(rtcp_cname) - 1);
-  rtcp_cname[sizeof(rtcp_cname) - 1] = '\0';
+  vie_channel_->SetRTCPCName(config_.rtp.c_name.c_str());
 
-  vie_channel_->SetRTCPCName(rtcp_cname);
+  input_.reset(new internal::VideoCaptureInput(
+      module_process_thread_, vie_encoder_, config_.local_renderer,
+      &stats_proxy_, overuse_observer));
 
-  vie_capturer_ = new ViECapturer(module_process_thread_, vie_encoder_);
-
-  vie_channel_->RegisterSendTransport(&transport_adapter_);
   // 28 to match packet overhead in ModuleRtpRtcpImpl.
-  vie_channel_->SetMTU(
-      static_cast<unsigned int>(config_.rtp.max_packet_size + 28));
+  DCHECK_LE(config_.rtp.max_packet_size, static_cast<size_t>(0xFFFF - 28));
+  vie_channel_->SetMTU(static_cast<uint16_t>(config_.rtp.max_packet_size + 28));
 
   DCHECK(config.encoder_settings.encoder != nullptr);
   DCHECK_GE(config.encoder_settings.payload_type, 0);
@@ -194,12 +191,6 @@ VideoSendStream::VideoSendStream(
                   config.encoder_settings.payload_type, false));
 
   CHECK(ReconfigureVideoEncoder(encoder_config));
-
-  if (overuse_observer) {
-    vie_capturer_->RegisterCpuOveruseObserver(overuse_observer);
-  }
-  // Registered regardless of monitoring, used for stats.
-  vie_capturer_->RegisterCpuOveruseMetricsObserver(&stats_proxy_);
 
   vie_channel_->RegisterSendSideDelayObserver(&stats_proxy_);
   vie_encoder_->RegisterSendStatisticsProxy(&stats_proxy_);
@@ -238,10 +229,9 @@ VideoSendStream::~VideoSendStream() {
   vie_encoder_->RegisterPreEncodeCallback(nullptr);
   vie_encoder_->RegisterPostEncodeImageCallback(nullptr);
 
-  vie_channel_->DeregisterSendTransport();
-
-  vie_capturer_->RegisterCpuOveruseObserver(nullptr);
-  delete vie_capturer_;
+  // Remove capture input (thread) so that it's not running after the current
+  // channel is deleted.
+  input_.reset();
 
   vie_encoder_->DeRegisterExternalEncoder(
       config_.encoder_settings.payload_type);
@@ -249,16 +239,9 @@ VideoSendStream::~VideoSendStream() {
   channel_group_->DeleteChannel(channel_id_);
 }
 
-void VideoSendStream::IncomingCapturedFrame(const I420VideoFrame& frame) {
-  // TODO(pbos): Local rendering should not be done on the capture thread.
-  if (config_.local_renderer != nullptr)
-    config_.local_renderer->RenderFrame(frame, 0);
-
-  stats_proxy_.OnIncomingFrame();
-  vie_capturer_->IncomingFrame(frame);
+VideoCaptureInput* VideoSendStream::Input() {
+  return input_.get();
 }
-
-VideoSendStreamInput* VideoSendStream::Input() { return this; }
 
 void VideoSendStream::Start() {
   transport_adapter_.Enable();
@@ -398,6 +381,12 @@ bool VideoSendStream::ReconfigureVideoEncoder(
 
   if (!SetSendCodec(video_codec))
     return false;
+
+  // Clear stats for disabled layers.
+  for (size_t i = video_codec.numberOfSimulcastStreams;
+       i < config_.rtp.ssrcs.size(); ++i) {
+    stats_proxy_.OnInactiveSsrc(config_.rtp.ssrcs[i]);
+  }
 
   DCHECK_GE(config.min_transmit_bitrate_bps, 0);
   vie_encoder_->SetMinTransmitBitrate(config.min_transmit_bitrate_bps / 1000);

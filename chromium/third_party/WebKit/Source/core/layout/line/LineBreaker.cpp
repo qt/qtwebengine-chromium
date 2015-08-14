@@ -33,16 +33,13 @@ void LineBreaker::skipLeadingWhitespace(InlineBidiResolver& resolver, LineInfo& 
     while (!resolver.position().atEnd() && !requiresLineBox(resolver.position(), lineInfo, LeadingWhitespace)) {
         LayoutObject* object = resolver.position().object();
         if (object->isOutOfFlowPositioned()) {
-            LayoutBox* box = toLayoutBox(object);
-            setStaticPositions(m_block, box);
-            bool originallyInline = box->style()->isOriginalDisplayInlineType();
-            box->markStaticPositionedBoxForLayout(box->style()->isHorizontalWritingMode(), originallyInline);
-            if (originallyInline) {
-                resolver.runs().addRun(createRun(0, 1, object, resolver));
+            setStaticPositions(m_block, toLayoutBox(object));
+            if (object->style()->isOriginalDisplayInlineType()) {
+                resolver.runs().addRun(createRun(0, 1, LineLayoutItem(object), resolver));
                 lineInfo.incrementRunsFromLeadingWhitespace();
             }
         } else if (object->isFloating()) {
-            m_block->positionNewFloatOnLine(m_block->insertFloatingObject(*toLayoutBox(object)), lastFloatFromPreviousLine, lineInfo, width);
+            m_block.positionNewFloatOnLine(*m_block.insertFloatingObject(*toLayoutBox(object)), lastFloatFromPreviousLine, lineInfo, width);
         }
         resolver.position().increment(&resolver);
     }
@@ -66,7 +63,7 @@ InlineIterator LineBreaker::nextLineBreak(InlineBidiResolver& resolver, LineInfo
 
     bool appliedStartWidth = resolver.position().offset() > 0;
 
-    LineWidth width(*m_block, lineInfo.isFirstLine(), requiresIndent(lineInfo.isFirstLine(), lineInfo.previousLineBrokeCleanly(), m_block->styleRef()));
+    LineWidth width(m_block, lineInfo.isFirstLine(), requiresIndent(lineInfo.isFirstLine(), lineInfo.previousLineBrokeCleanly(), m_block.styleRef()));
 
     skipLeadingWhitespace(resolver, lineInfo, lastFloatFromPreviousLine, width);
 

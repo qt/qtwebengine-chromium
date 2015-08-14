@@ -73,7 +73,7 @@ namespace blink {
 
     class CORE_EXPORT FrameLoaderClient : public FrameClient {
     public:
-        virtual ~FrameLoaderClient() { }
+        ~FrameLoaderClient() override {}
 
         virtual bool hasWebView() const = 0; // mainly for assertions
 
@@ -86,7 +86,7 @@ namespace blink {
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
         virtual void dispatchDidNavigateWithinPage(HistoryItem*, HistoryCommitType) { }
         virtual void dispatchWillClose() = 0;
-        virtual void dispatchDidStartProvisionalLoad(bool isTransitionNavigation, double triggeringEventTime) = 0;
+        virtual void dispatchDidStartProvisionalLoad(double triggeringEventTime) = 0;
         virtual void dispatchDidReceiveTitle(const String&) = 0;
         virtual void dispatchDidChangeIcons(IconType) = 0;
         virtual void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) = 0;
@@ -97,9 +97,8 @@ namespace blink {
         virtual void dispatchDidFirstVisuallyNonEmptyLayout() = 0;
         virtual void dispatchDidChangeThemeColor() = 0;
 
-        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy, bool isTransitionNavigation) = 0;
+        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
 
-        virtual void dispatchAddNavigationTransitionData(const Document::TransitionElementData&) { }
         virtual void dispatchWillRequestResource(FetchRequest*) { }
 
         virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
@@ -133,7 +132,7 @@ namespace blink {
         // that match any element on the frame.
         virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) = 0;
 
-        virtual PassRefPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) = 0;
+        virtual PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) = 0;
 
         virtual String userAgent(const KURL&) = 0;
 
@@ -162,6 +161,8 @@ namespace blink {
         virtual void didCreateNewDocument() = 0;
         virtual void dispatchDidClearWindowObjectInMainWorld() = 0;
         virtual void documentElementAvailable() = 0;
+
+        virtual v8::Local<v8::Value> createTestInterface(const AtomicString& name) = 0;
 
         virtual void didCreateScriptContext(v8::Local<v8::Context>, int extensionGroup, int worldId) = 0;
         virtual void willReleaseScriptContext(v8::Local<v8::Context>, int worldId) = 0;

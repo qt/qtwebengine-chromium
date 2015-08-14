@@ -35,7 +35,8 @@ ContextGroup::ContextGroup(
     const scoped_refptr<SubscriptionRefSet>& subscription_ref_set,
     const scoped_refptr<ValueStateMap>& pending_valuebuffer_state,
     bool bind_generates_resource)
-    : mailbox_manager_(mailbox_manager),
+    : context_type_(CONTEXT_TYPE_UNDEFINED),
+      mailbox_manager_(mailbox_manager),
       memory_tracker_(memory_tracker),
       shader_translator_cache_(shader_translator_cache),
       subscription_ref_set_(subscription_ref_set),
@@ -65,7 +66,7 @@ ContextGroup::ContextGroup(
     if (!feature_info.get())
       feature_info_ = new FeatureInfo;
     TransferBufferManager* manager = new TransferBufferManager();
-    transfer_buffer_manager_.reset(manager);
+    transfer_buffer_manager_ = manager;
     manager->Initialize();
   }
 }
@@ -76,9 +77,38 @@ static void GetIntegerv(GLenum pname, uint32* var) {
   *var = value;
 }
 
+// static
+ContextGroup::ContextType ContextGroup::GetContextType(
+    unsigned webgl_version) {
+  switch (webgl_version) {
+    case 0:
+      return CONTEXT_TYPE_OTHER;
+    case 1:
+      return CONTEXT_TYPE_WEBGL1;
+    case 2:
+      return CONTEXT_TYPE_WEBGL2;
+    default:
+      return CONTEXT_TYPE_UNDEFINED;
+  }
+}
+
 bool ContextGroup::Initialize(
     GLES2Decoder* decoder,
+    ContextGroup::ContextType context_type,
     const DisallowedFeatures& disallowed_features) {
+  if (context_type == CONTEXT_TYPE_UNDEFINED) {
+    LOG(ERROR) << "ContextGroup::Initialize failed because of unknown "
+               << "context type.";
+    return false;
+  }
+  if (context_type_ == CONTEXT_TYPE_UNDEFINED) {
+    context_type_ = context_type;
+  } else if (context_type_ != context_type) {
+    LOG(ERROR) << "ContextGroup::Initialize failed because the type of "
+               << "the context does not fit with the group.";
+    return false;
+  }
+
   // If we've already initialized the group just add the context.
   if (HaveContexts()) {
     decoders_.push_back(base::AsWeakPtr<GLES2Decoder>(decoder));

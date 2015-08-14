@@ -126,7 +126,7 @@ bool ShaderTranslator::Init(
     if (shader_spec == SH_WEBGL2_SPEC ||
         gfx::GetGLImplementation() ==
             gfx::kGLImplementationDesktopGLCoreProfile) {
-      shader_output = SH_GLSL_CORE_OUTPUT;
+      shader_output = SH_GLSL_410_CORE_OUTPUT;
     } else {
       shader_output = SH_GLSL_COMPATIBILITY_OUTPUT;
     }
@@ -194,6 +194,9 @@ bool ShaderTranslator::Translate(const std::string& shader_source,
   if (info_log) {
     *info_log = ShGetInfoLog(compiler_);
   }
+
+  // We don't need results in the compiler anymore.
+  ShClearResults(compiler_);
 
   return success;
 }

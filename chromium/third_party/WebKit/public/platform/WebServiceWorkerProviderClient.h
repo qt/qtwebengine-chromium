@@ -47,7 +47,7 @@ public:
 
     virtual void setController(WebServiceWorker*, bool shouldNotifyControllerChange) = 0;
 
-    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) = 0;
+    virtual void dispatchMessageEvent(WebServiceWorker*, const WebString& message, const WebMessagePortChannelArray& channels) = 0;
 };
 
 } // namespace blink

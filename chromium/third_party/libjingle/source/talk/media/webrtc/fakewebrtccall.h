@@ -42,6 +42,8 @@ class FakeAudioReceiveStream : public webrtc::AudioReceiveStream {
   explicit FakeAudioReceiveStream(
       const webrtc::AudioReceiveStream::Config& config);
 
+  webrtc::AudioReceiveStream::Stats GetStats() const override;
+
   const webrtc::AudioReceiveStream::Config& GetConfig() const;
 
   int received_packets() const { return received_packets_; }
@@ -53,7 +55,7 @@ class FakeAudioReceiveStream : public webrtc::AudioReceiveStream {
 };
 
 class FakeVideoSendStream : public webrtc::VideoSendStream,
-                            public webrtc::VideoSendStreamInput {
+                            public webrtc::VideoCaptureInput {
  public:
   FakeVideoSendStream(const webrtc::VideoSendStream::Config& config,
                       const webrtc::VideoEncoderConfig& encoder_config);
@@ -71,13 +73,13 @@ class FakeVideoSendStream : public webrtc::VideoSendStream,
   void SetStats(const webrtc::VideoSendStream::Stats& stats);
 
  private:
-  void IncomingCapturedFrame(const webrtc::I420VideoFrame& frame) override;
+  void IncomingCapturedFrame(const webrtc::VideoFrame& frame) override;
   webrtc::VideoSendStream::Stats GetStats() override;
 
   bool ReconfigureVideoEncoder(
       const webrtc::VideoEncoderConfig& config) override;
 
-  webrtc::VideoSendStreamInput* Input() override;
+  webrtc::VideoCaptureInput* Input() override;
 
   void Start() override;
   void Stop() override;
@@ -91,7 +93,7 @@ class FakeVideoSendStream : public webrtc::VideoSendStream,
     webrtc::VideoCodecVP9 vp9;
   } vpx_settings_;
   int num_swapped_frames_;
-  webrtc::I420VideoFrame last_frame_;
+  webrtc::VideoFrame last_frame_;
   webrtc::VideoSendStream::Stats stats_;
 };
 
@@ -104,7 +106,7 @@ class FakeVideoReceiveStream : public webrtc::VideoReceiveStream {
 
   bool IsReceiving() const;
 
-  void InjectFrame(const webrtc::I420VideoFrame& frame, int time_to_render_ms);
+  void InjectFrame(const webrtc::VideoFrame& frame, int time_to_render_ms);
 
   void SetStats(const webrtc::VideoReceiveStream::Stats& stats);
 
@@ -137,6 +139,10 @@ class FakeCall : public webrtc::Call, public webrtc::PacketReceiver {
   void SetStats(const webrtc::Call::Stats& stats);
 
  private:
+  webrtc::AudioSendStream* CreateAudioSendStream(
+      const webrtc::AudioSendStream::Config& config) override;
+  void DestroyAudioSendStream(webrtc::AudioSendStream* send_stream) override;
+
   webrtc::AudioReceiveStream* CreateAudioReceiveStream(
       const webrtc::AudioReceiveStream::Config& config) override;
   void DestroyAudioReceiveStream(

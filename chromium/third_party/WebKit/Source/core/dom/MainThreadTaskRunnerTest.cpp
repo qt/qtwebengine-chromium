@@ -37,9 +37,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class MarkingBooleanTask final : public ExecutionContextTask {
 public:
@@ -49,12 +47,12 @@ public:
     }
 
 
-    virtual ~MarkingBooleanTask() { }
+    ~MarkingBooleanTask() override { }
 
 private:
     MarkingBooleanTask(bool* toBeMarked) : m_toBeMarked(toBeMarked) { }
 
-    virtual void performTask(ExecutionContext* context) override
+    void performTask(ExecutionContext* context) override
     {
         *m_toBeMarked = true;
     }
@@ -105,4 +103,4 @@ TEST(MainThreadTaskRunnerTest, RemoveRunner)
     EXPECT_FALSE(isMarked);
 }
 
-}
+} // namespace blink

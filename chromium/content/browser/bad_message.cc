@@ -6,16 +6,30 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/render_process_host.h"
 
 namespace content {
 namespace bad_message {
 
-void ReceivedBadMessage(RenderProcessHost* host, BadMessageReason reason) {
+namespace {
+
+void LogBadMessage(BadMessageReason reason) {
   LOG(ERROR) << "Terminating renderer for bad IPC message, reason " << reason;
   UMA_HISTOGRAM_ENUMERATION("Stability.BadMessageTerminated.Content", reason,
                             BAD_MESSAGE_MAX);
+}
+
+}  // namespace
+
+void ReceivedBadMessage(RenderProcessHost* host, BadMessageReason reason) {
+  LogBadMessage(reason);
   host->ShutdownForBadMessage();
+}
+
+void ReceivedBadMessage(BrowserMessageFilter* filter, BadMessageReason reason) {
+  LogBadMessage(reason);
+  filter->ShutdownForBadMessage();
 }
 
 }  // namespace bad_message

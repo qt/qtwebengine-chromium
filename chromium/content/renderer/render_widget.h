@@ -87,6 +87,7 @@ class RenderWidgetCompositor;
 class RenderWidgetTest;
 class ResizingModeSelector;
 struct ContextMenuParams;
+struct DidOverscrollParams;
 struct WebPluginGeometry;
 
 // RenderWidget provides a communication bridge between a WebWidget and
@@ -166,14 +167,9 @@ class CONTENT_EXPORT RenderWidget
   bool Send(IPC::Message* msg) override;
 
   // blink::WebWidgetClient
-  virtual void willBeginCompositorFrame();
   virtual void didAutoResize(const blink::WebSize& new_size);
   virtual void initializeLayerTreeView();
   virtual blink::WebLayerTreeView* layerTreeView();
-  virtual void didBecomeReadyForAdditionalInput();
-  virtual void didCommitAndDrawCompositorFrame();
-  virtual void didCompleteSwapBuffers();
-  virtual void scheduleComposite();
   virtual void didFocus();
   virtual void didBlur();
   virtual void didChangeCursor(const blink::WebCursorInfo&);
@@ -190,6 +186,11 @@ class CONTENT_EXPORT RenderWidget
   virtual void resetInputMethod();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled);
+  virtual void didOverscroll(
+      const blink::WebFloatSize& unusedDelta,
+      const blink::WebFloatSize& accumulatedRootOverScroll,
+      const blink::WebFloatPoint& position,
+      const blink::WebFloatSize& velocity);
   virtual void showImeIfNeeded();
 
 #if defined(OS_ANDROID)
@@ -237,9 +238,6 @@ class CONTENT_EXPORT RenderWidget
   // Close the underlying WebWidget.
   virtual void Close();
 
-  // Notifies about a compositor frame commit operation having finished.
-  virtual void DidCommitCompositorFrame();
-
   // Deliveres |message| together with compositor state change updates. The
   // exact behavior depends on |policy|.
   // This mechanism is not a drop-in replacement for IPC: messages sent this way
@@ -280,6 +278,22 @@ class CONTENT_EXPORT RenderWidget
   void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
   gfx::Rect AdjustValidationMessageAnchor(const gfx::Rect& anchor);
 
+  // Indicates that the compositor is about to begin a frame. This is primarily
+  // to signal to flow control mechanisms that a frame is beginning, not to
+  // perform actual painting work.
+  void WillBeginCompositorFrame();
+
+  // Notifies about a compositor frame commit operation having finished.
+  virtual void DidCommitCompositorFrame();
+
+  // Notifies that the draw commands for a committed frame have been issued.
+  void DidCommitAndDrawCompositorFrame();
+
+  // Notifies that the compositor has posted a swapbuffers operation to the GPU
+  // process.
+  void DidCompleteSwapBuffers();
+
+  void ScheduleComposite();
   void ScheduleCompositeWithForcedRedraw();
 
   // Called by the compositor in single-threaded mode when a swap is posted,
@@ -426,9 +440,6 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateVideoAck(int32 video_id);
   void OnRequestMoveAck();
   void OnSetInputMethodActive(bool is_active);
-  void OnCandidateWindowShown();
-  void OnCandidateWindowUpdated();
-  void OnCandidateWindowHidden();
   virtual void OnImeSetComposition(
       const base::string16& text,
       const std::vector<blink::WebCompositionUnderline>& underlines,
@@ -559,13 +570,10 @@ class CONTENT_EXPORT RenderWidget
   // won't be sent to WebKit.
   virtual bool WillHandleGestureEvent(const blink::WebGestureEvent& event);
 
-  // Called by OnHandleInputEvent() to notify subclasses that a mouse event was
-  // just handled.
-  virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
-
   // Called by OnHandleInputEvent() to forward a mouse wheel event to the
   // compositor thread, to effect the elastic overscroll effect.
   void ObserveWheelEventAndResult(const blink::WebMouseWheelEvent& wheel_event,
+                                  const gfx::Vector2dF& wheel_unused_delta,
                                   bool event_processed);
 
   // Check whether the WebWidget has any touch event handlers registered
@@ -671,6 +679,12 @@ class CONTENT_EXPORT RenderWidget
 
   // Are we currently handling an input event?
   bool handling_input_event_;
+
+  // Used to intercept overscroll notifications while an event is being
+  // handled. If the event causes overscroll, the overscroll metadata can be
+  // bundled in the event ack, saving an IPC.  Note that we must continue
+  // supporting overscroll IPC notifications due to fling animation updates.
+  scoped_ptr<DidOverscrollParams>* handling_event_overscroll_;
 
   // Are we currently handling an ime event?
   bool handling_ime_event_;
@@ -799,15 +813,15 @@ class CONTENT_EXPORT RenderWidget
 
   // Lists of RenderFrameProxy objects that need to be notified of
   // compositing-related events (e.g. DidCommitCompositorFrame).
-  ObserverList<RenderFrameProxy> render_frame_proxies_;
+  base::ObserverList<RenderFrameProxy> render_frame_proxies_;
 #if defined(VIDEO_HOLE)
-  ObserverList<RenderFrameImpl> video_hole_frames_;
+  base::ObserverList<RenderFrameImpl> video_hole_frames_;
 #endif  // defined(VIDEO_HOLE)
 
   // A list of RenderFrames associated with this RenderWidget. Notifications
   // are sent to each frame in the list for events such as changing
   // visibility state for example.
-  ObserverList<RenderFrameImpl> render_frames_;
+  base::ObserverList<RenderFrameImpl> render_frames_;
 
   ui::MenuSourceType context_menu_source_type_;
   bool has_host_context_menu_location_;

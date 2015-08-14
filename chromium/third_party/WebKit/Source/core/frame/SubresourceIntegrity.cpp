@@ -14,13 +14,13 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "platform/Crypto.h"
 #include "platform/ParsingUtilities.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebCrypto.h"
 #include "public/platform/WebCryptoAlgorithm.h"
 #include "wtf/ASCIICType.h"
 #include "wtf/Vector.h"
+#include "wtf/dtoa/utils.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringUTF8Adaptor.h"
 #include "wtf/text/WTFString.h"
@@ -65,34 +65,77 @@ static String digestToString(const DigestValue& digest)
     return base64URLEncode(reinterpret_cast<const char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
 }
 
+
+HashAlgorithm SubresourceIntegrity::getPrioritizedHashFunction(HashAlgorithm algorithm1, HashAlgorithm algorithm2)
+{
+    const HashAlgorithm weakerThanSha384[] = { HashAlgorithmSha256 };
+    const HashAlgorithm weakerThanSha512[] = { HashAlgorithmSha256, HashAlgorithmSha384 };
+
+    ASSERT(algorithm1 != HashAlgorithmSha1);
+    ASSERT(algorithm2 != HashAlgorithmSha1);
+
+    if (algorithm1 == algorithm2)
+        return algorithm1;
+
+    const HashAlgorithm* weakerAlgorithms = 0;
+    size_t length = 0;
+    switch (algorithm1) {
+    case HashAlgorithmSha256:
+        break;
+    case HashAlgorithmSha384:
+        weakerAlgorithms = weakerThanSha384;
+        length = ARRAY_SIZE(weakerThanSha384);
+        break;
+    case HashAlgorithmSha512:
+        weakerAlgorithms = weakerThanSha512;
+        length = ARRAY_SIZE(weakerThanSha512);
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    };
+
+    for (size_t i = 0; i < length; i++) {
+        if (weakerAlgorithms[i] == algorithm2)
+            return algorithm1;
+    }
+
+    return algorithm2;
+}
+
 bool SubresourceIntegrity::CheckSubresourceIntegrity(const Element& element, const String& source, const KURL& resourceUrl, const Resource& resource)
 {
-    if (!RuntimeEnabledFeatures::subresourceIntegrityEnabled())
-        return true;
-
-    if (!element.fastHasAttribute(HTMLNames::integrityAttr))
-        return true;
-
     Document& document = element.document();
+    String attribute = element.fastGetAttribute(HTMLNames::integrityAttr);
+    if (attribute.isEmpty())
+        return true;
 
     if (!resource.isEligibleForIntegrityCheck(document.securityOrigin())) {
-        logErrorToConsole("Subresource Integrity: The resource '" + resourceUrl.elidedString() + "' has an integrity attribute, but the resource requires CORS to be enabled to check the integrity, and it is not. The resource has been blocked.", document);
+        UseCounter::count(document, UseCounter::SRIElementIntegrityAttributeButIneligible);
+        logErrorToConsole("Subresource Integrity: The resource '" + resourceUrl.elidedString() + "' has an integrity attribute, but the resource requires the request to be CORS enabled to check the integrity, and it is not. The resource has not been blocked, but no integrity check occurred.", document);
         return false;
     }
 
     WTF::Vector<IntegrityMetadata> metadataList;
-    String attribute = element.fastGetAttribute(HTMLNames::integrityAttr);
     IntegrityParseResult integrityParseResult = parseIntegrityAttribute(attribute, metadataList, document);
+    // On failed parsing, there's no need to log an error here, as
+    // parseIntegrityAttribute() will output an appropriate console message.
     if (integrityParseResult != IntegrityParseValidResult)
-        return false;
+        return true;
 
     StringUTF8Adaptor normalizedSource(source, StringUTF8Adaptor::Normalize, WTF::EntitiesForUnencodables);
 
     if (!metadataList.size())
         return true;
 
+    HashAlgorithm strongestAlgorithm = HashAlgorithmSha256;
+    for (const IntegrityMetadata& metadata : metadataList)
+        strongestAlgorithm = getPrioritizedHashFunction(metadata.algorithm, strongestAlgorithm);
+
     DigestValue digest;
-    for (IntegrityMetadata& metadata : metadataList) {
+    for (const IntegrityMetadata& metadata : metadataList) {
+        if (metadata.algorithm != strongestAlgorithm)
+            continue;
+
         digest.clear();
         bool digestSuccess = computeDigest(metadata.algorithm, normalizedSource.data(), normalizedSource.length(), digest);
 
@@ -109,6 +152,7 @@ bool SubresourceIntegrity::CheckSubresourceIntegrity(const Element& element, con
         }
     }
 
+    digest.clear();
     if (computeDigest(HashAlgorithmSha256, normalizedSource.data(), normalizedSource.length(), digest)) {
         // This message exposes the digest of the resource to the console.
         // Because this is only to the console, that's okay for now, but we

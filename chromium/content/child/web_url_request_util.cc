@@ -37,10 +37,10 @@ class HeaderFlattener : public blink::WebHTTPHeaderVisitor {
 
     // Skip over referrer headers found in the header map because we already
     // pulled it out as a separate parameter.
-    if (LowerCaseEqualsASCII(name_latin1, "referer"))
+    if (base::LowerCaseEqualsASCII(name_latin1, "referer"))
       return;
 
-    if (LowerCaseEqualsASCII(name_latin1, "accept"))
+    if (base::LowerCaseEqualsASCII(name_latin1, "accept"))
       has_accept_header_ = true;
 
     if (!buffer_.empty())
@@ -296,6 +296,16 @@ blink::WebURLError CreateWebURLError(const blink::WebURL& unreachable_url,
     error.localizedDescription =
         WebString::fromUTF8(net::ErrorToString(reason));
   }
+  return error;
+}
+
+blink::WebURLError CreateWebURLError(const blink::WebURL& unreachable_url,
+                                     bool stale_copy_in_cache,
+                                     int reason,
+                                     bool was_ignored_by_handler) {
+  blink::WebURLError error =
+      CreateWebURLError(unreachable_url, stale_copy_in_cache, reason);
+  error.wasIgnoredByHandler = was_ignored_by_handler;
   return error;
 }
 

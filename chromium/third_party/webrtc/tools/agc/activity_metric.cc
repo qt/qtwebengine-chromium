@@ -18,12 +18,12 @@
 #include "gflags/gflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_processing/agc/agc.h"
-#include "webrtc/modules/audio_processing/agc/agc_audio_proc.h"
-#include "webrtc/modules/audio_processing/agc/common.h"
 #include "webrtc/modules/audio_processing/agc/histogram.h"
-#include "webrtc/modules/audio_processing/agc/pitch_based_vad.h"
-#include "webrtc/modules/audio_processing/agc/standalone_vad.h"
 #include "webrtc/modules/audio_processing/agc/utility.h"
+#include "webrtc/modules/audio_processing/vad/vad_audio_proc.h"
+#include "webrtc/modules/audio_processing/vad/common.h"
+#include "webrtc/modules/audio_processing/vad/pitch_based_vad.h"
+#include "webrtc/modules/audio_processing/vad/standalone_vad.h"
 #include "webrtc/modules/interface/module_common_types.h"
 
 static const int kAgcAnalWindowSamples = 100;
@@ -75,7 +75,7 @@ class AgcStat {
       : video_index_(0),
         activity_threshold_(kDefaultActivityThreshold),
         audio_content_(Histogram::Create(kAgcAnalWindowSamples)),
-        audio_processing_(new AgcAudioProc()),
+        audio_processing_(new VadAudioProc()),
         vad_(new PitchBasedVad()),
         standalone_vad_(StandaloneVad::Create()),
         audio_content_fid_(NULL) {
@@ -155,7 +155,7 @@ class AgcStat {
   double activity_threshold_;
   double video_vad_[kMaxNumFrames];
   rtc::scoped_ptr<Histogram> audio_content_;
-  rtc::scoped_ptr<AgcAudioProc> audio_processing_;
+  rtc::scoped_ptr<VadAudioProc> audio_processing_;
   rtc::scoped_ptr<PitchBasedVad> vad_;
   rtc::scoped_ptr<StandaloneVad> standalone_vad_;
 
@@ -292,7 +292,7 @@ void void_main(int argc, char* argv[]) {
     ASSERT_GE(ret_val, 0);
 
     if (ret_val > 0) {
-      ASSERT_TRUE(ret_val == true_vad_index);
+      ASSERT_EQ(true_vad_index, ret_val);
       for (int n = 0; n < ret_val; n++) {
         if (true_vad[n] == 1) {
           total_active++;

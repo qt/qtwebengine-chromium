@@ -5,8 +5,8 @@
 #include "cc/blink/web_content_layer_impl.h"
 
 #include "cc/blink/web_display_item_list_impl.h"
-#include "cc/layers/content_layer.h"
 #include "cc/layers/picture_layer.h"
+#include "cc/playback/display_item_list_settings.h"
 #include "third_party/WebKit/public/platform/WebContentLayerClient.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
@@ -14,7 +14,6 @@
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
 
-using cc::ContentLayer;
 using cc::PictureLayer;
 
 namespace cc_blink {
@@ -38,18 +37,13 @@ PaintingControlToWeb(
 
 WebContentLayerImpl::WebContentLayerImpl(blink::WebContentLayerClient* client)
     : client_(client) {
-  if (WebLayerImpl::UsingPictureLayer())
-    layer_ = make_scoped_ptr(new WebLayerImpl(PictureLayer::Create(this)));
-  else
-    layer_ = make_scoped_ptr(new WebLayerImpl(ContentLayer::Create(this)));
+  layer_ = make_scoped_ptr(new WebLayerImpl(
+      PictureLayer::Create(WebLayerImpl::LayerSettings(), this)));
   layer_->layer()->SetIsDrawable(true);
 }
 
 WebContentLayerImpl::~WebContentLayerImpl() {
-  if (WebLayerImpl::UsingPictureLayer())
-    static_cast<PictureLayer*>(layer_->layer())->ClearClient();
-  else
-    static_cast<ContentLayer*>(layer_->layer())->ClearClient();
+  static_cast<PictureLayer*>(layer_->layer())->ClearClient();
 }
 
 blink::WebLayer* WebContentLayerImpl::layer() {
@@ -74,15 +68,21 @@ void WebContentLayerImpl::PaintContents(
   client_->paintContents(canvas, clip, PaintingControlToWeb(painting_control));
 }
 
-void WebContentLayerImpl::PaintContentsToDisplayList(
-    cc::DisplayItemList* display_list,
+scoped_refptr<cc::DisplayItemList>
+WebContentLayerImpl::PaintContentsToDisplayList(
     const gfx::Rect& clip,
     cc::ContentLayerClient::PaintingControlSetting painting_control) {
-  if (!client_)
-    return;
+  cc::DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
 
-  WebDisplayItemListImpl list(display_list);
-  client_->paintContents(&list, clip, PaintingControlToWeb(painting_control));
+  scoped_refptr<cc::DisplayItemList> display_list =
+      cc::DisplayItemList::Create(clip, settings);
+  if (client_) {
+    WebDisplayItemListImpl list(display_list.get());
+    client_->paintContents(&list, clip, PaintingControlToWeb(painting_control));
+  }
+  display_list->Finalize();
+  return display_list;
 }
 
 bool WebContentLayerImpl::FillsBoundsCompletely() const {

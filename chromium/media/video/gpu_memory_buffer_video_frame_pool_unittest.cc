@@ -6,7 +6,6 @@
 #include "base/run_loop.h"
 #include "gpu/command_buffer/client/gles2_interface_stub.h"
 #include "media/base/video_frame.h"
-#include "media/renderers/gpu_video_accelerator_factories.h"
 #include "media/renderers/mock_gpu_video_accelerator_factories.h"
 #include "media/video/gpu_memory_buffer_video_frame_pool.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -63,8 +62,7 @@ class GpuMemoryBufferVideoFramePoolTest : public ::testing::Test {
         y_data,                   // y_data
         u_data,                   // u_data
         v_data,                   // v_data
-        base::TimeDelta(),        // timestamp,
-        base::Closure());         // no_longer_needed_cb
+        base::TimeDelta());       // timestamp
   }
 
  protected:

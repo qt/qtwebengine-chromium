@@ -97,8 +97,6 @@ def interface_context(interface):
     is_typed_array_type = interface.idl_type.is_typed_array
     if is_array_buffer_or_view:
         includes.add('bindings/core/v8/V8ArrayBuffer.h')
-    if interface.name == 'ArrayBuffer':
-        includes.add('core/dom/DOMArrayBufferDeallocationObserver.h')
     if interface.name == 'ArrayBufferView':
         includes.update((
             'bindings/core/v8/V8Int8Array.h',
@@ -129,30 +127,31 @@ def interface_context(interface):
         includes.add('core/frame/UseCounter.h')
 
     # [SetWrapperReferenceFrom]
-    reachable_node_function = extended_attributes.get('SetWrapperReferenceFrom')
-    if reachable_node_function:
+    set_wrapper_reference_from = extended_attributes.get('SetWrapperReferenceFrom')
+    if set_wrapper_reference_from:
         includes.update(['bindings/core/v8/V8GCController.h',
                          'core/dom/Element.h'])
 
     # [SetWrapperReferenceTo]
-    set_wrapper_reference_to_list = [{
-        'name': argument.name,
-        # FIXME: properly should be:
-        # 'cpp_type': argument.idl_type.cpp_type_args(raw_type=True),
-        # (if type is non-wrapper type like NodeFilter, normally RefPtr)
-        # Raw pointers faster though, and NodeFilter hacky anyway.
-        'cpp_type': argument.idl_type.implemented_as + '*',
-        'idl_type': argument.idl_type,
-        'v8_type': v8_types.v8_type(argument.idl_type.name),
-    } for argument in extended_attributes.get('SetWrapperReferenceTo', [])]
-    for set_wrapper_reference_to in set_wrapper_reference_to_list:
+    set_wrapper_reference_to_argument = extended_attributes.get('SetWrapperReferenceTo')
+    set_wrapper_reference_to = None
+    if set_wrapper_reference_to_argument:
+        set_wrapper_reference_to = {
+            'name': set_wrapper_reference_to_argument.name,
+            # FIXME: properly should be:
+            # 'cpp_type': set_wrapper_reference_to_argument.idl_type.cpp_type_args(raw_type=True),
+            # (if type is non-wrapper type like NodeFilter, normally RefPtr)
+            # Raw pointers faster though, and NodeFilter hacky anyway.
+            'cpp_type': set_wrapper_reference_to_argument.idl_type.implemented_as + '*',
+            'idl_type': set_wrapper_reference_to_argument.idl_type,
+            'v8_type': v8_types.v8_type(set_wrapper_reference_to_argument.idl_type.name),
+        }
         set_wrapper_reference_to['idl_type'].add_includes_for_type()
 
     # [SetWrapperReferenceFrom]
     has_visit_dom_wrapper = (
         has_extended_attribute_value(interface, 'Custom', 'VisitDOMWrapper') or
-        reachable_node_function or
-        set_wrapper_reference_to_list)
+        set_wrapper_reference_from or set_wrapper_reference_to)
 
     this_gc_type = gc_type(interface)
 
@@ -196,9 +195,9 @@ def interface_context(interface):
         'pass_cpp_type': cpp_template_type(
             cpp_ptr_type('PassRefPtr', 'RawPtr', this_gc_type),
             cpp_name(interface)),
-        'reachable_node_function': reachable_node_function,
         'runtime_enabled_function': runtime_enabled_function_name(interface),  # [RuntimeEnabled]
-        'set_wrapper_reference_to_list': set_wrapper_reference_to_list,
+        'set_wrapper_reference_from': set_wrapper_reference_from,
+        'set_wrapper_reference_to': set_wrapper_reference_to,
         'v8_class': v8_class_name,
         'v8_class_or_partial': v8_class_name_or_partial,
         'wrapper_class_id': wrapper_class_id,
@@ -220,20 +219,10 @@ def interface_context(interface):
             number_of_required_arguments(constructor),
     } for constructor in interface.custom_constructors]
 
-    # [EventConstructor]
-    has_event_constructor = 'EventConstructor' in extended_attributes
-    any_type_attributes = [attribute for attribute in interface.attributes
-                           if attribute.idl_type.name == 'Any']
-    if has_event_constructor:
-        includes.add('bindings/core/v8/Dictionary.h')
-        if any_type_attributes:
-            includes.add('bindings/core/v8/SerializedScriptValue.h')
-            includes.add('bindings/core/v8/SerializedScriptValueFactory.h')
-
     # [NamedConstructor]
     named_constructor = named_constructor_context(interface)
 
-    if constructors or custom_constructors or has_event_constructor or named_constructor:
+    if constructors or custom_constructors or named_constructor:
         if interface.is_partial:
             raise Exception('[Constructor] and [NamedConstructor] MUST NOT be'
                             ' specified on partial interface definitions:'
@@ -252,10 +241,8 @@ def interface_context(interface):
             unscopeables.append((method.name, v8_utilities.runtime_enabled_function_name(method)))
 
     context.update({
-        'any_type_attributes': any_type_attributes,
         'constructors': constructors,
         'has_custom_constructor': bool(custom_constructors),
-        'has_event_constructor': has_event_constructor,
         'interface_length':
             interface_length(interface, constructors + custom_constructors),
         'is_constructor_raises_exception': extended_attributes.get('RaisesException') == 'Constructor',  # [RaisesException=Constructor]
@@ -312,7 +299,6 @@ def interface_context(interface):
                   attribute['runtime_enabled_function'])
              and attribute['should_be_exposed_to_script']
              for attribute in attributes),
-        'has_conditional_attributes': has_conditional_attributes,
         'has_constructor_attributes': any(attribute['constructor_type'] for attribute in attributes),
         'has_replaceable_attributes': any(attribute['is_replaceable'] for attribute in attributes),
     })
@@ -572,6 +558,20 @@ def interface_context(interface):
         'iterator_method': iterator_method,
         'method_configuration_methods': method_configuration_methods,
         'methods': methods,
+    })
+
+    # Conditionally enabled members
+    has_conditional_attributes_on_instance = any(
+        attribute['exposed_test'] and attribute['on_instance']
+        for attribute in attributes)
+    has_conditional_attributes_on_prototype = any(
+        attribute['exposed_test'] and attribute['on_prototype']
+        for attribute in attributes)
+    context.update({
+        'has_conditional_attributes_on_instance':
+            has_conditional_attributes_on_instance,
+        'has_conditional_attributes_on_prototype':
+            has_conditional_attributes_on_prototype,
     })
 
     context.update({
@@ -1253,8 +1253,6 @@ def number_of_required_arguments(constructor):
 
 def interface_length(interface, constructors):
     # Docs: http://heycam.github.io/webidl/#es-interface-call
-    if 'EventConstructor' in interface.extended_attributes:
-        return 1
     if not constructors:
         return 0
     return min(constructor['number_of_required_arguments']

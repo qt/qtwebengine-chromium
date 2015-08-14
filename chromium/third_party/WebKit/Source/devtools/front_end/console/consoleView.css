@@ -32,6 +32,10 @@
     overflow: hidden;
 }
 
+.console-view > .toolbar {
+    border-bottom: 1px solid #dadada;
+}
+
 .console-view-wrapper {
     background-color: #eee;
 }
@@ -41,18 +45,12 @@
     overflow: hidden;
 }
 
-.console-filters-header {
-    flex: 0 0 23px;
-    overflow: hidden;
-}
-
 #console-messages {
     flex: 1 1;
     padding: 2px 0;
     overflow-y: auto;
     word-wrap: break-word;
     -webkit-user-select: text;
-    border-top: 1px solid rgb(230, 230, 230);
     transform: translateZ(0);
 }
 
@@ -112,7 +110,7 @@
     margin-top: -4px;
     -webkit-user-select: none;
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
+    background-size: 352px 144px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
@@ -189,7 +187,7 @@
 .console-group-title::before {
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 144px;
+    -webkit-mask-size: 352px 144px;
     float: left;
     width: 8px;
     content: "a";
@@ -294,7 +292,7 @@
 .console-debug-level .console-message::before,
 .console-info-level .console-message::before {
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
+    background-size: 352px 144px;
     width: 10px;
     height: 10px;
 }
@@ -408,10 +406,6 @@
 .console-message-nowrap-below div,
 .console-message-nowrap-below span {
     white-space: nowrap !important;
-}
-
-.console-view .toolbar::shadow .console-context {
-    max-width: 200px;
 }
 
 .object-info-state-note {

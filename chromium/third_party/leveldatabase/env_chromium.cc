@@ -318,17 +318,6 @@ Status ChromiumWritableFile::Sync() {
   return Status::OK();
 }
 
-class IDBEnv : public ChromiumEnv {
- public:
-  IDBEnv() : ChromiumEnv() {
-    name_ = "LevelDBEnv.IDB";
-    uma_ioerror_base_name_ = name_ + ".IOError.BFE";
-    make_backup_ = true;
-  }
-};
-
-base::LazyInstance<IDBEnv>::Leaky idb_env = LAZY_INSTANCE_INITIALIZER;
-
 base::LazyInstance<ChromiumEnv>::Leaky default_env = LAZY_INSTANCE_INITIALIZER;
 
 }  // unnamed namespace
@@ -517,11 +506,14 @@ bool ChromiumEnv::MakeBackup(const std::string& fname) {
 }
 
 ChromiumEnv::ChromiumEnv()
-    : name_("LevelDBEnv"),
-      make_backup_(false),
+    : ChromiumEnv("LevelDBEnv", false /* make_backup */) {}
+
+ChromiumEnv::ChromiumEnv(const std::string& name, bool make_backup)
+    : kMaxRetryTimeMillis(1000),
+      name_(name),
+      make_backup_(make_backup),
       bgsignal_(&mu_),
-      started_bgthread_(false),
-      kMaxRetryTimeMillis(1000) {
+      started_bgthread_(false) {
   uma_ioerror_base_name_ = name_ + ".IOError.BFE";
 }
 
@@ -1067,13 +1059,25 @@ void ChromiumEnv::StartThread(void (*function)(void* arg), void* arg) {
   new Thread(function, arg);  // Will self-delete.
 }
 
+LevelDBStatusValue GetLevelDBStatusUMAValue(const leveldb::Status& s) {
+  if (s.ok())
+    return LEVELDB_STATUS_OK;
+  if (s.IsNotFound())
+    return LEVELDB_STATUS_NOT_FOUND;
+  if (s.IsCorruption())
+    return LEVELDB_STATUS_CORRUPTION;
+  if (s.IsNotSupportedError())
+    return LEVELDB_STATUS_NOT_SUPPORTED;
+  if (s.IsIOError())
+    return LEVELDB_STATUS_IO_ERROR;
+  // TODO(cmumford): IsInvalidArgument() was just added to leveldb. Use this
+  // function once that change goes to the public repository.
+  return LEVELDB_STATUS_INVALID_ARGUMENT;
+}
+
 }  // namespace leveldb_env
 
 namespace leveldb {
-
-Env* IDBEnv() {
-  return leveldb_env::idb_env.Pointer();
-}
 
 Env* Env::Default() {
   return leveldb_env::default_env.Pointer();

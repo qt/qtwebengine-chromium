@@ -5,8 +5,10 @@
 #include "content/renderer/media/render_media_log.h"
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/render_thread.h"
 
@@ -30,7 +32,7 @@ void Log(media::MediaLogEvent* event) {
 namespace content {
 
 RenderMediaLog::RenderMediaLog()
-    : task_runner_(base::MessageLoopProxy::current()),
+    : task_runner_(base::ThreadTaskRunnerHandle::Get()),
       tick_clock_(new base::DefaultTickClock()),
       last_ipc_send_time_(tick_clock_->NowTicks()) {
   DCHECK(RenderThread::Get())
@@ -38,11 +40,16 @@ RenderMediaLog::RenderMediaLog()
 }
 
 void RenderMediaLog::AddEvent(scoped_ptr<media::MediaLogEvent> event) {
-  if (!task_runner_->BelongsToCurrentThread()) {
-    task_runner_->PostTask(FROM_HERE, base::Bind(&RenderMediaLog::AddEvent,
-                                                 this, base::Passed(&event)));
-    return;
-  }
+  // Always post to preserve the correct order of events.
+  // TODO(xhwang): Consider using sorted containers to keep the order and
+  // avoid extra posting.
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&RenderMediaLog::AddEventInternal, this,
+                                    base::Passed(&event)));
+}
+
+void RenderMediaLog::AddEventInternal(scoped_ptr<media::MediaLogEvent> event) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   Log(event.get());
 

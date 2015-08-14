@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// https://webbluetoothcg.github.io/web-bluetooth/#idl-def-bluetoothdevice
+// https://webbluetoothchrome.github.io/web-bluetooth/#idl-def-bluetoothdevice
 
 // Implement BluetoothDevice interface: http://crbug.com/421668
 
@@ -11,11 +11,9 @@ enum VendorIDSource {
     "usb"
 };
 
-typedef DOMString UUID;
-
 [
     GarbageCollected,
-    RuntimeEnabled=Bluetooth,
+    RuntimeEnabled=WebBluetooth,
 ] interface BluetoothDevice
 // Implement ServiceEventHandlers interface: http://crbug.com/421670
 // : ServiceEventHandlers 

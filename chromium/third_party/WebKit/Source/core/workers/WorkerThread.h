@@ -48,9 +48,7 @@ class WorkerGlobalScope;
 class WorkerInspectorController;
 class WorkerMicrotaskRunner;
 class WorkerReportingProxy;
-class WorkerSharedTimer;
 class WorkerThreadStartupData;
-class WorkerThreadTask;
 
 enum WorkerThreadStartMode {
     DontPauseWorkerGlobalScopeOnStart,
@@ -62,8 +60,9 @@ class CORE_EXPORT WorkerThread : public RefCounted<WorkerThread> {
 public:
     virtual ~WorkerThread();
 
-    virtual void start(PassOwnPtr<WorkerThreadStartupData>);
-    virtual void stop();
+    // Called on the main thread.
+    void start(PassOwnPtr<WorkerThreadStartupData>);
+    void terminate();
 
     // Returns the thread this worker runs on. Some implementations can create
     // a new thread on the first call (e.g. shared, dedicated workers), whereas
@@ -77,10 +76,13 @@ public:
     v8::Isolate* isolate() const { return m_isolate; }
 
     // Can be used to wait for this worker thread to shut down.
-    // (This is signalled on the main thread, so it's assumed to be waited on the worker context thread)
+    // (This is signaled on the main thread, so it's assumed to be waited on
+    // the worker context thread)
     WebWaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
 
-    WebWaitableEvent* terminationEvent() { return m_terminationEvent.get(); }
+    // Called in shutdown sequence. Internally calls terminate() (or
+    // terminateInternal) and wait (by *blocking* the calling thread) until the
+    // worker(s) is/are shut down.
     void terminateAndWait();
     static void terminateAndWaitForAllWorkers();
 
@@ -94,7 +96,7 @@ public:
     WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
 
     void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
-    void postDebuggerTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
+    void appendDebuggerTask(PassOwnPtr<WebThread::Task>);
 
     enum WaitMode { WaitForMessage, DontWaitForMessage };
     MessageQueueWaitResult runDebuggerTask(WaitMode = WaitForMessage);
@@ -105,6 +107,8 @@ public:
     void didLeaveNestedLoop();
 
     WorkerGlobalScope* workerGlobalScope() const { return m_workerGlobalScope.get(); }
+
+    // Returns true once one of the terminate* methods is called.
     bool terminated();
 
     // Number of active worker threads.
@@ -123,6 +127,10 @@ protected:
 
     virtual void postInitialize() { }
 
+    // Both of these methods are called in the worker thread.
+    virtual void initializeBackingThread();
+    virtual void shutdownBackingThread();
+
     virtual v8::Isolate* initializeIsolate();
     virtual void willDestroyIsolate();
     virtual void destroyIsolate();
@@ -132,22 +140,21 @@ protected:
     virtual bool doIdleGc(double deadlineSeconds);
 
 private:
-    friend class WorkerSharedTimer;
     friend class WorkerMicrotaskRunner;
 
-    void stopInShutdownSequence();
-    void stopInternal();
+    // Called on the main thread.
+    void terminateInternal();
 
+    // Called on the worker thread.
     void initialize(PassOwnPtr<WorkerThreadStartupData>);
     void shutdown();
     void performIdleWork(double deadlineSeconds);
-    void postDelayedTask(PassOwnPtr<ExecutionContextTask>, long long delayMs);
     void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>, long long delayMs);
 
     bool m_started;
     bool m_terminated;
     bool m_shutdown;
-    MessageQueue<WorkerThreadTask> m_debuggerMessageQueue;
+    MessageQueue<WebThread::Task> m_debuggerMessageQueue;
     OwnPtr<WebThread::TaskObserver> m_microtaskRunner;
 
     RefPtr<WorkerLoaderProxy> m_workerLoaderProxy;

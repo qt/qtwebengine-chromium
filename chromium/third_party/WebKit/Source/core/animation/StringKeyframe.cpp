@@ -6,6 +6,7 @@
 #include "core/animation/StringKeyframe.h"
 
 #include "core/animation/AngleSVGInterpolation.h"
+#include "core/animation/CSSValueInterpolationType.h"
 #include "core/animation/ColorStyleInterpolation.h"
 #include "core/animation/CompositorAnimations.h"
 #include "core/animation/ConstantStyleInterpolation.h"
@@ -17,6 +18,8 @@
 #include "core/animation/ImageStyleInterpolation.h"
 #include "core/animation/IntegerOptionalIntegerSVGInterpolation.h"
 #include "core/animation/IntegerSVGInterpolation.h"
+#include "core/animation/InterpolationType.h"
+#include "core/animation/InvalidatableStyleInterpolation.h"
 #include "core/animation/LegacyStyleInterpolation.h"
 #include "core/animation/LengthBoxStyleInterpolation.h"
 #include "core/animation/LengthPairStyleInterpolation.h"
@@ -52,14 +55,14 @@ StringKeyframe::StringKeyframe(const StringKeyframe& copyFrom)
 void StringKeyframe::setPropertyValue(CSSPropertyID property, const String& value, Element* element, StyleSheetContents* styleSheetContents)
 {
     ASSERT(property != CSSPropertyInvalid);
-    if (CSSAnimations::isAllowedAnimation(property))
+    if (CSSAnimations::isAnimatableProperty(property))
         m_propertySet->setProperty(property, value, false, styleSheetContents);
 }
 
 void StringKeyframe::setPropertyValue(CSSPropertyID property, PassRefPtrWillBeRawPtr<CSSValue> value)
 {
     ASSERT(property != CSSPropertyInvalid);
-    ASSERT(CSSAnimations::isAllowedAnimation(property));
+    ASSERT(CSSAnimations::isAnimatableProperty(property));
     m_propertySet->setProperty(property, value, false);
 }
 
@@ -117,7 +120,7 @@ StringKeyframe::CSSPropertySpecificKeyframe::CSSPropertySpecificKeyframe(double 
 
 void StringKeyframe::CSSPropertySpecificKeyframe::populateAnimatableValue(CSSPropertyID property, Element& element, const ComputedStyle* baseStyle) const
 {
-    if (!m_animatableValueCache && (baseStyle || !m_value->isInheritedValue()))
+    if (!m_animatableValueCache && (baseStyle || !DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*m_value)))
         m_animatableValueCache = StyleResolver::createAnimatableValueSnapshot(element, baseStyle, property, m_value.get());
 }
 
@@ -150,11 +153,34 @@ InterpolationRange setRange(CSSPropertyID id)
     }
 }
 
+const Vector<const InterpolationType*>* applicableTypesForProperty(CSSPropertyID property)
+{
+    using ApplicableTypesMap = HashMap<CSSPropertyID, const Vector<const InterpolationType*>*>;
+    DEFINE_STATIC_LOCAL(ApplicableTypesMap, applicableTypesMap, ());
+    auto entry = applicableTypesMap.find(property);
+    if (entry != applicableTypesMap.end())
+        return entry->value;
+
+    // TODO(alancutter): Support all interpolable CSS properties here so we can stop falling back to the old StyleInterpolation implementation.
+    if (CSSPropertyMetadata::isInterpolableProperty(property))
+        return nullptr;
+
+    auto applicableTypes = new Vector<const InterpolationType*>();
+    applicableTypes->append(new CSSValueInterpolationType(property));
+    applicableTypesMap.add(property, applicableTypes);
+    return applicableTypes;
+}
+
 } // namespace
 
 PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::CSSPropertySpecificKeyframe::maybeCreateInterpolation(PropertyHandle propertyHandle, Keyframe::PropertySpecificKeyframe& end, Element* element, const ComputedStyle* baseStyle) const
 {
     CSSPropertyID property = propertyHandle.cssProperty();
+    const Vector<const InterpolationType*>* applicableTypes = applicableTypesForProperty(property);
+    if (applicableTypes)
+        return InvalidatableStyleInterpolation::create(*applicableTypes, *this, toCSSPropertySpecificKeyframe(end));
+
+    // TODO(alancutter): Remove the remainder of this function.
 
     // FIXME: Refactor this into a generic piece that lives in InterpolationEffect, and a template parameter specific converter.
     CSSValue* fromCSSValue = m_value.get();
@@ -171,14 +197,13 @@ PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::CSSPropertySpecificKeyfram
 
     ASSERT(fromCSSValue && toCSSValue);
 
-    if (!CSSPropertyMetadata::isAnimatableProperty(property)) {
+    if (!CSSPropertyMetadata::isInterpolableProperty(property)) {
         if (fromCSSValue == toCSSValue)
             return ConstantStyleInterpolation::create(fromCSSValue, property);
 
         return nullptr;
     }
 
-    // FIXME: Generate this giant switch statement.
     switch (property) {
     case CSSPropertyLineHeight:
         if (LengthStyleInterpolation::canCreateFrom(*fromCSSValue) && LengthStyleInterpolation::canCreateFrom(*toCSSValue))
@@ -398,6 +423,26 @@ PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::CSSPropertySpecificKeyfram
             return interpolation.release();
 
         // FIXME: Support drop shadow interpolation.
+        fallBackToLegacy = true;
+        break;
+    }
+
+    case CSSPropertyTranslate: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = ListStyleInterpolation<LengthStyleInterpolation>::maybeCreateFromList(*fromCSSValue, *toCSSValue, property, range);
+        if (interpolation)
+            return interpolation.release();
+
+        // TODO(soonm): Legacy mode is used when from and to cssvaluelist length does not match.
+        fallBackToLegacy = true;
+        break;
+    }
+
+    case CSSPropertyScale: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = ListStyleInterpolation<DoubleStyleInterpolation>::maybeCreateFromList(*fromCSSValue, *toCSSValue, property, range);
+        if (interpolation)
+            return interpolation.release();
+
+        // TODO(soonm): Legacy mode is used when from and to cssvaluelist length does not match.
         fallBackToLegacy = true;
         break;
     }

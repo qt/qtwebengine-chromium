@@ -53,7 +53,6 @@
 #include "core/events/TransitionEvent.h"
 #include "core/frame/UseCounter.h"
 #include "core/layout/LayoutObject.h"
-#include "core/style/KeyframeList.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/animation/TimingFunction.h"
 #include "public/platform/Platform.h"
@@ -101,7 +100,7 @@ static PassRefPtrWillBeRawPtr<StringKeyframeEffectModel> createKeyframeEffectMod
                     timingFunction = CSSTimingData::initialTimingFunction();
                 }
                 keyframe->setEasing(timingFunction.release());
-            } else if (CSSPropertyMetadata::isAnimatableProperty(property)) {
+            } else if (CSSAnimations::isAnimatableProperty(property)) {
                 keyframe->setPropertyValue(property, properties.propertyAt(j).value());
             }
         }
@@ -183,13 +182,13 @@ CSSAnimations::CSSAnimations()
 {
 }
 
-const AtomicString CSSAnimations::getAnimationNameForInspector(const Animation& animation)
+bool CSSAnimations::isAnimationForInspector(const Animation& animation)
 {
     for (const auto& it : m_animations) {
         if (it.value->animation->sequenceNumber() == animation.sequenceNumber())
-            return it.key;
+            return true;
     }
-    return nullAtom;
+    return false;
 }
 
 bool CSSAnimations::isTransitionAnimationForInspector(const Animation& animation) const
@@ -264,8 +263,8 @@ void CSSAnimations::calculateAnimationUpdate(CSSAnimationUpdate* update, const E
                         update->updateAnimation(animationName, animation, InertEffect::create(
                             createKeyframeEffectModel(resolver, animatingElement, element, &style, parentStyle, animationName, keyframeTimingFunction.get()),
                             timing, isPaused, animation->unlimitedCurrentTimeInternal()), specifiedTiming, keyframesRule);
-                    } else if (!isAnimationStyleChange && animation->source() && animation->source()->isAnimation()) {
-                        EffectModel* model = toKeyframeEffect(animation->source())->model();
+                    } else if (!isAnimationStyleChange && animation->effect() && animation->effect()->isAnimation()) {
+                        EffectModel* model = toKeyframeEffect(animation->effect())->model();
                         if (model && model->isKeyframeEffectModel()) {
                             KeyframeEffectModelBase* keyframeEffect = toKeyframeEffectModelBase(model);
                             if (keyframeEffect->hasSyntheticKeyframes())
@@ -348,7 +347,7 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
     }
 
     for (const auto& entry : update->animationsWithUpdates()) {
-        KeyframeEffect* effect = toKeyframeEffect(entry.animation->source());
+        KeyframeEffect* effect = toKeyframeEffect(entry.animation->effect());
 
         effect->setModel(entry.effect->model());
         effect->updateSpecifiedTiming(entry.effect->specifiedTiming());
@@ -379,15 +378,15 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         ASSERT(m_transitions.contains(id));
 
         RefPtrWillBeRawPtr<Animation> animation = m_transitions.take(id).animation;
-        KeyframeEffect* effect = toKeyframeEffect(animation->source());
+        KeyframeEffect* effect = toKeyframeEffect(animation->effect());
         if (effect->hasActiveAnimationsOnCompositor(id) && update->newTransitions().find(id) != update->newTransitions().end() && !animation->limited())
             retargetedCompositorTransitions.add(id, std::pair<RefPtrWillBeMember<KeyframeEffect>, double>(effect, animation->startTimeInternal()));
         animation->cancel();
         // after cancelation, transitions must be downgraded or they'll fail
         // to be considered when retriggering themselves. This can happen if
         // the transition is captured through getAnimations then played.
-        if (animation->source() && animation->source()->isAnimation())
-            toKeyframeEffect(animation->source())->downgradeToNormal();
+        if (animation->effect() && animation->effect()->isAnimation())
+            toKeyframeEffect(animation->effect())->downgradeToNormal();
         animation->update(TimingUpdateOnDemand);
     }
 
@@ -396,8 +395,8 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         if (m_transitions.contains(id)) {
             RefPtrWillBeRawPtr<Animation> animation = m_transitions.take(id).animation;
             // Transition must be downgraded
-            if (animation->source() && animation->source()->isAnimation())
-                toKeyframeEffect(animation->source())->downgradeToNormal();
+            if (animation->effect() && animation->effect()->isAnimation())
+                toKeyframeEffect(animation->effect())->downgradeToNormal();
         }
     }
 
@@ -552,7 +551,7 @@ void CSSAnimations::calculateTransitionUpdate(CSSAnimationUpdate* update, const 
                 CSSPropertyID id = propertyList.length() ? propertyList.properties()[j] : property;
 
                 if (!animateAll) {
-                    if (CSSPropertyMetadata::isAnimatableProperty(id))
+                    if (CSSPropertyMetadata::isInterpolableProperty(id))
                         listedProperties.set(id);
                     else
                         continue;
@@ -752,7 +751,7 @@ const StylePropertyShorthand& CSSAnimations::propertiesForTransitionAll()
                 || id == CSSPropertyWebkitTransformOriginY
                 || id == CSSPropertyWebkitTransformOriginZ)
                 continue;
-            if (CSSPropertyMetadata::isAnimatableProperty(id))
+            if (CSSPropertyMetadata::isInterpolableProperty(id))
                 properties.append(id);
         }
         propertyShorthand = StylePropertyShorthand(CSSPropertyInvalid, properties.begin(), properties.size());
@@ -760,9 +759,9 @@ const StylePropertyShorthand& CSSAnimations::propertiesForTransitionAll()
     return propertyShorthand;
 }
 
-// KeyframeEffect properties are not allowed to be affected by Web Animations.
-// http://dev.w3.org/fxtf/web-animations/#not-animatable
-bool CSSAnimations::isAllowedAnimation(CSSPropertyID property)
+// Properties that affect animations are not allowed to be affected by animations.
+// http://w3c.github.io/web-animations/#not-animatable-section
+bool CSSAnimations::isAnimatableProperty(CSSPropertyID property)
 {
     switch (property) {
     case CSSPropertyAnimation:

@@ -10,6 +10,10 @@
 
 class SkCanvas;
 
+namespace base {
+class SharedMemory;
+}  // namespace base
+
 namespace ppapi {
 namespace thunk {
 
@@ -22,7 +26,8 @@ class PPB_ImageData_API {
   virtual void Unmap() = 0;
 
   // Trusted inteface.
-  virtual int32_t GetSharedMemory(int* handle, uint32_t* byte_count) = 0;
+  virtual int32_t GetSharedMemory(base::SharedMemory** shm,
+                                  uint32_t* byte_count) = 0;
 
   // Get the platform-specific canvas that backs this ImageData, if there is
   // one.

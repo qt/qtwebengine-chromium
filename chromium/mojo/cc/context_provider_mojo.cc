@@ -12,8 +12,10 @@ namespace mojo {
 
 ContextProviderMojo::ContextProviderMojo(
     ScopedMessagePipeHandle command_buffer_handle)
-    : command_buffer_handle_(command_buffer_handle.Pass()),
-      context_lost_(false) {
+    : command_buffer_handle_(command_buffer_handle.Pass()) {
+  // Enabled the CHROMIUM_image extension to use GpuMemoryBuffers. The
+  // implementation of which is used in CommandBufferDriver.
+  capabilities_.gpu.image = true;
 }
 
 bool ContextProviderMojo::BindToCurrentThread() {
@@ -53,9 +55,6 @@ base::Lock* ContextProviderMojo::GetLock() {
   return &context_lock_;
 }
 
-bool ContextProviderMojo::IsContextLost() {
-  return context_lost_;
-}
 bool ContextProviderMojo::DestroyedOnMainThread() { return !context_; }
 
 ContextProviderMojo::~ContextProviderMojo() {
@@ -65,7 +64,6 @@ ContextProviderMojo::~ContextProviderMojo() {
 }
 
 void ContextProviderMojo::ContextLost() {
-  context_lost_ = true;
 }
 
 }  // namespace mojo

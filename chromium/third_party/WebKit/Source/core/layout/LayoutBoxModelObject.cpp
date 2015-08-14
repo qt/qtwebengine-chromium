@@ -26,6 +26,8 @@
 #include "config.h"
 #include "core/layout/LayoutBoxModelObject.h"
 
+#include "core/dom/NodeComputedStyle.h"
+#include "core/html/HTMLBodyElement.h"
 #include "core/layout/ImageQualityController.h"
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutFlowThread.h"
@@ -36,15 +38,12 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
-#include "core/style/BorderEdge.h"
-#include "core/style/ShadowList.h"
 #include "core/page/scrolling/ScrollingConstraints.h"
 #include "core/paint/DeprecatedPaintLayer.h"
+#include "core/style/BorderEdge.h"
+#include "core/style/ShadowList.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/TransformState.h"
-#include "platform/graphics/DrawLooperBuilder.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
-#include "platform/graphics/Path.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
@@ -187,6 +186,21 @@ void LayoutBoxModelObject::styleDidChange(StyleDifference diff, const ComputedSt
     LayoutObject::styleDidChange(diff, oldStyle);
     updateFromStyle();
 
+    // When an out-of-flow-positioned element changes its display between block and inline-block,
+    // then an incremental layout on the element's containing block lays out the element through
+    // LayoutPositionedObjects, which skips laying out the element's parent.
+    // The element's parent needs to relayout so that it calls
+    // LayoutBlockFlow::setStaticInlinePositionForChild with the out-of-flow-positioned child, so
+    // that when it's laid out, its LayoutBox::computePositionedLogicalWidth/Height takes into
+    // account its new inline/block position rather than its old block/inline position.
+    // Position changes and other types of display changes are handled elsewhere.
+    if (oldStyle && isOutOfFlowPositioned() && parent() && (parent() != containingBlock())
+        && (styleRef().position() == oldStyle->position())
+        && (styleRef().originalDisplay() != oldStyle->originalDisplay())
+        && ((styleRef().originalDisplay() == BLOCK) || (styleRef().originalDisplay() == INLINE_BLOCK))
+        && ((oldStyle->originalDisplay() == BLOCK) || (oldStyle->originalDisplay() == INLINE_BLOCK)))
+        parent()->setNeedsLayout(LayoutInvalidationReason::ChildChanged, MarkContainerChain);
+
     DeprecatedPaintLayerType type = layerTypeRequired();
     if (type != NoDeprecatedPaintLayer) {
         if (!layer() && layerCreationAllowedForSubtree()) {
@@ -232,6 +246,23 @@ void LayoutBoxModelObject::styleDidChange(StyleDifference diff, const ComputedSt
         bool oldStyleIsFixedPosition = oldStyle->position() == FixedPosition;
         if (newStyleIsFixedPosition != oldStyleIsFixedPosition)
             invalidateDisplayItemClientForNonCompositingDescendants();
+    }
+
+    // The used style for body background may change due to computed style change
+    // on the document element because of background stealing.
+    // Refer to backgroundStolenForBeingBody() and
+    // http://www.w3.org/TR/css3-background/#body-background for more info.
+    if (isDocumentElement()) {
+        HTMLBodyElement* body = document().firstBodyElement();
+        LayoutObject* bodyLayout = body ? body->layoutObject() : nullptr;
+        if (bodyLayout && bodyLayout->isBoxModelObject()) {
+            bool newStoleBodyBackground = toLayoutBoxModelObject(bodyLayout)->backgroundStolenForBeingBody(style());
+            bool oldStoleBodyBackground = oldStyle && toLayoutBoxModelObject(bodyLayout)->backgroundStolenForBeingBody(oldStyle);
+            if (newStoleBodyBackground != oldStoleBodyBackground
+                && bodyLayout->style() && bodyLayout->style()->hasBackground()) {
+                bodyLayout->setShouldDoFullPaintInvalidation();
+            }
+        }
     }
 
     if (FrameView *frameView = view()->frameView()) {
@@ -308,7 +339,7 @@ void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintI
 
     PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, newPaintInvalidationContainer);
     if (reason == PaintInvalidationLocationChange)
-        childTreeWalkState.setForceCheckForPaintInvalidation();
+        childTreeWalkState.setAncestorHadPaintInvalidationForLocationChange();
     invalidatePaintOfSubtreesIfNeeded(childTreeWalkState);
 }
 
@@ -342,41 +373,74 @@ void LayoutBoxModelObject::invalidateDisplayItemClientOnBacking(const DisplayIte
     }
 }
 
-void LayoutBoxModelObject::addChildFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutBoxModelObject::addFocusRingRectsForNormalChildren(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
 {
-    for (LayoutObject* current = slowFirstChild(); current; current = current->nextSibling()) {
-        if (current->isText() || current->isListMarker())
+    for (LayoutObject* child = slowFirstChild(); child; child = child->nextSibling()) {
+        // Focus rings of out-of-flow positioned descendants are handled in LayoutBlock::addFocusRingRects().
+        if (child->isOutOfFlowPositioned())
             continue;
 
-        if (!current->isBox()) {
-            current->addFocusRingRects(rects, additionalOffset);
+        // Focus ring of an element continuation or anonymous block continuation is added when we iterate the continuation chain.
+        // See LayoutBlock::addFocusRingRects() and LayoutInline::addFocusRingRects().
+        if (child->isElementContinuation()
+            || (child->isLayoutBlock() && toLayoutBlock(child)->isAnonymousBlockContinuation()))
             continue;
-        }
 
-        LayoutBox* box = toLayoutBox(current);
-        if (!box->hasLayer()) {
-            box->addFocusRingRects(rects, additionalOffset + box->locationOffset());
-            continue;
-        }
+        addFocusRingRectsForDescendant(*child, rects, additionalOffset);
+    }
+}
 
+void LayoutBoxModelObject::addFocusRingRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+{
+    if (descendant.isText() || descendant.isListMarker())
+        return;
+
+    if (descendant.hasLayer()) {
         Vector<LayoutRect> layerFocusRingRects;
-        box->addFocusRingRects(layerFocusRingRects, LayoutPoint());
+        descendant.addFocusRingRects(layerFocusRingRects, LayoutPoint());
         for (size_t i = 0; i < layerFocusRingRects.size(); ++i) {
-            FloatQuad quadInBox = box->localToContainerQuad(FloatQuad(layerFocusRingRects[i]), this);
+            FloatQuad quadInBox = toLayoutBoxModelObject(descendant).localToContainerQuad(FloatQuad(layerFocusRingRects[i]), this);
             LayoutRect rect = LayoutRect(quadInBox.boundingBox());
             if (!rect.isEmpty()) {
                 rect.moveBy(additionalOffset);
                 rects.append(rect);
             }
         }
+        return;
     }
-}
 
+    if (descendant.isBox()) {
+        descendant.addFocusRingRects(rects, additionalOffset + toLayoutBox(descendant).locationOffset());
+        return;
+    }
+
+    descendant.addFocusRingRects(rects, additionalOffset);
+}
 
 bool LayoutBoxModelObject::calculateHasBoxDecorations() const
 {
     const ComputedStyle& styleToUse = styleRef();
-    return hasBackground() || styleToUse.hasBorder() || styleToUse.hasAppearance() || styleToUse.boxShadow();
+    return hasBackground() || styleToUse.hasBorderDecoration() || styleToUse.hasAppearance() || styleToUse.boxShadow();
+}
+
+bool LayoutBoxModelObject::hasNonEmptyLayoutSize() const
+{
+    for (const LayoutBoxModelObject* root = this; root; root = root->continuation()) {
+        for (const LayoutObject* object = root; object; object = object->nextInPreOrder(object)) {
+            if (object->isBox()) {
+                const LayoutBox& box = toLayoutBox(*object);
+                if (box.logicalHeight() && box.logicalWidth())
+                    return true;
+            } else if (object->isLayoutInline()) {
+                const LayoutInline& layoutInline = toLayoutInline(*object);
+                if (!layoutInline.linesVisualOverflowBoundingBox().isEmpty())
+                    return true;
+            } else {
+                ASSERT(object->isText());
+            }
+        }
+    }
+    return false;
 }
 
 void LayoutBoxModelObject::updateFromStyle()
@@ -410,7 +474,7 @@ LayoutBlock* LayoutBoxModelObject::containingBlockForAutoHeightDetection(Length 
     // containing block. If the height of the containing block is not specified explicitly (i.e., it depends
     // on content height), and this element is not absolutely positioned, the value computes to 'auto'.
     if (!logicalHeight.hasPercent() || isOutOfFlowPositioned())
-        return 0;
+        return nullptr;
 
     // Anonymous block boxes are ignored when resolving percentage values that would refer to it:
     // the closest non-anonymous ancestor box is used instead.
@@ -423,15 +487,15 @@ LayoutBlock* LayoutBoxModelObject::containingBlockForAutoHeightDetection(Length 
     // what the CSS spec says to do with heights. Basically we
     // don't care if the cell specified a height or not.
     if (cb->isTableCell())
-        return 0;
+        return nullptr;
 
     // Match LayoutBox::availableLogicalHeightUsing by special casing
     // the layout view. The available height is taken from the frame.
     if (cb->isLayoutView())
-        return 0;
+        return nullptr;
 
     if (cb->isOutOfFlowPositioned() && !cb->style()->logicalTop().isAuto() && !cb->style()->logicalBottom().isAuto())
-        return 0;
+        return nullptr;
 
     return cb;
 }
@@ -722,9 +786,7 @@ LayoutUnit LayoutBoxModelObject::containingBlockLogicalWidthForContent() const
 
 LayoutBoxModelObject* LayoutBoxModelObject::continuation() const
 {
-    if (!continuationMap)
-        return 0;
-    return continuationMap->get(this);
+    return (!continuationMap) ? nullptr : continuationMap->get(this);
 }
 
 void LayoutBoxModelObject::setContinuation(LayoutBoxModelObject* continuation)
@@ -804,17 +866,17 @@ LayoutRect LayoutBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width,
             x -= textIndentOffset / 2;
         break;
     case AlignRight:
-        x = maxX - caretWidth;
+        x = maxX - caretWidth();
         if (!currentStyle.isLeftToRightDirection())
             x -= textIndentOffset;
         break;
     }
-    x = std::min(x, std::max<LayoutUnit>(maxX - caretWidth, 0));
+    x = std::min(x, std::max<LayoutUnit>(maxX - caretWidth(), 0));
 
     LayoutUnit height = style()->fontMetrics().height();
     LayoutUnit verticalSpace = lineHeight(true, currentStyle.isHorizontalWritingMode() ? HorizontalLine : VerticalLine,  PositionOfInteriorLineBoxes) - height;
     LayoutUnit y = paddingTop() + borderTop() + (verticalSpace / 2);
-    return currentStyle.isHorizontalWritingMode() ? LayoutRect(x, y, caretWidth, height) : LayoutRect(y, x, height, caretWidth);
+    return currentStyle.isHorizontalWritingMode() ? LayoutRect(x, y, caretWidth(), height) : LayoutRect(y, x, height, caretWidth());
 }
 
 void LayoutBoxModelObject::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, TransformState& transformState) const
@@ -837,11 +899,6 @@ void LayoutBoxModelObject::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, Tra
         // to return flowthread coordinates in the first place? We're effectively performing two
         // conversions here, when in fact none is needed.
         containerOffset = toLayoutSize(flowThread->visualPointToFlowThreadPoint(toLayoutPoint(containerOffset)));
-    } else if (!style()->hasOutOfFlowPosition() && o->hasColumns()) {
-        LayoutBlock* block = toLayoutBlock(o);
-        LayoutPoint point(roundedLayoutPoint(transformState.mappedPoint()));
-        point -= containerOffset;
-        block->adjustForColumnRect(containerOffset, point);
     }
 
     bool preserve3D = mode & UseTransforms && (o->style()->preserves3D() || style()->preserves3D());
@@ -861,7 +918,7 @@ const LayoutObject* LayoutBoxModelObject::pushMappingToContainer(const LayoutBox
     bool ancestorSkipped;
     LayoutObject* container = this->container(ancestorToStopAt, &ancestorSkipped);
     if (!container)
-        return 0;
+        return nullptr;
 
     bool isInline = isLayoutInline();
     bool isFixedPos = !isInline && style()->position() == FixedPosition;
@@ -915,7 +972,7 @@ void LayoutBoxModelObject::moveChildrenTo(LayoutBoxModelObject* toBoxModelObject
     // or when fullRemoveInsert is false.
     if (fullRemoveInsert && isLayoutBlock()) {
         LayoutBlock* block = toLayoutBlock(this);
-        block->removePositionedObjects(0);
+        block->removePositionedObjects(nullptr);
         if (block->isLayoutBlockFlow())
             toLayoutBlockFlow(block)->removeFloatingObjects();
     }
@@ -927,6 +984,29 @@ void LayoutBoxModelObject::moveChildrenTo(LayoutBoxModelObject* toBoxModelObject
         moveChildTo(toBoxModelObject, child, beforeChild, fullRemoveInsert);
         child = nextSibling;
     }
+}
+
+bool LayoutBoxModelObject::backgroundStolenForBeingBody(const ComputedStyle* rootElementStyle) const
+{
+    // http://www.w3.org/TR/css3-background/#body-background
+    // If the root element is <html> with no background, and a <body> child element exists,
+    // the root element steals the first <body> child element's background.
+    if (!isBody())
+        return false;
+
+    Element* rootElement = document().documentElement();
+    if (!isHTMLHtmlElement(rootElement))
+        return false;
+
+    if (!rootElementStyle)
+        rootElementStyle = rootElement->ensureComputedStyle();
+    if (rootElementStyle->hasBackground())
+        return false;
+
+    if (node() != document().firstBodyElement())
+        return false;
+
+    return true;
 }
 
 } // namespace blink

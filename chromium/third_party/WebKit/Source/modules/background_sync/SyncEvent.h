@@ -15,7 +15,7 @@
 
 namespace blink {
 
-class SyncEvent final : public ExtendableEvent {
+class MODULES_EXPORT SyncEvent final : public ExtendableEvent {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SyncEvent> create()
@@ -31,9 +31,9 @@ public:
         return adoptRefWillBeNoop(new SyncEvent(type, init));
     }
 
-    virtual ~SyncEvent();
+    ~SyncEvent() override;
 
-    virtual const AtomicString& interfaceName() const override;
+    const AtomicString& interfaceName() const override;
 
     SyncRegistration* registration();
 

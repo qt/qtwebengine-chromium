@@ -13,7 +13,6 @@
 #include "core/paint/BoxClipper.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/InlinePainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/LineBoxListPainter.h"
@@ -22,6 +21,7 @@
 #include "core/paint/ScrollRecorder.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
@@ -29,31 +29,25 @@ void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOff
 {
     PaintInfo localPaintInfo(paintInfo);
 
-    ANNOTATE_GRAPHICS_CONTEXT(localPaintInfo, &m_layoutBlock);
-
     LayoutPoint adjustedPaintOffset = paintOffset + m_layoutBlock.location();
 
     PaintPhase originalPhase = localPaintInfo.phase;
 
     // Check if we need to do anything at all.
-    // FIXME: Could eliminate the isDocumentElement() check if we fix background painting so that the LayoutView
-    // paints the root's background.
-    // TODO(schenney): Unroll m_layoutBlock.isDocumentElement() to try to get some insight into crbug.com/475698
+    // TODO(schenney): Could eliminate the isDocumentElement() check if we fix background painting so
+    // that the LayoutView paints the root's background.
+    // TODO(schenney): Test this code path, as breaking changes have failed to show up in testing.
+    // crbug.com/509737
     Node* blockNode = m_layoutBlock.node();
-    RELEASE_ASSERT(blockNode || m_layoutBlock.isAnonymous());
+    ASSERT(blockNode || m_layoutBlock.isAnonymous());
     if (blockNode) {
-        TreeScope& blockTreescope = blockNode->treeScope(); // Will crash on bad node
-        Document& blockDocument = blockTreescope.document(); // Will crash in bad treeScope
-        Element* blockDocumentElement = blockDocument.documentElement(); // Will crash on bad TreeScope::m_document
-        if (blockDocumentElement != blockNode) {
+        if (!m_layoutBlock.isDocumentElement()) {
             LayoutRect overflowBox = overflowRectForPaintRejection();
             m_layoutBlock.flipForWritingMode(overflowBox);
             overflowBox.moveBy(adjustedPaintOffset);
             if (!overflowBox.intersects(LayoutRect(localPaintInfo.rect)))
                 return;
         }
-    } else {
-        RELEASE_ASSERT(!m_layoutBlock.isDocumentElement());
     }
 
     // There are some cases where not all clipped visual overflow is accounted for.
@@ -160,23 +154,18 @@ void BlockPainter::paintAsInlineBlock(LayoutObject& layoutObject, const PaintInf
     }
 }
 
+static inline LayoutRect visualOverflowRectWithPaintOffset(const LayoutBlock& layoutBox, const LayoutPoint& paintOffset)
+{
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
+        return LayoutRect();
+    LayoutRect bounds = layoutBox.visualOverflowRect();
+    bounds.moveBy(paintOffset);
+    return bounds;
+}
+
 void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    PaintPhase paintPhase = paintInfo.phase;
-
-    LayoutPoint scrolledOffset = paintOffset;
-    if (!RuntimeEnabledFeatures::slimmingPaintCompositorLayerizationEnabled()) {
-        // Adjust our painting position if we're inside a scrolled layer (e.g., an overflow:auto div).
-        // With compositor layerization, a scroll display item is used instead.
-        if (m_layoutBlock.hasOverflowClip())
-            scrolledOffset.move(-m_layoutBlock.scrolledContentOffset());
-    }
-
-    LayoutRect bounds;
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        bounds = m_layoutBlock.visualOverflowRect();
-        bounds.moveBy(scrolledOffset);
-    }
+    const PaintPhase paintPhase = paintInfo.phase;
 
     if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
         && m_layoutBlock.style()->visibility() == VISIBLE
@@ -184,9 +173,7 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
         m_layoutBlock.paintBoxDecorationBackground(paintInfo, paintOffset);
 
     if (paintPhase == PaintPhaseMask && m_layoutBlock.style()->visibility() == VISIBLE) {
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, paintPhase, bounds);
-        if (!recorder.canUseCachedDrawing())
-            m_layoutBlock.paintMask(paintInfo, paintOffset);
+        m_layoutBlock.paintMask(paintInfo, paintOffset);
         return;
     }
 
@@ -195,52 +182,44 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
         return;
     }
 
-    {
-        OwnPtr<ScrollRecorder> scrollRecorder;
-        if (RuntimeEnabledFeatures::slimmingPaintCompositorLayerizationEnabled()
-            && m_layoutBlock.hasOverflowClip()
-            && m_layoutBlock.layer()->scrollsOverflow()) {
-            scrollRecorder = adoptPtr(new ScrollRecorder(*paintInfo.context, m_layoutBlock, paintPhase, m_layoutBlock.scrolledContentOffset()));
-        }
+    // FIXME: When Skia supports annotation rect covering (https://code.google.com/p/skia/issues/detail?id=3872),
+    // this rect may be covered by foreground and descendant drawings. Then we may need a dedicated paint phase.
+    if (paintPhase == PaintPhaseForeground && paintInfo.context->printing())
+        ObjectPainter(m_layoutBlock).addPDFURLRectIfNeeded(paintInfo, paintOffset);
 
-        if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
-            && m_layoutBlock.style()->visibility() == VISIBLE
-            && m_layoutBlock.hasColumns()
-            && !paintInfo.paintRootBackgroundOnly()) {
-            LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, DisplayItem::ColumnRules, bounds);
-            if (!recorder.canUseCachedDrawing())
-                paintColumnRules(paintInfo, scrolledOffset);
+    {
+        Optional<ScrollRecorder> scrollRecorder;
+        Optional<PaintInfo> scrolledPaintInfo;
+        if (m_layoutBlock.hasOverflowClip()) {
+            IntSize scrollOffset = m_layoutBlock.scrolledContentOffset();
+            if (m_layoutBlock.layer()->scrollsOverflow() || !scrollOffset.isZero()) {
+                scrollRecorder.emplace(*paintInfo.context, m_layoutBlock, paintPhase, scrollOffset);
+                scrolledPaintInfo.emplace(paintInfo);
+                scrolledPaintInfo->rect.move(scrollOffset);
+            }
         }
 
         // We're done. We don't bother painting any children.
         if (paintPhase == PaintPhaseBlockBackground || paintInfo.paintRootBackgroundOnly())
             return;
 
-        if (paintPhase != PaintPhaseSelfOutline) {
-            if (m_layoutBlock.hasColumns())
-                paintColumnContents(paintInfo, scrolledOffset);
-            else
-                paintContents(paintInfo, scrolledOffset);
-        }
+        const PaintInfo& contentsPaintInfo = scrolledPaintInfo ? *scrolledPaintInfo : paintInfo;
 
-        // FIXME: Make this work with multi column layouts. For now don't fill gaps.
-        bool isPrinting = m_layoutBlock.document().printing();
-        if (!isPrinting && !m_layoutBlock.hasColumns())
-            m_layoutBlock.paintSelection(paintInfo, scrolledOffset); // Fill in gaps in selection on lines and between blocks.
+        if (paintPhase != PaintPhaseSelfOutline)
+            paintContents(contentsPaintInfo, paintOffset);
 
-        if (paintPhase == PaintPhaseFloat || paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip) {
-            if (m_layoutBlock.hasColumns())
-                paintColumnContents(paintInfo, scrolledOffset, true);
-            else
-                m_layoutBlock.paintFloats(paintInfo, scrolledOffset, paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip);
-        }
+        if (paintPhase == PaintPhaseForeground && !m_layoutBlock.document().printing())
+            m_layoutBlock.paintSelection(contentsPaintInfo, paintOffset); // Fill in gaps in selection on lines and between blocks.
+
+        if (paintPhase == PaintPhaseFloat || paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip)
+            m_layoutBlock.paintFloats(contentsPaintInfo, paintOffset, paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip);
     }
 
     if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutBlock.style()->hasOutline() && m_layoutBlock.style()->visibility() == VISIBLE) {
         // Don't paint focus ring for anonymous block continuation because the
         // inline element having outline-style:auto paints the whole focus ring.
         if (!m_layoutBlock.style()->outlineStyleIsAuto() || !m_layoutBlock.isAnonymousBlockContinuation())
-            ObjectPainter(m_layoutBlock).paintOutline(paintInfo, LayoutRect(paintOffset, m_layoutBlock.size()), bounds);
+            ObjectPainter(m_layoutBlock).paintOutline(paintInfo, LayoutRect(paintOffset, m_layoutBlock.size()), visualOverflowRectWithPaintOffset(m_layoutBlock, paintOffset));
     }
 
     if (paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseChildOutlines)
@@ -248,42 +227,39 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 
     // If the caret's node's layout object's containing block is this block, and the paint action is PaintPhaseForeground,
     // then paint the caret.
-    if (paintPhase == PaintPhaseForeground && hasCaret()) {
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, DisplayItem::Caret, bounds);
-        if (!recorder.canUseCachedDrawing())
-            paintCarets(paintInfo, paintOffset);
+    if (paintPhase == PaintPhaseForeground && hasCaret() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBlock, DisplayItem::Caret)) {
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, DisplayItem::Caret, visualOverflowRectWithPaintOffset(m_layoutBlock, paintOffset));
+        paintCarets(paintInfo, paintOffset);
     }
 }
 
-static inline bool caretBrowsingEnabled(const Frame* frame)
+static inline bool caretBrowsingEnabled(const LocalFrame* frame)
 {
     Settings* settings = frame->settings();
     return settings && settings->caretBrowsingEnabled();
 }
 
-static inline bool hasCursorCaret(const FrameSelection& selection, const LayoutBlock* block, bool caretBrowsing)
+static inline bool hasCursorCaret(const FrameSelection& selection, const LayoutBlock* block, const LocalFrame* frame)
 {
-    return selection.caretLayoutObject() == block && (selection.hasEditableStyle() || caretBrowsing);
+    return selection.caretLayoutObject() == block && (selection.hasEditableStyle() || caretBrowsingEnabled(frame));
 }
 
-static inline bool hasDragCaret(const DragCaretController& dragCaretController, const LayoutBlock* block, bool caretBrowsing)
+static inline bool hasDragCaret(const DragCaretController& dragCaretController, const LayoutBlock* block, const LocalFrame* frame)
 {
-    return dragCaretController.caretLayoutObject() == block && (dragCaretController.isContentEditable() || caretBrowsing);
+    return dragCaretController.caretLayoutObject() == block && (dragCaretController.isContentEditable() || caretBrowsingEnabled(frame));
 }
 
 void BlockPainter::paintCarets(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    bool caretBrowsing = caretBrowsingEnabled(m_layoutBlock.frame());
+    LocalFrame* frame = m_layoutBlock.frame();
 
-    FrameSelection& selection = m_layoutBlock.frame()->selection();
-    if (hasCursorCaret(selection, &m_layoutBlock, caretBrowsing)) {
+    FrameSelection& selection = frame->selection();
+    if (hasCursorCaret(selection, &m_layoutBlock, frame))
         selection.paintCaret(paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
-    }
 
-    DragCaretController& dragCaretController = m_layoutBlock.frame()->page()->dragCaretController();
-    if (hasDragCaret(dragCaretController, &m_layoutBlock, caretBrowsing)) {
-        dragCaretController.paintDragCaret(m_layoutBlock.frame(), paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
-    }
+    DragCaretController& dragCaretController = frame->page()->dragCaretController();
+    if (hasDragCaret(dragCaretController, &m_layoutBlock, frame))
+        dragCaretController.paintDragCaret(frame, paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
 }
 
 LayoutRect BlockPainter::overflowRectForPaintRejection() const
@@ -299,154 +275,9 @@ LayoutRect BlockPainter::overflowRectForPaintRejection() const
 
 bool BlockPainter::hasCaret() const
 {
-    bool caretBrowsing = caretBrowsingEnabled(m_layoutBlock.frame());
-    return hasCursorCaret(m_layoutBlock.frame()->selection(), &m_layoutBlock, caretBrowsing)
-        || hasDragCaret(m_layoutBlock.frame()->page()->dragCaretController(), &m_layoutBlock, caretBrowsing);
-}
-
-void BlockPainter::paintColumnRules(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    const Color& ruleColor = m_layoutBlock.resolveColor(CSSPropertyWebkitColumnRuleColor);
-    bool ruleTransparent = m_layoutBlock.style()->columnRuleIsTransparent();
-    EBorderStyle ruleStyle = m_layoutBlock.style()->columnRuleStyle();
-    LayoutUnit ruleThickness = m_layoutBlock.style()->columnRuleWidth();
-    LayoutUnit colGap = m_layoutBlock.columnGap();
-    bool renderRule = ruleStyle > BHIDDEN && !ruleTransparent;
-    if (!renderRule)
-        return;
-
-    ColumnInfo* colInfo = m_layoutBlock.columnInfo();
-    unsigned colCount = m_layoutBlock.columnCount(colInfo);
-
-    bool antialias = BoxPainter::shouldAntialiasLines(paintInfo.context);
-
-    if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
-        bool leftToRight = m_layoutBlock.style()->isLeftToRightDirection();
-        LayoutUnit currLogicalLeftOffset = leftToRight ? LayoutUnit() : m_layoutBlock.contentLogicalWidth();
-        LayoutUnit ruleAdd = m_layoutBlock.logicalLeftOffsetForContent();
-        LayoutUnit ruleLogicalLeft = leftToRight ? LayoutUnit() : m_layoutBlock.contentLogicalWidth();
-        LayoutUnit inlineDirectionSize = colInfo->desiredColumnWidth();
-        BoxSide boxSide = m_layoutBlock.isHorizontalWritingMode()
-            ? leftToRight ? BSLeft : BSRight
-            : leftToRight ? BSTop : BSBottom;
-
-        for (unsigned i = 0; i < colCount; i++) {
-            // Move to the next position.
-            if (leftToRight) {
-                ruleLogicalLeft += inlineDirectionSize + colGap / 2;
-                currLogicalLeftOffset += inlineDirectionSize + colGap;
-            } else {
-                ruleLogicalLeft -= (inlineDirectionSize + colGap / 2);
-                currLogicalLeftOffset -= (inlineDirectionSize + colGap);
-            }
-
-            // Now paint the column rule.
-            if (i < colCount - 1) {
-                LayoutUnit ruleLeft = m_layoutBlock.isHorizontalWritingMode() ? paintOffset.x() + ruleLogicalLeft - ruleThickness / 2 + ruleAdd : paintOffset.x() + m_layoutBlock.borderLeft() + m_layoutBlock.paddingLeft();
-                LayoutUnit ruleRight = m_layoutBlock.isHorizontalWritingMode() ? ruleLeft + ruleThickness : ruleLeft + m_layoutBlock.contentWidth();
-                LayoutUnit ruleTop = m_layoutBlock.isHorizontalWritingMode() ? paintOffset.y() + m_layoutBlock.borderTop() + m_layoutBlock.paddingTop() : paintOffset.y() + ruleLogicalLeft - ruleThickness / 2 + ruleAdd;
-                LayoutUnit ruleBottom = m_layoutBlock.isHorizontalWritingMode() ? ruleTop + m_layoutBlock.contentHeight() : ruleTop + ruleThickness;
-                IntRect pixelSnappedRuleRect = pixelSnappedIntRectFromEdges(ruleLeft, ruleTop, ruleRight, ruleBottom);
-                ObjectPainter::drawLineForBoxSide(paintInfo.context, pixelSnappedRuleRect.x(), pixelSnappedRuleRect.y(), pixelSnappedRuleRect.maxX(), pixelSnappedRuleRect.maxY(), boxSide, ruleColor, ruleStyle, 0, 0, antialias);
-            }
-
-            ruleLogicalLeft = currLogicalLeftOffset;
-        }
-    } else {
-        bool topToBottom = !m_layoutBlock.style()->isFlippedBlocksWritingMode();
-        LayoutUnit ruleLeft = m_layoutBlock.isHorizontalWritingMode()
-            ? m_layoutBlock.borderLeft() + m_layoutBlock.paddingLeft()
-            : colGap / 2 - colGap - ruleThickness / 2 + m_layoutBlock.borderBefore() + m_layoutBlock.paddingBefore();
-        LayoutUnit ruleWidth = m_layoutBlock.isHorizontalWritingMode() ? m_layoutBlock.contentWidth() : ruleThickness;
-        LayoutUnit ruleTop = m_layoutBlock.isHorizontalWritingMode()
-            ? colGap / 2 - colGap - ruleThickness / 2 + m_layoutBlock.borderBefore() + m_layoutBlock.paddingBefore()
-            : m_layoutBlock.borderStart() + m_layoutBlock.paddingStart();
-        LayoutUnit ruleHeight = m_layoutBlock.isHorizontalWritingMode() ? ruleThickness : m_layoutBlock.contentHeight();
-        LayoutRect ruleRect(ruleLeft, ruleTop, ruleWidth, ruleHeight);
-
-        if (!topToBottom) {
-            if (m_layoutBlock.isHorizontalWritingMode())
-                ruleRect.setY(m_layoutBlock.size().height() - ruleRect.maxY());
-            else
-                ruleRect.setX(m_layoutBlock.size().width() - ruleRect.maxX());
-        }
-
-        ruleRect.moveBy(paintOffset);
-
-        BoxSide boxSide = m_layoutBlock.isHorizontalWritingMode()
-            ? topToBottom ? BSTop : BSBottom
-            : topToBottom ? BSLeft : BSRight;
-
-        LayoutSize step(0, topToBottom ? colInfo->columnHeight() + colGap : -(colInfo->columnHeight() + colGap));
-        if (!m_layoutBlock.isHorizontalWritingMode())
-            step = step.transposedSize();
-
-        for (unsigned i = 1; i < colCount; i++) {
-            ruleRect.move(step);
-            IntRect pixelSnappedRuleRect = pixelSnappedIntRect(ruleRect);
-            ObjectPainter::drawLineForBoxSide(paintInfo.context, pixelSnappedRuleRect.x(), pixelSnappedRuleRect.y(), pixelSnappedRuleRect.maxX(), pixelSnappedRuleRect.maxY(), boxSide, ruleColor, ruleStyle, 0, 0, antialias);
-        }
-    }
-}
-
-void BlockPainter::paintColumnContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, bool paintingFloats)
-{
-    // We need to do multiple passes, breaking up our child painting into strips.
-    ColumnInfo* colInfo = m_layoutBlock.columnInfo();
-    unsigned colCount = m_layoutBlock.columnCount(colInfo);
-    if (!colCount)
-        return;
-    LayoutUnit currLogicalTopOffset = 0;
-    LayoutUnit colGap = m_layoutBlock.columnGap();
-
-    for (unsigned i = 0; i < colCount; i++) {
-        ScopeRecorder scopeRecorder(*paintInfo.context, m_layoutBlock);
-
-        // For each rect, we clip to the rect, and then we adjust our coords.
-        LayoutRect colRect = m_layoutBlock.columnRectAt(colInfo, i);
-        m_layoutBlock.flipForWritingMode(colRect);
-        LayoutUnit logicalLeftOffset = (m_layoutBlock.isHorizontalWritingMode() ? colRect.x() : colRect.y()) - m_layoutBlock.logicalLeftOffsetForContent();
-        LayoutSize offset = m_layoutBlock.isHorizontalWritingMode() ? LayoutSize(logicalLeftOffset, currLogicalTopOffset) : LayoutSize(currLogicalTopOffset, logicalLeftOffset);
-        if (colInfo->progressionAxis() == ColumnInfo::BlockAxis) {
-            if (m_layoutBlock.isHorizontalWritingMode())
-                offset.expand(0, colRect.y() - m_layoutBlock.borderTop() - m_layoutBlock.paddingTop());
-            else
-                offset.expand(colRect.x() - m_layoutBlock.borderLeft() - m_layoutBlock.paddingLeft(), 0);
-        }
-        colRect.moveBy(paintOffset);
-        PaintInfo info(paintInfo);
-        info.rect.intersect(enclosingIntRect(colRect));
-
-        if (!info.rect.isEmpty()) {
-            LayoutRect clipRect(colRect);
-
-            if (i < colCount - 1) {
-                if (m_layoutBlock.isHorizontalWritingMode())
-                    clipRect.expand(colGap / 2, 0);
-                else
-                    clipRect.expand(0, colGap / 2);
-            }
-            // Each strip pushes a clip, since column boxes are specified as being
-            // like overflow:hidden.
-            // FIXME: Content and column rules that extend outside column boxes at the edges of the multi-column element
-            // are clipped according to the 'overflow' property.
-            ClipRecorder clipRecorder(*paintInfo.context, m_layoutBlock,
-                DisplayItem::paintPhaseToClipColumnBoundsType(paintInfo.phase), LayoutRect(enclosingIntRect(clipRect)));
-
-            // Adjust our x and y when painting.
-            LayoutPoint adjustedPaintOffset = paintOffset + offset;
-            if (paintingFloats)
-                m_layoutBlock.paintFloats(info, adjustedPaintOffset, paintInfo.phase == PaintPhaseSelection || paintInfo.phase == PaintPhaseTextClip);
-            else
-                paintContents(info, adjustedPaintOffset);
-        }
-
-        LayoutUnit blockDelta = (m_layoutBlock.isHorizontalWritingMode() ? colRect.height() : colRect.width());
-        if (m_layoutBlock.style()->isFlippedBlocksWritingMode())
-            currLogicalTopOffset += blockDelta;
-        else
-            currLogicalTopOffset -= blockDelta;
-    }
+    LocalFrame* frame = m_layoutBlock.frame();
+    return hasCursorCaret(frame->selection(), &m_layoutBlock, frame)
+        || hasDragCaret(frame->page()->dragCaretController(), &m_layoutBlock, frame);
 }
 
 void BlockPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -489,10 +320,13 @@ void BlockPainter::paintContinuationOutlines(const PaintInfo& info, const Layout
         // Do not add continuations for outline painting by our containing block if we are a relative positioned
         // anonymous block (i.e. have our own layer), paint them straightaway instead. This is because a block depends on layoutObjects in its continuation table being
         // in the same layer.
-        if (!inlineEnclosedInSelfPaintingLayer && !m_layoutBlock.hasLayer())
+        if (!inlineEnclosedInSelfPaintingLayer && !m_layoutBlock.hasLayer()) {
             cb->addContinuationWithOutline(inlineLayoutObject);
-        else if (!inlineLayoutObject->firstLineBox() || (!inlineEnclosedInSelfPaintingLayer && m_layoutBlock.hasLayer()))
+        } else if (!inlineLayoutObject->firstLineBox() || (!inlineEnclosedInSelfPaintingLayer && m_layoutBlock.hasLayer())) {
+            // The outline might be painted multiple times if multiple blocks have the same inline element continuation, and the inline has a self-painting layer.
+            ScopeRecorder scopeRecorder(*info.context, *inlineLayoutObject);
             InlinePainter(*inlineLayoutObject).paintOutline(info, paintOffset - m_layoutBlock.locationOffset() + inlineLayoutObject->containingBlock()->location());
+        }
     }
 
     ContinuationOutlineTableMap* table = continuationOutlineTable();

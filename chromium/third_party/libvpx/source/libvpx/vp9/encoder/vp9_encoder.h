@@ -194,10 +194,10 @@ typedef struct VP9EncoderConfig {
   int ss_number_layers;  // Number of spatial layers.
   int ts_number_layers;  // Number of temporal layers.
   // Bitrate allocation for spatial layers.
+  int layer_target_bitrate[VPX_MAX_LAYERS];
   int ss_target_bitrate[VPX_SS_MAX_LAYERS];
   int ss_enable_auto_arf[VPX_SS_MAX_LAYERS];
   // Bitrate allocation (CBR mode) and framerate factor, for temporal layers.
-  int ts_target_bitrate[VPX_TS_MAX_LAYERS];
   int ts_rate_decimator[VPX_TS_MAX_LAYERS];
 
   int enable_auto_arf;
@@ -237,6 +237,7 @@ typedef struct VP9EncoderConfig {
   int use_highbitdepth;
 #endif
   vpx_color_space_t color_space;
+  VP9E_TEMPORAL_LAYERING_MODE temporal_layering_mode;
 } VP9EncoderConfig;
 
 static INLINE int is_lossless_requested(const VP9EncoderConfig *cfg) {
@@ -305,6 +306,7 @@ typedef struct VP9_COMP {
   YV12_BUFFER_CONFIG scaled_last_source;
 
   TileDataEnc *tile_data;
+  int allocated_tiles;  // Keep track of memory allocated for tiles.
 
   // For a still frame, this flag is set to 1 to skip partition search.
   int partition_search_skippable_frame;
@@ -477,6 +479,12 @@ typedef struct VP9_COMP {
 #endif
 
   int resize_pending;
+  int resize_state;
+  int resize_scale_num;
+  int resize_scale_den;
+  int resize_avg_qp;
+  int resize_buffer_underflow;
+  int resize_count;
 
   // VAR_BASED_PARTITION thresholds
   // 0 - threshold_64x64; 1 - threshold_32x32;
@@ -611,9 +619,11 @@ YV12_BUFFER_CONFIG *vp9_scale_if_required(VP9_COMMON *cm,
 void vp9_apply_encoding_flags(VP9_COMP *cpi, vpx_enc_frame_flags_t flags);
 
 static INLINE int is_two_pass_svc(const struct VP9_COMP *const cpi) {
-  return cpi->use_svc &&
-         ((cpi->svc.number_spatial_layers > 1) ||
-         (cpi->svc.number_temporal_layers > 1 && cpi->oxcf.pass != 0));
+  return cpi->use_svc && cpi->oxcf.pass != 0;
+}
+
+static INLINE int is_one_pass_cbr_svc(const struct VP9_COMP *const cpi) {
+  return (cpi->use_svc && cpi->oxcf.pass == 0);
 }
 
 static INLINE int is_altref_enabled(const VP9_COMP *const cpi) {
@@ -641,6 +651,8 @@ static INLINE int *cond_cost_list(const struct VP9_COMP *cpi, int *cost_list) {
 }
 
 void vp9_new_framerate(VP9_COMP *cpi, double framerate);
+
+#define LAYER_IDS_TO_IDX(sl, tl, num_tl) ((sl) * (num_tl) + (tl))
 
 #ifdef __cplusplus
 }  // extern "C"

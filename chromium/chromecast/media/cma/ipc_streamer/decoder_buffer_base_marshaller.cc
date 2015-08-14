@@ -24,7 +24,9 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
   void Initialize();
 
   // DecoderBufferBase implementation.
+  StreamId stream_id() const override;
   base::TimeDelta timestamp() const override;
+  void set_timestamp(const base::TimeDelta& timestamp) override;
   const uint8* data() const override;
   uint8* writable_data() const override;
   size_t data_size() const override;
@@ -36,6 +38,9 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
 
   // Indicates whether this is an end of stream frame.
   bool is_eos_;
+
+  // Stream Id this decoder buffer belongs to.
+  StreamId stream_id_;
 
   // Frame timestamp.
   base::TimeDelta pts_;
@@ -56,6 +61,7 @@ class DecoderBufferFromMsg : public DecoderBufferBase {
 DecoderBufferFromMsg::DecoderBufferFromMsg(
     scoped_ptr<MediaMessage> msg)
     : is_eos_(true),
+      stream_id_(kPrimary),
       msg_(msg.Pass()),
       data_(NULL) {
   CHECK(msg_);
@@ -70,6 +76,8 @@ void DecoderBufferFromMsg::Initialize() {
   CHECK(msg_->ReadPod(&is_eos_));
   if (is_eos_)
     return;
+
+  CHECK(msg_->ReadPod(&stream_id_));
 
   int64 pts_internal = 0;
   CHECK(msg_->ReadPod(&pts_internal));
@@ -99,8 +107,16 @@ void DecoderBufferFromMsg::Initialize() {
   }
 }
 
+StreamId DecoderBufferFromMsg::stream_id() const {
+  return stream_id_;
+}
+
 base::TimeDelta DecoderBufferFromMsg::timestamp() const {
   return pts_;
+}
+
+void DecoderBufferFromMsg::set_timestamp(const base::TimeDelta& timestamp) {
+  pts_ = timestamp;
 }
 
 const uint8* DecoderBufferFromMsg::data() const {
@@ -135,6 +151,7 @@ void DecoderBufferBaseMarshaller::Write(
   if (buffer->end_of_stream())
     return;
 
+  CHECK(msg->WritePod(buffer->stream_id()));
   CHECK(msg->WritePod(buffer->timestamp().ToInternalValue()));
 
   bool has_decrypt_config =

@@ -5,79 +5,35 @@
 #include "config.h"
 #include "core/editing/StyledMarkupSerializer.h"
 
-#include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Document.h"
-#include "core/dom/Element.h"
-#include "core/dom/Node.h"
-#include "core/dom/Range.h"
-#include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/markup.h"
-#include "core/frame/FrameView.h"
-#include "core/html/HTMLDocument.h"
-#include "core/html/HTMLElement.h"
-#include "core/testing/DummyPageHolder.h"
-#include "platform/geometry/IntSize.h"
-#include "wtf/Compiler.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
-#include "wtf/StdLibExtras.h"
-#include "wtf/testing/WTFTestHelpers.h"
-#include <gtest/gtest.h>
-#include <string>
+#include "core/dom/Text.h"
+#include "core/editing/EditingTestBase.h"
 
 namespace blink {
 
 // This is smoke test of |StyledMarkupSerializer|. Full testing will be done
 // in layout tests.
-class StyledMarkupSerializerTest : public ::testing::Test {
+class StyledMarkupSerializerTest : public EditingTestBase {
 protected:
-    virtual void SetUp() override;
-
-    HTMLDocument& document() const { return *m_document; }
+    template <typename Tree>
+    std::string serialize(EAnnotateForInterchange = DoNotAnnotateForInterchange);
 
     template <typename Tree>
-    std::string serialize();
-
-    void setBodyContent(const char*);
-    PassRefPtrWillBeRawPtr<ShadowRoot> setShadowContent(const char*);
-
-private:
-    OwnPtr<DummyPageHolder> m_dummyPageHolder;
-    HTMLDocument* m_document;
+    std::string serializePart(const typename Tree::PositionType& start, const typename Tree::PositionType& end, EAnnotateForInterchange = DoNotAnnotateForInterchange);
 };
 
-void StyledMarkupSerializerTest::SetUp()
+template <typename Tree>
+std::string StyledMarkupSerializerTest::serialize(EAnnotateForInterchange shouldAnnotate)
 {
-    m_dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
-    m_document = toHTMLDocument(&m_dummyPageHolder->document());
-    ASSERT(m_document);
+    using PositionType = typename Tree::PositionType;
+    PositionType start = PositionType(document().body(), PositionAnchorType::BeforeChildren);
+    PositionType end = PositionType(document().body(), PositionAnchorType::AfterChildren);
+    return createMarkup(start, end, shouldAnnotate).utf8().data();
 }
 
 template <typename Tree>
-std::string StyledMarkupSerializerTest::serialize()
+std::string StyledMarkupSerializerTest::serializePart(const typename Tree::PositionType& start, const typename Tree::PositionType& end, EAnnotateForInterchange shouldAnnotate)
 {
-    using PositionType = typename Tree::PositionType;
-    PositionType start = PositionType(m_document->body(), PositionType::PositionIsBeforeChildren);
-    PositionType end = PositionType(m_document->body(), PositionType::PositionIsAfterChildren);
-    return CreateMarkupAlgorithm<Tree>::createMarkup(start, end).utf8().data();
-}
-
-PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRootForElementWithIDAndSetInnerHTML(TreeScope& scope, const char* hostElementID, const char* shadowRootContent)
-{
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRoot(ASSERT_NO_EXCEPTION);
-    shadowRoot->setInnerHTML(String::fromUTF8(shadowRootContent), ASSERT_NO_EXCEPTION);
-    return shadowRoot.release();
-}
-
-void StyledMarkupSerializerTest::setBodyContent(const char* bodyContent)
-{
-    document().body()->setInnerHTML(String::fromUTF8(bodyContent), ASSERT_NO_EXCEPTION);
-}
-
-PassRefPtrWillBeRawPtr<ShadowRoot> StyledMarkupSerializerTest::setShadowContent(const char* shadowContent)
-{
-    return createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
+    return createMarkup(start, end, shouldAnnotate).utf8().data();
 }
 
 TEST_F(StyledMarkupSerializerTest, TextOnly)
@@ -86,6 +42,7 @@ TEST_F(StyledMarkupSerializerTest, TextOnly)
     setBodyContent(bodyContent);
     const char* expectedResult = "<span style=\"display: inline !important; float: none;\">Hello world!</span>";
     EXPECT_EQ(expectedResult, serialize<EditingStrategy>());
+    EXPECT_EQ(expectedResult, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, BlockFormatting)
@@ -93,6 +50,7 @@ TEST_F(StyledMarkupSerializerTest, BlockFormatting)
     const char* bodyContent = "<div>Hello world!</div>";
     setBodyContent(bodyContent);
     EXPECT_EQ(bodyContent, serialize<EditingStrategy>());
+    EXPECT_EQ(bodyContent, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, FormControlInput)
@@ -101,6 +59,7 @@ TEST_F(StyledMarkupSerializerTest, FormControlInput)
     setBodyContent(bodyContent);
     const char* expectedResult = "<input value=\"foo\">";
     EXPECT_EQ(expectedResult, serialize<EditingStrategy>());
+    EXPECT_EQ(expectedResult, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, FormControlInputRange)
@@ -109,6 +68,7 @@ TEST_F(StyledMarkupSerializerTest, FormControlInputRange)
     setBodyContent(bodyContent);
     const char* expectedResult = "<input type=\"range\">";
     EXPECT_EQ(expectedResult, serialize<EditingStrategy>());
+    EXPECT_EQ(expectedResult, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, FormControlSelect)
@@ -116,6 +76,7 @@ TEST_F(StyledMarkupSerializerTest, FormControlSelect)
     const char* bodyContent = "<select><option value=\"1\">one</option><option value=\"2\">two</option></select>";
     setBodyContent(bodyContent);
     EXPECT_EQ(bodyContent, serialize<EditingStrategy>());
+    EXPECT_EQ(bodyContent, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, FormControlTextArea)
@@ -125,6 +86,7 @@ TEST_F(StyledMarkupSerializerTest, FormControlTextArea)
     const char* expectedResult = "<textarea></textarea>";
     EXPECT_EQ(expectedResult, serialize<EditingStrategy>())
         << "contents of TEXTAREA element should not be appeared.";
+    EXPECT_EQ(expectedResult, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, HeadingFormatting)
@@ -132,6 +94,7 @@ TEST_F(StyledMarkupSerializerTest, HeadingFormatting)
     const char* bodyContent = "<h4>Hello world!</h4>";
     setBodyContent(bodyContent);
     EXPECT_EQ(bodyContent, serialize<EditingStrategy>());
+    EXPECT_EQ(bodyContent, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, InlineFormatting)
@@ -139,6 +102,7 @@ TEST_F(StyledMarkupSerializerTest, InlineFormatting)
     const char* bodyContent = "<b>Hello world!</b>";
     setBodyContent(bodyContent);
     EXPECT_EQ(bodyContent, serialize<EditingStrategy>());
+    EXPECT_EQ(bodyContent, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, Mixed)
@@ -146,6 +110,7 @@ TEST_F(StyledMarkupSerializerTest, Mixed)
     const char* bodyContent = "<i>foo<b>bar</b>baz</i>";
     setBodyContent(bodyContent);
     EXPECT_EQ(bodyContent, serialize<EditingStrategy>());
+    EXPECT_EQ(bodyContent, serialize<EditingInComposedTreeStrategy>());
 }
 
 TEST_F(StyledMarkupSerializerTest, ShadowTreeDistributeOrder)
@@ -155,6 +120,20 @@ TEST_F(StyledMarkupSerializerTest, ShadowTreeDistributeOrder)
     setBodyContent(bodyContent);
     setShadowContent(shadowContent);
     EXPECT_EQ("<p id=\"host\"><b id=\"one\">11</b><b id=\"two\">22</b></p>", serialize<EditingStrategy>())
+        << "00 and 33 aren't appeared since they aren't distributed.";
+    EXPECT_EQ("<p id=\"host\"><a><b id=\"two\">22</b><b id=\"one\">11</b></a></p>", serialize<EditingInComposedTreeStrategy>())
+        << "00 and 33 aren't appeared since they aren't distributed.";
+}
+
+TEST_F(StyledMarkupSerializerTest, ShadowTreeInput)
+{
+    const char* bodyContent = "<p id=\"host\">00<b id=\"one\">11</b><b id=\"two\"><input value=\"22\"></b>33</p>";
+    const char* shadowContent = "<a><content select=#two></content><content select=#one></content></a>";
+    setBodyContent(bodyContent);
+    setShadowContent(shadowContent);
+    EXPECT_EQ("<p id=\"host\"><b id=\"one\">11</b><b id=\"two\"><input value=\"22\"></b></p>", serialize<EditingStrategy>())
+        << "00 and 33 aren't appeared since they aren't distributed.";
+    EXPECT_EQ("<p id=\"host\"><a><b id=\"two\"><input value=\"22\"></b><b id=\"one\">11</b></a></p>", serialize<EditingInComposedTreeStrategy>())
         << "00 and 33 aren't appeared since they aren't distributed.";
 }
 
@@ -169,6 +148,8 @@ TEST_F(StyledMarkupSerializerTest, ShadowTreeNested)
 
     EXPECT_EQ("<p id=\"host\"><b id=\"one\">11</b><b id=\"two\">22</b></p>", serialize<EditingStrategy>())
         << "00 and 33 aren't appeared since they aren't distributed.";
+    EXPECT_EQ("<p id=\"host\"><a><b id=\"two\">22</b><b id=\"host2\">NESTED</b><b id=\"one\">11</b></a></p>", serialize<EditingInComposedTreeStrategy>())
+        << "00 and 33 aren't appeared since they aren't distributed.";
 }
 
 TEST_F(StyledMarkupSerializerTest, StyleDisplayNone)
@@ -177,6 +158,77 @@ TEST_F(StyledMarkupSerializerTest, StyleDisplayNone)
     setBodyContent(bodyContent);
     const char* expectedResult = "<b>0022</b>";
     EXPECT_EQ(expectedResult, serialize<EditingStrategy>());
+    EXPECT_EQ(expectedResult, serialize<EditingInComposedTreeStrategy>());
 }
 
-} // namespace
+TEST_F(StyledMarkupSerializerTest, StyleDisplayNoneAndNewLines)
+{
+    const char* bodyContent = "<div style='display:none'>11</div>\n\n";
+    setBodyContent(bodyContent);
+    EXPECT_EQ("", serialize<EditingStrategy>());
+    EXPECT_EQ("", serialize<EditingInComposedTreeStrategy>());
+}
+
+TEST_F(StyledMarkupSerializerTest, ShadowTreeStyle)
+{
+    const char* bodyContent = "<p id='host' style='color: red'><span style='font-weight: bold;'><span id='one'>11</span></span></p>\n";
+    setBodyContent(bodyContent);
+    RefPtrWillBeRawPtr<Element> one = document().getElementById("one");
+    RefPtrWillBeRawPtr<Text> text = toText(one->firstChild());
+    Position startDOM(text, 0);
+    Position endDOM(text, 2);
+    const std::string& serializedDOM = serializePart<EditingStrategy>(startDOM, endDOM, AnnotateForInterchange);
+
+    bodyContent = "<p id='host' style='color: red'>00<span id='one'>11</span>22</p>\n";
+    const char* shadowContent = "<span style='font-weight: bold'><content select=#one></content></span>";
+    setBodyContent(bodyContent);
+    setShadowContent(shadowContent);
+    one = document().getElementById("one");
+    text = toText(one->firstChild());
+    PositionInComposedTree startICT(text, 0);
+    PositionInComposedTree endICT(text, 2);
+    const std::string& serializedICT = serializePart<EditingInComposedTreeStrategy>(startICT, endICT, AnnotateForInterchange);
+
+    EXPECT_EQ(serializedDOM, serializedICT);
+}
+
+TEST_F(StyledMarkupSerializerTest, AcrossShadow)
+{
+    const char* bodyContent = "<p id='host1'>[<span id='one'>11</span>]</p><p id='host2'>[<span id='two'>22</span>]</p>";
+    setBodyContent(bodyContent);
+    RefPtrWillBeRawPtr<Element> one = document().getElementById("one");
+    RefPtrWillBeRawPtr<Element> two = document().getElementById("two");
+    Position startDOM(toText(one->firstChild()), 0);
+    Position endDOM(toText(two->firstChild()), 2);
+    const std::string& serializedDOM = serializePart<EditingStrategy>(startDOM, endDOM, AnnotateForInterchange);
+
+    bodyContent = "<p id='host1'><span id='one'>11</span></p><p id='host2'><span id='two'>22</span></p>";
+    const char* shadowContent1 = "[<content select=#one></content>]";
+    const char* shadowContent2 = "[<content select=#two></content>]";
+    setBodyContent(bodyContent);
+    setShadowContent(shadowContent1, "host1");
+    setShadowContent(shadowContent2, "host2");
+    one = document().getElementById("one");
+    two = document().getElementById("two");
+    PositionInComposedTree startICT(toText(one->firstChild()), 0);
+    PositionInComposedTree endICT(toText(two->firstChild()), 2);
+    const std::string& serializedICT = serializePart<EditingInComposedTreeStrategy>(startICT, endICT, AnnotateForInterchange);
+
+    EXPECT_EQ(serializedDOM, serializedICT);
+}
+
+TEST_F(StyledMarkupSerializerTest, AcrossInvisibleElements)
+{
+    const char* bodyContent = "<span id='span1' style='display: none'>11</span><span id='span2' style='display: none'>22</span>";
+    setBodyContent(bodyContent);
+    RefPtrWillBeRawPtr<Element> span1 = document().getElementById("span1");
+    RefPtrWillBeRawPtr<Element> span2 = document().getElementById("span2");
+    Position startDOM = Position::firstPositionInNode(span1.get());
+    Position endDOM = Position::lastPositionInNode(span2.get());
+    EXPECT_EQ("", serializePart<EditingStrategy>(startDOM, endDOM));
+    PositionInComposedTree startICT = PositionInComposedTree::firstPositionInNode(span1.get());
+    PositionInComposedTree endICT = PositionInComposedTree::lastPositionInNode(span2.get());
+    EXPECT_EQ("", serializePart<EditingInComposedTreeStrategy>(startICT, endICT));
+}
+
+} // namespace blink

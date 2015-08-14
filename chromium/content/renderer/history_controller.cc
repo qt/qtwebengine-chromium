@@ -38,6 +38,7 @@
 #include "content/common/navigation_params.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/web/WebFrameLoadType.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 using blink::WebFrame;
@@ -55,16 +56,17 @@ HistoryController::~HistoryController() {
 }
 
 void HistoryController::GoToEntry(
+    blink::WebLocalFrame* main_frame,
     scoped_ptr<HistoryEntry> target_entry,
     scoped_ptr<NavigationParams> navigation_params,
     WebURLRequest::CachePolicy cache_policy) {
+  DCHECK(!main_frame->parent());
   HistoryFrameLoadVector same_document_loads;
   HistoryFrameLoadVector different_document_loads;
 
-  provisional_entry_ = target_entry.Pass();
+  set_provisional_entry(target_entry.Pass());
   navigation_params_ = navigation_params.Pass();
 
-  WebFrame* main_frame = render_view_->GetMainRenderFrame()->GetWebFrame();
   if (current_entry_) {
     RecursiveGoToEntry(
         main_frame, same_document_loads, different_document_loads);
@@ -89,9 +91,11 @@ void HistoryController::GoToEntry(
       continue;
     render_frame->SetPendingNavigationParams(make_scoped_ptr(
         new NavigationParams(*navigation_params_.get())));
-    frame->loadHistoryItem(item.second,
-                           blink::WebHistorySameDocumentLoad,
-                           cache_policy);
+    WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
+        item.second, cache_policy);
+    frame->toWebLocalFrame()->load(
+        request, blink::WebFrameLoadType::BackForward, item.second,
+        blink::WebHistorySameDocumentLoad);
   }
   for (const auto& item : different_document_loads) {
     WebFrame* frame = item.first;
@@ -100,9 +104,11 @@ void HistoryController::GoToEntry(
       continue;
     render_frame->SetPendingNavigationParams(make_scoped_ptr(
         new NavigationParams(*navigation_params_.get())));
-    frame->loadHistoryItem(item.second,
-                           blink::WebHistoryDifferentDocumentLoad,
-                           cache_policy);
+    WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
+        item.second, cache_policy);
+    frame->toWebLocalFrame()->load(
+        request, blink::WebFrameLoadType::BackForward, item.second,
+        blink::WebHistoryDifferentDocumentLoad);
   }
 }
 
@@ -153,7 +159,7 @@ void HistoryController::UpdateForInitialLoadInChildFrame(
     return;
   if (HistoryEntry::HistoryNode* parent_history_node =
           current_entry_->GetHistoryNodeForFrame(parent)) {
-    parent_history_node->AddChild(item, frame->GetRoutingID());
+    parent_history_node->AddChild(item);
   }
 }
 
@@ -166,6 +172,10 @@ void HistoryController::UpdateForCommit(RenderFrameImpl* frame,
       if (!provisional_entry_)
         return;
       current_entry_.reset(provisional_entry_.release());
+      if (HistoryEntry::HistoryNode* node =
+              current_entry_->GetHistoryNodeForFrame(frame)) {
+        node->set_item(item);
+      }
       break;
     case blink::WebStandardCommit:
       CreateNewBackForwardItem(frame, item, navigation_within_page);
@@ -179,6 +189,10 @@ void HistoryController::UpdateForCommit(RenderFrameImpl* frame,
       if (current_entry_) {
         if (HistoryEntry::HistoryNode* node =
                 current_entry_->GetHistoryNodeForFrame(frame)) {
+          // Inert commits that reset the page without changing the item (e.g.,
+          // reloads, location.replace) shouldn't keep the old subtree.
+          if (!navigation_within_page)
+            node->RemoveChildren();
           node->set_item(item);
         }
       }
@@ -217,8 +231,7 @@ void HistoryController::CreateNewBackForwardItem(
     const WebHistoryItem& new_item,
     bool clone_children_of_target) {
   if (!current_entry_) {
-    current_entry_.reset(
-        new HistoryEntry(new_item, target_frame->GetRoutingID()));
+    current_entry_.reset(new HistoryEntry(new_item));
   } else {
     current_entry_.reset(current_entry_->CloneAndReplace(
         new_item, clone_children_of_target, target_frame, render_view_));

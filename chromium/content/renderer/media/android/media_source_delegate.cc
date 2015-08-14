@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/renderer/media/android/renderer_demuxer_android.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/bind_to_current_loop.h"
@@ -57,7 +57,7 @@ MediaSourceDelegate::MediaSourceDelegate(
       browser_seek_time_(media::kNoTimestamp()),
       expecting_regular_seek_(false),
       access_unit_size_(0),
-      main_task_runner_(base::MessageLoopProxy::current()),
+      main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       media_task_runner_(media_task_runner),
       main_weak_factory_(this),
       media_weak_factory_(this) {
@@ -520,7 +520,7 @@ void MediaSourceDelegate::InitAudioDecryptingDemuxerStream() {
   DCHECK(!set_decryptor_ready_cb_.is_null());
 
   audio_decrypting_demuxer_stream_.reset(new media::DecryptingDemuxerStream(
-      media_task_runner_, set_decryptor_ready_cb_,
+      media_task_runner_, media_log_, set_decryptor_ready_cb_,
       waiting_for_decryption_key_cb_));
   audio_decrypting_demuxer_stream_->Initialize(
       audio_stream_,
@@ -534,7 +534,7 @@ void MediaSourceDelegate::InitVideoDecryptingDemuxerStream() {
   DCHECK(!set_decryptor_ready_cb_.is_null());
 
   video_decrypting_demuxer_stream_.reset(new media::DecryptingDemuxerStream(
-      media_task_runner_, set_decryptor_ready_cb_,
+      media_task_runner_, media_log_, set_decryptor_ready_cb_,
       waiting_for_decryption_key_cb_));
   video_decrypting_demuxer_stream_->Initialize(
       video_stream_,

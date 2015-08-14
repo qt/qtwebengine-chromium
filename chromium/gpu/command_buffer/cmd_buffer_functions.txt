@@ -228,7 +228,7 @@ GL_APICALL void         GL_APIENTRY glBlitFramebufferCHROMIUM (GLint srcX0, GLin
 GL_APICALL void         GL_APIENTRY glRenderbufferStorageMultisampleCHROMIUM (GLenumRenderBufferTarget target, GLsizei samples, GLenumRenderBufferFormat internalformat, GLsizei width, GLsizei height);
 GL_APICALL void         GL_APIENTRY glRenderbufferStorageMultisampleEXT (GLenumRenderBufferTarget target, GLsizei samples, GLenumRenderBufferFormat internalformat, GLsizei width, GLsizei height);
 GL_APICALL void         GL_APIENTRY glFramebufferTexture2DMultisampleEXT (GLenumFrameBufferTarget target, GLenumAttachment attachment, GLenumTextureTarget textarget, GLidTexture texture, GLintZeroOnly level, GLsizei samples);
-GL_APICALL void         GL_APIENTRY glTexStorage2DEXT (GLenumTextureTarget target, GLsizei levels, GLenumTextureInternalFormatStorage internalFormat, GLsizei width, GLsizei height);
+GL_APICALL void         GL_APIENTRY glTexStorage2DEXT (GLenumTextureBindTarget target, GLsizei levels, GLenumTextureInternalFormatStorage internalFormat, GLsizei width, GLsizei height);
 GL_APICALL void         GL_APIENTRY glGenQueriesEXT (GLsizeiNotNegative n, GLuint* queries);
 GL_APICALL void         GL_APIENTRY glDeleteQueriesEXT (GLsizeiNotNegative n, const GLuint* queries);
 GL_APICALL GLboolean    GL_APIENTRY glIsQueryEXT (GLidQuery id);
@@ -238,6 +238,7 @@ GL_APICALL void         GL_APIENTRY glEndQueryEXT (GLenumQueryTarget target);
 GL_APICALL void         GL_APIENTRY glEndTransformFeedback (void);
 GL_APICALL void         GL_APIENTRY glGetQueryivEXT (GLenumQueryTarget target, GLenumQueryParameter pname, GLint* params);
 GL_APICALL void         GL_APIENTRY glGetQueryObjectuivEXT (GLidQuery id, GLenumQueryObjectParameter pname, GLuint* params);
+GL_APICALL void         GL_APIENTRY glGetQueryObjectui64vEXT (GLidQuery id, GLenumQueryObjectParameter pname, GLuint64* params);
 GL_APICALL void         GL_APIENTRY glInsertEventMarkerEXT (GLsizei length, const GLchar* marker);
 GL_APICALL void         GL_APIENTRY glPushGroupMarkerEXT (GLsizei length, const GLchar* marker);
 GL_APICALL void         GL_APIENTRY glPopGroupMarkerEXT (void);
@@ -274,8 +275,9 @@ GL_APICALL GLuint       GL_APIENTRY glCreateGpuMemoryBufferImageCHROMIUM (GLsize
 GL_APICALL void         GL_APIENTRY glGetTranslatedShaderSourceANGLE (GLidShader shader, GLsizeiNotNegative bufsize, GLsizeiOptional* length, char* source);
 GL_APICALL void         GL_APIENTRY glPostSubBufferCHROMIUM (GLint x, GLint y, GLint width, GLint height);
 GL_APICALL void         GL_APIENTRY glTexImageIOSurface2DCHROMIUM (GLenumTextureBindTarget target, GLsizei width, GLsizei height, GLuint ioSurfaceId, GLuint plane);
-GL_APICALL void         GL_APIENTRY glCopyTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id, GLintTextureInternalFormat internalformat, GLenumPixelType dest_type);
-GL_APICALL void         GL_APIENTRY glCopySubTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id, GLint xoffset, GLint yoffset);
+GL_APICALL void         GL_APIENTRY glCopyTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id, GLintTextureInternalFormat internalformat, GLenumPixelType dest_type, GLboolean unpack_flip_y, GLboolean unpack_premultiply_alpha, GLboolean unpack_unmultiply_alpha);
+GL_APICALL void         GL_APIENTRY glCopySubTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height, GLboolean unpack_flip_y, GLboolean unpack_premultiply_alpha, GLboolean unpack_unmultiply_alpha);
+GL_APICALL void         GL_APIENTRY glCompressedCopyTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id);
 GL_APICALL void         GL_APIENTRY glDrawArraysInstancedANGLE (GLenumDrawMode mode, GLint first, GLsizei count, GLsizei primcount);
 GL_APICALL void         GL_APIENTRY glDrawElementsInstancedANGLE (GLenumDrawMode mode, GLsizei count, GLenumIndexType type, const void* indices, GLsizei primcount);
 GL_APICALL void         GL_APIENTRY glVertexAttribDivisorANGLE (GLuint index, GLuint divisor);
@@ -308,10 +310,14 @@ GL_APICALL void         GL_APIENTRY glDrawBuffersEXT (GLsizei count, const GLenu
 GL_APICALL void         GL_APIENTRY glDiscardBackbufferCHROMIUM (void);
 GL_APICALL void         GL_APIENTRY glScheduleOverlayPlaneCHROMIUM (GLint plane_z_order, GLenum plane_transform, GLuint overlay_texture_id, GLint bounds_x, GLint bounds_y, GLint bounds_width, GLint bounds_height, GLfloat uv_x, GLfloat uv_y, GLfloat uv_width, GLfloat uv_height);
 GL_APICALL void         GL_APIENTRY glSwapInterval (GLint interval);
+GL_APICALL void         GL_APIENTRY glFlushDriverCachesCHROMIUM (void);
 
 // Extension CHROMIUM_path_rendering.
 GL_APICALL void         GL_APIENTRY glMatrixLoadfCHROMIUM (GLenumMatrixMode matrixMode, const GLfloat* m);
 GL_APICALL void         GL_APIENTRY glMatrixLoadIdentityCHROMIUM (GLenumMatrixMode matrixMode);
+
+// Extension KHR_robustness
+GL_APICALL GLenum	GL_APIENTRY glGetGraphicsResetStatusKHR (void);
 
 // Extension KHR_blend_equation_advanced
 GL_APICALL void GL_APIENTRY glBlendBarrierKHR (void);

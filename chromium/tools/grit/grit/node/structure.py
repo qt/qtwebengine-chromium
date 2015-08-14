@@ -291,7 +291,10 @@ class StructureNode(base.Node):
         (not self.attrs['run_command'] or
          not self.RunCommandOnCurrentPlatform())):
       if return_if_not_generated:
-        return self.ToRealPath(self.GetInputPath())
+        input_path = self.GetInputPath()
+        if input_path is None:
+          return None
+        return self.ToRealPath(input_path)
       else:
         return None
 

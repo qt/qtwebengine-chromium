@@ -11,8 +11,8 @@
 #ifndef WEBRTC_BASE_STRINGENCODE_H_
 #define WEBRTC_BASE_STRINGENCODE_H_
 
-#include <string>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "webrtc/base/checks.h"
@@ -95,6 +95,7 @@ size_t hex_encode_with_delimiter(char* buffer, size_t buflen,
                                  char delimiter);
 
 // Helper functions for hex_encode.
+std::string hex_encode(const std::string& str);
 std::string hex_encode(const char* source, size_t srclen);
 std::string hex_encode_with_delimiter(const char* source, size_t srclen,
                                       char delimiter);
@@ -158,6 +159,14 @@ size_t tokenize_append(const std::string& source, char delimiter,
 // "filename" and "/Library/Application Support/media content.txt".
 size_t tokenize(const std::string& source, char delimiter, char start_mark,
                 char end_mark, std::vector<std::string>* fields);
+
+// Extract the first token from source as separated by delimiter, with
+// duplicates of delimiter ignored. Return false if the delimiter could not be
+// found, otherwise return true.
+bool tokenize_first(const std::string& source,
+                    const char delimiter,
+                    std::string* token,
+                    std::string* rest);
 
 // Safe sprintf to std::string
 //void sprintf(std::string& value, size_t maxlen, const char * format, ...)

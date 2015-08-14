@@ -33,6 +33,21 @@ OPENSSL_EXPORT int RAND_bytes(uint8_t *buf, size_t len);
 OPENSSL_EXPORT void RAND_cleanup(void);
 
 
+/* Obscure functions. */
+
+#if !defined(OPENSSL_WINDOWS)
+/* RAND_set_urandom_fd causes the module to use a copy of |fd| for system
+ * randomness rather opening /dev/urandom internally. The caller retains
+ * ownership of |fd| and is at liberty to close it at any time. This is useful
+ * if, due to a sandbox, /dev/urandom isn't available. If used, it must be
+ * called before |RAND_bytes| is called in the current address space.
+ *
+ * |RAND_set_urandom_fd| does not buffer any entropy, so it is safe to call
+ * |fork| between |RAND_set_urandom_fd| and the first call to |RAND_bytes|. */
+OPENSSL_EXPORT void RAND_set_urandom_fd(int fd);
+#endif
+
+
 /* Deprecated functions */
 
 /* RAND_pseudo_bytes is a wrapper around |RAND_bytes|. */
@@ -47,11 +62,32 @@ OPENSSL_EXPORT int RAND_load_file(const char *path, long num);
 /* RAND_add does nothing. */
 OPENSSL_EXPORT void RAND_add(const void *buf, int num, double entropy);
 
+/* RAND_egd returns 255. */
+OPENSSL_EXPORT int RAND_egd(const char *);
+
 /* RAND_poll returns one. */
 OPENSSL_EXPORT int RAND_poll(void);
 
 /* RAND_status returns one. */
 OPENSSL_EXPORT int RAND_status(void);
+
+/* rand_meth_st is typedefed to |RAND_METHOD| in base.h. It isn't used; it
+ * exists only to be the return type of |RAND_SSLeay|. It's
+ * external so that variables of this type can be initialized. */
+struct rand_meth_st {
+  void (*seed) (const void *buf, int num);
+  int (*bytes) (unsigned char *buf, int num);
+  void (*cleanup) (void);
+  void (*add) (const void *buf, int num, double entropy);
+  int (*pseudorand) (unsigned char *buf, int num);
+  int (*status) (void);
+};
+
+/* RAND_SSLeay returns a pointer to a dummy |RAND_METHOD|. */
+OPENSSL_EXPORT RAND_METHOD *RAND_SSLeay(void);
+
+/* RAND_set_rand_method does nothing. */
+OPENSSL_EXPORT void RAND_set_rand_method(const RAND_METHOD *);
 
 
 #if defined(__cplusplus)

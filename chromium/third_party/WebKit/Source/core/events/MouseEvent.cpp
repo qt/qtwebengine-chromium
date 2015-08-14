@@ -34,7 +34,7 @@ namespace blink {
 
 PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(ScriptState* scriptState, const AtomicString& type, const MouseEventInit& initializer)
 {
-    if (scriptState->world().isIsolatedWorld())
+    if (scriptState && scriptState->world().isIsolatedWorld())
         UIEventWithKeyState::didCreateEventInIsolatedWorld(initializer.ctrlKey(), initializer.altKey(), initializer.shiftKey(), initializer.metaKey());
     return adoptRefWillBeNoop(new MouseEvent(type, initializer));
 }
@@ -60,7 +60,7 @@ PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(const AtomicString& type, 
     int detail, int screenX, int screenY, int windowX, int windowY,
     int movementX, int movementY,
     bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
-    unsigned short button, unsigned short buttons,
+    short button, unsigned short buttons,
     PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, DataTransfer* dataTransfer, bool isSimulated, PlatformMouseEvent::SyntheticEventType syntheticEventType,
     double uiCreateTime)
 {
@@ -73,7 +73,6 @@ PassRefPtrWillBeRawPtr<MouseEvent> MouseEvent::create(const AtomicString& type, 
 MouseEvent::MouseEvent()
     : m_button(0)
     , m_buttons(0)
-    , m_buttonDown(false)
     , m_relatedTarget(nullptr)
     , m_dataTransfer(nullptr)
     , m_syntheticEventType(PlatformMouseEvent::RealOrIndistinguishable)
@@ -84,16 +83,16 @@ MouseEvent::MouseEvent(const AtomicString& eventType, bool canBubble, bool cance
     int detail, int screenX, int screenY, int windowX, int windowY,
     int movementX, int movementY,
     bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
-    unsigned short button, unsigned short buttons, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget,
+    short button, unsigned short buttons, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget,
     DataTransfer* dataTransfer, bool isSimulated, PlatformMouseEvent::SyntheticEventType syntheticEventType,
     double uiCreateTime)
     : MouseRelatedEvent(eventType, canBubble, cancelable, view, detail, IntPoint(screenX, screenY),
         IntPoint(windowX, windowY),
         IntPoint(movementX, movementY),
-        ctrlKey, altKey, shiftKey, metaKey, isSimulated)
-    , m_button(button == (unsigned short)-1 ? 0 : button)
+        ctrlKey, altKey, shiftKey, metaKey, isSimulated,
+        syntheticEventType == PlatformMouseEvent::FromTouch ? InputDevice::firesTouchEventsInputDevice() : InputDevice::doesntFireTouchEventsInputDevice())
+    , m_button(button)
     , m_buttons(buttons)
-    , m_buttonDown(button != (unsigned short)-1)
     , m_relatedTarget(relatedTarget)
     , m_dataTransfer(dataTransfer)
     , m_syntheticEventType(syntheticEventType)
@@ -105,10 +104,9 @@ MouseEvent::MouseEvent(const AtomicString& eventType, const MouseEventInit& init
     : MouseRelatedEvent(eventType, initializer.bubbles(), initializer.cancelable(), initializer.view(), initializer.detail(), IntPoint(initializer.screenX(), initializer.screenY()),
         IntPoint(0 /* pageX */, 0 /* pageY */),
         IntPoint(initializer.movementX(), initializer.movementY()),
-        initializer.ctrlKey(), initializer.altKey(), initializer.shiftKey(), initializer.metaKey(), false /* isSimulated */)
-    , m_button(initializer.button() == (unsigned short)-1 ? 0 : initializer.button())
+        initializer.ctrlKey(), initializer.altKey(), initializer.shiftKey(), initializer.metaKey(), false /* isSimulated */, initializer.sourceDevice())
+    , m_button(initializer.button())
     , m_buttons(initializer.buttons())
-    , m_buttonDown(initializer.button() != (unsigned short)-1)
     , m_relatedTarget(initializer.relatedTarget())
     , m_dataTransfer(nullptr)
     , m_syntheticEventType(PlatformMouseEvent::RealOrIndistinguishable)
@@ -137,7 +135,14 @@ unsigned short MouseEvent::platformModifiersToButtons(unsigned modifiers)
 void MouseEvent::initMouseEvent(ScriptState* scriptState, const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
                                 int detail, int screenX, int screenY, int clientX, int clientY,
                                 bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
-                                unsigned short button, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, unsigned short buttons)
+                                short button, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, unsigned short buttons)
+{
+    initMouseEventInternal(scriptState, type, canBubble, cancelable, view, detail, screenX, screenY, clientX, clientY, ctrlKey, altKey, shiftKey, metaKey, button, relatedTarget, nullptr, buttons);
+}
+
+void MouseEvent::initMouseEventInternal(ScriptState* scriptState, const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> view,
+    int detail, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
+    short button, PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, InputDevice* sourceDevice, unsigned short buttons)
 {
     if (dispatched())
         return;
@@ -152,9 +157,8 @@ void MouseEvent::initMouseEvent(ScriptState* scriptState, const AtomicString& ty
     m_altKey = altKey;
     m_shiftKey = shiftKey;
     m_metaKey = metaKey;
-    m_button = button == (unsigned short)-1 ? 0 : button;
+    m_button = button;
     m_buttons = buttons;
-    m_buttonDown = button != (unsigned short)-1;
     m_relatedTarget = relatedTarget;
 
     initCoordinates(IntPoint(clientX, clientY));
@@ -185,8 +189,6 @@ int MouseEvent::which() const
     // For the DOM, the return values for left, middle and right mouse buttons are 0, 1, 2, respectively.
     // For the Netscape "which" property, the return values for left, middle and right mouse buttons are 1, 2, 3, respectively.
     // So we must add 1.
-    if (!m_buttonDown)
-        return 0;
     return m_button + 1;
 }
 
@@ -291,10 +293,10 @@ bool MouseEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) cons
     // of the DOM specs, but is used for compatibility with the ondblclick="" attribute. This is treated
     // as a separate event in other DOM-compliant browsers like Firefox, and so we do the same.
     RefPtrWillBeRawPtr<MouseEvent> doubleClickEvent = MouseEvent::create();
-    doubleClickEvent->initMouseEvent(nullptr, EventTypeNames::dblclick, event().bubbles(), event().cancelable(), event().view(),
+    doubleClickEvent->initMouseEventInternal(nullptr, EventTypeNames::dblclick, event().bubbles(), event().cancelable(), event().view(),
         event().detail(), event().screenX(), event().screenY(), event().clientX(), event().clientY(),
         event().ctrlKey(), event().altKey(), event().shiftKey(), event().metaKey(),
-        event().button(), relatedTarget, event().buttons());
+        event().button(), relatedTarget, event().sourceDevice(), event().buttons());
     if (event().defaultHandled())
         doubleClickEvent->setDefaultHandled();
     EventDispatcher::dispatchEvent(dispatcher.node(), MouseEventDispatchMediator::create(doubleClickEvent));

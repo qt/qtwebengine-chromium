@@ -5,9 +5,12 @@
 #include "content/browser/web_contents/web_contents_view_aura.h"
 
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -46,9 +49,8 @@ namespace {
 // for details.
 void GiveItSomeTime() {
   base::RunLoop run_loop;
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      run_loop.QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(),
       base::TimeDelta::FromMillisecondsD(10));
   run_loop.Run();
 }
@@ -214,8 +216,8 @@ class InputEventMessageFilterWaitsForAcks : public BrowserMessageFilter {
     if (message.type() == InputHostMsg_HandleInputEvent_ACK::ID) {
       InputHostMsg_HandleInputEvent_ACK::Param params;
       InputHostMsg_HandleInputEvent_ACK::Read(&message, &params);
-      blink::WebInputEvent::Type type = get<0>(params).type;
-      InputEventAckState ack = get<0>(params).state;
+      blink::WebInputEvent::Type type = base::get<0>(params).type;
+      InputEventAckState ack = base::get<0>(params).state;
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
           base::Bind(&InputEventMessageFilterWaitsForAcks::ReceivedEventAck,
                      this, type, ack));
@@ -257,6 +259,9 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 
     screenshot_manager_ = new ScreenshotTracker(controller);
     controller->SetScreenshotManager(screenshot_manager_);
+
+    frame_watcher_ = new FrameWatcher();
+    GetRenderWidgetHost()->GetProcess()->AddFilter(frame_watcher_.get());
   }
 
   void SetUpCommandLine(base::CommandLine* cmd) override {
@@ -399,11 +404,9 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
   }
 
   void WaitAFrame() {
-    uint32 frame = GetRenderWidgetHostView()->RendererFrameNumber();
     while (!GetRenderWidgetHost()->ScheduleComposite())
       GiveItSomeTime();
-    while (GetRenderWidgetHostView()->RendererFrameNumber() == frame)
-      GiveItSomeTime();
+    frame_watcher_->WaitFrames(1);
   }
 
  protected:
@@ -420,6 +423,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
  private:
   ScreenshotTracker* screenshot_manager_;
   scoped_refptr<InputEventMessageFilterWaitsForAcks> filter_;
+  scoped_refptr<FrameWatcher> frame_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAuraTest);
 };

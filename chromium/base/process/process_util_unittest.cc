@@ -64,6 +64,12 @@ using base::FilePath;
 
 namespace {
 
+const char kSignalFileSlow[] = "SlowChildProcess.die";
+const char kSignalFileKill[] = "KilledChildProcess.die";
+
+#if defined(OS_POSIX)
+const char kSignalFileTerm[] = "TerminatedChildProcess.die";
+
 #if defined(OS_ANDROID)
 const char kShellPath[] = "/system/bin/sh";
 const char kPosixShell[] = "sh";
@@ -71,9 +77,7 @@ const char kPosixShell[] = "sh";
 const char kShellPath[] = "/bin/sh";
 const char kPosixShell[] = "bash";
 #endif
-
-const char kSignalFileSlow[] = "SlowChildProcess.die";
-const char kSignalFileKill[] = "KilledChildProcess.die";
+#endif  // defined(OS_POSIX)
 
 #if defined(OS_WIN)
 const int kExpectedStillRunningExitCode = 0x102;
@@ -286,7 +290,16 @@ MULTIPROCESS_TEST_MAIN(KilledChildProcess) {
   return 1;
 }
 
-TEST_F(ProcessUtilTest, GetTerminationStatusKill) {
+#if defined(OS_POSIX)
+MULTIPROCESS_TEST_MAIN(TerminatedChildProcess) {
+  WaitToDie(ProcessUtilTest::GetSignalFilePath(kSignalFileTerm).c_str());
+  // Send a SIGTERM to this process.
+  ::kill(getpid(), SIGTERM);
+  return 1;
+}
+#endif
+
+TEST_F(ProcessUtilTest, GetTerminationStatusSigKill) {
   const std::string signal_file =
     ProcessUtilTest::GetSignalFilePath(kSignalFileKill);
   remove(signal_file.c_str());
@@ -302,7 +315,12 @@ TEST_F(ProcessUtilTest, GetTerminationStatusKill) {
   exit_code = 42;
   base::TerminationStatus status =
       WaitForChildTermination(process.Handle(), &exit_code);
+#if defined(OS_CHROMEOS)
+  EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM, status);
+#else
   EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_WAS_KILLED, status);
+#endif
+
 #if defined(OS_WIN)
   EXPECT_EQ(kExpectedKilledExitCode, exit_code);
 #elif defined(OS_POSIX)
@@ -313,6 +331,33 @@ TEST_F(ProcessUtilTest, GetTerminationStatusKill) {
 #endif
   remove(signal_file.c_str());
 }
+
+#if defined(OS_POSIX)
+TEST_F(ProcessUtilTest, GetTerminationStatusSigTerm) {
+  const std::string signal_file =
+    ProcessUtilTest::GetSignalFilePath(kSignalFileTerm);
+  remove(signal_file.c_str());
+  base::Process process = SpawnChild("TerminatedChildProcess");
+  ASSERT_TRUE(process.IsValid());
+
+  int exit_code = 42;
+  EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
+            base::GetTerminationStatus(process.Handle(), &exit_code));
+  EXPECT_EQ(kExpectedStillRunningExitCode, exit_code);
+
+  SignalChildren(signal_file.c_str());
+  exit_code = 42;
+  base::TerminationStatus status =
+      WaitForChildTermination(process.Handle(), &exit_code);
+  EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_WAS_KILLED, status);
+
+  int signaled = WIFSIGNALED(exit_code);
+  EXPECT_NE(0, signaled);
+  int signal = WTERMSIG(exit_code);
+  EXPECT_EQ(SIGTERM, signal);
+  remove(signal_file.c_str());
+}
+#endif
 
 #if defined(OS_WIN)
 // TODO(estade): if possible, port this test.
@@ -980,6 +1025,7 @@ MULTIPROCESS_TEST_MAIN(CheckPidProcess) {
   return kSuccess;
 }
 
+#if defined(CLONE_NEWUSER) && defined(CLONE_NEWPID)
 TEST_F(ProcessUtilTest, CloneFlags) {
   if (RunningOnValgrind() ||
       !base::PathExists(FilePath("/proc/self/ns/user")) ||
@@ -998,6 +1044,7 @@ TEST_F(ProcessUtilTest, CloneFlags) {
   EXPECT_TRUE(process.WaitForExit(&exit_code));
   EXPECT_EQ(kSuccess, exit_code);
 }
+#endif
 
 TEST(ForkWithFlagsTest, UpdatesPidCache) {
   // The libc clone function, which allows ForkWithFlags to keep the pid cache

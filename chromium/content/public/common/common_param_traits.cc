@@ -16,7 +16,10 @@
 namespace IPC {
 
 void ParamTraits<GURL>::Write(Message* m, const GURL& p) {
-  DCHECK(p.possibly_invalid_spec().length() <= content::GetMaxURLChars());
+  if (p.possibly_invalid_spec().length() > content::GetMaxURLChars()) {
+    m->WriteString(std::string());
+    return;
+  }
 
   // Beware of print-parse inconsistency which would change an invalid
   // URL into a valid one. Ideally, the message would contain this flag
@@ -33,7 +36,9 @@ void ParamTraits<GURL>::Write(Message* m, const GURL& p) {
   // TODO(brettw) bug 684583: Add encoding for query params.
 }
 
-bool ParamTraits<GURL>::Read(const Message* m, PickleIterator* iter, GURL* p) {
+bool ParamTraits<GURL>::Read(const Message* m,
+                             base::PickleIterator* iter,
+                             GURL* p) {
   std::string s;
   if (!iter->ReadString(&s) || s.length() > content::GetMaxURLChars()) {
     *p = GURL();
@@ -57,7 +62,7 @@ void ParamTraits<url::Origin>::Write(Message* m,
 }
 
 bool ParamTraits<url::Origin>::Read(const Message* m,
-                                    PickleIterator* iter,
+                                    base::PickleIterator* iter,
                                     url::Origin* p) {
   std::string s;
   if (!iter->ReadString(&s)) {
@@ -78,7 +83,7 @@ void ParamTraits<net::HostPortPair>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<net::HostPortPair>::Read(const Message* m,
-                                          PickleIterator* iter,
+                                          base::PickleIterator* iter,
                                           param_type* r) {
   std::string host;
   uint16 port;
@@ -99,7 +104,8 @@ void ParamTraits<net::IPEndPoint>::Write(Message* m, const param_type& p) {
   WriteParam(m, p.port());
 }
 
-bool ParamTraits<net::IPEndPoint>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<net::IPEndPoint>::Read(const Message* m,
+                                        base::PickleIterator* iter,
                                         param_type* p) {
   net::IPAddressNumber address;
   uint16 port;
@@ -123,8 +129,9 @@ void ParamTraits<content::PageState>::Write(
   WriteParam(m, p.ToEncodedData());
 }
 
-bool ParamTraits<content::PageState>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<content::PageState>::Read(const Message* m,
+                                           base::PickleIterator* iter,
+                                           param_type* r) {
   std::string data;
   if (!ReadParam(m, iter, &data))
     return false;

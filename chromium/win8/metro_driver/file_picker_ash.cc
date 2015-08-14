@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/win/metro.h"
@@ -84,11 +85,11 @@ FilePickerSessionBase::FilePickerSessionBase(ChromeAppViewAsh* app_view,
                                              const base::string16& title,
                                              const base::string16& filter,
                                              const base::FilePath& default_path)
-    : app_view_(app_view),
+    : success_(false),
       title_(title),
       filter_(filter),
       default_path_(default_path),
-      success_(false) {
+      app_view_(app_view) {
 }
 
 bool FilePickerSessionBase::DoFilePicker() {
@@ -239,9 +240,8 @@ HRESULT OpenFilePickerSession::StartFilePicker() {
         break;
 
       // There can be a single extension, or a list of semicolon-separated ones.
-      std::vector<base::string16> extensions_win32_style;
-      size_t extension_count = Tokenize(walk, L";", &extensions_win32_style);
-      DCHECK_EQ(extension_count, extensions_win32_style.size());
+      std::vector<base::string16> extensions_win32_style = base::SplitString(
+          walk, L";", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
       // Metro wants suffixes only, not patterns.
       mswrw::HString extension;
@@ -421,9 +421,8 @@ HRESULT SaveFilePickerSession::StartFilePicker() {
         break;
 
       // There can be a single extension, or a list of semicolon-separated ones.
-      std::vector<base::string16> extensions_win32_style;
-      size_t extension_count = Tokenize(walk, L";", &extensions_win32_style);
-      DCHECK_EQ(extension_count, extensions_win32_style.size());
+      std::vector<base::string16> extensions_win32_style = base::SplitString(
+          walk, L";", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
       // Metro wants suffixes only, not patterns.  Also, metro does not support
       // the all files ("*") pattern in the save picker.

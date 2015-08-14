@@ -28,10 +28,8 @@
 #include "core/HTMLNames.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/paint/FieldsetPainter.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 
-using std::min;
-using std::max;
+using namespace std;
 
 namespace blink {
 
@@ -45,7 +43,7 @@ LayoutFieldset::LayoutFieldset(Element* element)
 void LayoutFieldset::computePreferredLogicalWidths()
 {
     LayoutBlockFlow::computePreferredLogicalWidths();
-    if (LayoutBox* legend = findLegend()) {
+    if (LayoutBox* legend = findInFlowLegend()) {
         int legendMinWidth = legend->minPreferredLogicalWidth();
 
         Length legendMarginLeft = legend->style()->marginLeft();
@@ -63,8 +61,10 @@ void LayoutFieldset::computePreferredLogicalWidths()
 
 LayoutObject* LayoutFieldset::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&)
 {
-    LayoutBox* legend = findLegend();
+    LayoutBox* legend = findInFlowLegend();
     if (legend) {
+        LayoutRect oldLegendFrameRect = legend->frameRect();
+
         if (relayoutChildren)
             legend->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::FieldsetChanged);
         legend->layoutIfNeeded();
@@ -121,20 +121,25 @@ LayoutObject* LayoutFieldset::layoutSpecialExcludedChild(bool relayoutChildren, 
 
         setLogicalTopForChild(*legend, legendLogicalTop);
         setLogicalHeight(paddingBefore() + collapsedLegendExtent);
+
+        if (legend->frameRect() != oldLegendFrameRect) {
+            // We need to invalidate the fieldset border if the legend's frame changed.
+            setShouldDoFullPaintInvalidation();
+        }
     }
     return legend;
 }
 
-LayoutBox* LayoutFieldset::findLegend(FindLegendOption option) const
+LayoutBox* LayoutFieldset::findInFlowLegend() const
 {
     for (LayoutObject* legend = firstChild(); legend; legend = legend->nextSibling()) {
-        if (option == IgnoreFloatingOrOutOfFlow && legend->isFloatingOrOutOfFlowPositioned())
+        if (legend->isFloatingOrOutOfFlowPositioned())
             continue;
 
         if (isHTMLLegendElement(legend->node()))
             return toLayoutBox(legend);
     }
-    return 0;
+    return nullptr;
 }
 
 void LayoutFieldset::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)

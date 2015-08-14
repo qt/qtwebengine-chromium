@@ -59,6 +59,8 @@
 
 #include <openssl/base.h>
 
+#include <openssl/thread.h>
+
 /* OpenSSL included digest and cipher functions in this header so we include
  * them for users that still expect that.
  *
@@ -134,14 +136,6 @@ OPENSSL_EXPORT int EVP_PKEY_id(const EVP_PKEY *pkey);
  * |EVP_PKEY_RSA2| will be turned into |EVP_PKEY_RSA|. */
 OPENSSL_EXPORT int EVP_PKEY_type(int nid);
 
-/* Deprecated: EVP_PKEY_new_mac_key allocates a fresh |EVP_PKEY| of the given
- * type (e.g. |EVP_PKEY_HMAC|), sets |mac_key| as the MAC key and "generates" a
- * new key, suitable for signing. It returns the fresh |EVP_PKEY|, or NULL on
- * error. Use |HMAC_CTX| directly instead. */
-OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_new_mac_key(int type, ENGINE *engine,
-                                              const uint8_t *mac_key,
-                                              size_t mac_key_len);
-
 
 /* Getting and setting concrete public key types.
  *
@@ -174,9 +168,6 @@ OPENSSL_EXPORT struct dh_st *EVP_PKEY_get1_DH(EVP_PKEY *pkey);
 #define EVP_PKEY_DH NID_dhKeyAgreement
 #define EVP_PKEY_DHX NID_dhpublicnumber
 #define EVP_PKEY_EC NID_X9_62_id_ecPublicKey
-
-/* Deprecated: Use |HMAC_CTX| directly instead. */
-#define EVP_PKEY_HMAC NID_hmac
 
 /* EVP_PKEY_assign sets the underlying key of |pkey| to |key|, which must be of
  * the given type. The |type| argument should be one of the |EVP_PKEY_*|
@@ -239,8 +230,7 @@ OPENSSL_EXPORT int EVP_DigestSignInit(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
                                       EVP_PKEY *pkey);
 
 /* EVP_DigestSignUpdate appends |len| bytes from |data| to the data which will
- * be signed in |EVP_DigestSignFinal|. It returns one on success and zero
- * otherwise. */
+ * be signed in |EVP_DigestSignFinal|. It returns one. */
 OPENSSL_EXPORT int EVP_DigestSignUpdate(EVP_MD_CTX *ctx, const void *data,
                                         size_t len);
 
@@ -291,8 +281,7 @@ OPENSSL_EXPORT int EVP_DigestVerifyInitFromAlgorithm(EVP_MD_CTX *ctx,
                                                      EVP_PKEY *pkey);
 
 /* EVP_DigestVerifyUpdate appends |len| bytes from |data| to the data which
- * will be verified by |EVP_DigestVerifyFinal|. It returns one on success and
- * zero otherwise. */
+ * will be verified by |EVP_DigestVerifyFinal|. It returns one. */
 OPENSSL_EXPORT int EVP_DigestVerifyUpdate(EVP_MD_CTX *ctx, const void *data,
                                           size_t len);
 
@@ -377,12 +366,12 @@ OPENSSL_EXPORT int EVP_VerifyFinal(EVP_MD_CTX *ctx, const uint8_t *sig,
 OPENSSL_EXPORT int EVP_PKEY_print_public(BIO *out, const EVP_PKEY *pkey,
                                          int indent, ASN1_PCTX *pctx);
 
-/* EVP_PKEY_print_public prints a textual representation of the private key in
+/* EVP_PKEY_print_private prints a textual representation of the private key in
  * |pkey| to |out|. Returns one on success or zero otherwise. */
 OPENSSL_EXPORT int EVP_PKEY_print_private(BIO *out, const EVP_PKEY *pkey,
                                           int indent, ASN1_PCTX *pctx);
 
-/* EVP_PKEY_print_public prints a textual representation of the parameters in
+/* EVP_PKEY_print_params prints a textual representation of the parameters in
  * |pkey| to |out|. Returns one on success or zero otherwise. */
 OPENSSL_EXPORT int EVP_PKEY_print_params(BIO *out, const EVP_PKEY *pkey,
                                          int indent, ASN1_PCTX *pctx);
@@ -419,13 +408,13 @@ OPENSSL_EXPORT int PKCS5_PBKDF2_HMAC_SHA1(const char *password,
  * returns the context or NULL on error. */
 OPENSSL_EXPORT EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *pkey, ENGINE *e);
 
-/* EVP_PKEY_CTX_new allocates a fresh |EVP_PKEY_CTX| for a key of type |id|
+/* EVP_PKEY_CTX_new_id allocates a fresh |EVP_PKEY_CTX| for a key of type |id|
  * (e.g. |EVP_PKEY_HMAC|). This can be used for key generation where
  * |EVP_PKEY_CTX_new| can't be used because there isn't an |EVP_PKEY| to pass
  * it. It returns the context or NULL on error. */
 OPENSSL_EXPORT EVP_PKEY_CTX *EVP_PKEY_CTX_new_id(int id, ENGINE *e);
 
-/* EVP_KEY_CTX_free frees |ctx| and the data it owns. */
+/* EVP_PKEY_CTX_free frees |ctx| and the data it owns. */
 OPENSSL_EXPORT void EVP_PKEY_CTX_free(EVP_PKEY_CTX *ctx);
 
 /* EVP_PKEY_CTX_dup allocates a fresh |EVP_PKEY_CTX| and sets it equal to the
@@ -664,6 +653,12 @@ OPENSSL_EXPORT EVP_PKEY *EVP_PKEY_dup(EVP_PKEY *pkey);
 /* OpenSSL_add_all_algorithms does nothing. */
 OPENSSL_EXPORT void OpenSSL_add_all_algorithms(void);
 
+/* OpenSSL_add_all_ciphers does nothing. */
+OPENSSL_EXPORT void OpenSSL_add_all_ciphers(void);
+
+/* OpenSSL_add_all_digests does nothing. */
+OPENSSL_EXPORT void OpenSSL_add_all_digests(void);
+
 /* EVP_cleanup does nothing. */
 OPENSSL_EXPORT void EVP_cleanup(void);
 
@@ -678,7 +673,7 @@ OPENSSL_EXPORT const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find_str(
     ENGINE **pengine, const char *name, size_t len);
 
 struct evp_pkey_st {
-  int references;
+  CRYPTO_refcount_t references;
 
   /* type contains one of the EVP_PKEY_* values or NID_undef and determines
    * which element (if any) of the |pkey| union is valid. */

@@ -37,6 +37,7 @@
 WebInspector.Main = function()
 {
     WebInspector.console.setUIDelegate(this);
+    WebInspector.Main._instanceForTest = this;
     runOnWindowLoad(this._loaded.bind(this));
 }
 
@@ -56,11 +57,22 @@ WebInspector.Main.prototype = {
 
         if (InspectorFrontendHost.isUnderTest())
             self.runtime.useTestBase();
-        InspectorFrontendHost.getPreferences(this._createSettings.bind(this));
+        InspectorFrontendHost.getPreferences(this._gotPreferences.bind(this));
     },
 
     /**
      * @param {!Object<string, string>} prefs
+     */
+    _gotPreferences: function(prefs)
+    {
+        console.timeStamp("Main._gotPreferences");
+        this._createSettings(prefs);
+        this._createAppUI();
+    },
+
+    /**
+     * @param {!Object<string, string>} prefs
+     * Note: this function is called from testSettings in Tests.js.
      */
     _createSettings: function(prefs)
     {
@@ -102,8 +114,6 @@ WebInspector.Main.prototype = {
 
         if (!InspectorFrontendHost.isUnderTest())
             new WebInspector.VersionController().updateVersion();
-
-        this._createAppUI();
     },
 
     /**
@@ -111,24 +121,24 @@ WebInspector.Main.prototype = {
      */
     _initializeExperiments: function(prefs)
     {
-        Runtime.experiments.register("emptySourceMapAutoStepping", "Empty sourcemap auto-stepping");
-        Runtime.experiments.register("accessibilityInspection", "Accessibility Inspection", true);
+        Runtime.experiments.register("accessibilityInspection", "Accessibility Inspection");
         Runtime.experiments.register("animationInspection", "Animation Inspection");
         Runtime.experiments.register("applyCustomStylesheet", "Allow custom UI themes");
-        Runtime.experiments.register("blackboxJSFramesOnTimeline", "Blackbox JavaScript frames on Timeline");
+        Runtime.experiments.register("blackboxJSFramesOnTimeline", "Blackbox JavaScript frames on Timeline", true);
         Runtime.experiments.register("timelineDetailsChart", "Costly functions view in Timeline details", true);
         Runtime.experiments.register("customObjectFormatters", "Custom object formatters", true);
-        Runtime.experiments.register("externalDeviceList", "External device list", true);
+        Runtime.experiments.register("emptySourceMapAutoStepping", "Empty sourcemap auto-stepping");
         Runtime.experiments.register("fileSystemInspection", "FileSystem inspection");
-        Runtime.experiments.register("filmStripInNetworkAndTimeline", "Filmstrip in Network and Timeline Panel", true);
         Runtime.experiments.register("gpuTimeline", "GPU data on timeline", true);
-        Runtime.experiments.register("inputEventsOnTimelineOverview", "Input events on Timeline overview", true)
+        Runtime.experiments.register("inputEventsOnTimelineOverview", "Input events on Timeline overview", true);
         Runtime.experiments.register("layersPanel", "Layers panel");
-        Runtime.experiments.register("materialDesign", "Material design", true);
+        Runtime.experiments.register("layoutEditor", "Layout editor", true);
+        Runtime.experiments.register("materialDesign", "Material design");
         Runtime.experiments.register("networkRequestHeadersFilterInDetailsView", "Network request headers filter in details view", true);
-        Runtime.experiments.register("networkRequestsOnTimeline", "Network requests on Timeline");
+        Runtime.experiments.register("networkRequestsOnTimeline", "Network requests on Timeline", true);
         Runtime.experiments.register("privateScriptInspection", "Private script inspection");
         Runtime.experiments.register("promiseTracker", "Promise inspector");
+        Runtime.experiments.register("securityPanel", "Security panel", true);
         Runtime.experiments.register("serviceWorkersInPageFrontend", "Service workers in DevTools for page");
         Runtime.experiments.register("serviceWorkersInResources", "Service workers in Resources panel", true);
         Runtime.experiments.register("showPrimaryLoadWaterfallInNetworkTimeline", "Show primary load waterfall in Network timeline", true);
@@ -171,18 +181,6 @@ WebInspector.Main.prototype = {
         WebInspector.initializeUIUtils(window);
         WebInspector.installComponentRootStyles(/** @type {!Element} */ (document.body));
 
-        if (Runtime.queryParam("toolbarColor") && Runtime.queryParam("textColor"))
-            WebInspector.setToolbarColors(document, /** @type {string} */ (Runtime.queryParam("toolbarColor")), /** @type {string} */ (Runtime.queryParam("textColor")));
-        InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.SetToolbarColors, updateToolbarColors);
-        /**
-         * @param {!WebInspector.Event} event
-         * @suppressGlobalPropertiesCheck
-         */
-        function updateToolbarColors(event)
-        {
-            WebInspector.setToolbarColors(document, /** @type {string} */ (event.data["backgroundColor"]), /** @type {string} */ (event.data["color"]));
-        }
-
         this._addMainEventListeners(document);
 
         var canDock = !!Runtime.queryParam("can_dock");
@@ -191,7 +189,7 @@ WebInspector.Main.prototype = {
         WebInspector.ContextMenu.initialize();
         WebInspector.ContextMenu.installHandler(document);
         WebInspector.dockController = new WebInspector.DockController(canDock);
-        WebInspector.overridesSupport = new WebInspector.OverridesSupport(canDock);
+        WebInspector.overridesSupport = new WebInspector.OverridesSupport();
         WebInspector.emulatedDevicesList = new WebInspector.EmulatedDevicesList();
         WebInspector.multitargetConsoleModel = new WebInspector.MultitargetConsoleModel();
         WebInspector.multitargetNetworkManager = new WebInspector.MultitargetNetworkManager();
@@ -215,7 +213,7 @@ WebInspector.Main.prototype = {
 
         new WebInspector.OverlayController();
         new WebInspector.ContentScriptProjectDecorator();
-        new WebInspector.ExecutionContextSelector();
+        new WebInspector.ExecutionContextSelector(WebInspector.targetManager, WebInspector.context);
 
         var autoselectPanel = WebInspector.UIString("a panel chosen automatically");
         var openAnchorLocationSetting = WebInspector.settings.createSetting("openLinkHandler", autoselectPanel);
@@ -227,6 +225,7 @@ WebInspector.Main.prototype = {
         new WebInspector.RenderingOptions();
         new WebInspector.Main.PauseListener();
         new WebInspector.Main.InspectedNodeRevealer();
+        new WebInspector.ThrottlingIndicator();
         WebInspector.domBreakpointsSidebarPane = new WebInspector.DOMBreakpointsSidebarPane();
 
         WebInspector.actionRegistry = new WebInspector.ActionRegistry();
@@ -335,7 +334,7 @@ WebInspector.Main.prototype = {
 
         function overridesReady()
         {
-            if (!WebInspector.overridesSupport.responsiveDesignAvailable() && WebInspector.overridesSupport.emulationEnabled())
+            if (!WebInspector.dockController.canDock() && WebInspector.overridesSupport.emulationEnabled())
                 WebInspector.inspectorView.showViewInDrawer("emulation", true);
 
             target.inspectorAgent().enable(inspectorAgentEnableCallback);
@@ -455,10 +454,10 @@ WebInspector.Main.prototype = {
         var toggleConsoleLabel = WebInspector.UIString("Show console");
         section.addKey(shortcut.makeDescriptor(shortcut.Keys.Tilde, shortcut.Modifiers.Ctrl), toggleConsoleLabel);
         section.addKey(shortcut.makeDescriptor(shortcut.Keys.Esc), WebInspector.UIString("Toggle drawer"));
-        if (WebInspector.overridesSupport.responsiveDesignAvailable())
+        if (WebInspector.dockController.canDock()) {
             section.addKey(shortcut.makeDescriptor("M", shortcut.Modifiers.CtrlOrMeta | shortcut.Modifiers.Shift), WebInspector.UIString("Toggle device mode"));
-        if (WebInspector.dockController.canDock())
             section.addKey(shortcut.makeDescriptor("D", shortcut.Modifiers.CtrlOrMeta | shortcut.Modifiers.Shift), WebInspector.UIString("Toggle dock side"));
+        }
         section.addKey(shortcut.makeDescriptor("f", shortcut.Modifiers.CtrlOrMeta), WebInspector.UIString("Search"));
 
         var advancedSearchShortcutModifier = WebInspector.isMac()
@@ -486,6 +485,13 @@ WebInspector.Main.prototype = {
     {
         if (event.handled)
             return;
+
+        var target = event.deepActiveElement();
+        if (target) {
+            var anchor = target.enclosingNodeOrSelfWithNodeName("a");
+            if (anchor && anchor.preventFollow)
+                event.preventDefault();
+        }
 
         if (!WebInspector.Dialog.currentInstance() && WebInspector.inspectorView.currentPanel()) {
             WebInspector.inspectorView.currentPanel().handleShortcut(event);
@@ -621,7 +627,7 @@ WebInspector.reload = function()
 {
     if (WebInspector.dockController.canDock() && WebInspector.dockController.dockSide() === WebInspector.DockController.State.Undocked)
         InspectorFrontendHost.setIsDocked(true, function() {});
-    window.top.location.reload();
+    window.location.reload();
 }
 
 /**
@@ -758,6 +764,22 @@ WebInspector.Main.WarningErrorCounter.prototype = {
     item: function()
     {
         return this._counter;
+    }
+}
+
+/**
+ * @constructor
+ */
+WebInspector.ThrottlingIndicator = function()
+{
+    var networkConditionsSetting = WebInspector.moduleSetting("networkConditions");
+    networkConditionsSetting.addChangeListener(updateVisibility);
+    updateVisibility();
+
+    function updateVisibility()
+    {
+        var throttlingEnabled = WebInspector.NetworkManager.IsThrottlingEnabled(networkConditionsSetting.get());
+        WebInspector.inspectorView.setPanelIcon("network", throttlingEnabled ? "warning-icon" : "", WebInspector.UIString("Network throttling is enabled"));
     }
 }
 

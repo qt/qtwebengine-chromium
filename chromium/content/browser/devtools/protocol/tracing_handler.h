@@ -10,7 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/trace_event/trace_event.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 #include "content/public/browser/tracing_controller.h"
 
 namespace base {
@@ -42,6 +42,7 @@ class TracingHandler {
                  const double* buffer_usage_reporting_interval);
   Response End(DevToolsCommandId command_id);
   Response GetCategories(DevToolsCommandId command);
+  bool did_initiate_recording() { return did_initiate_recording_; }
 
  private:
   void OnRecordingEnabled(DevToolsCommandId command_id);
@@ -50,18 +51,17 @@ class TracingHandler {
   void OnCategoriesReceived(DevToolsCommandId command_id,
                             const std::set<std::string>& category_set);
 
-  base::trace_event::TraceOptions TraceOptionsFromString(
-      const std::string* options);
-
   void SetupTimer(double usage_reporting_interval);
 
   void DisableRecording(bool abort);
 
+  bool IsRecording() const;
+
   scoped_ptr<base::Timer> buffer_usage_poll_timer_;
   Target target_;
-  bool is_recording_;
 
   scoped_ptr<Client> client_;
+  bool did_initiate_recording_;
   base::WeakPtrFactory<TracingHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TracingHandler);

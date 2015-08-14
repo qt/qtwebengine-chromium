@@ -36,18 +36,10 @@ enum EditingBehavior {
 // Cache options for V8. See V8CacheOptions.h for information on the options.
 enum V8CacheOptions {
   V8_CACHE_OPTIONS_DEFAULT,
+  V8_CACHE_OPTIONS_NONE,
   V8_CACHE_OPTIONS_PARSE,
   V8_CACHE_OPTIONS_CODE,
-  V8_CACHE_OPTIONS_CODE_COMPRESSED,
-  V8_CACHE_OPTIONS_NONE,
-  V8_CACHE_OPTIONS_PARSE_MEMORY,
-  V8_CACHE_OPTIONS_HEURISTICS,
-  V8_CACHE_OPTIONS_HEURISTICS_MOBILE,
-  V8_CACHE_OPTIONS_HEURISTICS_DEFAULT,
-  V8_CACHE_OPTIONS_HEURISTICS_DEFAULT_MOBILE,
-  V8_CACHE_OPTIONS_RECENT,
-  V8_CACHE_OPTIONS_RECENT_SMALL,
-  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_RECENT_SMALL
+  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_CODE
 };
 
 // ImageAnimationPolicy is used for controlling image animation
@@ -152,7 +144,6 @@ struct CONTENT_EXPORT WebPreferences {
   bool should_clear_document_background;
   bool enable_scroll_animator;
   bool css_variables_enabled;
-  bool region_based_columns_enabled;
   bool touch_enabled;
   // TODO(mustaq): Nuke when the new API is ready
   bool device_supports_touch;
@@ -165,7 +156,6 @@ struct CONTENT_EXPORT WebPreferences {
   int available_hover_types;
   ui::HoverType primary_hover_type;
   bool sync_xhr_in_documents_enabled;
-  bool deferred_image_decoding_enabled;
   bool image_color_profiles_enabled;
   bool should_respect_image_orientation;
   int number_of_cpu_cores;
@@ -177,7 +167,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool initialize_at_minimum_page_scale;
   bool smart_insert_delete_enabled;
   bool spatial_navigation_enabled;
-  bool pinch_virtual_viewport_enabled;
+  bool invert_viewport_scroll_order;
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;

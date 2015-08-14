@@ -130,7 +130,7 @@ WebInspector.OverviewGrid.prototype = {
      */
     setResizeEnabled: function(enabled)
     {
-        this._window._setEnabled(!!enabled);
+        this._window.setEnabled(enabled);
     }
 }
 
@@ -166,11 +166,6 @@ WebInspector.OverviewGrid.Window = function(parentElement, dividersLabelBarEleme
     this._overviewWindowBordersElement = parentElement.createChild("div", "overview-grid-window-rulers");
     parentElement.createChild("div", "overview-grid-dividers-background");
 
-    this._currentPositionElement = parentElement.createChild("div", "overview-grid-current-position");
-    this._currentPositionArea = parentElement.createChild("div", "overview-grid-window-area");
-    this._currentPositionArea.addEventListener("mousemove", this._onMouseMove.bind(this), true);
-    this._currentPositionArea.addEventListener("mouseout", this._hideCurrentPosition.bind(this), true);
-
     this._leftResizeElement = parentElement.createChild("div", "overview-grid-window-resizer");
     this._leftResizeElement.style.left = 0;
     WebInspector.installDragHandle(this._leftResizeElement, this._resizerElementStartDragging.bind(this), this._leftResizeElementDragging.bind(this), null, "ew-resize");
@@ -178,7 +173,7 @@ WebInspector.OverviewGrid.Window = function(parentElement, dividersLabelBarEleme
     this._rightResizeElement = parentElement.createChild("div", "overview-grid-window-resizer overview-grid-window-resizer-right");
     this._rightResizeElement.style.right = 0;
     WebInspector.installDragHandle(this._rightResizeElement, this._resizerElementStartDragging.bind(this), this._rightResizeElementDragging.bind(this), null, "ew-resize");
-    this._setEnabled(true);
+    this.setEnabled(true);
 }
 
 WebInspector.OverviewGrid.Events = {
@@ -198,38 +193,15 @@ WebInspector.OverviewGrid.Window.prototype = {
         this._overviewWindowBordersElement.style.right = "0%";
         this._leftResizeElement.style.left = "0%";
         this._rightResizeElement.style.left = "100%";
-        this._setEnabled(true);
+        this.setEnabled(true);
     },
 
     /**
      * @param {boolean} enabled
      */
-    _setEnabled: function(enabled)
+    setEnabled: function(enabled)
     {
-        enabled = !!enabled;
-        if (this._enabled === enabled)
-            return;
         this._enabled = enabled;
-        this._currentPositionArea.style.cursor = enabled ? "text" : "";
-        if (!enabled)
-            this._hideCurrentPosition();
-    },
-
-    _hideCurrentPosition: function()
-    {
-        this._currentPositionElement.style.visibility = "hidden";
-    },
-
-    /**
-     * @param {!Event} event
-     */
-    _onMouseMove: function(event)
-    {
-        if (!this._enabled)
-            return;
-        var x = event.offsetX + event.target.offsetLeft;
-        this._currentPositionElement.style.left = x + "px";
-        this._currentPositionElement.style.visibility = "visible";
     },
 
     /**

@@ -67,7 +67,8 @@ SystemDelayTest::SystemDelayTest()
 }
 
 void SystemDelayTest::SetUp() {
-  ASSERT_EQ(0, WebRtcAec_Create(&handle_));
+  handle_ = WebRtcAec_Create();
+  ASSERT_TRUE(handle_);
   self_ = reinterpret_cast<Aec*>(handle_);
 }
 
@@ -135,7 +136,7 @@ void SystemDelayTest::RunStableStartup() {
   // Process().
   int buffer_size = BufferFillUp();
 
-  if (WebRtcAec_reported_delay_enabled(self_->aec) == 0) {
+  if (WebRtcAec_delay_agnostic_enabled(self_->aec) == 1) {
     // In extended_filter mode we set the buffer size after the first processed
     // 10 ms chunk. Hence, we don't need to wait for the reported system delay
     // values to become stable.
@@ -194,11 +195,11 @@ TEST_F(SystemDelayTest, CorrectIncreaseWhenBufferFarend) {
   // incremented with the same amount as the size of data.
   // This process should be independent of DA-AEC and extended_filter mode.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       for (size_t i = 0; i < kNumSampleRates; i++) {
         Init(kSampleRateHz[i]);
         // Loop through a couple of calls to make sure the system delay
@@ -221,11 +222,11 @@ TEST_F(SystemDelayTest, CorrectDelayAfterStableStartup) {
   // delay meets the requirements.
   // This process should be independent of DA-AEC and extended_filter mode.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       for (size_t i = 0; i < kNumSampleRates; i++) {
         Init(kSampleRateHz[i]);
         RunStableStartup();
@@ -237,7 +238,7 @@ TEST_F(SystemDelayTest, CorrectDelayAfterStableStartup) {
         // 10 ms chunk.
         int average_reported_delay = kDeviceBufMs * samples_per_frame_ / 10;
         EXPECT_GE(average_reported_delay, WebRtcAec_system_delay(self_->aec));
-        int lower_bound = WebRtcAec_delay_correction_enabled(self_->aec)
+        int lower_bound = WebRtcAec_extended_filter_enabled(self_->aec)
                               ? average_reported_delay / 2 - samples_per_frame_
                               : average_reported_delay * 3 / 4;
         EXPECT_LE(lower_bound, WebRtcAec_system_delay(self_->aec));
@@ -250,10 +251,10 @@ TEST_F(SystemDelayTest, CorrectDelayAfterUnstableStartup) {
   // This test does not apply in extended_filter mode, since we only use the
   // the first 10 ms chunk to determine a reasonable buffer size. Neither does
   // it apply if DA-AEC is on because that overrides the startup procedure.
-  WebRtcAec_enable_delay_correction(self_->aec, 0);
-  EXPECT_EQ(0, WebRtcAec_delay_correction_enabled(self_->aec));
-  WebRtcAec_enable_reported_delay(self_->aec, 1);
-  EXPECT_EQ(1, WebRtcAec_reported_delay_enabled(self_->aec));
+  WebRtcAec_enable_extended_filter(self_->aec, 0);
+  EXPECT_EQ(0, WebRtcAec_extended_filter_enabled(self_->aec));
+  WebRtcAec_enable_delay_agnostic(self_->aec, 0);
+  EXPECT_EQ(0, WebRtcAec_delay_agnostic_enabled(self_->aec));
 
   // In an unstable system we would start processing after |kMaxConvergenceMs|.
   // On the last frame the AEC buffer is adjusted to 60% of the last reported
@@ -299,10 +300,10 @@ TEST_F(SystemDelayTest, CorrectDelayAfterStableBufferBuildUp) {
   // This test does not apply in extended_filter mode, since we only use the
   // the first 10 ms chunk to determine a reasonable buffer size. Neither does
   // it apply if DA-AEC is on because that overrides the startup procedure.
-  WebRtcAec_enable_delay_correction(self_->aec, 0);
-  EXPECT_EQ(0, WebRtcAec_delay_correction_enabled(self_->aec));
-  WebRtcAec_enable_reported_delay(self_->aec, 1);
-  EXPECT_EQ(1, WebRtcAec_reported_delay_enabled(self_->aec));
+  WebRtcAec_enable_extended_filter(self_->aec, 0);
+  EXPECT_EQ(0, WebRtcAec_extended_filter_enabled(self_->aec));
+  WebRtcAec_enable_delay_agnostic(self_->aec, 0);
+  EXPECT_EQ(0, WebRtcAec_delay_agnostic_enabled(self_->aec));
 
   // In this test we start by establishing the device buffer size during stable
   // conditions, but with an empty internal far-end buffer. Once that is done we
@@ -363,11 +364,11 @@ TEST_F(SystemDelayTest, CorrectDelayWhenBufferUnderrun) {
   // system delay goes negative.
   // This process should be independent of DA-AEC and extended_filter mode.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       for (size_t i = 0; i < kNumSampleRates; i++) {
         Init(kSampleRateHz[i]);
         RunStableStartup();
@@ -393,11 +394,11 @@ TEST_F(SystemDelayTest, CorrectDelayDuringDrift) {
 
   // This process should be independent of DA-AEC and extended_filter mode.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       for (size_t i = 0; i < kNumSampleRates; i++) {
         Init(kSampleRateHz[i]);
         RunStableStartup();
@@ -437,11 +438,11 @@ TEST_F(SystemDelayTest, ShouldRecoverAfterGlitch) {
 
   // This process should be independent of DA-AEC and extended_filter mode.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       for (size_t i = 0; i < kNumSampleRates; i++) {
         Init(kSampleRateHz[i]);
         RunStableStartup();
@@ -492,13 +493,13 @@ TEST_F(SystemDelayTest, UnaffectedWhenSpuriousDeviceBufferValues) {
   // This test does not apply in extended_filter mode, since we only use the
   // the first 10 ms chunk to determine a reasonable buffer size.
   const int extended_filter = 0;
-  WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-  EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+  WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+  EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
 
   // Should be DA-AEC independent.
   for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-    WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-    EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+    WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+    EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
     // This spurious device buffer data test aims at verifying that the system
     // delay is unaffected by large outliers.
     // The system is said to be in a non-causal state if the difference between
@@ -548,11 +549,11 @@ TEST_F(SystemDelayTest, CorrectImpactWhenTogglingDeviceBufferValues) {
   // This test does not apply if DA-AEC is enabled and extended_filter mode
   // disabled.
   for (int extended_filter = 0; extended_filter <= 1; ++extended_filter) {
-    WebRtcAec_enable_delay_correction(self_->aec, extended_filter);
-    EXPECT_EQ(extended_filter, WebRtcAec_delay_correction_enabled(self_->aec));
+    WebRtcAec_enable_extended_filter(self_->aec, extended_filter);
+    EXPECT_EQ(extended_filter, WebRtcAec_extended_filter_enabled(self_->aec));
     for (int da_aec = 0; da_aec <= 1; ++da_aec) {
-      WebRtcAec_enable_reported_delay(self_->aec, 1 - da_aec);
-      EXPECT_EQ(1 - da_aec, WebRtcAec_reported_delay_enabled(self_->aec));
+      WebRtcAec_enable_delay_agnostic(self_->aec, da_aec);
+      EXPECT_EQ(da_aec, WebRtcAec_delay_agnostic_enabled(self_->aec));
       if (extended_filter == 0 && da_aec == 1) {
         continue;
       }

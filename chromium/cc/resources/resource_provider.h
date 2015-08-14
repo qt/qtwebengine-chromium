@@ -18,6 +18,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/resource_id.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
 #include "cc/resources/release_callback_impl.h"
@@ -53,7 +54,6 @@ class BlockingTaskRunner;
 class IdAllocator;
 class SharedBitmap;
 class SharedBitmapManager;
-class TextureUploader;
 
 // This class is not thread-safe and can only be called from the thread it was
 // created on (in practice, the impl thread).
@@ -62,7 +62,6 @@ class CC_EXPORT ResourceProvider {
   struct Resource;
 
  public:
-  typedef unsigned ResourceId;
   typedef std::vector<ResourceId> ResourceIdArray;
   typedef base::hash_set<ResourceId> ResourceIdSet;
   typedef base::hash_map<ResourceId, ResourceId> ResourceIdMap;
@@ -85,7 +84,8 @@ class CC_EXPORT ResourceProvider {
       BlockingTaskRunner* blocking_main_thread_task_runner,
       int highp_threshold_min,
       bool use_rgba_4444_texture_format,
-      size_t id_allocation_chunk_size);
+      size_t id_allocation_chunk_size,
+      bool use_persistent_map_for_gpu_memory_buffers);
   virtual ~ResourceProvider();
 
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
@@ -95,15 +95,23 @@ class CC_EXPORT ResourceProvider {
     return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
   }
   ResourceFormat best_texture_format() const { return best_texture_format_; }
+  ResourceFormat best_render_buffer_format() const {
+    return best_render_buffer_format_;
+  }
   ResourceFormat yuv_resource_format() const { return yuv_resource_format_; }
   bool use_sync_query() const { return use_sync_query_; }
+  bool use_persistent_map_for_gpu_memory_buffers() const {
+    return use_persistent_map_for_gpu_memory_buffers_;
+  }
   size_t num_resources() const { return resources_.size(); }
 
   // Checks whether a resource is in use by a consumer.
   bool InUseByConsumer(ResourceId id);
 
   bool IsLost(ResourceId id);
-  bool AllowOverlay(ResourceId id);
+
+  void LoseResourceForTesting(ResourceId id);
+  void EnableReadLockFencesForTesting(ResourceId id);
 
   // Producer interface.
 
@@ -142,27 +150,18 @@ class CC_EXPORT ResourceProvider {
       const TextureMailbox& mailbox,
       scoped_ptr<SingleReleaseCallbackImpl> release_callback_impl);
 
+  ResourceId CreateResourceFromTextureMailbox(
+      const TextureMailbox& mailbox,
+      scoped_ptr<SingleReleaseCallbackImpl> release_callback_impl,
+      bool read_lock_fences_enabled);
+
   void DeleteResource(ResourceId id);
 
   // Update pixels from image, copying source_rect (in image) to dest_offset (in
   // the resource).
-  // NOTE: DEPRECATED. Use CopyToResource() instead.
-  void SetPixels(ResourceId id,
-                 const uint8_t* image,
-                 const gfx::Rect& image_rect,
-                 const gfx::Rect& source_rect,
-                 const gfx::Vector2d& dest_offset);
   void CopyToResource(ResourceId id,
                       const uint8_t* image,
                       const gfx::Size& image_size);
-
-  // Check upload status.
-  size_t NumBlockingUploads();
-  void MarkPendingUploadsAsNonBlocking();
-  size_t EstimatedUploadsPerTick();
-  void FlushUploads();
-  void ReleaseCachedData();
-  base::TimeTicks EstimatedUploadCompletionTime(size_t uploads_per_tick);
 
   // Only flush the command buffer if supported.
   // Returns true if the shallow flush occurred, false otherwise.
@@ -220,7 +219,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedReadLockGL {
    public:
     ScopedReadLockGL(ResourceProvider* resource_provider,
-                     ResourceProvider::ResourceId resource_id);
+                     ResourceId resource_id);
     virtual ~ScopedReadLockGL();
 
     unsigned texture_id() const { return resource_->gl_id; }
@@ -228,7 +227,7 @@ class CC_EXPORT ResourceProvider {
 
    protected:
     ResourceProvider* resource_provider_;
-    ResourceProvider::ResourceId resource_id_;
+    ResourceId resource_id_;
 
    private:
     const ResourceProvider::Resource* resource_;
@@ -239,10 +238,10 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedSamplerGL : public ScopedReadLockGL {
    public:
     ScopedSamplerGL(ResourceProvider* resource_provider,
-                    ResourceProvider::ResourceId resource_id,
+                    ResourceId resource_id,
                     GLenum filter);
     ScopedSamplerGL(ResourceProvider* resource_provider,
-                    ResourceProvider::ResourceId resource_id,
+                    ResourceId resource_id,
                     GLenum unit,
                     GLenum filter);
     ~ScopedSamplerGL() override;
@@ -259,7 +258,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedWriteLockGL {
    public:
     ScopedWriteLockGL(ResourceProvider* resource_provider,
-                      ResourceProvider::ResourceId resource_id);
+                      ResourceId resource_id);
     ~ScopedWriteLockGL();
 
     unsigned texture_id() const { return texture_id_; }
@@ -275,7 +274,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedReadLockSoftware {
    public:
     ScopedReadLockSoftware(ResourceProvider* resource_provider,
-                           ResourceProvider::ResourceId resource_id);
+                           ResourceId resource_id);
     ~ScopedReadLockSoftware();
 
     const SkBitmap* sk_bitmap() const {
@@ -288,7 +287,7 @@ class CC_EXPORT ResourceProvider {
 
    private:
     ResourceProvider* resource_provider_;
-    ResourceProvider::ResourceId resource_id_;
+    ResourceId resource_id_;
     SkBitmap sk_bitmap_;
     GLint wrap_mode_;
 
@@ -298,7 +297,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedWriteLockSoftware {
    public:
     ScopedWriteLockSoftware(ResourceProvider* resource_provider,
-                            ResourceProvider::ResourceId resource_id);
+                            ResourceId resource_id);
     ~ScopedWriteLockSoftware();
 
     SkBitmap& sk_bitmap() { return sk_bitmap_; }
@@ -316,7 +315,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedWriteLockGpuMemoryBuffer {
    public:
     ScopedWriteLockGpuMemoryBuffer(ResourceProvider* resource_provider,
-                                   ResourceProvider::ResourceId resource_id);
+                                   ResourceId resource_id);
     ~ScopedWriteLockGpuMemoryBuffer();
 
     gfx::GpuMemoryBuffer* GetGpuMemoryBuffer();
@@ -336,7 +335,7 @@ class CC_EXPORT ResourceProvider {
   class CC_EXPORT ScopedWriteLockGr {
    public:
     ScopedWriteLockGr(ResourceProvider* resource_provider,
-                      ResourceProvider::ResourceId resource_id);
+                      ResourceId resource_id);
     ~ScopedWriteLockGr();
 
     void InitSkSurface(bool use_distance_field_text,
@@ -424,8 +423,10 @@ class CC_EXPORT ResourceProvider {
   // Indicates if we can currently lock this resource for write.
   bool CanLockForWrite(ResourceId id);
 
-  // Copy pixels from source to destination.
-  void CopyResource(ResourceId source_id, ResourceId dest_id);
+  // Copy |rect| pixels from source to destination.
+  void CopyResource(ResourceId source_id,
+                    ResourceId dest_id,
+                    const gfx::Rect& rect);
 
   void WaitSyncPointIfNeeded(ResourceId id);
 
@@ -436,6 +437,17 @@ class CC_EXPORT ResourceProvider {
   OutputSurface* output_surface() { return output_surface_; }
 
   void ValidateResource(ResourceId id) const;
+
+ protected:
+  ResourceProvider(OutputSurface* output_surface,
+                   SharedBitmapManager* shared_bitmap_manager,
+                   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+                   BlockingTaskRunner* blocking_main_thread_task_runner,
+                   int highp_threshold_min,
+                   bool use_rgba_4444_texture_format,
+                   size_t id_allocation_chunk_size,
+                   bool use_persistent_map_for_gpu_memory_buffers);
+  void Initialize();
 
  private:
   struct Resource {
@@ -486,7 +498,6 @@ class CC_EXPORT ResourceProvider {
     bool allocated : 1;
     bool read_lock_fences_enabled : 1;
     bool has_shared_bitmap_id : 1;
-    bool allow_overlay : 1;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
     Origin origin;
@@ -523,18 +534,6 @@ class CC_EXPORT ResourceProvider {
     return !resource->read_lock_fence.get() ||
            resource->read_lock_fence->HasPassed();
   }
-
-  ResourceProvider(OutputSurface* output_surface,
-                   SharedBitmapManager* shared_bitmap_manager,
-                   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-                   BlockingTaskRunner* blocking_main_thread_task_runner,
-                   int highp_threshold_min,
-                   ResourceType default_resource_type,
-                   bool use_rgba_4444_texture_format,
-                   size_t id_allocation_chunk_size);
-
-  void InitializeSoftware();
-  void InitializeGL();
 
   Resource* InsertResource(ResourceId id, const Resource& resource);
   Resource* GetResource(ResourceId id);
@@ -582,15 +581,15 @@ class CC_EXPORT ResourceProvider {
   int next_child_;
   ChildMap children_;
 
-  const ResourceType default_resource_type_;
+  ResourceType default_resource_type_;
   bool use_texture_storage_ext_;
   bool use_texture_format_bgra_;
   bool use_texture_usage_hint_;
   bool use_compressed_texture_etc1_;
   ResourceFormat yuv_resource_format_;
-  scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
   ResourceFormat best_texture_format_;
+  ResourceFormat best_render_buffer_format_;
 
   base::ThreadChecker thread_checker_;
 
@@ -602,6 +601,7 @@ class CC_EXPORT ResourceProvider {
   scoped_ptr<IdAllocator> buffer_id_allocator_;
 
   bool use_sync_query_;
+  bool use_persistent_map_for_gpu_memory_buffers_;
   // Fence used for CopyResource if CHROMIUM_sync_query is not supported.
   scoped_refptr<SynchronousFence> synchronous_fence_;
 
@@ -610,7 +610,7 @@ class CC_EXPORT ResourceProvider {
 
 // TODO(epenner): Move these format conversions to resource_format.h
 // once that builds on mac (npapi.h currently #includes OpenGL.h).
-inline unsigned BitsPerPixel(ResourceFormat format) {
+inline int BitsPerPixel(ResourceFormat format) {
   switch (format) {
     case BGRA_8888:
     case RGBA_8888:

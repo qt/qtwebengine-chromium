@@ -40,9 +40,13 @@ class CONTENT_EXPORT TouchEventQueue {
   struct CONTENT_EXPORT Config {
     Config();
 
-    // Controls whether touch ack timeouts will trigger touch cancellation.
-    // Defaults to 200ms.
-    base::TimeDelta touch_ack_timeout_delay;
+    // Touch ack timeout delay for desktop sites. If zero, timeout behavior
+    // is disabled for such sites. Defaults to 200ms.
+    base::TimeDelta desktop_touch_ack_timeout_delay;
+
+    // Touch ack timeout delay for mobile sites. If zero, timeout behavior
+    // is disabled for such sites. Defaults to 1000ms.
+    base::TimeDelta mobile_touch_ack_timeout_delay;
 
     // Whether the platform supports touch ack timeout behavior.
     // Defaults to false (disabled).
@@ -61,10 +65,13 @@ class CONTENT_EXPORT TouchEventQueue {
   void QueueEvent(const TouchEventWithLatencyInfo& event);
 
   // Notifies the queue that a touch-event has been processed by the renderer.
-  // At this point, the queue may send one or more gesture events and/or
-  // additional queued touch-events to the renderer.
+  // At this point, if the ack is for async touchmove, remove the uncancelable
+  // touchmove from the front of the queue and decide if it should dispatch the
+  // next pending async touch move event, otherwise the queue may send one or
+  // more gesture events and/or additional queued touch-events to the renderer.
   void ProcessTouchAck(InputEventAckState ack_result,
-                       const ui::LatencyInfo& latency_info);
+                       const ui::LatencyInfo& latency_info,
+                       const uint32 unique_touch_event_id);
 
   // When GestureScrollBegin is received, we send a touch cancel to renderer,
   // route all the following touch events directly to client, and ignore the
@@ -88,6 +95,12 @@ class CONTENT_EXPORT TouchEventQueue {
   // it will take effect only for the following touch sequence.
   void SetAckTimeoutEnabled(bool enabled);
 
+  // Sets whether the current site has a mobile friendly viewport. This
+  // determines which ack timeout delay will be used for *future* touch events.
+  // The default assumption is that the site is *not* mobile-optimized.
+  void SetIsMobileOptimizedSite(bool mobile_optimized_site);
+
+  // Whether ack timeout behavior is supported and enabled for the current site.
   bool IsAckTimeoutEnabled() const;
 
   bool IsForwardingTouches();
@@ -101,6 +114,10 @@ class CONTENT_EXPORT TouchEventQueue {
   }
 
   bool has_handlers() const { return has_handlers_; }
+
+  size_t uncancelable_touch_moves_pending_ack_count() const {
+    return ack_pending_async_touchmove_ids_.size();
+  }
 
  private:
   class TouchTimeoutHandler;
@@ -156,6 +173,7 @@ class CONTENT_EXPORT TouchEventQueue {
   void ForwardToRenderer(const TouchEventWithLatencyInfo& event);
   void UpdateTouchConsumerStates(const blink::WebTouchEvent& event,
                                  InputEventAckState ack_result);
+  void FlushPendingAsyncTouchmove();
 
   // Handles touch event forwarding and ack'ed event dispatch.
   TouchEventQueueClient* client_;
@@ -171,8 +189,9 @@ class CONTENT_EXPORT TouchEventQueue {
   // True within the scope of |AckTouchEventToClient()|.
   bool dispatching_touch_ack_;
 
-  // Used to prevent touch timeout scheduling if we receive a synchronous
-  // ack after forwarding a touch event to the client.
+  // Used to prevent touch timeout scheduling and increase the count for async
+  // touchmove if we receive a synchronous ack after forwarding a touch event
+  // to the client.
   bool dispatching_touch_;
 
   // Whether the renderer has at least one touch handler.
@@ -202,6 +221,17 @@ class CONTENT_EXPORT TouchEventQueue {
   // For details see the design doc at http://goo.gl/lVyJAa.
   bool send_touch_events_async_;
   scoped_ptr<TouchEventWithLatencyInfo> pending_async_touchmove_;
+
+  // For uncancelable touch moves, not only we send a fake ack, but also a real
+  // ack from render, which we use to decide when to send the next async
+  // touchmove. This can help avoid the touch event queue keep growing when
+  // render handles touchmove slow. We use a queue
+  // ack_pending_async_touchmove_ids to store the recent dispatched
+  // uncancelable touchmoves which are still waiting for their acks back from
+  // render. We do not put them back to the front the touch_event_queue any
+  // more.
+  std::deque<uint32> ack_pending_async_touchmove_ids_;
+
   double last_sent_touch_timestamp_sec_;
 
   // Event is saved to compare pointer positions for new touchmove events.

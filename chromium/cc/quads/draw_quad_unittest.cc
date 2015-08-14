@@ -34,8 +34,8 @@ namespace {
 
 TEST(DrawQuadTest, CopySharedQuadState) {
   gfx::Transform quad_transform = gfx::Transform(1.0, 0.0, 0.5, 1.0, 0.5, 0.0);
-  gfx::Size content_bounds(26, 28);
-  gfx::Rect visible_content_rect(10, 12, 14, 16);
+  gfx::Size layer_bounds(26, 28);
+  gfx::Rect visible_layer_rect(10, 12, 14, 16);
   gfx::Rect clip_rect(19, 21, 23, 25);
   bool is_clipped = true;
   float opacity = 0.25f;
@@ -43,19 +43,13 @@ TEST(DrawQuadTest, CopySharedQuadState) {
   int sorting_context_id = 65536;
 
   scoped_ptr<SharedQuadState> state(new SharedQuadState);
-  state->SetAll(quad_transform,
-                content_bounds,
-                visible_content_rect,
-                clip_rect,
-                is_clipped,
-                opacity,
-                blend_mode,
-                sorting_context_id);
+  state->SetAll(quad_transform, layer_bounds, visible_layer_rect, clip_rect,
+                is_clipped, opacity, blend_mode, sorting_context_id);
 
   scoped_ptr<SharedQuadState> copy(new SharedQuadState);
   copy->CopyFrom(state.get());
-  EXPECT_EQ(quad_transform, copy->content_to_target_transform);
-  EXPECT_EQ(visible_content_rect, copy->visible_content_rect);
+  EXPECT_EQ(quad_transform, copy->quad_to_target_transform);
+  EXPECT_EQ(visible_layer_rect, copy->visible_quad_layer_rect);
   EXPECT_EQ(opacity, copy->opacity);
   EXPECT_EQ(clip_rect, copy->clip_rect);
   EXPECT_EQ(is_clipped, copy->is_clipped);
@@ -64,8 +58,8 @@ TEST(DrawQuadTest, CopySharedQuadState) {
 
 SharedQuadState* CreateSharedQuadState(RenderPass* render_pass) {
   gfx::Transform quad_transform = gfx::Transform(1.0, 0.0, 0.5, 1.0, 0.5, 0.0);
-  gfx::Size content_bounds(26, 28);
-  gfx::Rect visible_content_rect(10, 12, 14, 16);
+  gfx::Size layer_bounds(26, 28);
+  gfx::Rect visible_layer_rect(10, 12, 14, 16);
   gfx::Rect clip_rect(19, 21, 23, 25);
   bool is_clipped = false;
   float opacity = 1.f;
@@ -73,14 +67,8 @@ SharedQuadState* CreateSharedQuadState(RenderPass* render_pass) {
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
   SharedQuadState* state = render_pass->CreateAndAppendSharedQuadState();
-  state->SetAll(quad_transform,
-                content_bounds,
-                visible_content_rect,
-                clip_rect,
-                is_clipped,
-                opacity,
-                blend_mode,
-                sorting_context_id);
+  state->SetAll(quad_transform, layer_bounds, visible_layer_rect, clip_rect,
+                is_clipped, opacity, blend_mode, sorting_context_id);
   return state;
 }
 
@@ -330,6 +318,15 @@ void CompareDrawQuad(DrawQuad* quad,
   }                                                              \
   SETUP_AND_COPY_QUAD_NEW(Type, quad_new);
 
+#define CREATE_QUAD_10_ALL(Type, a, b, c, d, e, f, g, h, i, j)                \
+  Type* quad_all = render_pass->CreateAndAppendDrawQuad<Type>();              \
+  {                                                                           \
+    QUAD_DATA quad_all->SetAll(shared_state, quad_rect, quad_opaque_rect,     \
+                               quad_visible_rect, needs_blending, a, b, c, d, \
+                               e, f, g, h, i, j);                             \
+  }                                                                           \
+  SETUP_AND_COPY_QUAD_ALL(Type, quad_all);
+
 #define CREATE_QUAD_11_NEW(Type, a, b, c, d, e, f, g, h, i, j, k)            \
   Type* quad_new = render_pass->CreateAndAppendDrawQuad<Type>();             \
   {                                                                          \
@@ -404,7 +401,7 @@ TEST(DrawQuadTest, CopyIOSurfaceDrawQuad) {
   gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Rect visible_rect(40, 50, 30, 20);
   gfx::Size size(58, 95);
-  ResourceProvider::ResourceId resource_id = 72;
+  ResourceId resource_id = 72;
   IOSurfaceDrawQuad::Orientation orientation = IOSurfaceDrawQuad::UNFLIPPED;
   CREATE_SHARED_STATE();
 
@@ -418,20 +415,20 @@ TEST(DrawQuadTest, CopyIOSurfaceDrawQuad) {
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(opaque_rect, copy_quad->opaque_rect);
   EXPECT_EQ(size, copy_quad->io_surface_size);
-  EXPECT_EQ(resource_id, copy_quad->io_surface_resource_id);
+  EXPECT_EQ(resource_id, copy_quad->io_surface_resource_id());
   EXPECT_EQ(orientation, copy_quad->orientation);
 
   CREATE_QUAD_3_ALL(IOSurfaceDrawQuad, size, resource_id, orientation);
   EXPECT_EQ(DrawQuad::IO_SURFACE_CONTENT, copy_quad->material);
   EXPECT_EQ(size, copy_quad->io_surface_size);
-  EXPECT_EQ(resource_id, copy_quad->io_surface_resource_id);
+  EXPECT_EQ(resource_id, copy_quad->io_surface_resource_id());
   EXPECT_EQ(orientation, copy_quad->orientation);
 }
 
 TEST(DrawQuadTest, CopyRenderPassDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
   RenderPassId render_pass_id(22, 64);
-  ResourceProvider::ResourceId mask_resource_id = 78;
+  ResourceId mask_resource_id = 78;
   gfx::Vector2dF mask_uv_scale(33.f, 19.f);
   gfx::Size mask_texture_size(128, 134);
   FilterOperations filters;
@@ -457,7 +454,7 @@ TEST(DrawQuadTest, CopyRenderPassDrawQuad) {
   EXPECT_EQ(DrawQuad::RENDER_PASS, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(copied_render_pass_id, copy_quad->render_pass_id);
-  EXPECT_EQ(mask_resource_id, copy_quad->mask_resource_id);
+  EXPECT_EQ(mask_resource_id, copy_quad->mask_resource_id());
   EXPECT_EQ(mask_uv_scale.ToString(), copy_quad->mask_uv_scale.ToString());
   EXPECT_EQ(mask_texture_size.ToString(),
             copy_quad->mask_texture_size.ToString());
@@ -476,7 +473,7 @@ TEST(DrawQuadTest, CopyRenderPassDrawQuad) {
                      copied_render_pass_id);
   EXPECT_EQ(DrawQuad::RENDER_PASS, copy_quad->material);
   EXPECT_EQ(copied_render_pass_id, copy_quad->render_pass_id);
-  EXPECT_EQ(mask_resource_id, copy_quad->mask_resource_id);
+  EXPECT_EQ(mask_resource_id, copy_quad->mask_resource_id());
   EXPECT_EQ(mask_uv_scale.ToString(), copy_quad->mask_uv_scale.ToString());
   EXPECT_EQ(mask_texture_size.ToString(),
             copy_quad->mask_texture_size.ToString());
@@ -507,21 +504,28 @@ TEST(DrawQuadTest, CopySolidColorDrawQuad) {
 TEST(DrawQuadTest, CopyStreamVideoDrawQuad) {
   gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Rect visible_rect(40, 50, 30, 20);
-  ResourceProvider::ResourceId resource_id = 64;
+  ResourceId resource_id = 64;
+  gfx::Size resource_size_in_pixels = gfx::Size(40, 41);
+  bool allow_overlay = true;
   gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
   CREATE_SHARED_STATE();
 
-  CREATE_QUAD_4_NEW(
-      StreamVideoDrawQuad, opaque_rect, visible_rect, resource_id, matrix);
+  CREATE_QUAD_6_NEW(StreamVideoDrawQuad, opaque_rect, visible_rect, resource_id,
+                    resource_size_in_pixels, allow_overlay, matrix);
   EXPECT_EQ(DrawQuad::STREAM_VIDEO_CONTENT, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(opaque_rect, copy_quad->opaque_rect);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
+  EXPECT_EQ(allow_overlay, copy_quad->allow_overlay());
+  EXPECT_EQ(resource_size_in_pixels, copy_quad->resource_size_in_pixels());
   EXPECT_EQ(matrix, copy_quad->matrix);
 
-  CREATE_QUAD_2_ALL(StreamVideoDrawQuad, resource_id, matrix);
+  CREATE_QUAD_4_ALL(StreamVideoDrawQuad, resource_id, resource_size_in_pixels,
+                    allow_overlay, matrix);
   EXPECT_EQ(DrawQuad::STREAM_VIDEO_CONTENT, copy_quad->material);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
+  EXPECT_EQ(allow_overlay, copy_quad->allow_overlay());
+  EXPECT_EQ(resource_size_in_pixels, copy_quad->resource_size_in_pixels());
   EXPECT_EQ(matrix, copy_quad->matrix);
 }
 
@@ -545,6 +549,8 @@ TEST(DrawQuadTest, CopyTextureDrawQuad) {
   gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Rect visible_rect(40, 50, 30, 20);
   unsigned resource_id = 82;
+  gfx::Size resource_size_in_pixels = gfx::Size(40, 41);
+  bool allow_overlay = true;
   bool premultiplied_alpha = true;
   gfx::PointF uv_top_left(0.5f, 224.f);
   gfx::PointF uv_bottom_right(51.5f, 260.f);
@@ -567,7 +573,7 @@ TEST(DrawQuadTest, CopyTextureDrawQuad) {
   EXPECT_EQ(DrawQuad::TEXTURE_CONTENT, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(opaque_rect, copy_quad->opaque_rect);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
   EXPECT_EQ(premultiplied_alpha, copy_quad->premultiplied_alpha);
   EXPECT_EQ(uv_top_left, copy_quad->uv_top_left);
   EXPECT_EQ(uv_bottom_right, copy_quad->uv_bottom_right);
@@ -575,17 +581,14 @@ TEST(DrawQuadTest, CopyTextureDrawQuad) {
   EXPECT_EQ(y_flipped, copy_quad->y_flipped);
   EXPECT_EQ(nearest_neighbor, copy_quad->nearest_neighbor);
 
-  CREATE_QUAD_8_ALL(TextureDrawQuad,
-                    resource_id,
-                    premultiplied_alpha,
-                    uv_top_left,
-                    uv_bottom_right,
-                    SK_ColorTRANSPARENT,
-                    vertex_opacity,
-                    y_flipped,
-                    nearest_neighbor);
+  CREATE_QUAD_10_ALL(TextureDrawQuad, resource_id, resource_size_in_pixels,
+                     allow_overlay, premultiplied_alpha, uv_top_left,
+                     uv_bottom_right, SK_ColorTRANSPARENT, vertex_opacity,
+                     y_flipped, nearest_neighbor);
   EXPECT_EQ(DrawQuad::TEXTURE_CONTENT, copy_quad->material);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
+  EXPECT_EQ(allow_overlay, copy_quad->allow_overlay());
+  EXPECT_EQ(resource_size_in_pixels, copy_quad->resource_size_in_pixels());
   EXPECT_EQ(premultiplied_alpha, copy_quad->premultiplied_alpha);
   EXPECT_EQ(uv_top_left, copy_quad->uv_top_left);
   EXPECT_EQ(uv_bottom_right, copy_quad->uv_bottom_right);
@@ -615,7 +618,7 @@ TEST(DrawQuadTest, CopyTileDrawQuad) {
   EXPECT_EQ(DrawQuad::TILED_CONTENT, copy_quad->material);
   EXPECT_EQ(opaque_rect, copy_quad->opaque_rect);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
   EXPECT_EQ(tex_coord_rect, copy_quad->tex_coord_rect);
   EXPECT_EQ(texture_size, copy_quad->texture_size);
   EXPECT_EQ(swizzle_contents, copy_quad->swizzle_contents);
@@ -628,7 +631,7 @@ TEST(DrawQuadTest, CopyTileDrawQuad) {
                     swizzle_contents,
                     nearest_neighbor);
   EXPECT_EQ(DrawQuad::TILED_CONTENT, copy_quad->material);
-  EXPECT_EQ(resource_id, copy_quad->resource_id);
+  EXPECT_EQ(resource_id, copy_quad->resource_id());
   EXPECT_EQ(tex_coord_rect, copy_quad->tex_coord_rect);
   EXPECT_EQ(texture_size, copy_quad->texture_size);
   EXPECT_EQ(swizzle_contents, copy_quad->swizzle_contents);
@@ -642,10 +645,10 @@ TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
   gfx::RectF uv_tex_coord_rect(20, 25, 15, 10);
   gfx::Size ya_tex_size(32, 68);
   gfx::Size uv_tex_size(41, 51);
-  ResourceProvider::ResourceId y_plane_resource_id = 45;
-  ResourceProvider::ResourceId u_plane_resource_id = 532;
-  ResourceProvider::ResourceId v_plane_resource_id = 4;
-  ResourceProvider::ResourceId a_plane_resource_id = 63;
+  ResourceId y_plane_resource_id = 45;
+  ResourceId u_plane_resource_id = 532;
+  ResourceId v_plane_resource_id = 4;
+  ResourceId a_plane_resource_id = 63;
   YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::JPEG;
   CREATE_SHARED_STATE();
 
@@ -660,10 +663,10 @@ TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
   EXPECT_EQ(uv_tex_coord_rect, copy_quad->uv_tex_coord_rect);
   EXPECT_EQ(ya_tex_size, copy_quad->ya_tex_size);
   EXPECT_EQ(uv_tex_size, copy_quad->uv_tex_size);
-  EXPECT_EQ(y_plane_resource_id, copy_quad->y_plane_resource_id);
-  EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id);
-  EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id);
-  EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id);
+  EXPECT_EQ(y_plane_resource_id, copy_quad->y_plane_resource_id());
+  EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id());
+  EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id());
+  EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id());
   EXPECT_EQ(color_space, copy_quad->color_space);
 
   CREATE_QUAD_9_ALL(YUVVideoDrawQuad, ya_tex_coord_rect, uv_tex_coord_rect,
@@ -675,10 +678,10 @@ TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
   EXPECT_EQ(uv_tex_coord_rect, copy_quad->uv_tex_coord_rect);
   EXPECT_EQ(ya_tex_size, copy_quad->ya_tex_size);
   EXPECT_EQ(uv_tex_size, copy_quad->uv_tex_size);
-  EXPECT_EQ(y_plane_resource_id, copy_quad->y_plane_resource_id);
-  EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id);
-  EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id);
-  EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id);
+  EXPECT_EQ(y_plane_resource_id, copy_quad->y_plane_resource_id());
+  EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id());
+  EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id());
+  EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id());
   EXPECT_EQ(color_space, copy_quad->color_space);
 }
 
@@ -725,16 +728,12 @@ TEST(DrawQuadTest, CopyPictureDrawQuad) {
 
 class DrawQuadIteratorTest : public testing::Test {
  protected:
-  ResourceProvider::ResourceId IncrementResourceId(
-      ResourceProvider::ResourceId id) {
-    ++num_resources_;
-    return id + 1;
-  }
-
   int IterateAndCount(DrawQuad* quad) {
     num_resources_ = 0;
-    quad->IterateResources(base::Bind(
-        &DrawQuadIteratorTest::IncrementResourceId, base::Unretained(this)));
+    for (ResourceId& resource_id : quad->resources) {
+      ++num_resources_;
+      ++resource_id;
+    }
     return num_resources_;
   }
 
@@ -766,7 +765,7 @@ TEST_F(DrawQuadIteratorTest, IOSurfaceDrawQuad) {
   gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Rect visible_rect(40, 50, 30, 20);
   gfx::Size size(58, 95);
-  ResourceProvider::ResourceId resource_id = 72;
+  ResourceId resource_id = 72;
   IOSurfaceDrawQuad::Orientation orientation = IOSurfaceDrawQuad::UNFLIPPED;
 
   CREATE_SHARED_STATE();
@@ -776,15 +775,15 @@ TEST_F(DrawQuadIteratorTest, IOSurfaceDrawQuad) {
                     size,
                     resource_id,
                     orientation);
-  EXPECT_EQ(resource_id, quad_new->io_surface_resource_id);
+  EXPECT_EQ(resource_id, quad_new->io_surface_resource_id());
   EXPECT_EQ(1, IterateAndCount(quad_new));
-  EXPECT_EQ(resource_id + 1, quad_new->io_surface_resource_id);
+  EXPECT_EQ(resource_id + 1, quad_new->io_surface_resource_id());
 }
 
 TEST_F(DrawQuadIteratorTest, RenderPassDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
   RenderPassId render_pass_id(22, 64);
-  ResourceProvider::ResourceId mask_resource_id = 78;
+  ResourceId mask_resource_id = 78;
   gfx::Vector2dF mask_uv_scale(33.f, 19.f);
   gfx::Size mask_texture_size(128, 134);
   FilterOperations filters;
@@ -807,12 +806,17 @@ TEST_F(DrawQuadIteratorTest, RenderPassDrawQuad) {
                      filters_scale,
                      background_filters,
                      copied_render_pass_id);
-  EXPECT_EQ(mask_resource_id, quad_new->mask_resource_id);
+  EXPECT_EQ(mask_resource_id, quad_new->mask_resource_id());
   EXPECT_EQ(1, IterateAndCount(quad_new));
-  EXPECT_EQ(mask_resource_id + 1, quad_new->mask_resource_id);
-  quad_new->mask_resource_id = 0;
+  EXPECT_EQ(mask_resource_id + 1, quad_new->mask_resource_id());
+
+  ResourceId new_mask_resource_id = 0;
+  gfx::Rect quad_rect(30, 40, 50, 60);
+  quad_new->SetNew(shared_state, quad_rect, visible_rect, render_pass_id,
+                   new_mask_resource_id, mask_uv_scale, mask_texture_size,
+                   filters, filters_scale, background_filters);
   EXPECT_EQ(0, IterateAndCount(quad_new));
-  EXPECT_EQ(0u, quad_new->mask_resource_id);
+  EXPECT_EQ(0u, quad_new->mask_resource_id());
 }
 
 TEST_F(DrawQuadIteratorTest, SolidColorDrawQuad) {
@@ -829,15 +833,19 @@ TEST_F(DrawQuadIteratorTest, SolidColorDrawQuad) {
 TEST_F(DrawQuadIteratorTest, StreamVideoDrawQuad) {
   gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Rect visible_rect(40, 50, 30, 20);
-  ResourceProvider::ResourceId resource_id = 64;
+  ResourceId resource_id = 64;
+  gfx::Size resource_size_in_pixels = gfx::Size(40, 41);
+  bool allow_overlay = true;
   gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
 
   CREATE_SHARED_STATE();
-  CREATE_QUAD_4_NEW(
-      StreamVideoDrawQuad, opaque_rect, visible_rect, resource_id, matrix);
-  EXPECT_EQ(resource_id, quad_new->resource_id);
+  CREATE_QUAD_6_NEW(StreamVideoDrawQuad, opaque_rect, visible_rect, resource_id,
+                    resource_size_in_pixels, allow_overlay, matrix);
+  EXPECT_EQ(resource_id, quad_new->resource_id());
+  EXPECT_EQ(allow_overlay, quad_new->allow_overlay());
+  EXPECT_EQ(resource_size_in_pixels, quad_new->resource_size_in_pixels());
   EXPECT_EQ(1, IterateAndCount(quad_new));
-  EXPECT_EQ(resource_id + 1, quad_new->resource_id);
+  EXPECT_EQ(resource_id + 1, quad_new->resource_id());
 }
 
 TEST_F(DrawQuadIteratorTest, SurfaceDrawQuad) {
@@ -872,9 +880,9 @@ TEST_F(DrawQuadIteratorTest, TextureDrawQuad) {
                      vertex_opacity,
                      y_flipped,
                      nearest_neighbor);
-  EXPECT_EQ(resource_id, quad_new->resource_id);
+  EXPECT_EQ(resource_id, quad_new->resource_id());
   EXPECT_EQ(1, IterateAndCount(quad_new));
-  EXPECT_EQ(resource_id + 1, quad_new->resource_id);
+  EXPECT_EQ(resource_id + 1, quad_new->resource_id());
 }
 
 TEST_F(DrawQuadIteratorTest, TileDrawQuad) {
@@ -895,9 +903,9 @@ TEST_F(DrawQuadIteratorTest, TileDrawQuad) {
                     texture_size,
                     swizzle_contents,
                     nearest_neighbor);
-  EXPECT_EQ(resource_id, quad_new->resource_id);
+  EXPECT_EQ(resource_id, quad_new->resource_id());
   EXPECT_EQ(1, IterateAndCount(quad_new));
-  EXPECT_EQ(resource_id + 1, quad_new->resource_id);
+  EXPECT_EQ(resource_id + 1, quad_new->resource_id());
 }
 
 TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
@@ -907,10 +915,10 @@ TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
   gfx::RectF uv_tex_coord_rect(0.0f, 0.0f, 0.375f, 0.25f);
   gfx::Size ya_tex_size(32, 68);
   gfx::Size uv_tex_size(41, 51);
-  ResourceProvider::ResourceId y_plane_resource_id = 45;
-  ResourceProvider::ResourceId u_plane_resource_id = 532;
-  ResourceProvider::ResourceId v_plane_resource_id = 4;
-  ResourceProvider::ResourceId a_plane_resource_id = 63;
+  ResourceId y_plane_resource_id = 45;
+  ResourceId u_plane_resource_id = 532;
+  ResourceId v_plane_resource_id = 4;
+  ResourceId a_plane_resource_id = 63;
   YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::JPEG;
 
   CREATE_SHARED_STATE();
@@ -919,16 +927,16 @@ TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
                      uv_tex_size, y_plane_resource_id, u_plane_resource_id,
                      v_plane_resource_id, a_plane_resource_id, color_space);
   EXPECT_EQ(DrawQuad::YUV_VIDEO_CONTENT, copy_quad->material);
-  EXPECT_EQ(y_plane_resource_id, quad_new->y_plane_resource_id);
-  EXPECT_EQ(u_plane_resource_id, quad_new->u_plane_resource_id);
-  EXPECT_EQ(v_plane_resource_id, quad_new->v_plane_resource_id);
-  EXPECT_EQ(a_plane_resource_id, quad_new->a_plane_resource_id);
+  EXPECT_EQ(y_plane_resource_id, quad_new->y_plane_resource_id());
+  EXPECT_EQ(u_plane_resource_id, quad_new->u_plane_resource_id());
+  EXPECT_EQ(v_plane_resource_id, quad_new->v_plane_resource_id());
+  EXPECT_EQ(a_plane_resource_id, quad_new->a_plane_resource_id());
   EXPECT_EQ(color_space, quad_new->color_space);
   EXPECT_EQ(4, IterateAndCount(quad_new));
-  EXPECT_EQ(y_plane_resource_id + 1, quad_new->y_plane_resource_id);
-  EXPECT_EQ(u_plane_resource_id + 1, quad_new->u_plane_resource_id);
-  EXPECT_EQ(v_plane_resource_id + 1, quad_new->v_plane_resource_id);
-  EXPECT_EQ(a_plane_resource_id + 1, quad_new->a_plane_resource_id);
+  EXPECT_EQ(y_plane_resource_id + 1, quad_new->y_plane_resource_id());
+  EXPECT_EQ(u_plane_resource_id + 1, quad_new->u_plane_resource_id());
+  EXPECT_EQ(v_plane_resource_id + 1, quad_new->v_plane_resource_id());
+  EXPECT_EQ(a_plane_resource_id + 1, quad_new->a_plane_resource_id());
 }
 
 // Disabled until picture draw quad is supported for ubercomp: crbug.com/231715

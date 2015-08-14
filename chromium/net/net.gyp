@@ -10,11 +10,11 @@
     'net_test_extra_libs': [],
     'linux_link_kerberos%': 0,
     'conditions': [
-      ['chromeos==1 or embedded==1 or OS=="android" or OS=="ios"', {
-        # Disable Kerberos on ChromeOS, Android and iOS, at least for now.
+      ['chromeos==1 or embedded==1 or OS=="ios"', {
+        # Disable Kerberos on ChromeOS and iOS, at least for now.
         # It needs configuration (krb5.conf and so on).
         'use_kerberos%': 0,
-      }, {  # chromeos == 0 and embedded==0 and OS!="android" and OS!="ios"
+      }, {  # chromeos == 0 and embedded==0 and OS!="ios"
         'use_kerberos%': 1,
       }],
       ['OS=="android" and target_arch != "ia32"', {
@@ -177,7 +177,6 @@
           ],
           'dependencies': [
             'net_javatests',
-            'net_test_jni_headers',
           ],
         }],
         [ 'use_nss_certs != 1', {
@@ -223,12 +222,19 @@
           'defines': [
             'USE_KERBEROS',
           ],
-        }, { # use_kerberos == 0
+        }],
+        [ 'use_kerberos==0 or OS == "android"', {
+          # These are excluded on Android, because the actual Kerberos support,
+          # which these test, is in a separate app on Android.
           'sources!': [
             'http/http_auth_gssapi_posix_unittest.cc',
-            'http/http_auth_handler_negotiate_unittest.cc',
             'http/mock_gssapi_library_posix.cc',
             'http/mock_gssapi_library_posix.h',
+          ],
+        }],
+       [ 'use_kerberos==0', {
+          'sources!': [
+            'http/http_auth_handler_negotiate_unittest.cc',
           ],
         }],
         [ 'use_openssl == 1 or (desktop_linux == 0 and chromeos == 0 and OS != "ios")', {
@@ -302,6 +308,7 @@
           }, {  # else: !use_v8_in_net
             'sources!': [
               'proxy/proxy_resolver_v8_tracing_unittest.cc',
+              'proxy/proxy_resolver_v8_tracing_wrapper_unittest.cc',
               'proxy/proxy_resolver_v8_unittest.cc',
             ],
           },
@@ -318,11 +325,10 @@
             'sources!': [
               'dns/host_resolver_mojo_unittest.cc',
               'dns/mojo_host_resolver_impl_unittest.cc',
-              'proxy/load_state_change_coalescer_unittest.cc',
               'proxy/mojo_proxy_resolver_factory_impl_unittest.cc',
               'proxy/mojo_proxy_resolver_impl_unittest.cc',
-              'proxy/proxy_resolver_error_observer_mojo_unittest.cc',
-              'proxy/proxy_resolver_mojo_unittest.cc',
+              'proxy/mojo_proxy_resolver_v8_tracing_bindings_unittest.cc',
+              'proxy/proxy_resolver_factory_mojo_unittest.cc',
               'proxy/proxy_service_mojo_unittest.cc',
             ],
           },
@@ -394,7 +400,6 @@
               # iOS.
               # OS is not "linux" or "freebsd" or "openbsd".
               'socket/unix_domain_client_socket_posix_unittest.cc',
-              'socket/unix_domain_listen_socket_posix_unittest.cc',
               'socket/unix_domain_server_socket_posix_unittest.cc',
 
               # See bug http://crbug.com/344533.
@@ -451,11 +456,14 @@
         '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
         'net',
+        'net_extras',
         'net_test_support',
       ],
       'sources': [
+        'base/mime_sniffer_perftest.cc',
         'cookies/cookie_monster_perftest.cc',
         'disk_cache/blockfile/disk_cache_perftest.cc',
+        'extras/sqlite/sqlite_persistent_cookie_store_perftest.cc',
         'proxy/proxy_resolver_perftest.cc',
         'udp/udp_socket_perftest.cc',
         'websockets/websocket_frame_perftest.cc',
@@ -559,6 +567,8 @@
         'test/cert_test_util.cc',
         'test/cert_test_util.h',
         'test/cert_test_util_nss.cc',
+        'test/channel_id_test_util.cc',
+        'test/channel_id_test_util.h',
         'test/ct_test_util.cc',
         'test/ct_test_util.h',
         'test/embedded_test_server/embedded_test_server.cc',
@@ -569,6 +579,10 @@
         'test/embedded_test_server/http_request.h',
         'test/embedded_test_server/http_response.cc',
         'test/embedded_test_server/http_response.h',
+        'test/embedded_test_server/stream_listen_socket.cc',
+        'test/embedded_test_server/stream_listen_socket.h',
+        'test/embedded_test_server/tcp_listen_socket.cc',
+        'test/embedded_test_server/tcp_listen_socket.h',
         'test/event_waiter.h',
         'test/net_test_suite.cc',
         'test/net_test_suite.h',
@@ -580,11 +594,7 @@
         'test/spawned_test_server/local_test_server.h',
         'test/spawned_test_server/local_test_server_posix.cc',
         'test/spawned_test_server/local_test_server_win.cc',
-        'test/spawned_test_server/remote_test_server.cc',
-        'test/spawned_test_server/remote_test_server.h',
         'test/spawned_test_server/spawned_test_server.h',
-        'test/spawned_test_server/spawner_communicator.cc',
-        'test/spawned_test_server/spawner_communicator.h',
         'test/url_request/url_request_failed_job.cc',
         'test/url_request/url_request_failed_job.h',
         'test/url_request/url_request_mock_data_job.cc',
@@ -602,7 +612,7 @@
             '../third_party/protobuf/protobuf.gyp:py_proto',
           ],
         }],
-        ['use_openssl == 0 and (use_nss_certs == 1 or OS == "ios")', {
+        ['use_nss_certs == 1 or OS == "ios"', {
           'conditions': [
             [ 'desktop_linux == 1 or chromeos == 1', {
               'dependencies': [
@@ -626,8 +636,15 @@
             }],
           ],
         }],
-        ['OS != "android"', {
-          'sources!': [
+        ['OS == "android"', {
+          'dependencies': [
+            'net_test_jni_headers',
+          ],
+          'sources': [
+            'test/android/net_test_jni_onload.cc',
+            'test/android/net_test_jni_onload.h',
+            'test/embedded_test_server/android/embedded_test_server_android.cc',
+            'test/embedded_test_server/android/embedded_test_server_android.h',
             'test/spawned_test_server/remote_test_server.cc',
             'test/spawned_test_server/remote_test_server.h',
             'test/spawned_test_server/spawner_communicator.cc',
@@ -859,6 +876,8 @@
             'proxy/proxy_resolver_v8.h',
             'proxy/proxy_resolver_v8_tracing.cc',
             'proxy/proxy_resolver_v8_tracing.h',
+            'proxy/proxy_resolver_v8_tracing_wrapper.cc',
+            'proxy/proxy_resolver_v8_tracing_wrapper.h',
             'proxy/proxy_service_v8.cc',
             'proxy/proxy_service_v8.h',
           ],
@@ -891,8 +910,8 @@
             'proxy/in_process_mojo_proxy_resolver_factory.cc',
             'proxy/in_process_mojo_proxy_resolver_factory.h',
             'proxy/mojo_proxy_resolver_factory.h',
-            'proxy/proxy_resolver_mojo.cc',
-            'proxy/proxy_resolver_mojo.h',
+            'proxy/proxy_resolver_factory_mojo.cc',
+            'proxy/proxy_resolver_factory_mojo.h',
             'proxy/proxy_service_mojo.cc',
             'proxy/proxy_service_mojo.h',
           ],
@@ -920,14 +939,11 @@
           'sources': [
             'dns/host_resolver_mojo.cc',
             'dns/host_resolver_mojo.h',
-            'proxy/load_state_change_coalescer.cc',
-            'proxy/load_state_change_coalescer.h',
             'proxy/mojo_proxy_resolver_factory_impl.cc',
             'proxy/mojo_proxy_resolver_factory_impl.h',
             'proxy/mojo_proxy_resolver_impl.cc',
             'proxy/mojo_proxy_resolver_impl.h',
-            'proxy/proxy_resolver_error_observer_mojo.cc',
-            'proxy/proxy_resolver_error_observer_mojo.h',
+            'proxy/mojo_proxy_resolver_v8_tracing_bindings.h',
           ],
           'dependencies': [
             'mojo_type_converters',
@@ -1345,6 +1361,7 @@
             'android/java/src/org/chromium/net/AndroidNetworkLibrary.java',
             'android/java/src/org/chromium/net/AndroidPrivateKey.java',
             'android/java/src/org/chromium/net/GURLUtils.java',
+            'android/java/src/org/chromium/net/HttpNegotiateAuthenticator.java',
             'android/java/src/org/chromium/net/NetStringUtil.java',
             'android/java/src/org/chromium/net/NetworkChangeNotifier.java',
             'android/java/src/org/chromium/net/ProxyChangeListener.java',
@@ -1360,9 +1377,11 @@
           'type': 'none',
           'sources': [
             'android/javatests/src/org/chromium/net/AndroidKeyStoreTestUtil.java',
+            'test/android/javatests/src/org/chromium/net/test/EmbeddedTestServer.java',
+            'test/android/javatests/src/org/chromium/net/test/DummySpnegoAuthenticator.java',
           ],
           'variables': {
-            'jni_gen_package': 'net',
+            'jni_gen_package': 'net/test',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1404,8 +1423,10 @@
             'java_in_dir': '../net/test/android/javatests',
           },
           'dependencies': [
+            'net_test_support',
             'url_request_failed_job_java',
             '../base/base.gyp:base_java',
+            'net_java',
             '<@(net_test_extra_libs)',
           ],
           'includes': [ '../build/java.gypi' ],
@@ -1481,6 +1502,7 @@
           'dependencies': [
             'net_java',
             'net_javatests',
+            'net_java_test_support',
             'net_unittests',
           ],
           'conditions': [
@@ -1501,6 +1523,9 @@
           ],
           'variables': {
             'test_suite_name': 'net_unittests',
+            'isolate_file': 'net_unittests.isolate',
+            'android_manifest_path': 'android/unittest_support/AndroidManifest.xml',
+            'resource_dir': 'android/unittest_support/res',
             'conditions': [
               ['v8_use_external_startup_data==1', {
                 'asset_location': '<(PRODUCT_DIR)/net_unittests_apk/assets',
@@ -1517,6 +1542,26 @@
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
+        {
+          'target_name': 'net_junit_tests',
+          'type': 'none',
+          'dependencies': [
+            'net_java',
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_java_test_support',
+            '../testing/android/junit/junit_test.gyp:junit_test_support',
+          ],
+          'variables': {
+            'main_class': 'org.chromium.testing.local.JunitTestMain',
+            'src_paths': [
+              'android/junit/',
+            ],
+          },
+          'includes': [
+            '../build/host_jar.gypi',
+          ],
+        },
+  
       ],
     }],
     ['OS == "android" or OS == "linux"', {

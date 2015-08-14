@@ -98,8 +98,10 @@ class MockDataChannelObserver : public webrtc::DataChannelObserver {
     channel_->UnregisterObserver();
   }
 
-  virtual void OnStateChange() { state_ = channel_->state(); }
-  virtual void OnMessage(const DataBuffer& buffer) {
+  void OnBufferedAmountChange(uint64 previous_amount) override {}
+
+  void OnStateChange() override { state_ = channel_->state(); }
+  void OnMessage(const DataBuffer& buffer) override {
     last_message_.assign(buffer.data.data<char>(), buffer.data.size());
     ++received_message_count_;
   }
@@ -127,6 +129,7 @@ class MockStatsObserver : public webrtc::StatsObserver {
     stats_.number_of_reports = reports.size();
     for (const auto* r : reports) {
       if (r->type() == StatsReport::kStatsReportTypeSsrc) {
+        stats_.timestamp = r->timestamp();
         GetIntValue(r, StatsReport::kStatsValueNameAudioOutputLevel,
             &stats_.audio_output_level);
         GetIntValue(r, StatsReport::kStatsValueNameAudioInputLevel,
@@ -136,9 +139,11 @@ class MockStatsObserver : public webrtc::StatsObserver {
         GetIntValue(r, StatsReport::kStatsValueNameBytesSent,
             &stats_.bytes_sent);
       } else if (r->type() == StatsReport::kStatsReportTypeBwe) {
+        stats_.timestamp = r->timestamp();
         GetIntValue(r, StatsReport::kStatsValueNameAvailableReceiveBandwidth,
             &stats_.available_receive_bandwidth);
       } else if (r->type() == StatsReport::kStatsReportTypeComponent) {
+        stats_.timestamp = r->timestamp();
         GetStringValue(r, StatsReport::kStatsValueNameDtlsCipher,
             &stats_.dtls_cipher);
         GetStringValue(r, StatsReport::kStatsValueNameSrtpCipher,
@@ -149,6 +154,7 @@ class MockStatsObserver : public webrtc::StatsObserver {
 
   bool called() const { return called_; }
   size_t number_of_reports() const { return stats_.number_of_reports; }
+  double timestamp() const { return stats_.timestamp; }
 
   int AudioOutputLevel() const {
     ASSERT(called_);
@@ -210,6 +216,7 @@ class MockStatsObserver : public webrtc::StatsObserver {
   struct {
     void Clear() {
       number_of_reports = 0;
+      timestamp = 0;
       audio_output_level = 0;
       audio_input_level = 0;
       bytes_received = 0;
@@ -220,6 +227,7 @@ class MockStatsObserver : public webrtc::StatsObserver {
     }
 
     size_t number_of_reports;
+    double timestamp;
     int audio_output_level;
     int audio_input_level;
     int bytes_received;

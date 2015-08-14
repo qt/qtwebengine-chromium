@@ -1,20 +1,31 @@
-// Copyright (c) 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @constructor
- * @extends {WebInspector.ThrottledElementsSidebarView}
+ * @extends {WebInspector.ThrottledWidget}
  */
 WebInspector.AccessibilitySidebarView = function()
 {
-    WebInspector.ThrottledElementsSidebarView.call(this);
+    WebInspector.ThrottledWidget.call(this);
     this._computedTextSubPane = null;
     this._axNodeSubPane = null;
+    this._node = null;
     this._sidebarPaneStack = null;
+    WebInspector.context.addFlavorChangeListener(WebInspector.DOMNode, this._pullNode, this);
+    this._pullNode();
 }
 
 WebInspector.AccessibilitySidebarView.prototype = {
+    /**
+     * @return {?WebInspector.DOMNode}
+     */
+    node: function()
+    {
+        return this._node;
+    },
+
     /**
      * @override
      * @param {!WebInspector.Throttler.FinishCallback} finishCallback
@@ -43,7 +54,7 @@ WebInspector.AccessibilitySidebarView.prototype = {
      */
     wasShown: function()
     {
-        WebInspector.ElementsSidebarPane.prototype.wasShown.call(this);
+        WebInspector.ThrottledWidget.prototype.wasShown.call(this);
 
         if (!this._sidebarPaneStack) {
             this._computedTextSubPane = new WebInspector.AXComputedTextSubPane();
@@ -80,17 +91,14 @@ WebInspector.AccessibilitySidebarView.prototype = {
         WebInspector.targetManager.removeModelListener(WebInspector.DOMModel, WebInspector.DOMModel.Events.ChildNodeCountUpdated, this._onNodeChange, this);
     },
 
-    /**
-     * @param {?WebInspector.DOMNode} node
-     * @override
-     */
-    setNode: function(node)
+    _pullNode: function()
     {
-        WebInspector.ThrottledElementsSidebarView.prototype.setNode.call(this, node);
+        this._node = WebInspector.context.flavor(WebInspector.DOMNode);
         if (this._computedTextSubPane)
-            this._computedTextSubPane.setNode(node);
+            this._computedTextSubPane.setNode(this._node);
         if (this._axNodeSubPane)
-            this._axNodeSubPane.setNode(node);
+            this._axNodeSubPane.setNode(this._node);
+        this.update();
     },
 
     /**
@@ -120,7 +128,7 @@ WebInspector.AccessibilitySidebarView.prototype = {
     },
 
 
-    __proto__: WebInspector.ThrottledElementsSidebarView.prototype
+    __proto__: WebInspector.ThrottledWidget.prototype
 };
 
 /**
@@ -171,7 +179,7 @@ WebInspector.AccessibilitySubPane.prototype = {
         var classNameOrDefault = className || "info";
         var info = createElementWithClass("div", classNameOrDefault);
         info.textContent = textContent;
-        this.bodyElement.appendChild(info);
+        this.element.appendChild(info);
         return info;
     },
 
@@ -185,7 +193,7 @@ WebInspector.AccessibilitySubPane.prototype = {
         treeOutline.registerRequiredCSS("accessibility/accessibilityNode.css");
         treeOutline.registerRequiredCSS("components/objectValue.css");
         treeOutline.element.classList.add("hidden");
-        this.bodyElement.appendChild(treeOutline.element);
+        this.element.appendChild(treeOutline.element);
         return treeOutline;
     },
 
@@ -200,11 +208,10 @@ WebInspector.AXComputedTextSubPane = function()
 {
     WebInspector.AccessibilitySubPane.call(this, WebInspector.UIString("Computed Text"));
 
-    this._computedTextElement = this.bodyElement.createChild("div", "ax-computed-text hidden");
+    this._computedTextElement = this.element.createChild("div", "ax-computed-text hidden");
 
-    this._noTextInfo = this.createInfo(WebInspector.UIString("No computed text"));
-    this._noNodeInfo = this.createInfo(WebInspector.UIString("No accessibility node"));
-    this._treeOutline = this.createTreeOutline("monospace");
+    this._noTextInfo = this.createInfo(WebInspector.UIString("Node has no text alternative."));
+    this._treeOutline = this.createTreeOutline();
 };
 
 
@@ -224,21 +231,18 @@ WebInspector.AXComputedTextSubPane.prototype = {
         var target = this.node().target();
 
         if (!axNode || axNode.ignored) {
-            this._noTextInfo.classList.add("hidden");
             this._computedTextElement.classList.add("hidden");
             treeOutline.element.classList.add("hidden");
 
-            this._noNodeInfo.classList.remove("hidden");
+            this._noTextInfo.classList.remove("hidden");
             return;
         }
-        this._noNodeInfo.classList.add("hidden");
-
         this._computedTextElement.removeChildren();
 
         // TODO(aboxhall): include contents where appropriate (requires protocol change)
         this._computedTextElement.classList.toggle("hidden", !axNode.name || !axNode.name.value);
         if (axNode.name && axNode.name.value)
-            this._computedTextElement.textContent = axNode.name.value;
+            this._computedTextElement.createChild("div").textContent = axNode.name.value;
 
         var foundProperty = false;
         /**
@@ -248,13 +252,6 @@ WebInspector.AXComputedTextSubPane.prototype = {
         {
             foundProperty = true;
             treeOutline.appendChild(new WebInspector.AXNodePropertyTreeElement(property, target));
-        }
-
-        for (var propertyName of ["name", "description", "help"]) {
-            if (propertyName in axNode) {
-                var defaultProperty = /** @type {!AccessibilityAgent.AXProperty} */ ({name: propertyName, value: axNode[propertyName]});
-                addProperty(defaultProperty);
-            }
         }
 
         if ("value" in axNode && axNode.value.type === "string")
@@ -286,7 +283,7 @@ WebInspector.AXNodeSubPane = function()
     this._noNodeInfo = this.createInfo(WebInspector.UIString("No accessibility node"));
     this._ignoredInfo = this.createInfo(WebInspector.UIString("Accessibility node not exposed"), "ax-ignored-info hidden");
 
-    this._treeOutline = this.createTreeOutline('monospace');
+    this._treeOutline = this.createTreeOutline();
     this._ignoredReasonsTree = this.createTreeOutline();
 };
 
@@ -314,10 +311,13 @@ WebInspector.AXNodeSubPane.prototype = {
             ignoredReasons.element.classList.add("hidden");
 
             this._noNodeInfo.classList.remove("hidden");
+            this.element.classList.add("ax-ignored-node-pane");
+
             return;
         } else if (axNode.ignored) {
             this._noNodeInfo.classList.add("hidden");
             treeOutline.element.classList.add("hidden");
+            this.element.classList.add("ax-ignored-node-pane");
 
             this._ignoredInfo.classList.remove("hidden");
             ignoredReasons.element.classList.remove("hidden");
@@ -335,6 +335,8 @@ WebInspector.AXNodeSubPane.prototype = {
                 ignoredReasons.element.classList.add("hidden");
             return;
         }
+        this.element.classList.remove("ax-ignored-node-pane");
+
         this._ignoredInfo.classList.add("hidden");
         ignoredReasons.element.classList.add("hidden");
         this._noNodeInfo.classList.add("hidden");
@@ -349,15 +351,15 @@ WebInspector.AXNodeSubPane.prototype = {
             treeOutline.appendChild(new WebInspector.AXNodePropertyTreeElement(property, target));
         }
 
-        var roleProperty = /** @type {!AccessibilityAgent.AXProperty} */ ({name: "role", value: axNode.role});
-        addProperty(roleProperty);
-
-        for (var propertyName of ["description", "help", "value"]) {
+        for (var propertyName of ["name", "description", "help", "value"]) {
             if (propertyName in axNode) {
                 var defaultProperty = /** @type {!AccessibilityAgent.AXProperty} */ ({name: propertyName, value: axNode[propertyName]});
                 addProperty(defaultProperty);
             }
         }
+
+        var roleProperty = /** @type {!AccessibilityAgent.AXProperty} */ ({name: "role", value: axNode.role});
+        addProperty(roleProperty);
 
         var propertyMap = {};
         var propertiesArray = /** @type {!Array.<!AccessibilityAgent.AXProperty>} */ (axNode.properties);
@@ -422,6 +424,10 @@ WebInspector.AXNodePropertyTreeElement.prototype = {
                 this.appendChild(child);
             }
             this._valueElement = WebInspector.AXNodePropertyTreeElement.createValueElement(value, this.listItemElement);
+            if (relatedNodes.length <= 3)
+                this.expand();
+            else
+                this.collapse();
         } else {
             this._valueElement = WebInspector.AXNodePropertyTreeElement.createValueElement(value, this.listItemElement);
         }
@@ -451,11 +457,16 @@ WebInspector.AXNodePropertyTreeElement.populateWithNode = function(treeNode, axN
  */
 WebInspector.AXNodePropertyTreeElement.createNameElement = function(name)
 {
-    var nameElement = createElementWithClass("span", "ax-name");
-    if (/^\s|\s$|^$|\n/.test(name))
-        nameElement.createTextChildren("\"", name.replace(/\n/g, "\u21B5"), "\"");
-    else
+    var nameElement = createElement("span");
+    var AXAttributes = WebInspector.AccessibilityStrings.AXAttributes;
+    if (name in AXAttributes) {
+        nameElement.textContent = WebInspector.UIString(AXAttributes[name].name);
+        nameElement.title = WebInspector.UIString(AXAttributes[name].description);
+        nameElement.classList.add("ax-readable-name");
+    } else {
         nameElement.textContent = name;
+        nameElement.classList.add("ax-name");
+    }
     return nameElement;
 }
 
@@ -488,7 +499,7 @@ WebInspector.AXNodePropertyTreeElement.createRelationshipValueElement = function
  */
 WebInspector.AXNodePropertyTreeElement.createValueElement = function(value, parentElement)
 {
-    var valueElement = createElementWithClass("span", "object-value");
+    var valueElement = createElementWithClass("span", "monospace");
     var type = value.type;
     var prefix;
     var valueText;

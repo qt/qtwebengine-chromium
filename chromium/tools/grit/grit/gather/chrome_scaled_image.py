@@ -100,20 +100,34 @@ class ChromeScaledImage(interface.GathererBase):
     req_layout, req_scale = match.group(1), int(match.group(2))
 
     layouts = [req_layout]
-    if 'default' not in layouts:
+    try_default_layout = self.grd_node.GetRoot().fallback_to_default_layout
+    if try_default_layout and 'default' not in layouts:
       layouts.append('default')
+
+    # TODO(tdanderson): Search in descending order of all image scales
+    #                   instead of immediately falling back to 100.
+    #                   See crbug.com/503643.
     scales = [req_scale]
     try_low_res = self.grd_node.FindBooleanAttribute(
         'fallback_to_low_resolution', default=False, skip_self=False)
     if try_low_res and 100 not in scales:
       scales.append(100)
+
     for layout in layouts:
       for scale in scales:
         dir = '%s_%s_percent' % (layout, scale)
         path = os.path.join(dir, self.rc_file)
         if os.path.exists(self.grd_node.ToRealPath(path)):
           return path, scale, req_scale
-    # If we get here then the file is missing, so fail.
+
+    if not try_default_layout:
+      # The file was not found in the specified output context and it was
+      # explicitly indicated that the default context should not be searched
+      # as a fallback, so return an empty path.
+      return None, 100, req_scale
+
+    # The file was found in neither the specified context nor the default
+    # context, so raise an exception.
     dir = "%s_%s_percent" % (_MakeBraceGlob(layouts),
                              _MakeBraceGlob(map(str, scales)))
     raise exception.FileNotFound(
@@ -131,6 +145,9 @@ class ChromeScaledImage(interface.GathererBase):
 
   def GetData(self, *args):
     path, scale, req_scale = self._FindInputFile()
+    if path is None:
+      return None
+
     data = util.ReadFile(self.grd_node.ToRealPath(path), util.BINARY)
     data = _RescaleImage(data, scale, req_scale)
     data = _MoveSpecialChunksToFront(data)

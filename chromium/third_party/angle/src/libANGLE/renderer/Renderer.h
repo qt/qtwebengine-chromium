@@ -39,6 +39,7 @@ struct Data;
 namespace rx
 {
 struct TranslatedIndexData;
+struct SourceIndexData;
 struct Workarounds;
 class DisplayImpl;
 
@@ -67,6 +68,10 @@ class Renderer : public ImplFactory
     virtual VendorID getVendorId() const = 0;
     virtual std::string getVendorString() const = 0;
     virtual std::string getRendererDescription() const = 0;
+
+    virtual void insertEventMarker(GLsizei length, const char *marker) = 0;
+    virtual void pushGroupMarker(GLsizei length, const char *marker) = 0;
+    virtual void popGroupMarker() = 0;
 
     // Renderer capabilities
     const gl::Caps &getRendererCaps() const;

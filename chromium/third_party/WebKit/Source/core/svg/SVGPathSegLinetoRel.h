@@ -34,12 +34,17 @@ public:
         return adoptRefWillBeNoop(new SVGPathSegLinetoRel(element, x, y));
     }
 
+    PassRefPtrWillBeRawPtr<SVGPathSeg> clone() override
+    {
+        return adoptRefWillBeNoop(new SVGPathSegLinetoRel(nullptr, x(), y()));
+    }
+
 private:
     SVGPathSegLinetoRel(SVGPathElement* element, float x, float y)
         : SVGPathSegSingleCoordinate(element, x, y) { }
 
-    virtual unsigned short pathSegType() const override { return PATHSEG_LINETO_REL; }
-    virtual String pathSegTypeAsLetter() const override { return "l"; }
+    unsigned short pathSegType() const override { return PATHSEG_LINETO_REL; }
+    String pathSegTypeAsLetter() const override { return "l"; }
 };
 
 } // namespace blink

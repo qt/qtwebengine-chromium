@@ -59,9 +59,10 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     , m_prev(nullptr)
     , m_next(nullptr)
     , m_numberOfStyles(0)
-    , m_type(type)
+    , m_type(static_cast<unsigned>(type))
     , m_registeredWithParentShadowRoot(false)
     , m_descendantInsertionPointsIsValid(false)
+    , m_delegatesFocus(false)
 {
 }
 

@@ -19,6 +19,8 @@
       'utility/local_discovery/service_discovery_message_handler.h',
       'utility/printing_handler.cc',
       'utility/printing_handler.h',
+      'utility/safe_json_parser_handler.cc',
+      'utility/safe_json_parser_handler.h',
       'utility/shell_handler_win.cc',
       'utility/shell_handler_win.h',
       'utility/utility_message_handler.h',
@@ -101,6 +103,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../components/components_strings.gyp:components_strings',
+        '../components/components.gyp:safe_json_parser_message_filter',
         '../components/components.gyp:search_engines',
         '../components/components.gyp:url_fixer',
         '../content/content.gyp:content_common',
@@ -135,6 +138,7 @@
         }],
         ['OS!="android"', {
           'dependencies': [
+            'common_mojo_bindings',
             '../net/net.gyp:net_utility_services',
           ],
           'sources': [
@@ -149,12 +153,6 @@
             'utility/importer/nss_decryptor_system_nss.cc',
             'utility/importer/nss_decryptor_system_nss.h',
           ],
-        }],
-        ['OS=="android" and use_seccomp_bpf==1', {
-          'dependencies': [
-            '../sandbox/sandbox.gyp:seccomp_bpf',
-          ],
-          'defines': ['USE_SECCOMP_BPF'],
         }],
         ['enable_extensions==1', {
           'dependencies': [

@@ -340,6 +340,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
       # Set the context, for conditional inclusion of resources
       self.res.SetOutputLanguage(output.GetLanguage())
       self.res.SetOutputContext(output.GetContext())
+      self.res.SetFallbackToDefaultLayout(output.GetFallbackToDefaultLayout())
       self.res.SetDefines(self.defines)
 
       # Make the output directory if it doesn't exist.

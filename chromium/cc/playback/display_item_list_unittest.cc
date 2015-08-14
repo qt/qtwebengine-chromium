@@ -9,6 +9,7 @@
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/playback/clip_display_item.h"
+#include "cc/playback/display_item_list_settings.h"
 #include "cc/playback/drawing_display_item.h"
 #include "cc/playback/filter_display_item.h"
 #include "cc/playback/transform_display_item.h"
@@ -50,8 +51,7 @@ TEST(DisplayItemListTest, SingleDrawingItem) {
   picture = skia::AdoptRef(recorder.endRecordingAsPicture());
   auto* item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
+  list->Finalize();
   DrawDisplayList(pixels, layer_rect, list);
 
   SkBitmap expected_bitmap;
@@ -110,8 +110,7 @@ TEST(DisplayItemListTest, ClipItem) {
   item3->SetNew(picture.Pass());
 
   list->CreateAndAppendItem<EndClipDisplayItem>();
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
+  list->Finalize();
 
   DrawDisplayList(pixels, layer_rect, list);
 
@@ -173,8 +172,7 @@ TEST(DisplayItemListTest, TransformItem) {
   item3->SetNew(picture);
 
   list->CreateAndAppendItem<EndTransformDisplayItem>();
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
+  list->Finalize();
 
   DrawDisplayList(pixels, layer_rect, list);
 
@@ -228,8 +226,7 @@ TEST(DisplayItemListTest, FilterItem) {
   auto* item = list->CreateAndAppendItem<FilterDisplayItem>();
   item->SetNew(filters, filter_bounds);
   list->CreateAndAppendItem<EndFilterDisplayItem>();
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
+  list->Finalize();
 
   DrawDisplayList(pixels, layer_rect, list);
 
@@ -272,7 +269,7 @@ TEST(DisplayItemListTest, CompactingItems) {
   picture = skia::AdoptRef(recorder.endRecordingAsPicture());
   auto* item1 = list_without_caching->CreateAndAppendItem<DrawingDisplayItem>();
   item1->SetNew(picture);
-  list_without_caching->ProcessAppendedItems();
+  list_without_caching->Finalize();
   DrawDisplayList(pixels, layer_rect, list_without_caching);
 
   unsigned char expected_pixels[4 * 100 * 100] = {0};
@@ -281,14 +278,141 @@ TEST(DisplayItemListTest, CompactingItems) {
       DisplayItemList::Create(layer_rect, use_cached_picture);
   auto* item2 = list_with_caching->CreateAndAppendItem<DrawingDisplayItem>();
   item2->SetNew(picture);
-  list_with_caching->ProcessAppendedItems();
-  list_with_caching->CreateAndCacheSkPicture();
+  list_with_caching->Finalize();
   DrawDisplayList(expected_pixels, layer_rect, list_with_caching);
 
   EXPECT_EQ(0, memcmp(pixels, expected_pixels, 4 * 100 * 100));
 }
 
-TEST(DisplayItemListTest, PictureMemoryUsage) {
+TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithCachedPicture) {
+  gfx::Rect layer_rect(1000, 1000);
+  SkPictureRecorder recorder;
+  skia::RefPtr<SkCanvas> canvas;
+  skia::RefPtr<SkPicture> picture;
+
+  bool use_cached_picture = true;
+  scoped_refptr<DisplayItemList> list =
+      DisplayItemList::Create(layer_rect, use_cached_picture);
+  canvas =
+      skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+
+  SkPath path;
+  path.moveTo(0, 0);
+  path.lineTo(0, 100);
+  path.lineTo(50, 50);
+  path.lineTo(100, 100);
+  path.lineTo(100, 0);
+  path.close();
+
+  SkPaint paint;
+  paint.setAntiAlias(true);
+  canvas->drawPath(path, paint);
+
+  picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+  DrawingDisplayItem* item = list->CreateAndAppendItem<DrawingDisplayItem>();
+  item->SetNew(picture);
+  list->Finalize();
+
+  // A single DrawingDisplayItem with a large AA concave path shouldn't trigger
+  // a veto.
+  EXPECT_TRUE(list->IsSuitableForGpuRasterization());
+
+  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  canvas =
+      skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+  for (int i = 0; i < 10; ++i)
+    canvas->drawPath(path, paint);
+  picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+  item = list->CreateAndAppendItem<DrawingDisplayItem>();
+  item->SetNew(picture);
+  list->Finalize();
+
+  // A single DrawingDisplayItem with several large AA concave paths should
+  // trigger a veto.
+  EXPECT_FALSE(list->IsSuitableForGpuRasterization());
+
+  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  for (int i = 0; i < 10; ++i) {
+    canvas =
+        skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+    canvas->drawPath(path, paint);
+    picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+    item = list->CreateAndAppendItem<DrawingDisplayItem>();
+    item->SetNew(picture);
+  }
+  list->Finalize();
+
+  // Having several DrawingDisplayItems that each contain a large AA concave
+  // path should trigger a veto.
+  EXPECT_FALSE(list->IsSuitableForGpuRasterization());
+}
+
+TEST(DisplayItemListTest, IsSuitableForGpuRasterizationWithoutCachedPicture) {
+  gfx::Rect layer_rect(1000, 1000);
+  SkPictureRecorder recorder;
+  skia::RefPtr<SkCanvas> canvas;
+  skia::RefPtr<SkPicture> picture;
+
+  bool use_cached_picture = false;
+  scoped_refptr<DisplayItemList> list =
+      DisplayItemList::Create(layer_rect, use_cached_picture);
+  canvas =
+      skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+
+  SkPath path;
+  path.moveTo(0, 0);
+  path.lineTo(0, 100);
+  path.lineTo(50, 50);
+  path.lineTo(100, 100);
+  path.lineTo(100, 0);
+  path.close();
+
+  SkPaint paint;
+  paint.setAntiAlias(true);
+  canvas->drawPath(path, paint);
+
+  picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+  DrawingDisplayItem* item = list->CreateAndAppendItem<DrawingDisplayItem>();
+  item->SetNew(picture);
+  list->Finalize();
+
+  // A single DrawingDisplayItem with a large AA concave path shouldn't trigger
+  // a veto.
+  EXPECT_TRUE(list->IsSuitableForGpuRasterization());
+
+  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  canvas =
+      skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+  for (int i = 0; i < 10; ++i)
+    canvas->drawPath(path, paint);
+  picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+  item = list->CreateAndAppendItem<DrawingDisplayItem>();
+  item->SetNew(picture);
+  list->Finalize();
+
+  // A single DrawingDisplayItem with several large AA concave paths should
+  // trigger a veto.
+  EXPECT_FALSE(list->IsSuitableForGpuRasterization());
+
+  list = DisplayItemList::Create(layer_rect, use_cached_picture);
+  for (int i = 0; i < 10; ++i) {
+    canvas =
+        skia::SharePtr(recorder.beginRecording(gfx::RectToSkRect(layer_rect)));
+    canvas->drawPath(path, paint);
+    picture = skia::AdoptRef(recorder.endRecordingAsPicture());
+    item = list->CreateAndAppendItem<DrawingDisplayItem>();
+    item->SetNew(picture);
+  }
+  list->Finalize();
+
+  // Without a cached picture, having several DrawingDisplayItems that each
+  // contain a single large AA concave will not trigger a veto, since each item
+  // is individually suitable for GPU rasterization.
+  EXPECT_TRUE(list->IsSuitableForGpuRasterization());
+}
+
+TEST(DisplayItemListTest, ApproximateMemoryUsage) {
+  const int kNumCommandsInTestSkPicture = 1000;
   scoped_refptr<DisplayItemList> list;
   size_t memory_usage;
 
@@ -298,21 +422,19 @@ TEST(DisplayItemListTest, PictureMemoryUsage) {
   SkPaint blue_paint;
   blue_paint.setColor(SK_ColorBLUE);
   SkCanvas* canvas = recorder.beginRecording(gfx::RectFToSkRect(layer_rect));
-  for (int i = 0; i < 100; i++)
+  for (int i = 0; i < kNumCommandsInTestSkPicture; i++)
     canvas->drawPaint(blue_paint);
   skia::RefPtr<SkPicture> picture =
       skia::AdoptRef(recorder.endRecordingAsPicture());
   size_t picture_size = SkPictureUtils::ApproximateBytesUsed(picture.get());
-  ASSERT_GE(picture_size, 100 * sizeof(SkPaint));
-  ASSERT_LE(picture_size, 200 * sizeof(SkPaint));
+  ASSERT_GE(picture_size, kNumCommandsInTestSkPicture * sizeof(blue_paint));
 
   // Using a cached picture, we should get about the right size.
   list = DisplayItemList::Create(layer_rect, true);
   auto* item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
-  memory_usage = list->PictureMemoryUsage();
+  list->Finalize();
+  memory_usage = list->ApproximateMemoryUsage();
   EXPECT_GE(memory_usage, picture_size);
   EXPECT_LE(memory_usage, 2 * picture_size);
 
@@ -320,20 +442,21 @@ TEST(DisplayItemListTest, PictureMemoryUsage) {
   list = DisplayItemList::Create(layer_rect, false);
   item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
-  list->ProcessAppendedItems();
-  memory_usage = list->PictureMemoryUsage();
+  list->Finalize();
+  memory_usage = list->ApproximateMemoryUsage();
   EXPECT_GE(memory_usage, picture_size);
   EXPECT_LE(memory_usage, 2 * picture_size);
 
   // To avoid double counting, we expect zero size to be computed if both the
   // picture and items are retained (currently this only happens due to certain
   // categories being traced).
-  list = new DisplayItemList(layer_rect, true, true);
+  DisplayItemListSettings settings;
+  settings.use_cached_picture = true;
+  list = new DisplayItemList(layer_rect, settings, true);
   item = list->CreateAndAppendItem<DrawingDisplayItem>();
   item->SetNew(picture);
-  list->ProcessAppendedItems();
-  list->CreateAndCacheSkPicture();
-  memory_usage = list->PictureMemoryUsage();
+  list->Finalize();
+  memory_usage = list->ApproximateMemoryUsage();
   EXPECT_EQ(static_cast<size_t>(0), memory_usage);
 }
 

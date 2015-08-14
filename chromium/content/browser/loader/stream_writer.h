@@ -37,6 +37,10 @@ class StreamWriter : public StreamWriteObserver {
     controller_ = controller;
   }
 
+  // When immediate mode is enabled, the |stream_| is flushed every time new
+  // data is made available by calls to OnReadCompleted.
+  void set_immediate_mode(bool enabled) { immediate_mode_ = enabled; }
+
   // Initializes the writer with a new Stream in |registry|. |origin| will be
   // used to construct the URL for the Stream. See WebCore::BlobURL and and
   // WebCore::SecurityOrigin in Blink to understand how origin check is done on
@@ -50,7 +54,7 @@ class StreamWriter : public StreamWriteObserver {
   // is not -1, it is the minimum size of the returned buffer.
   //
   // OnWillRead may be called before the stream is initialized. This is to
-  // support BufferedResourceHandler which reads the initial chunk of data
+  // support MimeTypeResourceHandler which reads the initial chunk of data
   // early.
   void OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                   int* buf_size,
@@ -74,6 +78,7 @@ class StreamWriter : public StreamWriteObserver {
   ResourceController* controller_;
   scoped_refptr<Stream> stream_;
   scoped_refptr<net::IOBuffer> read_buffer_;
+  bool immediate_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(StreamWriter);
 };

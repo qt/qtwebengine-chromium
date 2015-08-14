@@ -36,6 +36,7 @@ GpuMemoryBufferImpl::GpuMemoryBufferImpl(gfx::GpuMemoryBufferId id,
 }
 
 GpuMemoryBufferImpl::~GpuMemoryBufferImpl() {
+  DCHECK(!mapped_);
   callback_.Run(destruction_sync_point_);
 }
 
@@ -44,6 +45,7 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
     Format format,
+    Usage usage,
     const DestructionCallback& callback) {
   switch (handle.type) {
     case gfx::SHARED_MEMORY_BUFFER:
@@ -52,7 +54,7 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
 #if defined(OS_MACOSX)
     case gfx::IO_SURFACE_BUFFER:
       return GpuMemoryBufferImplIOSurface::CreateFromHandle(
-          handle, size, format, callback);
+          handle, size, format, usage, callback);
 #endif
 #if defined(OS_ANDROID)
     case gfx::SURFACE_TEXTURE_BUFFER:
@@ -62,11 +64,11 @@ scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
 #if defined(USE_OZONE)
     case gfx::OZONE_NATIVE_BUFFER:
       return GpuMemoryBufferImplOzoneNativeBuffer::CreateFromHandle(
-          handle, size, format, callback);
+          handle, size, format, usage, callback);
 #endif
     default:
       NOTREACHED();
-      return scoped_ptr<GpuMemoryBufferImpl>();
+      return nullptr;
   }
 }
 
@@ -86,6 +88,7 @@ size_t GpuMemoryBufferImpl::NumberOfPlanesForGpuMemoryBufferFormat(
     case DXT5:
     case ETC1:
     case R_8:
+    case RGBA_4444:
     case RGBA_8888:
     case RGBX_8888:
     case BGRA_8888:
@@ -106,6 +109,7 @@ size_t GpuMemoryBufferImpl::SubsamplingFactor(Format format, int plane) {
     case DXT5:
     case ETC1:
     case R_8:
+    case RGBA_4444:
     case RGBA_8888:
     case RGBX_8888:
     case BGRA_8888:
@@ -145,6 +149,11 @@ bool GpuMemoryBufferImpl::RowSizeInBytes(size_t width,
         return false;
       *size_in_bytes = checked_size.ValueOrDie() & ~0x3;
       return true;
+    case RGBA_4444:
+      checked_size *= 2;
+      if (!checked_size.IsValid())
+        return false;
+      *size_in_bytes = checked_size.ValueOrDie();
     case RGBX_8888:
     case RGBA_8888:
     case BGRA_8888:

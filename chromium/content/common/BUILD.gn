@@ -143,6 +143,7 @@ source_set("common") {
     "//base",
     "//build/util:webkit_version",
     "//components/tracing",
+    "//components/tracing:startup_tracing",
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/common:gles2_utils",
     "//net",
@@ -361,6 +362,8 @@ source_set("common") {
         "gpu/media/v4l2_device.h",
         "gpu/media/v4l2_image_processor.cc",
         "gpu/media/v4l2_image_processor.h",
+        "gpu/media/v4l2_jpeg_decode_accelerator.cc",
+        "gpu/media/v4l2_jpeg_decode_accelerator.h",
         "gpu/media/v4l2_slice_video_decode_accelerator.cc",
         "gpu/media/v4l2_slice_video_decode_accelerator.h",
         "gpu/media/v4l2_video_decode_accelerator.cc",
@@ -382,6 +385,10 @@ source_set("common") {
     if (current_cpu != "arm") {
       sources += [
                    "gpu/media/va_surface.h",
+                   "gpu/media/vaapi_jpeg_decode_accelerator.cc",
+                   "gpu/media/vaapi_jpeg_decode_accelerator.h",
+                   "gpu/media/vaapi_jpeg_decoder.cc",
+                   "gpu/media/vaapi_jpeg_decoder.h",
                    "gpu/media/vaapi_picture.cc",
                    "gpu/media/vaapi_picture.h",
                    "gpu/media/vaapi_video_decode_accelerator.cc",
@@ -484,13 +491,21 @@ mojom("mojo_bindings") {
     "application_setup.mojom",
     "background_sync_service.mojom",
     "geolocation_service.mojom",
+    "image_downloader/image_downloader.mojom",
     "permission_service.mojom",
     "presentation/presentation_service.mojom",
+    "process_control.mojom",
     "render_frame_setup.mojom",
+    "service_port_service.mojom",
+    "vr_service.mojom",
   ]
+
+  import_dirs = [ "//mojo/services" ]
 
   deps = [
     "//content/public/common:mojo_bindings",
     "//mojo/application/public/interfaces",
+    "//skia/public/interfaces",
+    "//ui/mojo/geometry:interfaces",
   ]
 }

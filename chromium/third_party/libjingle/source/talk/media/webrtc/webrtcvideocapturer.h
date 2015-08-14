@@ -35,8 +35,9 @@
 
 #include "talk/media/base/videocapturer.h"
 #include "talk/media/webrtc/webrtcvideoframe.h"
-#include "webrtc/base/criticalsection.h"
+#include "webrtc/base/asyncinvoker.h"
 #include "webrtc/base/messagehandler.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_capture/include/video_capture.h"
 
@@ -81,7 +82,7 @@ class WebRtcVideoCapturer : public VideoCapturer,
  private:
   // Callback when a frame is captured by camera.
   virtual void OnIncomingCapturedFrame(const int32_t id,
-                                       const webrtc::I420VideoFrame& frame);
+                                       const webrtc::VideoFrame& frame);
   virtual void OnCaptureDelayChanged(const int32_t id,
                                      const int32_t delay);
 
@@ -91,7 +92,7 @@ class WebRtcVideoCapturer : public VideoCapturer,
   // directly from OnIncomingCapturedFrame.
   // TODO(tommi): Remove this workaround when we've updated the WebRTC capturers
   // to follow the same contract.
-  void SignalFrameCapturedOnStartThread(const webrtc::I420VideoFrame* frame);
+  void SignalFrameCapturedOnStartThread(const webrtc::VideoFrame frame);
 
   rtc::scoped_ptr<WebRtcVcmFactoryInterface> factory_;
   webrtc::VideoCaptureModule* module_;
@@ -99,14 +100,14 @@ class WebRtcVideoCapturer : public VideoCapturer,
   std::vector<uint8_t> capture_buffer_;
   rtc::Thread* start_thread_;  // Set in Start(), unset in Stop();
 
-  // Critical section to avoid Stop during an OnIncomingCapturedFrame callback.
-  rtc::CriticalSection critical_section_stopping_;
+  rtc::scoped_ptr<rtc::AsyncInvoker> async_invoker_;
 };
 
 struct WebRtcCapturedFrame : public CapturedFrame {
  public:
-  WebRtcCapturedFrame(const webrtc::I420VideoFrame& frame,
-                      void* buffer, size_t length);
+  WebRtcCapturedFrame(const webrtc::VideoFrame& frame,
+                      void* buffer,
+                      size_t length);
 };
 
 }  // namespace cricket

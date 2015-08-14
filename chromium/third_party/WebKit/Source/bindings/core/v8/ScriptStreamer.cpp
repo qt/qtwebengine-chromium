@@ -14,6 +14,7 @@
 #include "core/frame/Settings.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
+#include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
@@ -90,15 +91,20 @@ public:
 
     ~SourceStreamDataQueue()
     {
-        while (!m_data.isEmpty()) {
-            std::pair<const uint8_t*, size_t> next_data = m_data.takeFirst();
-            delete[] next_data.first;
-        }
+        discardQueuedData();
+    }
+
+    void clear()
+    {
+        MutexLocker locker(m_mutex);
+        m_finished = false;
+        discardQueuedData();
     }
 
     void produce(const uint8_t* data, size_t length)
     {
         MutexLocker locker(m_mutex);
+        ASSERT(!m_finished);
         m_data.append(std::make_pair(data, length));
         m_haveData.signal();
     }
@@ -120,6 +126,7 @@ public:
 private:
     bool tryGetData(const uint8_t** data, size_t* length)
     {
+        ASSERT(m_mutex.locked());
         if (!m_data.isEmpty()) {
             std::pair<const uint8_t*, size_t> next_data = m_data.takeFirst();
             *data = next_data.first;
@@ -131,6 +138,14 @@ private:
             return true;
         }
         return false;
+    }
+
+    void discardQueuedData()
+    {
+        while (!m_data.isEmpty()) {
+            std::pair<const uint8_t*, size_t> next_data = m_data.takeFirst();
+            delete[] next_data.first;
+        }
     }
 
     WTF::Deque<std::pair<const uint8_t*, size_t>> m_data;
@@ -150,13 +165,18 @@ public:
     SourceStream()
         : v8::ScriptCompiler::ExternalSourceStream()
         , m_cancelled(false)
-        , m_dataPosition(0) { }
+        , m_finished(false)
+        , m_queueLeadPosition(0)
+        , m_queueTailPosition(0)
+        , m_bookmarkPosition(0)
+    {
+    }
 
-    virtual ~SourceStream() { }
+    virtual ~SourceStream() override { }
 
     // Called by V8 on a background thread. Should block until we can return
     // some data.
-    virtual size_t GetMoreData(const uint8_t** src) override
+    size_t GetMoreData(const uint8_t** src) override
     {
         ASSERT(!isMainThread());
         {
@@ -172,13 +192,44 @@ public:
             if (m_cancelled)
                 return 0;
         }
+        m_queueLeadPosition += length;
         return length;
+    }
+
+    // Called by V8 on background thread.
+    bool SetBookmark() override
+    {
+        ASSERT(!isMainThread());
+        m_bookmarkPosition = m_queueLeadPosition;
+        return m_bookmarkPosition != 0; // Don't mess with BOM.
+    }
+
+    // Called by V8 on background thread.
+    void ResetToBookmark() override
+    {
+        ASSERT(!isMainThread());
+        {
+            MutexLocker locker(m_mutex);
+            m_queueLeadPosition = m_bookmarkPosition;
+            m_queueTailPosition = m_bookmarkPosition;
+            m_dataQueue.clear();
+        }
+
+        // Inform main thread to re-queue the data.
+        Platform::current()->mainThread()->postTask(
+            FROM_HERE, bind(&SourceStream::fetchDataFromResourceBuffer, this, 0));
     }
 
     void didFinishLoading()
     {
         ASSERT(isMainThread());
-        m_dataQueue.finish();
+
+        // ResetToBookmark may reset the data queue's 'finished' status,
+        // so we may need to re-finish after a ResetToBookmark happened.
+        // We do this by remembering m_finished, and always checking for it
+        // at the end ot fetchDataFromResourceBuffer.
+        m_finished = true;
+        fetchDataFromResourceBuffer(0);
     }
 
     void didReceiveData(ScriptStreamer* streamer, size_t lengthOfBOM)
@@ -206,13 +257,14 @@ private:
     void prepareDataOnMainThread(ScriptStreamer* streamer, size_t lengthOfBOM)
     {
         ASSERT(isMainThread());
+
         // The Resource must still be alive; otherwise we should've cancelled
         // the streaming (if we have cancelled, the background thread is not
         // waiting).
         ASSERT(streamer->resource());
 
         // BOM can only occur at the beginning of the data.
-        ASSERT(lengthOfBOM == 0 || m_dataPosition == 0);
+        ASSERT(lengthOfBOM == 0 || m_queueTailPosition == 0);
 
         CachedMetadataHandler* cacheHandler = streamer->resource()->cacheHandler();
         if (cacheHandler && cacheHandler->cachedMetadata(V8ScriptRunner::tagForCodeCache(cacheHandler))) {
@@ -220,11 +272,7 @@ private:
             // parse the code. Cancel the streaming and resume the non-streaming
             // code path.
             streamer->suppressStreaming();
-            {
-                MutexLocker locker(m_mutex);
-                m_cancelled = true;
-            }
-            m_dataQueue.finish();
+            cancel();
             return;
         }
 
@@ -234,20 +282,34 @@ private:
             m_resourceBuffer = RefPtr<SharedBuffer>(buffer);
         }
 
+        fetchDataFromResourceBuffer(lengthOfBOM);
+    }
+
+    void fetchDataFromResourceBuffer(size_t lengthOfBOM)
+    {
+        ASSERT(isMainThread());
+
         // Get as much data from the ResourceBuffer as we can.
         const char* data = 0;
         Vector<const char*> chunks;
         Vector<unsigned> chunkLengths;
         size_t dataLength = 0;
-        while (unsigned length = m_resourceBuffer->getSomeData(data, m_dataPosition)) {
-            // FIXME: Here we can limit based on the total length, if it turns
-            // out that we don't want to give all the data we have (memory
-            // vs. speed).
-            chunks.append(data);
-            chunkLengths.append(length);
-            dataLength += length;
-            m_dataPosition += length;
+
+        {
+            MutexLocker locker(m_mutex); // For m_cancelled + m_queueTailPosition.
+            if (!m_cancelled) {
+                while (unsigned length = m_resourceBuffer->getSomeData(data, m_queueTailPosition)) {
+                    // FIXME: Here we can limit based on the total length, if it turns
+                    // out that we don't want to give all the data we have (memory
+                    // vs. speed).
+                    chunks.append(data);
+                    chunkLengths.append(length);
+                    dataLength += length;
+                    m_queueTailPosition += length;
+                }
+            }
         }
+
         // Copy the data chunks into a new buffer, since we're going to give the
         // data to a background thread.
         if (dataLength > lengthOfBOM) {
@@ -262,16 +324,30 @@ private:
             }
             m_dataQueue.produce(copiedData, dataLength);
         }
+
+        if (m_finished || m_cancelled)
+            m_dataQueue.finish();
     }
 
     // For coordinating between the main thread and background thread tasks.
-    // Guarded by m_mutex.
-    bool m_cancelled;
+    // Guards m_cancelled and m_queueTailPosition.
     Mutex m_mutex;
 
-    unsigned m_dataPosition; // Only used by the main thread.
+    // The shared buffer containing the resource data + state variables.
+    // Used by both threads, guarded by m_mutex.
+    bool m_cancelled;
+    bool m_finished;
+
     RefPtr<SharedBuffer> m_resourceBuffer; // Only used by the main thread.
+
+    // The queue contains the data to be passed to the V8 thread.
+    //   queueLeadPosition: data we have handed off to the V8 thread.
+    //   queueTailPosition: end of data we have enqued in the queue.
+    //   bookmarkPosition: position of the bookmark.
     SourceStreamDataQueue m_dataQueue; // Thread safe.
+    unsigned m_queueLeadPosition; // Only used by v8 thread.
+    unsigned m_queueTailPosition; // Used by both threads; guarded by m_mutex.
+    unsigned m_bookmarkPosition; // Only used by v8 thread.
 };
 
 size_t ScriptStreamer::kSmallScriptThreshold = 30 * 1024;
@@ -305,6 +381,12 @@ bool ScriptStreamer::convertEncoding(const char* encodingName, v8::ScriptCompile
     // are Latin1 or UTF-8 anyway, so this should be enough for most
     // real world purposes.
     return false;
+}
+
+bool ScriptStreamer::isFinished() const
+{
+    MutexLocker locker(m_mutex);
+    return m_loadingFinished && (m_parsingFinished || m_streamingSuppressed);
 }
 
 void ScriptStreamer::streamingCompleteOnBackgroundThread()
@@ -429,8 +511,7 @@ void ScriptStreamer::notifyAppendData(ScriptResource* resource)
         // running. This is taken care of with a manual ref() & deref() pair;
         // the corresponding deref() is in streamingComplete.
         ref();
-        ScriptStreamingTask* task = new ScriptStreamingTask(scriptStreamingTask.release(), this);
-        ScriptStreamerThread::shared()->postTask(task);
+        ScriptStreamerThread::shared()->postTask(new Task(threadSafeBind(&ScriptStreamerThread::runScriptStreamingTask, scriptStreamingTask.release(), AllowCrossThreadAccess(this))));
         Platform::current()->histogramEnumeration(startedStreamingHistogramName(m_scriptType), 1, 2);
     }
     if (m_stream)
@@ -522,11 +603,9 @@ void ScriptStreamer::notifyFinishedToClient()
     // function calling notifyFinishedToClient was already scheduled in the task
     // queue and the upper layer decided that it's not interested in the script
     // and called removeClient.
-    {
-        MutexLocker locker(m_mutex);
-        if (!isFinished())
-            return;
-    }
+    if (!isFinished())
+        return;
+
     if (m_client)
         m_client->notifyFinished(m_resource);
 }
@@ -534,6 +613,7 @@ void ScriptStreamer::notifyFinishedToClient()
 bool ScriptStreamer::startStreamingInternal(PendingScript& script, PendingScript::Type scriptType, Settings* settings, ScriptState* scriptState)
 {
     ASSERT(isMainThread());
+    ASSERT(scriptState->contextIsValid());
     ScriptResource* resource = script.resource();
     if (resource->isLoaded()) {
         Platform::current()->histogramEnumeration(notStreamingReasonHistogramName(scriptType), AlreadyLoaded, NotStreamingReasonEnd);
@@ -554,15 +634,10 @@ bool ScriptStreamer::startStreamingInternal(PendingScript& script, PendingScript
     // to arrive: the Content-Length HTTP header is not sent for chunked
     // downloads.
 
-    if (!scriptState->contextIsValid()) {
-        Platform::current()->histogramEnumeration(notStreamingReasonHistogramName(scriptType), ContextNotValid, NotStreamingReasonEnd);
-        return false;
-    }
-
     // Decide what kind of cached data we should produce while streaming. Only
     // produce parser cache if the non-streaming compile takes advantage of it.
     v8::ScriptCompiler::CompileOptions compileOption = v8::ScriptCompiler::kNoCompileOptions;
-    if (settings->v8CacheOptions() == V8CacheOptionsParseMemory || settings->v8CacheOptions() == V8CacheOptionsParse)
+    if (settings->v8CacheOptions() == V8CacheOptionsParse)
         compileOption = v8::ScriptCompiler::kProduceParserCache;
 
     // The Resource might go out of scope if the script is no longer

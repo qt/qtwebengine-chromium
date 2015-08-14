@@ -8,7 +8,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread.h"
 
 namespace base {
@@ -31,7 +30,7 @@ class TaskRunners {
   }
 
   base::SingleThreadTaskRunner* io_runner() const {
-    return io_thread_->message_loop_proxy().get();
+    return io_thread_->task_runner().get();
   }
 
   base::SequencedWorkerPool* blocking_pool() const {

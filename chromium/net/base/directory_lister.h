@@ -13,8 +13,11 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "net/base/net_export.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace net {
 
@@ -107,7 +110,7 @@ class NET_EXPORT DirectoryLister  {
 
     const base::FilePath dir_;
     const ListingType type_;
-    const scoped_refptr<base::MessageLoopProxy> origin_loop_;
+    const scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
 
     // Only used on the origin thread.
     DirectoryLister* lister_;

@@ -39,12 +39,15 @@
 #include "core/events/MessageEvent.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "modules/background_sync/SyncEvent.h"
 #include "modules/fetch/Headers.h"
 #include "modules/geofencing/CircularGeofencingRegion.h"
 #include "modules/geofencing/GeofencingEvent.h"
 #include "modules/navigatorconnect/AcceptConnectionObserver.h"
 #include "modules/navigatorconnect/CrossOriginConnectEvent.h"
 #include "modules/navigatorconnect/CrossOriginServiceWorkerClient.h"
+#include "modules/navigatorconnect/ServicePortCollection.h"
+#include "modules/navigatorconnect/WorkerNavigatorServices.h"
 #include "modules/notifications/Notification.h"
 #include "modules/notifications/NotificationEvent.h"
 #include "modules/push_messaging/PushEvent.h"
@@ -52,6 +55,8 @@
 #include "modules/serviceworkers/ExtendableEvent.h"
 #include "modules/serviceworkers/FetchEvent.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
+#include "modules/serviceworkers/StashedMessagePort.h"
+#include "modules/serviceworkers/StashedPortCollection.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebCrossOriginServiceWorkerClient.h"
@@ -94,14 +99,10 @@ void ServiceWorkerGlobalScopeProxy::dispatchFetchEvent(int eventID, const WebSer
     ASSERT(m_workerGlobalScope);
     RespondWithObserver* observer = RespondWithObserver::create(m_workerGlobalScope, eventID, webRequest.mode(), webRequest.frameType());
     bool defaultPrevented = false;
-    if (!RuntimeEnabledFeatures::serviceWorkerOnFetchEnabled()) {
-        observer->didDispatchEvent(defaultPrevented);
-        return;
-    }
-
     Request* request = Request::create(m_workerGlobalScope, webRequest);
     request->headers()->setGuard(Headers::ImmutableGuard);
     FetchEventInit eventInit;
+    eventInit.setCancelable(true);
     eventInit.setRequest(request);
     eventInit.setIsReload(webRequest.isReload());
     RefPtrWillBeRawPtr<FetchEvent> fetchEvent(FetchEvent::create(EventTypeNames::fetch, eventInit, observer));
@@ -128,9 +129,9 @@ void ServiceWorkerGlobalScopeProxy::dispatchMessageEvent(const WebString& messag
 {
     ASSERT(m_workerGlobalScope);
 
-    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
+    MessagePortArray* ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
     WebSerializedScriptValue value = WebSerializedScriptValue::fromString(message);
-    m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports.release(), value));
+    m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports, value));
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchNotificationClickEvent(int eventID, int64_t notificationID, const WebNotificationData& data)
@@ -151,12 +152,25 @@ void ServiceWorkerGlobalScopeProxy::dispatchPushEvent(int eventID, const WebStri
     m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
+void ServiceWorkerGlobalScopeProxy::dispatchServicePortConnectEvent(WebServicePortConnectEventCallbacks* rawCallbacks, const WebURL& targetURL, const WebString& origin, WebServicePortID portID)
+{
+    ASSERT(m_workerGlobalScope);
+    OwnPtr<WebServicePortConnectEventCallbacks> callbacks = adoptPtr(rawCallbacks);
+    ServicePortCollection* collection = WorkerNavigatorServices::services(m_workerGlobalScope, *m_workerGlobalScope->navigator());
+    collection->dispatchConnectEvent(callbacks.release(), targetURL, origin, portID);
+}
+
 void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
-    if (RuntimeEnabledFeatures::backgroundSyncEnabled())
-        m_workerGlobalScope->dispatchEvent(Event::create(EventTypeNames::sync));
-    ServiceWorkerGlobalScopeClient::from(m_workerGlobalScope)->didHandleSyncEvent(eventID);
+    if (!RuntimeEnabledFeatures::backgroundSyncEnabled()) {
+        ServiceWorkerGlobalScopeClient::from(m_workerGlobalScope)->didHandleSyncEvent(eventID, WebServiceWorkerEventResultCompleted);
+        return;
+    }
+    WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Sync, eventID);
+    // TODO(chasej) - Send registration as in crbug.com/482066
+    RefPtrWillBeRawPtr<Event> event(SyncEvent::create(EventTypeNames::sync, nullptr /* registration */, observer));
+    m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginConnectEvent(int eventID, const WebCrossOriginServiceWorkerClient& webClient)
@@ -171,12 +185,19 @@ void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginConnectEvent(int eventID,
 void ServiceWorkerGlobalScopeProxy::dispatchCrossOriginMessageEvent(const WebCrossOriginServiceWorkerClient& webClient, const WebString& message, const WebMessagePortChannelArray& webChannels)
 {
     ASSERT(m_workerGlobalScope);
-    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
+    MessagePortArray* ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
     WebSerializedScriptValue value = WebSerializedScriptValue::fromString(message);
     // FIXME: Have proper source for this MessageEvent.
-    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create(ports.release(), value, webClient.origin.string());
+    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create(ports, value, webClient.origin.string());
     event->setType(EventTypeNames::crossoriginmessage);
     m_workerGlobalScope->dispatchEvent(event);
+}
+
+void ServiceWorkerGlobalScopeProxy::addStashedMessagePorts(const WebMessagePortChannelArray& webChannels, const WebVector<WebString>& webChannelNames)
+{
+    ASSERT(m_workerGlobalScope);
+    StashedMessagePortArray* ports = StashedMessagePort::toStashedMessagePortArray(m_workerGlobalScope, webChannels, webChannelNames);
+    m_workerGlobalScope->ports()->addPorts(*ports);
 }
 
 void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int)

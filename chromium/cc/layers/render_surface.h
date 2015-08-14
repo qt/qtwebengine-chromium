@@ -19,8 +19,6 @@
 namespace cc {
 
 class Layer;
-template <typename LayerType>
-class LayerIterator;
 
 class CC_EXPORT RenderSurface {
  public:
@@ -116,8 +114,6 @@ class CC_EXPORT RenderSurface {
   void ClearLayerLists();
 
  private:
-  friend class LayerIterator<Layer>;
-
   Layer* owning_layer_;
 
   // Uses this surface's space.
@@ -143,10 +139,6 @@ class CC_EXPORT RenderSurface {
   // The nearest ancestor target surface that will contain the contents of this
   // surface, and that ignores outside occlusion. This can point to itself.
   RenderSurface* nearest_occlusion_immune_ancestor_;
-
-  // For LayerIteratorActions
-  int target_render_surface_layer_index_history_;
-  int current_layer_index_history_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderSurface);
 };

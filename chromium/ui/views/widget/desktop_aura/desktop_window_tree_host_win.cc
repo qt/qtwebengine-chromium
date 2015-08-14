@@ -26,7 +26,6 @@
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/native_theme/native_theme_win.h"
 #include "ui/views/corewm/tooltip_win.h"
-#include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
@@ -36,8 +35,8 @@
 #include "ui/views/widget/widget_hwnd_utils.h"
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler.h"
+#include "ui/views/win/hwnd_util.h"
 #include "ui/wm/core/compound_event_filter.h"
-#include "ui/wm/core/input_method_event_filter.h"
 #include "ui/wm/core/window_animations.h"
 #include "ui/wm/public/scoped_tooltip_disabler.h"
 
@@ -86,9 +85,7 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
       should_animate_window_close_(false),
       pending_close_(false),
       has_non_client_view_(false),
-      tooltip_(NULL),
-      need_synchronous_paint_(false),
-      in_sizing_loop_(false) {
+      tooltip_(NULL) {
 }
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
@@ -209,11 +206,15 @@ aura::WindowTreeHost* DesktopWindowTreeHostWin::AsWindowTreeHost() {
 
 void DesktopWindowTreeHostWin::ShowWindowWithState(
     ui::WindowShowState show_state) {
+  if (compositor())
+    compositor()->SetVisible(true);
   message_handler_->ShowWindowWithState(show_state);
 }
 
 void DesktopWindowTreeHostWin::ShowMaximizedWithBounds(
     const gfx::Rect& restored_bounds) {
+  if (compositor())
+    compositor()->SetVisible(true);
   gfx::Rect pixel_bounds = gfx::win::DIPToScreenRect(restored_bounds);
   message_handler_->ShowMaximizedWithBounds(pixel_bounds);
 }
@@ -230,6 +231,12 @@ void DesktopWindowTreeHostWin::SetSize(const gfx::Size& size) {
       gfx::Vector2d(expanded.width() - size_in_pixels.width(),
                     expanded.height() - size_in_pixels.height());
   message_handler_->SetSize(expanded);
+}
+
+void DesktopWindowTreeHostWin::StackAbove(aura::Window* window) {
+  HWND hwnd = HWNDForNativeView(window);
+  if (hwnd)
+    message_handler_->StackAbove(hwnd);
 }
 
 void DesktopWindowTreeHostWin::StackAtTop() {
@@ -283,11 +290,11 @@ gfx::Rect DesktopWindowTreeHostWin::GetWorkAreaBoundsInScreen() const {
   return gfx::win::ScreenToDIPRect(pixel_bounds);
 }
 
-void DesktopWindowTreeHostWin::SetShape(gfx::NativeRegion native_region) {
+void DesktopWindowTreeHostWin::SetShape(SkRegion* native_region) {
   if (native_region) {
     // TODO(wez): This would be a lot simpler if we were passed an SkPath.
     // See crbug.com/410593.
-    gfx::NativeRegion shape = native_region;
+    SkRegion* shape = native_region;
     SkRegion device_region;
     if (gfx::GetDPIScale() > 1.0) {
       shape = &device_region;
@@ -412,8 +419,11 @@ void DesktopWindowTreeHostWin::SetFullscreen(bool fullscreen) {
   // TODO(sky): workaround for ScopedFullscreenVisibility showing window
   // directly. Instead of this should listen for visibility changes and then
   // update window.
-  if (message_handler_->IsVisible() && !content_window_->TargetVisibility())
+  if (message_handler_->IsVisible() && !content_window_->TargetVisibility()) {
+    if (compositor())
+      compositor()->SetVisible(true);
     content_window_->Show();
+  }
   SetWindowTransparency();
 }
 
@@ -471,11 +481,11 @@ gfx::AcceleratedWidget DesktopWindowTreeHostWin::GetAcceleratedWidget() {
   return message_handler_->hwnd();
 }
 
-void DesktopWindowTreeHostWin::Show() {
+void DesktopWindowTreeHostWin::ShowImpl() {
   message_handler_->Show();
 }
 
-void DesktopWindowTreeHostWin::Hide() {
+void DesktopWindowTreeHostWin::HideImpl() {
   if (!pending_close_)
     message_handler_->Hide();
 }
@@ -552,13 +562,6 @@ void DesktopWindowTreeHostWin::MoveCursorToNative(const gfx::Point& location) {
   POINT cursor_location = location.ToPOINT();
   ::ClientToScreen(GetHWND(), &cursor_location);
   ::SetCursorPos(cursor_location.x, cursor_location.y);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// DesktopWindowTreeHostWin, ui::EventSource implementation:
-
-ui::EventProcessor* DesktopWindowTreeHostWin::GetEventProcessor() {
-  return dispatcher();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -673,16 +676,8 @@ void DesktopWindowTreeHostWin::ResetWindowControls() {
   GetWidget()->non_client_view()->ResetWindowControls();
 }
 
-void DesktopWindowTreeHostWin::PaintLayeredWindow(gfx::Canvas* canvas) {
-  GetWidget()->GetRootView()->Paint(ui::PaintContext(canvas));
-}
-
 gfx::NativeViewAccessible DesktopWindowTreeHostWin::GetNativeViewAccessible() {
   return GetWidget()->GetRootView()->GetNativeViewAccessible();
-}
-
-InputMethod* DesktopWindowTreeHostWin::GetInputMethod() {
-  return GetWidget()->GetInputMethodDirect();
 }
 
 bool DesktopWindowTreeHostWin::ShouldHandleSystemCommands() const {
@@ -725,22 +720,6 @@ void DesktopWindowTreeHostWin::HandleClose() {
 }
 
 bool DesktopWindowTreeHostWin::HandleCommand(int command) {
-  // Windows uses the 4 lower order bits of |notification_code| for type-
-  // specific information so we must exclude this when comparing.
-  static const int sc_mask = 0xFFF0;
-  switch (command & sc_mask) {
-    case SC_RESTORE:
-    case SC_MAXIMIZE:
-      need_synchronous_paint_ = true;
-      break;
-
-    case SC_SIZE:
-      in_sizing_loop_ = true;
-      break;
-
-    default:
-      break;
-  }
   return GetWidget()->widget_delegate()->ExecuteWindowsCommand(command);
 }
 
@@ -776,16 +755,10 @@ void DesktopWindowTreeHostWin::HandleDisplayChange() {
 }
 
 void DesktopWindowTreeHostWin::HandleBeginWMSizeMove() {
-  if (in_sizing_loop_)
-    need_synchronous_paint_ = true;
   native_widget_delegate_->OnNativeWidgetBeginUserBoundsChange();
 }
 
 void DesktopWindowTreeHostWin::HandleEndWMSizeMove() {
-  if (in_sizing_loop_) {
-    need_synchronous_paint_ = false;
-    in_sizing_loop_ = false;
-  }
   native_widget_delegate_->OnNativeWidgetEndUserBoundsChange();
 }
 
@@ -880,15 +853,13 @@ bool DesktopWindowTreeHostWin::HandleIMEMessage(UINT message,
   msg.message = message;
   msg.wParam = w_param;
   msg.lParam = l_param;
-  return desktop_native_widget_aura_->input_method_event_filter()->
-      input_method()->OnUntranslatedIMEMessage(msg, result);
+  return GetInputMethod()->OnUntranslatedIMEMessage(msg, result);
 }
 
 void DesktopWindowTreeHostWin::HandleInputLanguageChange(
     DWORD character_set,
     HKL input_language_id) {
-  desktop_native_widget_aura_->input_method_event_filter()->
-      input_method()->OnInputLocaleChanged();
+  GetInputMethod()->OnInputLocaleChanged();
 }
 
 void DesktopWindowTreeHostWin::HandlePaintAccelerated(
@@ -931,15 +902,8 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
-  if (compositor() && need_synchronous_paint_) {
+  if (compositor())
     compositor()->DisableSwapUntilResize();
-    // If we received the window size changing notification due to a restore or
-    // maximize operation, then we can reset the need_synchronous_paint_ flag
-    // here. For a sizing operation, the flag will be reset at the end of the
-    // operation.
-    if (!in_sizing_loop_)
-      need_synchronous_paint_ = false;
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -14,8 +14,10 @@
 #endif
 
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/cancellation_flag.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -95,14 +97,14 @@ class SampleRecord {
 
   SampleRecord() {}
 
-  base::TimeTicks timestamp() const { return timestamp_; }
+  base::TraceTicks timestamp() const { return timestamp_; }
   void Collect(v8::Isolate* isolate,
-               base::TimeTicks timestamp,
+               base::TraceTicks timestamp,
                const v8::RegisterState& state);
   scoped_refptr<ConvertableToTraceFormat> ToTraceFormat() const;
 
  private:
-  base::TimeTicks timestamp_;
+  base::TraceTicks timestamp_;
   unsigned vm_state_ : 4;
   unsigned frames_count_ : kMaxFramesCountLog2;
   const void* frames_[kMaxFramesCount];
@@ -111,7 +113,7 @@ class SampleRecord {
 };
 
 void SampleRecord::Collect(v8::Isolate* isolate,
-                           base::TimeTicks timestamp,
+                           base::TraceTicks timestamp,
                            const v8::RegisterState& state) {
   v8::SampleInfo sample_info;
   isolate->GetStackSample(state, (void**)frames_, kMaxFramesCount,
@@ -282,7 +284,7 @@ void Sampler::Sample() {
 void Sampler::DoSample(const v8::RegisterState& state) {
   // Called in the sampled thread signal handler.
   // Because of that it is not allowed to do any memory allocation here.
-  base::TimeTicks timestamp = base::TimeTicks::NowFromSystemTraceTime();
+  base::TraceTicks timestamp = base::TraceTicks::Now();
   SampleRecord* record = samples_data_->StartEnqueue();
   if (!record)
     return;
@@ -296,7 +298,7 @@ void Sampler::InjectPendingEvents() {
     TRACE_EVENT_SAMPLE_WITH_TID_AND_TIMESTAMP1(
         TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"), "V8Sample",
         platform_data_.thread_id(),
-        (record->timestamp() - base::TimeTicks()).InMicroseconds(), "data",
+        (record->timestamp() - base::TraceTicks()).InMicroseconds(), "data",
         record->ToTraceFormat());
     samples_data_->Remove();
     record = samples_data_->Peek();
@@ -444,7 +446,10 @@ void V8SamplingThread::ThreadMain() {
   InstallSamplers();
   StartSamplers();
   InstallSignalHandler();
-  const int kSamplingFrequencyMicroseconds = 1000;
+  bool enabled_hires;
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+      TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile.hires"), &enabled_hires);
+  const int kSamplingFrequencyMicroseconds = enabled_hires ? 100 : 1000;
   while (!cancellation_flag_.IsSet()) {
     Sample();
     if (waitable_event_for_testing_ &&
@@ -566,11 +571,13 @@ void V8SamplingThread::Stop() {
 V8SamplingProfiler::V8SamplingProfiler(bool underTest)
     : sampling_thread_(nullptr),
       render_thread_sampler_(Sampler::CreateForCurrentThread()),
-      message_loop_proxy_(base::MessageLoopProxy::current()) {
+      task_runner_(base::ThreadTaskRunnerHandle::Get()) {
   DCHECK(underTest || RenderThreadImpl::current());
-  // Force the "v8.cpu_profile" category to show up in the trace viewer.
+  // Force the "v8.cpu_profile*" categories to show up in the trace viewer.
   TraceLog::GetCategoryGroupEnabled(
       TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"));
+  TraceLog::GetCategoryGroupEnabled(
+      TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile.hires"));
   TraceLog::GetInstance()->AddEnabledStateObserver(this);
 }
 
@@ -586,6 +593,13 @@ void V8SamplingProfiler::StartSamplingThread() {
   sampling_thread_->Start();
 }
 
+void V8SamplingProfiler::StopSamplingThread() {
+  if (!sampling_thread_.get())
+    return;
+  sampling_thread_->Stop();
+  sampling_thread_.reset();
+}
+
 void V8SamplingProfiler::OnTraceLogEnabled() {
   bool enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(
@@ -597,20 +611,19 @@ void V8SamplingProfiler::OnTraceLogEnabled() {
   // Jit code events may not be afforded.
   // TODO(alph): add support of infinite recording of meta trace events.
   base::trace_event::TraceRecordMode record_mode =
-      TraceLog::GetInstance()->GetCurrentTraceOptions().record_mode;
+      TraceLog::GetInstance()->GetCurrentTraceConfig().GetTraceRecordMode();
   if (record_mode == base::trace_event::TraceRecordMode::RECORD_CONTINUOUSLY)
     return;
 
-  message_loop_proxy_->PostTask(
-      FROM_HERE, base::Bind(&V8SamplingProfiler::StartSamplingThread,
-                            base::Unretained(this)));
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&V8SamplingProfiler::StartSamplingThread,
+                                    base::Unretained(this)));
 }
 
 void V8SamplingProfiler::OnTraceLogDisabled() {
-  if (!sampling_thread_.get())
-    return;
-  sampling_thread_->Stop();
-  sampling_thread_.reset();
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&V8SamplingProfiler::StopSamplingThread,
+                                    base::Unretained(this)));
 }
 
 void V8SamplingProfiler::EnableSamplingEventForTesting(int code_added_events,

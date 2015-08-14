@@ -44,6 +44,7 @@ WebInspector.NetworkManager = function(target)
         this._networkAgent.setCacheDisabled(true);
     if (WebInspector.moduleSetting("monitoringXHREnabled").get())
         this._networkAgent.setMonitoringXHREnabled(true);
+    this._initNetworkConditions();
     this._networkAgent.enable();
 
     WebInspector.moduleSetting("cacheDisabled").addChangeListener(this._cacheDisabledSettingChanged, this);
@@ -65,6 +66,18 @@ WebInspector.NetworkManager._MIMETypes = {
     "text/css":                    {"stylesheet": true},
     "text/xsl":                    {"stylesheet": true},
     "text/vtt":                    {"texttrack": true},
+}
+
+/** @typedef {{throughput: number, latency: number}} */
+WebInspector.NetworkManager.Conditions;
+
+/**
+ * @param {!WebInspector.NetworkManager.Conditions} conditions
+ * @return {boolean}
+ */
+WebInspector.NetworkManager.IsThrottlingEnabled = function(conditions)
+{
+    return conditions.throughput >= 0;
 }
 
 WebInspector.NetworkManager.prototype = {
@@ -99,6 +112,46 @@ WebInspector.NetworkManager.prototype = {
     clearBrowserCookies: function()
     {
         this._networkAgent.clearBrowserCookies();
+    },
+
+    _initNetworkConditions: function()
+    {
+        this._networkAgent.canEmulateNetworkConditions(callback.bind(this));
+
+        /**
+         * @this {WebInspector.NetworkManager}
+         */
+        function callback(error, canEmulate)
+        {
+            if (error || !canEmulate)
+                return;
+            WebInspector.moduleSetting("networkConditions").addChangeListener(this._networkConditionsSettingChanged, this);
+            var conditions = WebInspector.moduleSetting("networkConditions").get();
+            if (conditions.throughput < 0)
+                return;
+            this._updateNetworkConditions(conditions);
+        }
+    },
+
+    /**
+     * @param {!WebInspector.NetworkManager.Conditions} conditions
+     */
+    _updateNetworkConditions: function(conditions)
+    {
+        if (conditions.throughput < 0) {
+            this._networkAgent.emulateNetworkConditions(false, 0, 0, 0);
+        } else {
+            var offline = !conditions.throughput && !conditions.latency;
+            this._networkAgent.emulateNetworkConditions(!!offline, conditions.latency, conditions.throughput, conditions.throughput);
+        }
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _networkConditionsSettingChanged: function(event)
+    {
+        this._updateNetworkConditions(/** @type {!WebInspector.NetworkManager.Conditions} */ (event.data));
     },
 
     __proto__: WebInspector.SDKModel.prototype
@@ -596,10 +649,6 @@ WebInspector.MultitargetNetworkManager.prototype = {
             networkAgent.setExtraHTTPHeaders(this._extraHeaders);
         if (typeof this._userAgent !== "undefined")
             networkAgent.setUserAgentOverride(this._userAgent);
-        if (this._networkConditions) {
-            networkAgent.emulateNetworkConditions(this._networkConditions.offline, this._networkConditions.latency,
-                this._networkConditions.throughput, this._networkConditions.throughput);
-        }
     },
 
     /**
@@ -625,23 +674,10 @@ WebInspector.MultitargetNetworkManager.prototype = {
      */
     setUserAgentOverride: function(userAgent)
     {
+        WebInspector.ResourceLoader.targetUserAgent = userAgent;
         this._userAgent = userAgent;
         for (var target of WebInspector.targetManager.targets())
             target.networkAgent().setUserAgentOverride(this._userAgent);
-    },
-
-    /**
-     * @param {boolean} offline
-     * @param {number} latency
-     * @param {number} throughput
-     */
-    emulateNetworkConditions: function(offline, latency, throughput)
-    {
-        this._networkConditions = { offline: offline, latency: latency, throughput: throughput };
-        for (var target of WebInspector.targetManager.targets()) {
-            target.networkAgent().emulateNetworkConditions(this._networkConditions.offline, this._networkConditions.latency,
-                this._networkConditions.throughput, this._networkConditions.throughput);
-        }
     }
 }
 

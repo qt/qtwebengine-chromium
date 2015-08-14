@@ -44,12 +44,16 @@ source_set("renderer") {
     "//media/blink",
     "//mojo/application/public/interfaces",
     "//mojo/environment:chromium",
+    "//mojo/common:url_type_converters",
+    "//mojo/converters/geometry",
     "//net",
     "//skia",
+    "//skia/public",
     "//storage/common",
     "//third_party/icu",
     "//third_party/libjingle",
     "//third_party/mojo/src/mojo/edk/js",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//third_party/mojo/src/mojo/public/js",
     "//third_party/npapi",
     "//third_party/WebKit/public:blink",
@@ -110,8 +114,6 @@ source_set("renderer") {
     sources -= [
       "media/media_stream_audio_level_calculator.cc",
       "media/media_stream_audio_level_calculator.h",
-      "media/media_stream_audio_renderer.cc",
-      "media/media_stream_audio_renderer.h",
       "media/media_stream_center.h",
       "media/media_stream_constraints_util.cc",
       "media/media_stream_constraints_util.h",
@@ -134,6 +136,7 @@ source_set("renderer") {
       "//third_party/webrtc/modules/audio_processing",
       "//third_party/libjingle:libjingle_webrtc",
       "//third_party/libjingle:libpeerconnection",
+      "//third_party/libjingle:libstunprober",
     ]
   } else {
     sources += [
@@ -194,11 +197,16 @@ source_set("renderer") {
     ]
   }
 
-  if (enable_media_mojo_renderer) {
+  if (enable_mojo_media != "none") {
+    deps += [ "//media/mojo/services:proxy" ]
+  }
+
+  if (enable_webvr) {
     sources += [
-      "media/media_renderer_service_provider.cc",
-      "media/media_renderer_service_provider.h",
+      "vr/vr_dispatcher.cc",
+      "vr/vr_dispatcher.h",
+      "vr/vr_type_converters.cc",
+      "vr/vr_type_converters.h",
     ]
-    deps += [ "//media/mojo/services:renderer_proxy" ]
   }
 }

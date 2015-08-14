@@ -6,48 +6,27 @@
 # we ship with.
 
 import("//build/config/ui.gni")
-import("//third_party/mojo/src/mojo/public/mojo_application.gni")
-import("//testing/test.gni")
+import("//mojo/public/mojo_application.gni")
 
-if (is_android) {
-  import("//build/config/android/rules.gni")
-
-  java_library_path = "$target_out_dir/java_library.dex.jar"
-
-  mojo_android_application("core_services") {
-    input_so = "$root_out_dir/lib.stripped/libcore_services.so"
-    input_dex_jar = java_library_path
-  }
-
-  shared_library("native_library") {
-    output_name = "core_services"
-
-    sources = [
-      "android_hooks.cc",
-    ]
-
-    deps = [
-      ":sources",
-      "//base",
-      "//components/resource_provider:jni_headers",
-      "//net",
-      "//third_party/mojo/src/mojo/public/c/system:for_shared_library",
-    ]
-  }
-
-  android_standalone_library("java_library") {
-    dex_path = java_library_path
-
-    deps = [
-      "//components/resource_provider:java_library",
-      "//net/android:net_java",
-    ]
-  }
-} else {
-  mojo_native_application("core_services") {
-    deps = [
-      ":sources",
-    ]
+mojo_native_application("core_services") {
+  deps = [
+    ":sources",
+    "//third_party/icu:icudata",
+    "//third_party/angle:libEGL",
+    "//third_party/angle:libGLESv2",
+  ]
+  if (is_win) {
+    copy("copy_files") {
+      sources = [
+        "$root_out_dir/icudtl.dat",
+        "$root_out_dir/libEGL.dll",
+        "$root_out_dir/libGLESv2.dll",
+      ]
+      outputs = [
+        "$root_out_dir/core_services/{{source_file_part}}",
+      ]
+    }
+    deps += [ ":copy_files" ]
   }
 }
 
@@ -60,25 +39,26 @@ source_set("sources") {
   deps = [
     "//base",
     "//components/clipboard:lib",
-    "//components/surfaces:lib",
-    "//components/resource_provider:lib",
-    "//components/view_manager:view_manager_lib",
-    "//mandoline/ui/browser:kiosk_wm_lib",
-    "//mojo/application",
-    "//mojo/application/public/interfaces",
-    "//mojo/common",
+    "//components/filesystem:lib",
+    "//components/view_manager/surfaces:lib",
+    "//mandoline/ui/browser:lib",
+    "//mojo/application/public/cpp",
     "//mojo/common:tracing_impl",
-    "//mojo/environment:chromium",
-    "//mojo/services/network:lib",
     "//mojo/services/tracing:lib",
-    "//third_party/mojo/src/mojo/public/cpp/bindings:bindings",
-    "//third_party/mojo_services/src/content_handler/public/interfaces",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
   ]
 
   if (!is_android) {
     deps += [
-      "//components/native_viewport:lib",
-      "//components/native_viewport/public/cpp:args",
+      "//components/resource_provider:lib",
+      "//components/view_manager:lib",
+      "//mojo/services/network:lib",
+    ]
+  }
+
+  if (use_aura) {
+    deps += [
+      "//components/view_manager/public/cpp",
       "//mandoline/ui/omnibox:lib",
     ]
   }

@@ -173,6 +173,8 @@
             'examples/objc/AppRTCDemo/ARDMessageResponse.m',
             'examples/objc/AppRTCDemo/ARDMessageResponse+Internal.h',
             'examples/objc/AppRTCDemo/ARDRoomServerClient.h',
+            'examples/objc/AppRTCDemo/ARDSDPUtils.h',
+            'examples/objc/AppRTCDemo/ARDSDPUtils.m',
             'examples/objc/AppRTCDemo/ARDSignalingChannel.h',
             'examples/objc/AppRTCDemo/ARDSignalingMessage.h',
             'examples/objc/AppRTCDemo/ARDSignalingMessage.m',
@@ -220,7 +222,9 @@
           'conditions': [
             ['OS=="ios"', {
               'mac_bundle_resources': [
-                'examples/objc/AppRTCDemo/ios/resources/Default-568h.png',
+                'examples/objc/AppRTCDemo/ios/resources/iPhone5@2x.png',
+                'examples/objc/AppRTCDemo/ios/resources/iPhone6@2x.png',
+                'examples/objc/AppRTCDemo/ios/resources/iPhone6p@3x.png',
                 'examples/objc/AppRTCDemo/ios/resources/Roboto-Regular.ttf',
                 'examples/objc/AppRTCDemo/ios/resources/ic_call_end_black_24dp.png',
                 'examples/objc/AppRTCDemo/ios/resources/ic_call_end_black_24dp@2x.png',
@@ -290,6 +294,9 @@
                 # warning so we can compile successfully.
                 'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'NO',
                 'MACOSX_DEPLOYMENT_TARGET' : '10.8',
+                # SRWebSocket.m uses code with partial availability.
+                # https://code.google.com/p/webrtc/issues/detail?id=4695
+                'WARNING_CFLAGS!': ['-Wpartial-availability'],
               },
             }],
           ],

@@ -23,6 +23,10 @@
       ],
       'sources': [
         # Note: file list duplicated in GN build.
+        'android/bluetooth_jni_registrar.cc',
+        'android/bluetooth_jni_registrar.h',
+        'android/wrappers.cc',
+        'android/wrappers.h',
         'bluetooth_adapter.cc',
         'bluetooth_adapter.h',
         'bluetooth_adapter_android.cc',
@@ -47,14 +51,18 @@
         'bluetooth_audio_sink_chromeos.h',
         'bluetooth_channel_mac.mm',
         'bluetooth_channel_mac.h',
+        'bluetooth_classic_device_mac.mm',
+        'bluetooth_classic_device_mac.h',
         'bluetooth_device.cc',
         'bluetooth_device.h',
         'bluetooth_device_chromeos.cc',
         'bluetooth_device_chromeos.h',
-        'bluetooth_device_mac.h',
         'bluetooth_device_mac.mm',
+        'bluetooth_device_mac.h',
         'bluetooth_device_win.cc',
         'bluetooth_device_win.h',
+        'bluetooth_discovery_filter.cc',
+        'bluetooth_discovery_filter.h',
         'bluetooth_discovery_manager_mac.mm',
         'bluetooth_discovery_manager_mac.h',
         'bluetooth_discovery_session.cc',
@@ -127,11 +135,8 @@
         }],
         ['OS == "android"', {
           'dependencies': [
+            'device_bluetooth_java',
             'device_bluetooth_jni_headers',
-          ],
-          'sources': [
-            'android/bluetooth_jni_registrar.cc',
-            'android/bluetooth_jni_registrar.h',
           ],
         }],
         ['OS=="win"', {
@@ -213,6 +218,8 @@
         'test/mock_bluetooth_adapter.h',
         'test/mock_bluetooth_advertisement.cc',
         'test/mock_bluetooth_advertisement.h',
+        'test/mock_bluetooth_central_manager_mac.mm',
+        'test/mock_bluetooth_central_manager_mac.h',
         'test/mock_bluetooth_device.cc',
         'test/mock_bluetooth_device.h',
         'test/mock_bluetooth_discovery_session.cc',
@@ -239,7 +246,8 @@
           'target_name': 'device_bluetooth_jni_headers',
           'type': 'none',
           'sources': [
-            'android/java/src/org/chromium/device/bluetooth/BluetoothAdapter.java',
+            'android/java/src/org/chromium/device/bluetooth/ChromeBluetoothAdapter.java',
+            'android/java/src/org/chromium/device/bluetooth/Wrappers.java',
           ],
           'variables': {
             'jni_gen_package': 'device_bluetooth',

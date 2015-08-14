@@ -140,14 +140,18 @@
                 # included here, or better yet, build a proper .jar in webrtc
                 # and include it here.
                 'android_java_files': [
+                  'app/webrtc/java/android/org/webrtc/EglBase.java',
+                  'app/webrtc/java/android/org/webrtc/GlRectDrawer.java',
+                  'app/webrtc/java/android/org/webrtc/GlShader.java',
+                  'app/webrtc/java/android/org/webrtc/GlUtil.java',
                   'app/webrtc/java/android/org/webrtc/VideoRendererGui.java',
                   'app/webrtc/java/src/org/webrtc/MediaCodecVideoEncoder.java',
                   'app/webrtc/java/src/org/webrtc/MediaCodecVideoDecoder.java',
                   'app/webrtc/java/src/org/webrtc/VideoCapturerAndroid.java',
-                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/AudioManagerAndroid.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViEAndroidGLES20.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViERenderer.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViESurfaceRenderer.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/BuildInfo.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioManager.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioUtils.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioRecord.java',
@@ -257,6 +261,8 @@
             'app/webrtc/objc/RTCPeerConnection+Internal.h',
             'app/webrtc/objc/RTCPeerConnection.mm',
             'app/webrtc/objc/RTCPeerConnectionFactory.mm',
+            'app/webrtc/objc/RTCPeerConnectionInterface+Internal.h',
+            'app/webrtc/objc/RTCPeerConnectionInterface.mm',
             'app/webrtc/objc/RTCPeerConnectionObserver.h',
             'app/webrtc/objc/RTCPeerConnectionObserver.mm',
             'app/webrtc/objc/RTCSessionDescription+Internal.h',
@@ -286,6 +292,7 @@
             'app/webrtc/objc/public/RTCPeerConnection.h',
             'app/webrtc/objc/public/RTCPeerConnectionDelegate.h',
             'app/webrtc/objc/public/RTCPeerConnectionFactory.h',
+            'app/webrtc/objc/public/RTCPeerConnectionInterface.h',
             'app/webrtc/objc/public/RTCSessionDescription.h',
             'app/webrtc/objc/public/RTCSessionDescriptionDelegate.h',
             'app/webrtc/objc/public/RTCStatsDelegate.h',
@@ -351,6 +358,9 @@
                 # Need to build against 10.7 framework for full ARC support
                 # on OSX.
                 'MACOSX_DEPLOYMENT_TARGET' : '10.7',
+                # RTCVideoTrack.mm uses code with partial availability.
+                # https://code.google.com/p/webrtc/issues/detail?id=4695
+                'WARNING_CFLAGS!': ['-Wpartial-availability'],
               },
               'link_settings': {
                 'xcode_settings': {
@@ -429,8 +439,6 @@
         'media/base/cryptoparams.h',
         'media/base/device.h',
         'media/base/fakescreencapturerfactory.h',
-        'media/base/filemediaengine.cc',
-        'media/base/filemediaengine.h',
         'media/base/hybriddataengine.h',
         'media/base/mediachannel.h',
         'media/base/mediacommon.h',
@@ -470,22 +478,20 @@
         'media/devices/videorendererfactory.h',
         'media/devices/yuvframescapturer.cc',
         'media/devices/yuvframescapturer.h',
-        'media/other/linphonemediaengine.h',
         'media/sctp/sctpdataengine.cc',
         'media/sctp/sctpdataengine.h',
         'media/webrtc/simulcast.cc',
         'media/webrtc/simulcast.h',
         'media/webrtc/webrtccommon.h',
-        'media/webrtc/webrtcexport.h',
         'media/webrtc/webrtcmediaengine.cc',
         'media/webrtc/webrtcmediaengine.h',
         'media/webrtc/webrtcmediaengine.cc',
         'media/webrtc/webrtcpassthroughrender.cc',
         'media/webrtc/webrtcpassthroughrender.h',
         'media/webrtc/webrtcvideocapturer.cc',
+        'media/webrtc/webrtcvideocapturer.h',
         'media/webrtc/webrtcvideocapturerfactory.h',
         'media/webrtc/webrtcvideocapturerfactory.cc',
-        'media/webrtc/webrtcvideocapturer.h',
         'media/webrtc/webrtcvideodecoderfactory.h',
         'media/webrtc/webrtcvideoencoderfactory.h',
         'media/webrtc/webrtcvideoengine2.cc',
@@ -600,6 +606,10 @@
               # deprecated functions and remove this flag.
               '-Wno-deprecated-declarations',
             ],
+            # Disable partial availability warning to prevent errors
+            # in macdevicemanagermm.mm using AVFoundation.
+            # https://code.google.com/p/webrtc/issues/detail?id=4695
+            'WARNING_CFLAGS!': ['-Wpartial-availability'],
           },
           'link_settings': {
             'xcode_settings': {
@@ -666,15 +676,11 @@
         'session/media/currentspeakermonitor.h',
         'session/media/mediamonitor.cc',
         'session/media/mediamonitor.h',
-        'session/media/mediarecorder.cc',
-        'session/media/mediarecorder.h',
         'session/media/mediasession.cc',
         'session/media/mediasession.h',
         'session/media/mediasink.h',
         'session/media/rtcpmuxfilter.cc',
         'session/media/rtcpmuxfilter.h',
-        'session/media/soundclip.cc',
-        'session/media/soundclip.h',
         'session/media/srtpfilter.cc',
         'session/media/srtpfilter.h',
         'session/media/typingmonitor.cc',

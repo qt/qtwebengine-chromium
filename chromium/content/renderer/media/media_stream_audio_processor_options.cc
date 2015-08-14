@@ -35,12 +35,11 @@ const char MediaAudioConstraints::kGoogNoiseSuppression[] =
 const char MediaAudioConstraints::kGoogExperimentalNoiseSuppression[] =
     "googNoiseSuppression2";
 const char MediaAudioConstraints::kGoogBeamforming[] = "googBeamforming";
+const char MediaAudioConstraints::kGoogArrayGeometry[] = "googArrayGeometry";
 const char MediaAudioConstraints::kGoogHighpassFilter[] = "googHighpassFilter";
 const char MediaAudioConstraints::kGoogTypingNoiseDetection[] =
     "googTypingNoiseDetection";
 const char MediaAudioConstraints::kGoogAudioMirroring[] = "googAudioMirroring";
-const char MediaAudioConstraints::kGoogAudioProcessing48kHzSupport[] =
-    "googAudioProcessing48kHzSupport";
 
 namespace {
 
@@ -71,7 +70,6 @@ struct {
   { kMediaStreamAudioDucking, false },
 #endif
   { kMediaStreamAudioHotword, false },
-  { MediaAudioConstraints::kGoogAudioProcessing48kHzSupport, false },
 };
 
 bool IsAudioProcessingConstraint(const std::string& key) {
@@ -157,6 +155,13 @@ bool MediaAudioConstraints::GetProperty(const std::string& key) const {
   if (!GetConstraintValueAsBoolean(constraints_, key, &value))
     value = GetDefaultValueForConstraint(constraints_, key);
 
+  return value;
+}
+
+std::string MediaAudioConstraints::GetPropertyAsString(
+    const std::string& key) const {
+  std::string value;
+  GetConstraintValueAsString(constraints_, key, &value);
   return value;
 }
 
@@ -291,9 +296,9 @@ void EnableEchoCancellation(AudioProcessing* audio_processing) {
   CHECK_EQ(err, 0);
 }
 
-void EnableNoiseSuppression(AudioProcessing* audio_processing) {
-  int err = audio_processing->noise_suppression()->set_level(
-      webrtc::NoiseSuppression::kHigh);
+void EnableNoiseSuppression(AudioProcessing* audio_processing,
+                            webrtc::NoiseSuppression::Level ns_level) {
+  int err = audio_processing->noise_suppression()->set_level(ns_level);
   err |= audio_processing->noise_suppression()->Enable(true);
   CHECK_EQ(err, 0);
 }

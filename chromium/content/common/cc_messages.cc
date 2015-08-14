@@ -6,6 +6,7 @@
 
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
+#include "cc/quads/draw_quad.h"
 #include "cc/quads/largest_draw_quad.h"
 #include "cc/quads/render_pass_id.h"
 #include "content/public/common/common_param_traits.h"
@@ -53,8 +54,9 @@ void ParamTraits<cc::FilterOperation>::Write(
   }
 }
 
-bool ParamTraits<cc::FilterOperation>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<cc::FilterOperation>::Read(const Message* m,
+                                            base::PickleIterator* iter,
+                                            param_type* r) {
   cc::FilterOperation::FilterType type;
   float amount;
   gfx::Point drop_shadow_offset;
@@ -187,8 +189,9 @@ void ParamTraits<cc::FilterOperations>::Write(
   }
 }
 
-bool ParamTraits<cc::FilterOperations>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<cc::FilterOperations>::Read(const Message* m,
+                                             base::PickleIterator* iter,
+                                             param_type* r) {
   size_t count;
   if (!ReadParam(m, iter, &count))
     return false;
@@ -225,8 +228,9 @@ void ParamTraits<skia::RefPtr<SkImageFilter> >::Write(
   }
 }
 
-bool ParamTraits<skia::RefPtr<SkImageFilter> >::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<skia::RefPtr<SkImageFilter>>::Read(const Message* m,
+                                                    base::PickleIterator* iter,
+                                                    param_type* r) {
   const char* data = 0;
   int length = 0;
   if (!iter->ReadData(&data, &length))
@@ -260,8 +264,9 @@ void ParamTraits<gfx::Transform>::Write(
   m->WriteBytes(&column_major_data, sizeof(SkMScalar) * 16);
 }
 
-bool ParamTraits<gfx::Transform>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<gfx::Transform>::Read(const Message* m,
+                                       base::PickleIterator* iter,
+                                       param_type* r) {
   const char* column_major_data;
   if (!iter->ReadBytes(&column_major_data, sizeof(SkMScalar) * 16))
     return false;
@@ -295,6 +300,7 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
+  WriteParam(m, p.referenced_surfaces);
   WriteParam(m, p.quad_list.size());
 
   cc::SharedQuadStateList::ConstIterator shared_quad_state_iter =
@@ -381,12 +387,15 @@ static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
 
   // The largest quad type, verified by a unit test.
   to_reserve += p.quad_list.size() * cc::LargestDrawQuadSize();
+
+  // The actual list of referenced surfaces.
+  to_reserve += p.referenced_surfaces.size() * sizeof(cc::SurfaceId);
   return to_reserve;
 }
 
 template <typename QuadType>
 static cc::DrawQuad* ReadDrawQuad(const Message* m,
-                                  PickleIterator* iter,
+                                  base::PickleIterator* iter,
                                   cc::RenderPass* render_pass) {
   QuadType* quad = render_pass->CreateAndAppendDrawQuad<QuadType>();
   if (!ReadParam(m, iter, quad))
@@ -394,20 +403,22 @@ static cc::DrawQuad* ReadDrawQuad(const Message* m,
   return quad;
 }
 
-bool ParamTraits<cc::RenderPass>::Read(
-    const Message* m, PickleIterator* iter, param_type* p) {
-  cc::RenderPassId id(-1, -1);
+bool ParamTraits<cc::RenderPass>::Read(const Message* m,
+                                       base::PickleIterator* iter,
+                                       param_type* p) {
+  cc::RenderPassId id;
   gfx::Rect output_rect;
   gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
+  std::vector<cc::SurfaceId> referenced_surfaces;
   size_t quad_list_size;
 
-  if (!ReadParam(m, iter, &id) ||
-      !ReadParam(m, iter, &output_rect) ||
+  if (!ReadParam(m, iter, &id) || !ReadParam(m, iter, &output_rect) ||
       !ReadParam(m, iter, &damage_rect) ||
       !ReadParam(m, iter, &transform_to_root_target) ||
       !ReadParam(m, iter, &has_transparent_background) ||
+      !ReadParam(m, iter, &referenced_surfaces) ||
       !ReadParam(m, iter, &quad_list_size))
     return false;
 
@@ -416,10 +427,11 @@ bool ParamTraits<cc::RenderPass>::Read(
             damage_rect,
             transform_to_root_target,
             has_transparent_background);
+  p->referenced_surfaces.swap(referenced_surfaces);
 
   for (size_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
-    PickleIterator temp_iter = *iter;
+    base::PickleIterator temp_iter = *iter;
     if (!ReadParam(m, &temp_iter, &material))
       return false;
 
@@ -507,6 +519,8 @@ void ParamTraits<cc::RenderPass>::Log(
   l->append(", ");
   LogParam(p.has_transparent_background, l);
   l->append(", ");
+  LogParam(p.referenced_surfaces, l);
+  l->append(", ");
 
   l->append("[");
   for (const auto& shared_quad_state : p.shared_quad_state_list) {
@@ -589,7 +603,7 @@ void ParamTraits<cc::CompositorFrame>::Write(Message* m,
 }
 
 bool ParamTraits<cc::CompositorFrame>::Read(const Message* m,
-                                            PickleIterator* iter,
+                                            base::PickleIterator* iter,
                                             param_type* p) {
   if (!ReadParam(m, iter, &p->metadata))
     return false;
@@ -649,7 +663,7 @@ void ParamTraits<cc::CompositorFrameAck>::Write(Message* m,
 }
 
 bool ParamTraits<cc::CompositorFrameAck>::Read(const Message* m,
-                                               PickleIterator* iter,
+                                               base::PickleIterator* iter,
                                                param_type* p) {
   if (!ReadParam(m, iter, &p->resources))
     return false;
@@ -711,7 +725,7 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
 }
 
 bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
-                                               PickleIterator* iter,
+                                               base::PickleIterator* iter,
                                                param_type* p) {
   if (!ReadParam(m, iter, &p->device_scale_factor))
     return false;
@@ -781,7 +795,7 @@ void ParamTraits<cc::SoftwareFrameData>::Write(Message* m,
 }
 
 bool ParamTraits<cc::SoftwareFrameData>::Read(const Message* m,
-                                              PickleIterator* iter,
+                                              base::PickleIterator* iter,
                                               param_type* p) {
   if (!ReadParam(m, iter, &p->id))
     return false;
@@ -806,6 +820,118 @@ void ParamTraits<cc::SoftwareFrameData>::Log(const param_type& p,
   l->append(", ");
   LogParam(p.bitmap_id, l);
   l->append(")");
+}
+
+void ParamTraits<cc::DrawQuad::Resources>::Write(Message* m,
+                                                 const param_type& p) {
+  DCHECK_LE(p.count, cc::DrawQuad::Resources::kMaxResourceIdCount);
+  WriteParam(m, p.count);
+  for (size_t i = 0; i < p.count; ++i)
+    WriteParam(m, p.ids[i]);
+}
+
+bool ParamTraits<cc::DrawQuad::Resources>::Read(const Message* m,
+                                                base::PickleIterator* iter,
+                                                param_type* p) {
+  if (!ReadParam(m, iter, &p->count))
+    return false;
+  if (p->count > cc::DrawQuad::Resources::kMaxResourceIdCount)
+    return false;
+  for (size_t i = 0; i < p->count; ++i) {
+    if (!ReadParam(m, iter, &p->ids[i]))
+      return false;
+  }
+  return true;
+}
+
+void ParamTraits<cc::DrawQuad::Resources>::Log(const param_type& p,
+                                               std::string* l) {
+  l->append("DrawQuad::Resources(");
+  LogParam(p.count, l);
+  l->append(", [");
+  if (p.count > cc::DrawQuad::Resources::kMaxResourceIdCount) {
+    l->append("])");
+    return;
+  }
+
+  for (size_t i = 0; i < p.count; ++i) {
+    LogParam(p.ids[i], l);
+    if (i < (p.count - 1))
+      l->append(", ");
+  }
+  l->append("])");
+}
+
+void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Write(
+    Message* m,
+    const param_type& p) {
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    WriteParam(m, p.size_in_pixels[i]);
+    WriteParam(m, p.allow_overlay[i]);
+  }
+}
+
+bool ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Read(
+    const Message* m,
+    base::PickleIterator* iter,
+    param_type* p) {
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    if (!ReadParam(m, iter, &p->size_in_pixels[i]))
+      return false;
+    if (!ReadParam(m, iter, &p->allow_overlay[i]))
+      return false;
+  }
+  return true;
+}
+
+void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Log(
+    const param_type& p,
+    std::string* l) {
+  l->append("StreamVideoDrawQuad::OverlayResources([");
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    LogParam(p.size_in_pixels[i], l);
+    l->append(", ");
+    LogParam(p.allow_overlay[i], l);
+    if (i < (cc::DrawQuad::Resources::kMaxResourceIdCount - 1))
+      l->append(", ");
+  }
+  l->append("])");
+}
+
+void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Write(
+    Message* m,
+    const param_type& p) {
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    WriteParam(m, p.size_in_pixels[i]);
+    WriteParam(m, p.allow_overlay[i]);
+  }
+}
+
+bool ParamTraits<cc::TextureDrawQuad::OverlayResources>::Read(
+    const Message* m,
+    base::PickleIterator* iter,
+    param_type* p) {
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    if (!ReadParam(m, iter, &p->size_in_pixels[i]))
+      return false;
+    if (!ReadParam(m, iter, &p->allow_overlay[i]))
+      return false;
+  }
+  return true;
+}
+
+void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Log(
+    const param_type& p,
+    std::string* l) {
+  l->append("TextureDrawQuad::OverlayResources([");
+  for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
+    LogParam(p.size_in_pixels[i], l);
+    l->append(", ");
+    LogParam(p.allow_overlay[i], l);
+    if (i < (cc::DrawQuad::Resources::kMaxResourceIdCount - 1))
+      l->append(", ");
+  }
+  l->append("])");
 }
 
 }  // namespace IPC

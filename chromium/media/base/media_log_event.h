@@ -32,11 +32,6 @@ struct MediaLogEvent {
     WEBMEDIAPLAYER_CREATED,
     WEBMEDIAPLAYER_DESTROYED,
 
-    // A Pipeline is being created or destroyed.
-    // params: none.
-    PIPELINE_CREATED,
-    PIPELINE_DESTROYED,
-
     // A media player is loading a resource.
     // params: "url": <URL of the resource>.
     LOAD,
@@ -82,7 +77,7 @@ struct MediaLogEvent {
     //         "buffer_end": <last buffered byte>.
     BUFFERED_EXTENTS_CHANGED,
 
-    // Error log reported by media code such as details of an MSE parse error.
+    // Error log reported by media code such as reasons of playback error.
     MEDIA_ERROR_LOG_ENTRY,
     // params: "error": Error string describing the error detected.
 

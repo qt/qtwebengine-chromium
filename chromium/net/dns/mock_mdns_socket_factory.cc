@@ -4,6 +4,9 @@
 
 #include <algorithm>
 
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/dns/mock_mdns_socket_factory.h"
 
@@ -50,7 +53,8 @@ int MockMDnsDatagramServerSocket::HandleRecvLater(
     IOBuffer* buffer, int size, IPEndPoint* address,
     const CompletionCallback& callback) {
   int rv = HandleRecvNow(buffer, size, address, callback);
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, rv));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                base::Bind(callback, rv));
   return ERR_IO_PENDING;
 }
 
@@ -82,7 +86,7 @@ void MockMDnsSocketFactory::CreateSocket(
           this,
           &MockMDnsSocketFactory::RecvFromInternal));
 
-  sockets->push_back(new_socket.release());
+  sockets->push_back(new_socket.Pass());
 }
 
 void MockMDnsSocketFactory::SimulateReceive(const uint8* packet, int size) {

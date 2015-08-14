@@ -59,6 +59,20 @@
         'beamformer/nonlinear_beamformer_test.cc',
       ],
     }, # nonlinear_beamformer_test
+    {
+      'target_name': 'intelligibility_proc',
+      'type': 'executable',
+      'dependencies': [
+        'audioproc_test_utils',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(webrtc_root)/modules/modules.gyp:audio_processing',
+        '<(webrtc_root)/test/test.gyp:test_support',
+      ],
+      'sources': [
+        'intelligibility/intelligibility_proc.cc',
+      ],
+    }, # intelligibility_proc
   ],
   'conditions': [
     ['enable_protobuf==1', {
@@ -97,6 +111,7 @@
             'audioproc_protobuf_utils',
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
           'sources': [ 'test/process_test.cc', ],
@@ -109,6 +124,8 @@
             'audioproc_debug_proto',
             'audioproc_test_utils',
             'audioproc_protobuf_utils',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
+            '<(webrtc_root)/test/test.gyp:test_support',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [ 'test/audioproc_float.cc', ],

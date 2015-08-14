@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 
-#include "core/style/ComputedStyle.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "third_party/skia/include/core/SkPaint.h"
 
@@ -119,7 +119,7 @@ static SVGPaintDescription requestPaint(const LayoutObject& object, const Comput
         return SVGPaintDescription(color);
     }
 
-    LayoutSVGResourcePaintServer* uriResource = 0;
+    LayoutSVGResourcePaintServer* uriResource = nullptr;
     if (SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(&object))
         uriResource = applyToFill ? resources->fill() : resources->stroke();
 

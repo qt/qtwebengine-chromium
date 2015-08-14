@@ -76,7 +76,7 @@ public:
     static StringImpl* find(const StringImpl*);
 
     operator const String&() const { return m_string; }
-    const String& string() const { return m_string; };
+    const String& string() const { return m_string; }
 
     StringImpl* impl() const { return m_string.impl(); }
 
@@ -160,10 +160,10 @@ private:
     String m_string;
 
     static PassRefPtr<StringImpl> add(const LChar*);
-    ALWAYS_INLINE static PassRefPtr<StringImpl> add(const char* s) { return add(reinterpret_cast<const LChar*>(s)); };
+    ALWAYS_INLINE static PassRefPtr<StringImpl> add(const char* s) { return add(reinterpret_cast<const LChar*>(s)); }
     static PassRefPtr<StringImpl> add(const LChar*, unsigned length);
     static PassRefPtr<StringImpl> add(const UChar*, unsigned length);
-    ALWAYS_INLINE static PassRefPtr<StringImpl> add(const char* s, unsigned length) { return add(reinterpret_cast<const LChar*>(s), length); };
+    ALWAYS_INLINE static PassRefPtr<StringImpl> add(const char* s, unsigned length) { return add(reinterpret_cast<const LChar*>(s), length); }
     static PassRefPtr<StringImpl> add(const UChar*, unsigned length, unsigned existingHash);
     static PassRefPtr<StringImpl> add(const UChar*);
     static PassRefPtr<StringImpl> add(StringImpl*, unsigned offset, unsigned length);
@@ -188,6 +188,7 @@ inline bool operator==(const AtomicString& a, const char* b) { return WTF::equal
 inline bool operator==(const AtomicString& a, const Vector<UChar>& b) { return a.impl() && equal(a.impl(), b.data(), b.size()); }
 inline bool operator==(const AtomicString& a, const String& b) { return equal(a.impl(), b.impl()); }
 inline bool operator==(const LChar* a, const AtomicString& b) { return b == a; }
+inline bool operator==(const char* a, const AtomicString& b) { return b == a; }
 inline bool operator==(const String& a, const AtomicString& b) { return equal(a.impl(), b.impl()); }
 inline bool operator==(const Vector<UChar>& a, const AtomicString& b) { return b == a; }
 
@@ -197,6 +198,7 @@ inline bool operator!=(const AtomicString& a, const char* b) { return !(a == b);
 inline bool operator!=(const AtomicString& a, const String& b) { return !equal(a.impl(), b.impl()); }
 inline bool operator!=(const AtomicString& a, const Vector<UChar>& b) { return !(a == b); }
 inline bool operator!=(const LChar* a, const AtomicString& b) { return !(b == a); }
+inline bool operator!=(const char* a, const AtomicString& b) { return !(b == a); }
 inline bool operator!=(const String& a, const AtomicString& b) { return !equal(a.impl(), b.impl()); }
 inline bool operator!=(const Vector<UChar>& a, const AtomicString& b) { return !(a == b); }
 

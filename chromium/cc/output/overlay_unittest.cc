@@ -18,6 +18,7 @@
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
@@ -77,11 +78,9 @@ void SingleOverlayValidator::CheckOverlaySupport(
 template <typename OverlayStrategyType>
 class SingleOverlayProcessor : public OverlayProcessor {
  public:
-  SingleOverlayProcessor(OutputSurface* surface,
-                         ResourceProvider* resource_provider)
-      : OverlayProcessor(surface, resource_provider) {
+  explicit SingleOverlayProcessor(OutputSurface* surface)
+      : OverlayProcessor(surface) {
     EXPECT_EQ(surface, surface_);
-    EXPECT_EQ(resource_provider, resource_provider_);
   }
 
   // Virtual to allow testing different strategies.
@@ -89,22 +88,20 @@ class SingleOverlayProcessor : public OverlayProcessor {
     OverlayCandidateValidator* candidates =
         surface_->GetOverlayCandidateValidator();
     ASSERT_TRUE(candidates != NULL);
-    strategies_.push_back(scoped_ptr<Strategy>(
-        new OverlayStrategyType(candidates, resource_provider_)));
+    strategies_.push_back(
+        scoped_ptr<Strategy>(new OverlayStrategyType(candidates)));
   }
 };
 
 class DefaultOverlayProcessor : public OverlayProcessor {
  public:
-  DefaultOverlayProcessor(OutputSurface* surface,
-                          ResourceProvider* resource_provider);
+  explicit DefaultOverlayProcessor(OutputSurface* surface);
   size_t GetStrategyCount();
 };
 
-DefaultOverlayProcessor::DefaultOverlayProcessor(
-    OutputSurface* surface,
-    ResourceProvider* resource_provider)
-    : OverlayProcessor(surface, resource_provider) {}
+DefaultOverlayProcessor::DefaultOverlayProcessor(OutputSurface* surface)
+    : OverlayProcessor(surface) {
+}
 
 size_t DefaultOverlayProcessor::GetStrategyCount() {
   return strategies_.size();
@@ -152,12 +149,10 @@ scoped_ptr<RenderPass> CreateRenderPass() {
   return pass.Pass();
 }
 
-ResourceProvider::ResourceId CreateResource(
-    ResourceProvider* resource_provider) {
+ResourceId CreateResource(ResourceProvider* resource_provider) {
   unsigned sync_point = 0;
   TextureMailbox mailbox =
       TextureMailbox(gpu::Mailbox::Generate(), GL_TEXTURE_2D, sync_point);
-  mailbox.set_allow_overlay(true);
   scoped_ptr<SingleReleaseCallbackImpl> release_callback =
       SingleReleaseCallbackImpl::Create(base::Bind(&MailboxReleased));
 
@@ -180,11 +175,13 @@ TextureDrawQuad* CreateCandidateQuadAt(ResourceProvider* resource_provider,
                                        const SharedQuadState* shared_quad_state,
                                        RenderPass* render_pass,
                                        const gfx::Rect& rect) {
-  ResourceProvider::ResourceId resource_id = CreateResource(resource_provider);
+  ResourceId resource_id = CreateResource(resource_provider);
   bool premultiplied_alpha = false;
   bool flipped = false;
   bool nearest_neighbor = false;
   float vertex_opacity[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  gfx::Size resource_size_in_pixels = gfx::Size(64, 64);
+  bool allow_overlay = true;
 
   TextureDrawQuad* overlay_quad =
       render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
@@ -200,6 +197,8 @@ TextureDrawQuad* CreateCandidateQuadAt(ResourceProvider* resource_provider,
                        vertex_opacity,
                        flipped,
                        nearest_neighbor);
+  overlay_quad->set_allow_overlay(allow_overlay);
+  overlay_quad->set_resource_size_in_pixels(resource_size_in_pixels);
 
   return overlay_quad;
 }
@@ -210,12 +209,14 @@ StreamVideoDrawQuad* CreateCandidateVideoQuadAt(
     RenderPass* render_pass,
     const gfx::Rect& rect,
     const gfx::Transform& transform) {
-  ResourceProvider::ResourceId resource_id = CreateResource(resource_provider);
+  ResourceId resource_id = CreateResource(resource_provider);
+  gfx::Size resource_size_in_pixels = gfx::Size(64, 64);
+  bool allow_overlay = true;
 
   StreamVideoDrawQuad* overlay_quad =
       render_pass->CreateAndAppendDrawQuad<StreamVideoDrawQuad>();
   overlay_quad->SetNew(shared_quad_state, rect, rect, rect, resource_id,
-                       transform);
+                       resource_size_in_pixels, allow_overlay, transform);
 
   return overlay_quad;
 }
@@ -277,8 +278,8 @@ static void CompareRenderPassLists(const RenderPassList& expected_list,
          exp_iter != expected->quad_list.cend();
          ++exp_iter, ++act_iter) {
       EXPECT_EQ(exp_iter->rect.ToString(), act_iter->rect.ToString());
-      EXPECT_EQ(exp_iter->shared_quad_state->content_bounds.ToString(),
-                act_iter->shared_quad_state->content_bounds.ToString());
+      EXPECT_EQ(exp_iter->shared_quad_state->quad_layer_bounds.ToString(),
+                act_iter->shared_quad_state->quad_layer_bounds.ToString());
     }
   }
 }
@@ -302,11 +303,11 @@ TEST(OverlayTest, OverlaysProcessorHasStrategy) {
 
   scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
       new TestSharedBitmapManager());
-  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
-      &output_surface, shared_bitmap_manager.get(), NULL, NULL, 0, false, 1));
+  scoped_ptr<ResourceProvider> resource_provider = FakeResourceProvider::Create(
+      &output_surface, shared_bitmap_manager.get());
 
   scoped_ptr<DefaultOverlayProcessor> overlay_processor(
-      new DefaultOverlayProcessor(&output_surface, resource_provider.get()));
+      new DefaultOverlayProcessor(&output_surface));
   overlay_processor->Initialize();
   EXPECT_GE(2U, overlay_processor->GetStrategyCount());
 }
@@ -322,16 +323,11 @@ class OverlayTest : public testing::Test {
     EXPECT_TRUE(output_surface_->GetOverlayCandidateValidator() != NULL);
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
-                                                  shared_bitmap_manager_.get(),
-                                                  NULL,
-                                                  NULL,
-                                                  0,
-                                                  false,
-                                                  1);
+    resource_provider_ = FakeResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get());
 
-    overlay_processor_.reset(new SingleOverlayProcessor<OverlayStrategyType>(
-        output_surface_.get(), resource_provider_.get()));
+    overlay_processor_.reset(
+        new SingleOverlayProcessor<OverlayStrategyType>(output_surface_.get()));
     overlay_processor_->Initialize();
   }
 
@@ -352,7 +348,7 @@ TEST_F(SingleOverlayOnTopTest, SuccessfullOverlay) {
       CreateFullscreenCandidateQuad(resource_provider_.get(),
                                     pass->shared_quad_state_list.back(),
                                     pass.get());
-  unsigned original_resource_id = original_quad->resource_id;
+  unsigned original_resource_id = original_quad->resource_id();
 
   // Add something behind it.
   CreateFullscreenCheckeredQuad(resource_provider_.get(),
@@ -550,7 +546,7 @@ TEST_F(SingleOverlayOnTopTest, RejectNonAxisAlignedTransform) {
                                 pass->shared_quad_state_list.back(),
                                 pass.get());
   pass->shared_quad_state_list.back()
-      ->content_to_target_transform.RotateAboutXAxis(45.f);
+      ->quad_to_target_transform.RotateAboutXAxis(45.f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -567,8 +563,8 @@ TEST_F(SingleOverlayOnTopTest, AllowVerticalFlip) {
   scoped_ptr<RenderPass> pass = CreateRenderPass();
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
-  pass->shared_quad_state_list.back()->content_to_target_transform.Scale(2.0f,
-                                                                         -1.0f);
+  pass->shared_quad_state_list.back()->quad_to_target_transform.Scale(2.0f,
+                                                                      -1.0f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -587,8 +583,8 @@ TEST_F(SingleOverlayOnTopTest, AllowHorizontalFlip) {
   scoped_ptr<RenderPass> pass = CreateRenderPass();
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
-  pass->shared_quad_state_list.back()->content_to_target_transform.Scale(-1.0f,
-                                                                         2.0f);
+  pass->shared_quad_state_list.back()->quad_to_target_transform.Scale(-1.0f,
+                                                                      2.0f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -606,8 +602,8 @@ TEST_F(SingleOverlayOnTopTest, AllowPositiveScaleTransform) {
   scoped_ptr<RenderPass> pass = CreateRenderPass();
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
-  pass->shared_quad_state_list.back()->content_to_target_transform.Scale(2.0f,
-                                                                         1.0f);
+  pass->shared_quad_state_list.back()->quad_to_target_transform.Scale(2.0f,
+                                                                      1.0f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -624,7 +620,7 @@ TEST_F(SingleOverlayOnTopTest, Allow90DegreeRotation) {
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
   pass->shared_quad_state_list.back()
-      ->content_to_target_transform.RotateAboutZAxis(90.f);
+      ->quad_to_target_transform.RotateAboutZAxis(90.f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -642,7 +638,7 @@ TEST_F(SingleOverlayOnTopTest, Allow180DegreeRotation) {
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
   pass->shared_quad_state_list.back()
-      ->content_to_target_transform.RotateAboutZAxis(180.f);
+      ->quad_to_target_transform.RotateAboutZAxis(180.f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -660,7 +656,7 @@ TEST_F(SingleOverlayOnTopTest, Allow270DegreeRotation) {
   CreateCandidateQuadAt(resource_provider_.get(),
                         pass->shared_quad_state_list.back(), pass.get(), rect);
   pass->shared_quad_state_list.back()
-      ->content_to_target_transform.RotateAboutZAxis(270.f);
+      ->quad_to_target_transform.RotateAboutZAxis(270.f);
 
   RenderPassList pass_list;
   pass_list.push_back(pass.Pass());
@@ -961,8 +957,8 @@ class GLRendererWithOverlaysTest : public testing::Test {
     provider_ = TestContextProvider::Create();
     output_surface_.reset(new OverlayOutputSurface(provider_));
     CHECK(output_surface_->BindToClient(&output_surface_client_));
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), NULL, NULL, NULL, 0, false, 1);
+    resource_provider_ =
+        FakeResourceProvider::Create(output_surface_.get(), nullptr);
 
     provider_->support()->SetScheduleOverlayPlaneCallback(base::Bind(
         &MockOverlayScheduler::Schedule, base::Unretained(&scheduler_)));
@@ -1104,10 +1100,8 @@ TEST_F(GLRendererWithOverlaysTest, ResourcesExportedAndReturned) {
   Init(use_validator);
   renderer_->set_expect_overlays(true);
 
-  ResourceProvider::ResourceId resource1 =
-      CreateResource(resource_provider_.get());
-  ResourceProvider::ResourceId resource2 =
-      CreateResource(resource_provider_.get());
+  ResourceId resource1 = CreateResource(resource_provider_.get());
+  ResourceId resource2 = CreateResource(resource_provider_.get());
 
   scoped_ptr<RenderPass> pass = CreateRenderPass();
   RenderPassList pass_list;

@@ -8,6 +8,8 @@
 #include "base/callback.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -43,6 +45,13 @@ const char kHttpBr[] = "\r\n";
 
 // Mime type of multipart mixed.
 const char kMultipartMixedMimeTypePrefix[] = "multipart/mixed; boundary=";
+
+// UMA names.
+const char kUMADriveBatchUploadResponseCode[] = "Drive.BatchUploadResponseCode";
+const char kUMADriveTotalFileCountInBatchUpload[] =
+    "Drive.TotalFileCountInBatchUpload";
+const char kUMADriveTotalFileSizeInBatchUpload[] =
+    "Drive.TotalFileSizeInBatchUpload";
 
 // Parses the JSON value to FileResource instance and runs |callback| on the
 // UI thread once parsing is done.
@@ -130,7 +139,7 @@ std::string CreateMultipartUploadMetadataJson(
 
   AttachProperties(properties, &root);
   std::string json_string;
-  base::JSONWriter::Write(&root, &json_string);
+  base::JSONWriter::Write(root, &json_string);
   return json_string;
 }
 
@@ -417,7 +426,7 @@ bool FilesInsertRequest::GetContentData(std::string* upload_content_type,
     root.SetString("title", title_);
 
   AttachProperties(properties_, &root);
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
 
   DVLOG(1) << "FilesInsert data: " << *upload_content_type << ", ["
            << *upload_content << "]";
@@ -491,7 +500,7 @@ bool FilesPatchRequest::GetContentData(std::string* upload_content_type,
   }
 
   AttachProperties(properties_, &root);
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
 
   DVLOG(1) << "FilesPatch data: " << *upload_content_type << ", ["
            << *upload_content << "]";
@@ -545,7 +554,7 @@ bool FilesCopyRequest::GetContentData(std::string* upload_content_type,
   if (!title_.empty())
     root.SetString("title", title_);
 
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
   DVLOG(1) << "FilesCopy data: " << *upload_content_type << ", ["
            << *upload_content << "]";
   return true;
@@ -755,7 +764,7 @@ bool ChildrenInsertRequest::GetContentData(std::string* upload_content_type,
   base::DictionaryValue root;
   root.SetString("id", id_);
 
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
   DVLOG(1) << "InsertResource data: " << *upload_content_type << ", ["
            << *upload_content << "]";
   return true;
@@ -834,7 +843,7 @@ bool InitiateUploadNewFileRequest::GetContentData(
   }
 
   AttachProperties(properties_, &root);
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
 
   DVLOG(1) << "InitiateUploadNewFile data: " << *upload_content_type << ", ["
            << *upload_content << "]";
@@ -906,7 +915,7 @@ bool InitiateUploadExistingFileRequest::GetContentData(
     return false;
 
   *upload_content_type = util::kContentTypeApplicationJson;
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
   DVLOG(1) << "InitiateUploadExistingFile data: " << *upload_content_type
            << ", [" << *upload_content << "]";
   return true;
@@ -1158,7 +1167,7 @@ bool PermissionsInsertRequest::GetContentData(std::string* upload_content_type,
       break;
   }
   root.SetString("value", value_);
-  base::JSONWriter::Write(&root, upload_content);
+  base::JSONWriter::Write(root, upload_content);
   return true;
 }
 
@@ -1314,6 +1323,7 @@ void BatchUploadRequest::MayCompletePrepare() {
   }
 
   // Build multipart body here.
+  int64 total_size = 0;
   std::vector<ContentTypeAndData> parts;
   for (auto& child : child_requests_) {
     std::string type;
@@ -1341,12 +1351,17 @@ void BatchUploadRequest::MayCompletePrepare() {
 
     child->data_offset = header.size();
     child->data_size = data.size();
+    total_size += data.size();
 
     parts.push_back(ContentTypeAndData());
     parts.back().type = kHttpContentType;
     parts.back().data = header;
     parts.back().data.append(data);
   }
+
+  UMA_HISTOGRAM_COUNTS_100(kUMADriveTotalFileCountInBatchUpload, parts.size());
+  UMA_HISTOGRAM_MEMORY_KB(kUMADriveTotalFileSizeInBatchUpload,
+                          total_size / 1024);
 
   std::vector<uint64> part_data_offset;
   GenerateMultipartBody(MULTIPART_MIXED, boundary_, parts, &upload_content_,
@@ -1385,6 +1400,8 @@ std::vector<std::string> BatchUploadRequest::GetExtraRequestHeaders() const {
 }
 
 void BatchUploadRequest::ProcessURLFetchResults(const net::URLFetcher* source) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY(kUMADriveBatchUploadResponseCode, GetErrorCode());
+
   if (!IsSuccessfulDriveApiErrorCode(GetErrorCode())) {
     RunCallbackOnPrematureFailure(GetErrorCode());
     sender_->RequestFinished(this);

@@ -44,7 +44,6 @@ public:
     DECLARE_NODE_FACTORY(SVGFilterElement);
     DECLARE_VIRTUAL_TRACE();
 
-    void setFilterRes(unsigned x, unsigned y);
     void addClient(Node*);
     void removeClient(Node*);
 
@@ -54,20 +53,18 @@ public:
     SVGAnimatedLength* height() const { return m_height.get(); }
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* filterUnits() { return m_filterUnits.get(); }
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* primitiveUnits() { return m_primitiveUnits.get(); }
-    SVGAnimatedInteger* filterResX() { return m_filterRes->firstInteger(); }
-    SVGAnimatedInteger* filterResY() { return m_filterRes->secondInteger(); }
 
 private:
     explicit SVGFilterElement(Document&);
 
-    virtual bool needsPendingResourceHandling() const override { return false; }
+    bool needsPendingResourceHandling() const override { return false; }
 
-    virtual void svgAttributeChanged(const QualifiedName&) override;
-    virtual void childrenChanged(const ChildrenChange&) override;
+    void svgAttributeChanged(const QualifiedName&) override;
+    void childrenChanged(const ChildrenChange&) override;
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual bool selfHasRelativeLengths() const override;
+    bool selfHasRelativeLengths() const override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_x;
     RefPtrWillBeMember<SVGAnimatedLength> m_y;
@@ -75,7 +72,6 @@ private:
     RefPtrWillBeMember<SVGAnimatedLength> m_height;
     RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_filterUnits;
     RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_primitiveUnits;
-    RefPtrWillBeMember<SVGAnimatedIntegerOptionalInteger> m_filterRes;
 
     WillBeHeapHashSet<RefPtrWillBeMember<Node>> m_clientsToAdd;
 };

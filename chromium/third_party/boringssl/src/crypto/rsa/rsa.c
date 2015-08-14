@@ -114,6 +114,18 @@ RSA *RSA_new_method(const ENGINE *engine) {
   return rsa;
 }
 
+void RSA_additional_prime_free(RSA_additional_prime *ap) {
+  if (ap == NULL) {
+    return;
+  }
+
+  BN_clear_free(ap->prime);
+  BN_clear_free(ap->exp);
+  BN_clear_free(ap->coeff);
+  BN_clear_free(ap->r);
+  OPENSSL_free(ap);
+}
+
 void RSA_free(RSA *rsa) {
   unsigned u;
 
@@ -121,7 +133,7 @@ void RSA_free(RSA *rsa) {
     return;
   }
 
-  if (CRYPTO_add(&rsa->references, -1, CRYPTO_LOCK_RSA) > 0) {
+  if (!CRYPTO_refcount_dec_and_test_zero(&rsa->references)) {
     return;
   }
 
@@ -145,12 +157,16 @@ void RSA_free(RSA *rsa) {
   }
   OPENSSL_free(rsa->blindings);
   OPENSSL_free(rsa->blindings_inuse);
+  if (rsa->additional_primes != NULL) {
+    sk_RSA_additional_prime_pop_free(rsa->additional_primes,
+                                     RSA_additional_prime_free);
+  }
   CRYPTO_MUTEX_cleanup(&rsa->lock);
   OPENSSL_free(rsa);
 }
 
 int RSA_up_ref(RSA *rsa) {
-  CRYPTO_add(&rsa->references, 1, CRYPTO_LOCK_RSA);
+  CRYPTO_refcount_inc(&rsa->references);
   return 1;
 }
 
@@ -160,6 +176,16 @@ int RSA_generate_key_ex(RSA *rsa, int bits, BIGNUM *e_value, BN_GENCB *cb) {
   }
 
   return RSA_default_method.keygen(rsa, bits, e_value, cb);
+}
+
+int RSA_generate_multi_prime_key(RSA *rsa, int bits, int num_primes,
+                                 BIGNUM *e_value, BN_GENCB *cb) {
+  if (rsa->meth->multi_prime_keygen) {
+    return rsa->meth->multi_prime_keygen(rsa, bits, num_primes, e_value, cb);
+  }
+
+  return RSA_default_method.multi_prime_keygen(rsa, bits, num_primes, e_value,
+                                               cb);
 }
 
 int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
@@ -342,20 +368,16 @@ static const struct pkcs1_sig_prefix kPKCS1SigPrefixes[] = {
     },
 };
 
-/* TODO(fork): mostly new code, needs careful review. */
-
-/* pkcs1_prefixed_msg builds a PKCS#1, prefixed version of |msg| for the given
- * hash function and sets |out_msg| to point to it. On successful return,
- * |*out_msg| may be allocated memory and, if so, |*is_alloced| will be 1. */
-static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
-                              int *is_alloced, int hash_nid, const uint8_t *msg,
-                              size_t msg_len) {
+int RSA_add_pkcs1_prefix(uint8_t **out_msg, size_t *out_msg_len,
+                         int *is_alloced, int hash_nid, const uint8_t *msg,
+                         size_t msg_len) {
   unsigned i;
 
   if (hash_nid == NID_md5_sha1) {
     /* Special case: SSL signature, just check the length. */
     if (msg_len != SSL_SIG_LENGTH) {
-      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_INVALID_MESSAGE_LENGTH);
+      OPENSSL_PUT_ERROR(RSA, RSA_add_pkcs1_prefix,
+                        RSA_R_INVALID_MESSAGE_LENGTH);
       return 0;
     }
 
@@ -378,13 +400,13 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
 
     signed_msg_len = prefix_len + msg_len;
     if (signed_msg_len < prefix_len) {
-      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_TOO_LONG);
+      OPENSSL_PUT_ERROR(RSA, RSA_add_pkcs1_prefix, RSA_R_TOO_LONG);
       return 0;
     }
 
     signed_msg = OPENSSL_malloc(signed_msg_len);
     if (!signed_msg) {
-      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, ERR_R_MALLOC_FAILURE);
+      OPENSSL_PUT_ERROR(RSA, RSA_add_pkcs1_prefix, ERR_R_MALLOC_FAILURE);
       return 0;
     }
 
@@ -398,7 +420,7 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
     return 1;
   }
 
-  OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_UNKNOWN_ALGORITHM_TYPE);
+  OPENSSL_PUT_ERROR(RSA, RSA_add_pkcs1_prefix, RSA_R_UNKNOWN_ALGORITHM_TYPE);
   return 0;
 }
 
@@ -415,8 +437,8 @@ int RSA_sign(int hash_nid, const uint8_t *in, unsigned in_len, uint8_t *out,
     return rsa->meth->sign(hash_nid, in, in_len, out, out_len, rsa);
   }
 
-  if (!pkcs1_prefixed_msg(&signed_msg, &signed_msg_len, &signed_msg_is_alloced,
-                          hash_nid, in, in_len)) {
+  if (!RSA_add_pkcs1_prefix(&signed_msg, &signed_msg_len,
+                            &signed_msg_is_alloced, hash_nid, in, in_len)) {
     return 0;
   }
 
@@ -473,8 +495,8 @@ int RSA_verify(int hash_nid, const uint8_t *msg, size_t msg_len,
     goto out;
   }
 
-  if (!pkcs1_prefixed_msg(&signed_msg, &signed_msg_len, &signed_msg_is_alloced,
-                          hash_nid, msg, msg_len)) {
+  if (!RSA_add_pkcs1_prefix(&signed_msg, &signed_msg_len,
+                            &signed_msg_is_alloced, hash_nid, msg, msg_len)) {
     goto out;
   }
 
@@ -540,15 +562,37 @@ int RSA_check_key(const RSA *key) {
   BN_init(&dmq1);
   BN_init(&iqmp);
 
-  if (/* n = pq */
-      !BN_mul(&n, key->p, key->q, ctx) ||
-      /* lcm = lcm(p-1, q-1) */
+  if (!BN_mul(&n, key->p, key->q, ctx) ||
+      /* lcm = lcm(prime-1, for all primes) */
       !BN_sub(&pm1, key->p, BN_value_one()) ||
       !BN_sub(&qm1, key->q, BN_value_one()) ||
       !BN_mul(&lcm, &pm1, &qm1, ctx) ||
+      !BN_gcd(&gcd, &pm1, &qm1, ctx)) {
+    OPENSSL_PUT_ERROR(RSA, RSA_check_key, ERR_LIB_BN);
+    goto out;
+  }
+
+  size_t num_additional_primes = 0;
+  if (key->additional_primes != NULL) {
+    num_additional_primes = sk_RSA_additional_prime_num(key->additional_primes);
+  }
+
+  size_t i;
+  for (i = 0; i < num_additional_primes; i++) {
+    const RSA_additional_prime *ap =
+        sk_RSA_additional_prime_value(key->additional_primes, i);
+    if (!BN_mul(&n, &n, ap->prime, ctx) ||
+        !BN_sub(&pm1, ap->prime, BN_value_one()) ||
+        !BN_mul(&lcm, &lcm, &pm1, ctx) ||
+        !BN_gcd(&gcd, &gcd, &pm1, ctx)) {
+      OPENSSL_PUT_ERROR(RSA, RSA_check_key, ERR_LIB_BN);
+      goto out;
+    }
+  }
+
+  if (!BN_div(&lcm, NULL, &lcm, &gcd, ctx) ||
       !BN_gcd(&gcd, &pm1, &qm1, ctx) ||
-      !BN_div(&lcm, NULL, &lcm, &gcd, ctx) ||
-      /* de = d*e mod lcm(p-1, q-1) */
+      /* de = d*e mod lcm(prime-1, for all primes). */
       !BN_mod_mul(&de, key->d, key->e, &lcm, ctx)) {
     OPENSSL_PUT_ERROR(RSA, RSA_check_key, ERR_LIB_BN);
     goto out;
@@ -571,7 +615,7 @@ int RSA_check_key(const RSA *key) {
     goto out;
   }
 
-  if (has_crt_values) {
+  if (has_crt_values && num_additional_primes == 0) {
     if (/* dmp1 = d mod (p-1) */
         !BN_mod(&dmp1, key->d, &pm1, ctx) ||
         /* dmq1 = d mod (q-1) */
@@ -620,6 +664,12 @@ int RSA_recover_crt_params(RSA *rsa) {
   if (rsa->p || rsa->q || rsa->dmp1 || rsa->dmq1 || rsa->iqmp) {
     OPENSSL_PUT_ERROR(RSA, RSA_recover_crt_params,
                       RSA_R_CRT_PARAMS_ALREADY_GIVEN);
+    return 0;
+  }
+
+  if (rsa->additional_primes != NULL) {
+    OPENSSL_PUT_ERROR(RSA, RSA_recover_crt_params,
+                      RSA_R_CANNOT_RECOVER_MULTI_PRIME_KEY);
     return 0;
   }
 

@@ -10,6 +10,9 @@
 #include "SkReadBuffer.h"
 #include "SkWriteBuffer.h"
 #include "SkRegion.h"
+#if SK_SUPPORT_GPU
+#include "GrDrawContext.h"
+#endif
 
 class SK_API SkAlphaThresholdFilterImpl : public SkImageFilter {
 public:
@@ -22,11 +25,11 @@ public:
 protected:
     void flatten(SkWriteBuffer&) const override;
 
-    virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
-                               SkBitmap* result, SkIPoint* offset) const override;
+    bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
+                       SkBitmap* result, SkIPoint* offset) const override;
 #if SK_SUPPORT_GPU
-    virtual bool asFragmentProcessor(GrFragmentProcessor**, GrTexture*, const SkMatrix&,
-                                     const SkIRect& bounds) const override;
+    bool asFragmentProcessor(GrFragmentProcessor**, GrProcessorDataManager*, GrTexture*,
+                             const SkMatrix&, const SkIRect& bounds) const override;
 #endif
 
 private:
@@ -59,11 +62,13 @@ SkImageFilter* SkAlphaThresholdFilter::Create(const SkRegion& region,
 class AlphaThresholdEffect : public GrFragmentProcessor {
 
 public:
-    static GrFragmentProcessor* Create(GrTexture* texture,
+    static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager,
+                                       GrTexture* texture,
                                        GrTexture* maskTexture,
                                        float innerThreshold,
                                        float outerThreshold) {
-        return SkNEW_ARGS(AlphaThresholdEffect, (texture,
+        return SkNEW_ARGS(AlphaThresholdEffect, (procDataManager,
+                                                 texture,
                                                  maskTexture,
                                                  innerThreshold,
                                                  outerThreshold));
@@ -81,7 +86,8 @@ public:
     GrGLFragmentProcessor* createGLInstance() const override;
 
 private:
-    AlphaThresholdEffect(GrTexture* texture,
+    AlphaThresholdEffect(GrProcessorDataManager*,
+                         GrTexture* texture,
                          GrTexture* maskTexture,
                          float innerThreshold,
                          float outerThreshold)
@@ -201,15 +207,13 @@ void GrGLAlphaThresholdEffect::setData(const GrGLProgramDataManager& pdman,
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(AlphaThresholdEffect);
 
-GrFragmentProcessor* AlphaThresholdEffect::TestCreate(SkRandom* random,
-                                           GrContext* context,
-                                           const GrDrawTargetCaps&,
-                                           GrTexture** textures) {
-    GrTexture* bmpTex = textures[GrProcessorUnitTest::kSkiaPMTextureIdx];
-    GrTexture* maskTex = textures[GrProcessorUnitTest::kAlphaTextureIdx];
-    float inner_thresh = random->nextUScalar1();
-    float outer_thresh = random->nextUScalar1();
-    return AlphaThresholdEffect::Create(bmpTex, maskTex, inner_thresh, outer_thresh);
+GrFragmentProcessor* AlphaThresholdEffect::TestCreate(GrProcessorTestData* d) {
+    GrTexture* bmpTex = d->fTextures[GrProcessorUnitTest::kSkiaPMTextureIdx];
+    GrTexture* maskTex = d->fTextures[GrProcessorUnitTest::kAlphaTextureIdx];
+    float innerThresh = d->fRandom->nextUScalar1();
+    float outerThresh = d->fRandom->nextUScalar1();
+    return AlphaThresholdEffect::Create(d->fProcDataManager, bmpTex, maskTex, innerThresh,
+                                        outerThresh);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -262,13 +266,14 @@ SkAlphaThresholdFilterImpl::SkAlphaThresholdFilterImpl(const SkRegion& region,
 
 #if SK_SUPPORT_GPU
 bool SkAlphaThresholdFilterImpl::asFragmentProcessor(GrFragmentProcessor** fp,
+                                                     GrProcessorDataManager* procDataManager,
                                                      GrTexture* texture,
                                                      const SkMatrix& in_matrix,
                                                      const SkIRect&) const {
     if (fp) {
         GrContext* context = texture->getContext();
         GrSurfaceDesc maskDesc;
-        if (context->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
+        if (context->caps()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
             maskDesc.fConfig = kAlpha_8_GrPixelConfig;
         } else {
             maskDesc.fConfig = kRGBA_8888_GrPixelConfig;
@@ -284,21 +289,23 @@ bool SkAlphaThresholdFilterImpl::asFragmentProcessor(GrFragmentProcessor** fp,
             return false;
         }
 
-        {
+        GrDrawContext* drawContext = context->drawContext();
+        if (drawContext) {
             GrPaint grPaint;
             grPaint.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
             SkRegion::Iterator iter(fRegion);
-            context->clear(NULL, 0x0, true, maskTexture->asRenderTarget());
+            drawContext->clear(maskTexture->asRenderTarget(), NULL, 0x0, true);
 
             while (!iter.done()) {
                 SkRect rect = SkRect::Make(iter.rect());
-                context->drawRect(maskTexture->asRenderTarget(), GrClip::WideOpen(), grPaint,
-                                  in_matrix, rect);
+                drawContext->drawRect(maskTexture->asRenderTarget(), GrClip::WideOpen(), grPaint,
+                                      in_matrix, rect);
                 iter.next();
             }
         }
 
-        *fp = AlphaThresholdEffect::Create(texture,
+        *fp = AlphaThresholdEffect::Create(procDataManager,
+                                           texture,
                                            maskTexture,
                                            fInnerThreshold,
                                            fOuterThreshold);

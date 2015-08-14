@@ -34,9 +34,9 @@
 #include "core/frame/UseCounter.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/style/ComputedStyle.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/LengthFunctions.h"
 #include "wtf/MathExtras.h"
 #include <limits>
@@ -84,7 +84,7 @@ LayoutFlexibleBox::~LayoutFlexibleBox()
 
 LayoutFlexibleBox* LayoutFlexibleBox::createAnonymous(Document* document)
 {
-    LayoutFlexibleBox* layoutObject = new LayoutFlexibleBox(0);
+    LayoutFlexibleBox* layoutObject = new LayoutFlexibleBox(nullptr);
     layoutObject->setDocumentForAnonymous(document);
     return layoutObject;
 }
@@ -109,6 +109,8 @@ void LayoutFlexibleBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidt
             minPreferredLogicalWidth = child->minPreferredLogicalWidth();
             maxPreferredLogicalWidth = child->maxPreferredLogicalWidth();
         }
+        ASSERT(minPreferredLogicalWidth >= 0);
+        ASSERT(maxPreferredLogicalWidth >= 0);
         minPreferredLogicalWidth += margin;
         maxPreferredLogicalWidth += margin;
         if (!isColumnFlow()) {
@@ -154,7 +156,7 @@ int LayoutFlexibleBox::firstLineBoxBaseline() const
 {
     if (isWritingModeRoot() || m_numberOfInFlowChildrenOnFirstLine <= 0)
         return -1;
-    LayoutBox* baselineChild = 0;
+    LayoutBox* baselineChild = nullptr;
     int childNumber = 0;
     for (LayoutBox* child = m_orderIterator.first(); child; child = m_orderIterator.next()) {
         if (child->isOutOfFlowPositioned())
@@ -231,6 +233,7 @@ void LayoutFlexibleBox::layoutBlock(bool relayoutChildren)
     if (updateLogicalWidthAndColumnWidth())
         relayoutChildren = true;
 
+    SubtreeLayoutScope layoutScope(*this);
     LayoutUnit previousHeight = logicalHeight();
     setLogicalHeight(borderAndPaddingLogicalHeight() + scrollbarLogicalHeight());
 
@@ -247,7 +250,7 @@ void LayoutFlexibleBox::layoutBlock(bool relayoutChildren)
         ChildFrameRects oldChildRects;
         appendChildFrameRects(oldChildRects);
 
-        layoutFlexItems(relayoutChildren);
+        layoutFlexItems(relayoutChildren, layoutScope);
 
         LayoutBlock::finishDelayUpdateScrollInfo();
 
@@ -643,7 +646,7 @@ LayoutUnit LayoutFlexibleBox::computeInnerFlexBaseSizeForChild(LayoutBox& child,
     return std::max(LayoutUnit(), computeMainAxisExtentForChild(child, MainOrPreferredSize, flexBasis));
 }
 
-void LayoutFlexibleBox::layoutFlexItems(bool relayoutChildren)
+void LayoutFlexibleBox::layoutFlexItems(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
     Vector<LineContext> lineContexts;
     OrderedFlexItemList orderedChildren;
@@ -667,7 +670,7 @@ void LayoutFlexibleBox::layoutFlexItems(bool relayoutChildren)
             ASSERT(inflexibleItems.size() > 0);
         }
 
-        layoutAndPlaceChildren(crossAxisOffset, orderedChildren, childSizes, availableFreeSpace, relayoutChildren, lineContexts);
+        layoutAndPlaceChildren(crossAxisOffset, orderedChildren, childSizes, availableFreeSpace, relayoutChildren, layoutScope, lineContexts);
     }
     if (hasLineIfEmpty()) {
         // Even if computeNextFlexLine returns true, the flexbox might not have
@@ -868,19 +871,13 @@ LayoutUnit LayoutFlexibleBox::adjustChildSizeForMinAndMax(LayoutBox& child, Layo
         if (maxExtent != -1 && contentSize > maxExtent)
             contentSize = maxExtent;
 
-        bool hasClampedSize = !childFlexBaseSizeRequiresLayout(child);
-        if (hasClampedSize) {
-            const Length& flexBasis = flexBasisForChild(child);
-            bool flexBasisIsDefinite = flexBasis.isFixed() || (flexBasis.hasPercent() && mainAxisExtentIsDefinite());
-            if (flexBasisIsDefinite) {
-                LayoutUnit resolvedFlexBasis = computeMainAxisExtentForChild(child, MainOrPreferredSize, flexBasis);
-                ASSERT(resolvedFlexBasis >= 0);
-                LayoutUnit clampedSize = maxExtent != -1 ? std::min(resolvedFlexBasis, maxExtent) : resolvedFlexBasis;
+        Length mainSize = isHorizontalFlow() ? child.styleRef().width() : child.styleRef().height();
+        if (!mainAxisLengthIsIndefinite(mainSize)) {
+            LayoutUnit resolvedMainSize = computeMainAxisExtentForChild(child, MainOrPreferredSize, mainSize);
+            ASSERT(resolvedMainSize >= 0);
+            LayoutUnit specifiedSize = maxExtent != -1 ? std::min(resolvedMainSize, maxExtent) : resolvedMainSize;
 
-                minExtent = std::min(clampedSize, contentSize);
-            } else {
-                minExtent = contentSize;
-            }
+            minExtent = std::min(specifiedSize, contentSize);
         } else {
             minExtent = contentSize;
         }
@@ -1114,7 +1111,7 @@ EOverflow LayoutFlexibleBox::mainAxisOverflowForChild(LayoutBox& child) const
     return child.styleRef().overflowY();
 }
 
-void LayoutFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, const OrderedFlexItemList& children, const Vector<LayoutUnit, 16>& childSizes, LayoutUnit availableFreeSpace, bool relayoutChildren, Vector<LineContext>& lineContexts)
+void LayoutFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, const OrderedFlexItemList& children, const Vector<LayoutUnit, 16>& childSizes, LayoutUnit availableFreeSpace, bool relayoutChildren, SubtreeLayoutScope& layoutScope, Vector<LineContext>& lineContexts)
 {
     ASSERT(childSizes.size() == children.size());
 
@@ -1152,6 +1149,8 @@ void LayoutFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, cons
         // We may have already forced relayout for orthogonal flowing children in computeInnerFlexBaseSizeForChild.
         bool forceChildRelayout = relayoutChildren && !childFlexBaseSizeRequiresLayout(*child);
         updateBlockChildDirtyBitsBeforeLayout(forceChildRelayout, *child);
+        if (!child->needsLayout())
+            child->markForPaginationRelayoutIfNeeded(layoutScope);
         child->layoutIfNeeded();
 
         updateAutoMarginsInMainAxis(*child, autoMarginOffset);
@@ -1180,7 +1179,6 @@ void LayoutFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, cons
         LayoutPoint childLocation(shouldFlipMainAxis ? totalMainExtent - mainAxisOffset - childMainExtent : mainAxisOffset,
             crossAxisOffset + flowAwareMarginBeforeForChild(*child));
 
-        // FIXME: Supporting layout deltas.
         setFlowAwareLocationForChild(*child, childLocation);
         mainAxisOffset += childMainExtent + flowAwareMarginEndForChild(*child);
 

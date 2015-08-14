@@ -10,7 +10,7 @@
 
 //   LOG(...) an ostream target that can be used to send formatted
 // output to a variety of logging targets, such as debugger console, stderr,
-// file, or any StreamInterface.
+// or any LogSink.
 //   The severity level passed as the first argument to the LOGging
 // functions is used as a filter, to limit the verbosity of the logging.
 //   Static members of LogMessage documented below are used to control the
@@ -56,10 +56,9 @@
 #include <utility>
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/criticalsection.h"
+#include "webrtc/base/thread_annotations.h"
 
 namespace rtc {
-
-class StreamInterface;
 
 ///////////////////////////////////////////////////////////////////////////////
 // ConstantLabel can be used to easily generate string names from constant
@@ -96,10 +95,18 @@ std::string ErrorName(int err, const ConstantLabel* err_table);
 //   in debug builds.
 //  LS_WARNING: Something that may warrant investigation.
 //  LS_ERROR: Something that should not have occurred.
-enum LoggingSeverity { LS_SENSITIVE, LS_VERBOSE, LS_INFO, LS_WARNING, LS_ERROR,
-                       INFO = LS_INFO,
-                       WARNING = LS_WARNING,
-                       LERROR = LS_ERROR };
+//  LS_NONE: Don't log.
+enum LoggingSeverity {
+  LS_SENSITIVE,
+  LS_VERBOSE,
+  LS_INFO,
+  LS_WARNING,
+  LS_ERROR,
+  LS_NONE,
+  INFO = LS_INFO,
+  WARNING = LS_WARNING,
+  LERROR = LS_ERROR
+};
 
 // LogErrorContext assists in interpreting the meaning of an error value.
 enum LogErrorContext {
@@ -114,9 +121,16 @@ enum LogErrorContext {
   ERRCTX_OS = ERRCTX_OSSTATUS,  // LOG_E(sev, OS, x)
 };
 
+// Virtual sink interface that can receive log messages.
+class LogSink {
+ public:
+  LogSink() {}
+  virtual ~LogSink() {}
+  virtual void OnLogMessage(const std::string& message) = 0;
+};
+
 class LogMessage {
  public:
-  static const int NO_LOGGING;
   static const uint32 WARN_SLOW_LOGS_DELAY = 50;  // ms
 
   LogMessage(const char* file, int line, LoggingSeverity sev,
@@ -138,18 +152,16 @@ class LogMessage {
   // epoch.
   static uint32 WallClockStartTime();
 
-  // These are attributes which apply to all logging channels
-  //  LogContext: Display the file and line number of the message
-  static void LogContext(int min_sev);
   //  LogThreads: Display the thread identifier of the current thread
   static void LogThreads(bool on = true);
+
   //  LogTimestamps: Display the elapsed time of the program
   static void LogTimestamps(bool on = true);
 
   // These are the available logging channels
   //  Debug: Debug console on Windows, otherwise stderr
-  static void LogToDebug(int min_sev);
-  static int GetLogToDebug() { return dbg_sev_; }
+  static void LogToDebug(LoggingSeverity min_sev);
+  static LoggingSeverity GetLogToDebug() { return dbg_sev_; }
 
   //  Stream: Any non-blocking stream interface.  LogMessage takes ownership of
   //   the stream. Multiple streams may be specified by using AddLogToStream.
@@ -158,39 +170,27 @@ class LogMessage {
   //   GetLogToStream gets the severity for the specified stream, of if none
   //   is specified, the minimum stream severity.
   //   RemoveLogToStream removes the specified stream, without destroying it.
-  static void LogToStream(StreamInterface* stream, int min_sev);
-  static int GetLogToStream(StreamInterface* stream = NULL);
-  static void AddLogToStream(StreamInterface* stream, int min_sev);
-  static void RemoveLogToStream(StreamInterface* stream);
+  static int GetLogToStream(LogSink* stream = NULL);
+  static void AddLogToStream(LogSink* stream, LoggingSeverity min_sev);
+  static void RemoveLogToStream(LogSink* stream);
 
   // Testing against MinLogSeverity allows code to avoid potentially expensive
   // logging operations by pre-checking the logging level.
   static int GetMinLogSeverity() { return min_sev_; }
 
-  static void SetDiagnosticMode(bool f) { is_diagnostic_mode_ = f; }
-  static bool IsDiagnosticMode() { return is_diagnostic_mode_; }
-
   // Parses the provided parameter stream to configure the options above.
-  // Useful for configuring logging from the command line.  If file logging
-  // is enabled, it is output to the specified filename.
-  static void ConfigureLogging(const char* params, const char* filename);
-
-  // Convert the string to a LS_ value; also accept numeric values.
-  static int ParseLogSeverity(const std::string& value);
+  // Useful for configuring logging from the command line.
+  static void ConfigureLogging(const char* params);
 
  private:
-  typedef std::list<std::pair<StreamInterface*, int> > StreamList;
+  typedef std::pair<LogSink*, LoggingSeverity> StreamAndSeverity;
+  typedef std::list<StreamAndSeverity> StreamList;
 
   // Updates min_sev_ appropriately when debug sinks change.
-  static void UpdateMinLogSeverity();
-
-  // These assist in formatting some parts of the debug output.
-  static const char* Describe(LoggingSeverity sev);
-  static const char* DescribeFile(const char* file);
+  static void UpdateMinLogSeverity() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   // These write out the actual log messages.
   static void OutputToDebug(const std::string& msg, LoggingSeverity severity_);
-  static void OutputToStream(StreamInterface* stream, const std::string& msg);
 
   // The ostream that buffers the formatted message before output
   std::ostringstream print_stream_;
@@ -214,16 +214,13 @@ class LogMessage {
   //  as a short-circuit in the logging macros to identify messages that won't
   //  be logged.
   // ctx_sev_ is the minimum level at which file context is displayed
-  static int min_sev_, dbg_sev_, ctx_sev_;
+  static LoggingSeverity min_sev_, dbg_sev_, ctx_sev_;
 
   // The output streams and their associated severities
   static StreamList streams_;
 
   // Flags for formatting options
   static bool thread_, timestamp_;
-
-  // are we in diagnostic mode (as defined by the app)?
-  static bool is_diagnostic_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(LogMessage);
 };
@@ -291,6 +288,7 @@ class LogMessageVoidify {
   rtc::LogCheckLevel(rtc::sev)
 #define LOG_CHECK_LEVEL_V(sev) \
   rtc::LogCheckLevel(sev)
+
 inline bool LogCheckLevel(LoggingSeverity sev) {
   return (LogMessage::GetMinLogSeverity() <= sev);
 }
@@ -335,7 +333,7 @@ inline bool LogCheckLevel(LoggingSeverity sev) {
   LOG_ERRNO(sev)
 #define LAST_SYSTEM_ERROR \
   (errno)
-#endif  // WEBRTC_WIN 
+#endif  // WEBRTC_WIN
 
 #define PLOG(sev, err) \
   LOG_ERR_EX(sev, err)

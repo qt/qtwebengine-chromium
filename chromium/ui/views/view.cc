@@ -19,6 +19,7 @@
 #include "ui/accessibility/ax_enums.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/compositor/clip_transform_recorder.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/dip_util.h"
@@ -81,9 +82,6 @@ const View* GetHierarchyRoot(const View* view) {
 }
 
 }  // namespace
-
-// static
-ViewsDelegate* ViewsDelegate::views_delegate = NULL;
 
 // static
 const char View::kViewClassName[] = "View";
@@ -737,6 +735,8 @@ void View::SchedulePaintInRect(const gfx::Rect& rect) {
 void View::Paint(const ui::PaintContext& parent_context) {
   if (!visible_)
     return;
+  if (size().IsEmpty())
+    return;
 
   gfx::Vector2d offset_to_parent;
   if (!layer()) {
@@ -773,9 +773,6 @@ void View::Paint(const ui::PaintContext& parent_context) {
     is_invalidated = context.IsRectInvalid(GetLocalBounds());
   }
 
-  if (!is_invalidated && context.ShouldEarlyOutOfPaintingWhenValid())
-    return;
-
   TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
 
   // If the view is backed by a layer, it should paint with itself as the origin
@@ -804,10 +801,8 @@ void View::Paint(const ui::PaintContext& parent_context) {
   }
 
   if (is_invalidated || !paint_cache_.UseCache(context)) {
-    ui::PaintRecorder recorder(context, &paint_cache_);
+    ui::PaintRecorder recorder(context, size(), &paint_cache_);
     gfx::Canvas* canvas = recorder.canvas();
-    // TODO(danakj): This is not needed with impl-side/slimming paint.
-    gfx::ScopedCanvas scoped_canvas(canvas);
 
     // If the View we are about to paint requested the canvas to be flipped, we
     // should change the transform appropriately.
@@ -1016,18 +1011,10 @@ void View::OnTouchEvent(ui::TouchEvent* event) {
 void View::OnGestureEvent(ui::GestureEvent* event) {
 }
 
-ui::TextInputClient* View::GetTextInputClient() {
-  return NULL;
-}
-
-InputMethod* View::GetInputMethod() {
-  Widget* widget = GetWidget();
-  return widget ? widget->GetInputMethod() : NULL;
-}
-
-const InputMethod* View::GetInputMethod() const {
-  const Widget* widget = GetWidget();
-  return widget ? widget->GetInputMethod() : NULL;
+const ui::InputMethod* View::GetInputMethod() const {
+  Widget* widget = const_cast<Widget*>(GetWidget());
+  return widget ? const_cast<const ui::InputMethod*>(widget->GetInputMethod())
+                : nullptr;
 }
 
 scoped_ptr<ViewTargeter>
@@ -1222,6 +1209,14 @@ bool View::ShouldShowContextMenuOnMousePress() {
   return kContextMenuOnMousePress;
 }
 
+gfx::Point View::GetKeyboardContextMenuLocation() {
+  gfx::Rect vis_bounds = GetVisibleBounds();
+  gfx::Point screen_point(vis_bounds.x() + vis_bounds.width() / 2,
+                          vis_bounds.y() + vis_bounds.height() / 2);
+  ConvertPointToScreen(this, &screen_point);
+  return screen_point;
+}
+
 // Drag and drop ---------------------------------------------------------------
 
 bool View::GetDropFormats(
@@ -1275,8 +1270,8 @@ gfx::NativeViewAccessible View::GetNativeViewAccessible() {
 void View::NotifyAccessibilityEvent(
     ui::AXEvent event_type,
     bool send_native_event) {
-  if (ViewsDelegate::views_delegate)
-    ViewsDelegate::views_delegate->NotifyAccessibilityEvent(this, event_type);
+  if (ViewsDelegate::GetInstance())
+    ViewsDelegate::GetInstance()->NotifyAccessibilityEvent(this, event_type);
 
   if (send_native_event && GetWidget()) {
     if (!native_view_accessibility_)
@@ -1460,12 +1455,6 @@ void View::UpdateChildLayerBounds(const gfx::Vector2d& offset) {
 }
 
 void View::OnPaintLayer(const ui::PaintContext& context) {
-  if (!layer()->fills_bounds_opaquely()) {
-    ui::PaintRecorder recorder(context);
-    recorder.canvas()->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
-  }
-  if (!visible_)
-    return;
   Paint(context);
 }
 
@@ -1566,16 +1555,6 @@ void View::TooltipTextChanged() {
   // TooltipManager may be null if there is a problem creating it.
   if (widget && widget->GetTooltipManager())
     widget->GetTooltipManager()->TooltipTextChanged(this);
-}
-
-// Context menus ---------------------------------------------------------------
-
-gfx::Point View::GetKeyboardContextMenuLocation() {
-  gfx::Rect vis_bounds = GetVisibleBounds();
-  gfx::Point screen_point(vis_bounds.x() + vis_bounds.width() / 2,
-                          vis_bounds.y() + vis_bounds.height() / 2);
-  ConvertPointToScreen(this, &screen_point);
-  return screen_point;
 }
 
 // Drag and drop ---------------------------------------------------------------

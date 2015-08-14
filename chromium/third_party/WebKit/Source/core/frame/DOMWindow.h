@@ -37,7 +37,7 @@ class SerializedScriptValue;
 class Storage;
 class StyleMedia;
 
-typedef WillBeHeapVector<RefPtrWillBeMember<MessagePort>, 1> MessagePortArray;
+typedef HeapVector<Member<MessagePort>, 1> MessagePortArray;
 
 class CORE_EXPORT DOMWindow : public EventTargetWithInlineData, public RefCountedWillBeNoBase<DOMWindow>, public DOMWindowBase64 {
     DEFINE_WRAPPERTYPEINFO();
@@ -129,13 +129,11 @@ public:
 
     virtual Console* console() const  = 0;
 
-    virtual DOMWindowCSS* css() const = 0;
-
     virtual DOMSelection* getSelection() = 0;
 
     virtual void focus(ExecutionContext*) = 0;
     virtual void blur() = 0;
-    virtual void close(ExecutionContext*) = 0;
+    void close(ExecutionContext*);
     virtual void print() = 0;
     virtual void stop() = 0;
 
@@ -151,19 +149,11 @@ public:
     virtual void scrollTo(const ScrollToOptions&) const = 0;
     void scroll(double x, double y) const { scrollTo(x, y); }
     void scroll(const ScrollToOptions& scrollToOptions) const { scrollTo(scrollToOptions); }
-    void moveBy() const { moveBy(0, 0, false, false); }
-    void moveBy(int x) const { moveBy(x, 0, true, false); }
-    virtual void moveBy(int x, int y, bool hasX = true, bool hasY = true) const = 0;
-    void moveTo() const { moveTo(0, 0, false, false); }
-    void moveTo(int x) const { moveTo(x, 0, true, false); }
-    virtual void moveTo(int x, int y, bool hasX = true, bool hasY = true) const = 0;
+    virtual void moveBy(int x, int y) const = 0;
+    virtual void moveTo(int x, int y) const = 0;
 
-    void resizeBy() const { resizeBy(0, 0, false, false); }
-    void resizeBy(int x) const { resizeBy(x, 0, true, false); }
-    virtual void resizeBy(int x, int y, bool hasX = true, bool hasY = true) const = 0;
-    void resizeTo() const { resizeTo(0, 0, false, false); }
-    void resizeTo(int x) const { resizeTo(x, 0, true, false); }
-    virtual void resizeTo(int width, int height, bool hasWidth = true, bool hasHeight = true) const = 0;
+    virtual void resizeBy(int x, int y) const = 0;
+    virtual void resizeTo(int width, int height) const = 0;
 
     virtual PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) = 0;
 

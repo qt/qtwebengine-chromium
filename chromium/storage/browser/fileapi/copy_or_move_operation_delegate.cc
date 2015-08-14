@@ -16,7 +16,6 @@
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "storage/browser/fileapi/file_system_url.h"
-#include "storage/browser/fileapi/recursive_operation_delegate.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 namespace storage {
@@ -407,21 +406,21 @@ class StreamCopyOrMoveImpl
   void NotifyOnStartUpdate(const FileSystemURL& url) {
     if (file_system_context_->GetUpdateObservers(url.type())) {
       file_system_context_->GetUpdateObservers(url.type())
-          ->Notify(&FileUpdateObserver::OnStartUpdate, MakeTuple(url));
+          ->Notify(&FileUpdateObserver::OnStartUpdate, base::MakeTuple(url));
     }
   }
 
   void NotifyOnModifyFile(const FileSystemURL& url) {
     if (file_system_context_->GetChangeObservers(url.type())) {
       file_system_context_->GetChangeObservers(url.type())
-          ->Notify(&FileChangeObserver::OnModifyFile, MakeTuple(url));
+          ->Notify(&FileChangeObserver::OnModifyFile, base::MakeTuple(url));
     }
   }
 
   void NotifyOnEndUpdate(const FileSystemURL& url) {
     if (file_system_context_->GetUpdateObservers(url.type())) {
       file_system_context_->GetUpdateObservers(url.type())
-          ->Notify(&FileUpdateObserver::OnEndUpdate, MakeTuple(url));
+          ->Notify(&FileUpdateObserver::OnEndUpdate, base::MakeTuple(url));
     }
   }
 
@@ -731,6 +730,7 @@ CopyOrMoveOperationDelegate::CopyOrMoveOperationDelegate(
     const FileSystemURL& dest_root,
     OperationType operation_type,
     CopyOrMoveOption option,
+    ErrorBehavior error_behavior,
     const CopyProgressCallback& progress_callback,
     const StatusCallback& callback)
     : RecursiveOperationDelegate(file_system_context),
@@ -738,6 +738,7 @@ CopyOrMoveOperationDelegate::CopyOrMoveOperationDelegate(
       dest_root_(dest_root),
       operation_type_(operation_type),
       option_(option),
+      error_behavior_(error_behavior),
       progress_callback_(progress_callback),
       callback_(callback),
       weak_factory_(this) {
@@ -774,7 +775,7 @@ void CopyOrMoveOperationDelegate::RunRecursively() {
   // TODO(kinuko): This could be too expensive for same_file_system_==true
   // and operation==MOVE case, probably we can just rename the root directory.
   // http://crbug.com/172187
-  StartRecursiveOperation(src_root_, callback_);
+  StartRecursiveOperation(src_root_, error_behavior_, callback_);
 }
 
 void CopyOrMoveOperationDelegate::ProcessFile(
@@ -803,6 +804,10 @@ void CopyOrMoveOperationDelegate::ProcessFile(
         file_system_context()->GetCopyOrMoveFileValidatorFactory(
             dest_root_.type(), &error);
     if (error != base::File::FILE_OK) {
+      if (!progress_callback_.is_null())
+        progress_callback_.Run(FileSystemOperation::ERROR_COPY_ENTRY, src_url,
+                               dest_url, 0);
+
       callback.Run(error);
       return;
     }
@@ -900,6 +905,11 @@ void CopyOrMoveOperationDelegate::DidCopyOrMoveFile(
     base::File::Error error) {
   running_copy_set_.erase(impl);
   delete impl;
+
+  if (!progress_callback_.is_null() && error != base::File::FILE_OK &&
+      error != base::File::FILE_ERROR_NOT_A_FILE)
+    progress_callback_.Run(FileSystemOperation::ERROR_COPY_ENTRY, src_url,
+                           dest_url, 0);
 
   if (!progress_callback_.is_null() && error == base::File::FILE_OK) {
     progress_callback_.Run(

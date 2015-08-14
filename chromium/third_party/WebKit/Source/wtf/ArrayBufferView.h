@@ -32,7 +32,6 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/WTFExport.h"
-#include <algorithm>
 #include <limits.h>
 
 namespace WTF {
@@ -73,6 +72,7 @@ class WTF_EXPORT ArrayBufferView : public RefCounted<ArrayBufferView> {
 
     void setNeuterable(bool flag) { m_isNeuterable = flag; }
     bool isNeuterable() const { return m_isNeuterable; }
+    bool isShared() const { return m_buffer ? m_buffer->isShared() : false; }
 
     virtual ~ArrayBufferView();
 
@@ -80,13 +80,6 @@ class WTF_EXPORT ArrayBufferView : public RefCounted<ArrayBufferView> {
     ArrayBufferView(PassRefPtr<ArrayBuffer>, unsigned byteOffset);
 
     inline bool setImpl(ArrayBufferView*, unsigned byteOffset);
-
-    inline bool setRangeImpl(const char* data, size_t dataByteLength, unsigned byteOffset);
-
-    inline bool zeroRangeImpl(unsigned byteOffset, size_t rangeByteLength);
-
-    static inline void calculateOffsetAndLength(int start, int end, unsigned arraySize,
-                                         unsigned* offset, unsigned* length);
 
     // Helper to verify that a given sub-range of an ArrayBuffer is
     // within range.
@@ -105,26 +98,6 @@ class WTF_EXPORT ArrayBufferView : public RefCounted<ArrayBufferView> {
         if (numElements > remainingElements)
             return false;
         return true;
-    }
-
-    // Input offset is in number of elements from this array's view;
-    // output offset is in number of bytes from the underlying buffer's view.
-    template <typename T>
-    static void clampOffsetAndNumElements(PassRefPtr<ArrayBuffer> buffer,
-                                          unsigned arrayByteOffset,
-                                          unsigned *offset,
-                                          unsigned *numElements)
-    {
-        unsigned maxOffset = (UINT_MAX - arrayByteOffset) / sizeof(T);
-        if (*offset > maxOffset) {
-            *offset = buffer->byteLength();
-            *numElements = 0;
-            return;
-        }
-        *offset = arrayByteOffset + *offset * sizeof(T);
-        *offset = std::min(buffer->byteLength(), *offset);
-        unsigned remainingElements = (buffer->byteLength() - *offset) / sizeof(T);
-        *numElements = std::min(remainingElements, *numElements);
     }
 
     virtual void neuter();
@@ -154,53 +127,6 @@ bool ArrayBufferView::setImpl(ArrayBufferView* array, unsigned byteOffset)
     char* base = static_cast<char*>(baseAddress());
     memmove(base + byteOffset, array->baseAddress(), array->byteLength());
     return true;
-}
-
-bool ArrayBufferView::setRangeImpl(const char* data, size_t dataByteLength, unsigned byteOffset)
-{
-    if (byteOffset > byteLength()
-        || byteOffset + dataByteLength > byteLength()
-        || byteOffset + dataByteLength < byteOffset) {
-        // Out of range offset or overflow
-        return false;
-    }
-
-    char* base = static_cast<char*>(baseAddress());
-    memmove(base + byteOffset, data, dataByteLength);
-    return true;
-}
-
-bool ArrayBufferView::zeroRangeImpl(unsigned byteOffset, size_t rangeByteLength)
-{
-    if (byteOffset > byteLength()
-        || byteOffset + rangeByteLength > byteLength()
-        || byteOffset + rangeByteLength < byteOffset) {
-        // Out of range offset or overflow
-        return false;
-    }
-
-    char* base = static_cast<char*>(baseAddress());
-    memset(base + byteOffset, 0, rangeByteLength);
-    return true;
-}
-
-void ArrayBufferView::calculateOffsetAndLength(int start, int end, unsigned arraySize,
-                                               unsigned* offset, unsigned* length)
-{
-    if (start < 0)
-        start += arraySize;
-    if (start < 0)
-        start = 0;
-    if (end < 0)
-        end += arraySize;
-    if (end < 0)
-        end = 0;
-    if (static_cast<unsigned>(end) > arraySize)
-        end = arraySize;
-    if (end < start)
-        end = start;
-    *offset = static_cast<unsigned>(start);
-    *length = static_cast<unsigned>(end - start);
 }
 
 } // namespace WTF

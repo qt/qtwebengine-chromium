@@ -38,33 +38,33 @@ class Scrollbar;
 
 class AXScrollbar final : public AXMockObject {
 public:
-    static PassRefPtr<AXScrollbar> create(Scrollbar*, AXObjectCacheImpl*);
+    static PassRefPtrWillBeRawPtr<AXScrollbar> create(Scrollbar*, AXObjectCacheImpl&);
+    ~AXScrollbar() override;
+    DECLARE_VIRTUAL_TRACE();
 
     Scrollbar* scrollbar() const { return m_scrollbar.get(); }
 
 private:
-    AXScrollbar(Scrollbar*, AXObjectCacheImpl*);
+    AXScrollbar(Scrollbar*, AXObjectCacheImpl&);
 
-    virtual void detachFromParent() override;
+    void detachFromParent() override;
 
-    virtual bool canSetValueAttribute() const override { return true; }
+    bool canSetValueAttribute() const override { return true; }
 
-    virtual bool isAXScrollbar() const override { return true; }
-    virtual LayoutRect elementRect() const override;
+    bool isAXScrollbar() const override { return true; }
+    LayoutRect elementRect() const override;
 
-    virtual AccessibilityRole roleValue() const override { return ScrollBarRole; }
-    virtual AccessibilityOrientation orientation() const override;
-    virtual Document* document() const override;
+    AccessibilityRole roleValue() const override { return ScrollBarRole; }
+    AccessibilityOrientation orientation() const override;
+    Document* document() const override;
 
-    virtual bool isEnabled() const override;
+    bool isEnabled() const override;
 
     // Assumes float [0..1]
-    virtual void setValue(float) override;
-    virtual float valueForRange() const override;
+    void setValue(float) override;
+    float valueForRange() const override;
 
-    // FIXME: Oilpan: turn this into a Member once the AXObject
-    // hierarchy is on the heap.
-    RefPtrWillBePersistent<Scrollbar> m_scrollbar;
+    RefPtrWillBeMember<Scrollbar> m_scrollbar;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXScrollbar, isAXScrollbar());

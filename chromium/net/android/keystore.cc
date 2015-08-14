@@ -22,9 +22,7 @@ using base::android::JavaArrayOfByteArrayToStringVector;
 namespace net {
 namespace android {
 
-bool GetRSAKeyModulus(
-    jobject private_key_ref,
-    std::vector<uint8>* result) {
+bool GetRSAKeyModulus(jobject private_key_ref, std::vector<uint8_t>* result) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jbyteArray> modulus_ref =
@@ -38,24 +36,7 @@ bool GetRSAKeyModulus(
   return true;
 }
 
-bool GetDSAKeyParamQ(jobject private_key_ref,
-                     std::vector<uint8>* result) {
-  JNIEnv* env = AttachCurrentThread();
-
-  ScopedJavaLocalRef<jbyteArray> q_ref =
-      Java_AndroidKeyStore_getDSAKeyParamQ(
-          env,
-          GetKeyStore(private_key_ref).obj(),
-          private_key_ref);
-  if (q_ref.is_null())
-    return false;
-
-  JavaByteArrayToByteVector(env, q_ref.obj(), result);
-  return true;
-}
-
-bool GetECKeyOrder(jobject private_key_ref,
-                   std::vector<uint8>* result) {
+bool GetECKeyOrder(jobject private_key_ref, std::vector<uint8_t>* result) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jbyteArray> order_ref =
@@ -71,33 +52,14 @@ bool GetECKeyOrder(jobject private_key_ref,
   return true;
 }
 
-bool GetPrivateKeyEncodedBytes(jobject private_key_ref,
-                               std::vector<uint8>* result) {
-  JNIEnv* env = AttachCurrentThread();
-
-  ScopedJavaLocalRef<jbyteArray> encoded_ref =
-      Java_AndroidKeyStore_getPrivateKeyEncodedBytes(
-          env,
-          GetKeyStore(private_key_ref).obj(),
-          private_key_ref);
-  if (encoded_ref.is_null())
-    return false;
-
-  JavaByteArrayToByteVector(env, encoded_ref.obj(), result);
-  return true;
-}
-
-bool RawSignDigestWithPrivateKey(
-    jobject private_key_ref,
-    const base::StringPiece& digest,
-    std::vector<uint8>* signature) {
+bool RawSignDigestWithPrivateKey(jobject private_key_ref,
+                                 const base::StringPiece& digest,
+                                 std::vector<uint8_t>* signature) {
   JNIEnv* env = AttachCurrentThread();
 
   // Convert message to byte[] array.
-  ScopedJavaLocalRef<jbyteArray> digest_ref =
-      ToJavaByteArray(env,
-                      reinterpret_cast<const uint8*>(digest.data()),
-                      digest.length());
+  ScopedJavaLocalRef<jbyteArray> digest_ref = ToJavaByteArray(
+      env, reinterpret_cast<const uint8_t*>(digest.data()), digest.length());
   DCHECK(!digest_ref.is_null());
 
   // Invoke platform API

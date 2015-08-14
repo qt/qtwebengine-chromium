@@ -28,12 +28,15 @@ namespace content {
 // These nonstandard GUIDs are taken directly from the Mozilla sources
 // (accessible/src/msaa/nsAccessNodeWrap.cpp); some documentation is here:
 // http://developer.mozilla.org/en/Accessibility/AT-APIs/ImplementationFeatures/MSAA
-const GUID GUID_ISimpleDOM = {
-    0x0c539790, 0x12e4, 0x11cf,
-    0xb6, 0x61, 0x00, 0xaa, 0x00, 0x4c, 0xd6, 0xd8};
+const GUID GUID_ISimpleDOM = {0x0c539790,
+                              0x12e4,
+                              0x11cf,
+                              {0xb6, 0x61, 0x00, 0xaa, 0x00, 0x4c, 0xd6, 0xd8}};
 const GUID GUID_IAccessibleContentDocument = {
-    0xa5d8e1f3, 0x3571, 0x4d8f,
-    0x95, 0x21, 0x07, 0xed, 0x28, 0xfb, 0x07, 0x2e};
+    0xa5d8e1f3,
+    0x3571,
+    0x4d8f,
+    {0x95, 0x21, 0x07, 0xed, 0x28, 0xfb, 0x07, 0x2e}};
 
 const base::char16 BrowserAccessibilityWin::kEmbeddedCharacter = L'\xfffc';
 
@@ -3173,8 +3176,6 @@ void BrowserAccessibilityWin::UpdateStep1ComputeWinAttributes() {
 
   // Expose the "display" and "tag" attributes.
   StringAttributeToIA2(ui::AX_ATTR_DISPLAY, "display");
-  StringAttributeToIA2(ui::AX_ATTR_DROPEFFECT, "dropeffect");
-  StringAttributeToIA2(ui::AX_ATTR_TEXT_INPUT_TYPE, "text-input-type");
   StringAttributeToIA2(ui::AX_ATTR_HTML_TAG, "tag");
   StringAttributeToIA2(ui::AX_ATTR_ROLE, "xml-roles");
 
@@ -3198,9 +3199,6 @@ void BrowserAccessibilityWin::UpdateStep1ComputeWinAttributes() {
   StringAttributeToIA2(ui::AX_ATTR_LIVE_RELEVANT, "relevant");
   BoolAttributeToIA2(ui::AX_ATTR_LIVE_ATOMIC, "atomic");
   BoolAttributeToIA2(ui::AX_ATTR_LIVE_BUSY, "busy");
-
-  // Expose aria-grabbed attributes.
-  BoolAttributeToIA2(ui::AX_ATTR_GRABBED, "grabbed");
 
   // Expose container live region attributes.
   StringAttributeToIA2(ui::AX_ATTR_CONTAINER_LIVE_STATUS,
@@ -3406,6 +3404,28 @@ void BrowserAccessibilityWin::UpdateStep1ComputeWinAttributes() {
       ia_role() == ROLE_SYSTEM_SLIDER) {
     win_attributes_->ia2_attributes.push_back(L"valuetext:" + GetValueText());
   }
+
+  // Expose dropeffect attribute.
+  base::string16 dropEffect;
+  if (GetHtmlAttribute("aria-dropeffect", &dropEffect))
+    win_attributes_->ia2_attributes.push_back(L"dropeffect:" + dropEffect);
+
+  // Expose grabbed attribute.
+  base::string16 grabbed;
+  if (GetHtmlAttribute("aria-grabbed", &grabbed))
+    win_attributes_->ia2_attributes.push_back(L"grabbed:" + grabbed);
+
+  // Expose datetime attribute.
+  base::string16 datetime;
+  if (GetRole() == ui::AX_ROLE_TIME &&
+      GetHtmlAttribute("datetime", &datetime))
+    win_attributes_->ia2_attributes.push_back(L"datetime:" + datetime);
+
+  // Expose input-text type attribute.
+  base::string16 type;
+  if (GetRole() == ui::AX_ROLE_TEXT_FIELD &&
+      GetHtmlAttribute("type", &type))
+    win_attributes_->ia2_attributes.push_back(L"text-input-type:" + type);
 
   // If this is a web area for a presentational iframe, give it a role of
   // something other than DOCUMENT so that the fact that it's a separate doc
@@ -4068,6 +4088,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_state |= STATE_SYSTEM_LINKED;
       ia_state |= STATE_SYSTEM_READONLY;
       break;
+    case ui::AX_ROLE_INPUT_TIME:
+      ia_role = ROLE_SYSTEM_GROUPING;
+      break;
     case ui::AX_ROLE_LABEL_TEXT:
     case ui::AX_ROLE_LEGEND:
       ia_role = ROLE_SYSTEM_TEXT;
@@ -4099,6 +4122,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
     case ui::AX_ROLE_MAIN:
       ia_role = ROLE_SYSTEM_GROUPING;
       ia2_role = IA2_ROLE_PARAGRAPH;
+      break;
+    case ui::AX_ROLE_MARK:
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_TEXT_FRAME;
       break;
     case ui::AX_ROLE_MARQUEE:
       ia_role = ROLE_SYSTEM_ANIMATION;
@@ -4282,7 +4309,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia2_state |= IA2_STATE_SELECTABLE_TEXT;
       break;
     case ui::AX_ROLE_TIME:
-      ia_role = ROLE_SYSTEM_SPINBUTTON;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_TEXT_FRAME;
       break;
     case ui::AX_ROLE_TIMER:
       ia_role = ROLE_SYSTEM_CLOCK;

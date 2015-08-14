@@ -30,9 +30,7 @@ TabletEventConverterEvdev::TabletEventConverterEvdev(
                           info.vendor_id(),
                           info.product_id()),
       cursor_(cursor),
-      dispatcher_(dispatcher),
-      stylus_(0),
-      abs_value_dirty_(false) {
+      dispatcher_(dispatcher) {
   x_abs_min_ = info.GetAbsMinimum(ABS_X);
   x_abs_range_ = info.GetAbsMaximum(ABS_X) - x_abs_min_ + 1;
   y_abs_min_ = info.GetAbsMinimum(ABS_Y);
@@ -40,8 +38,6 @@ TabletEventConverterEvdev::TabletEventConverterEvdev(
 }
 
 TabletEventConverterEvdev::~TabletEventConverterEvdev() {
-  Stop();
-  close(fd_);
 }
 
 void TabletEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
@@ -60,7 +56,7 @@ void TabletEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
-  if (ignore_events_)
+  if (!enabled_)
     return;
 
   DCHECK_EQ(read_size % sizeof(*inputs), 0u);

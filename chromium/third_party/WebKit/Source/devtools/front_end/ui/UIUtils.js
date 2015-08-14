@@ -180,7 +180,7 @@ WebInspector._elementDragEnd = function(event)
 WebInspector.GlassPane = function(document)
 {
     this.element = createElement("div");
-    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;";
+    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;overflow:hidden;";
     this.element.id = "glass-pane";
     document.body.appendChild(this.element);
     WebInspector._glassPane = this;
@@ -361,6 +361,42 @@ WebInspector._modifiedFloatNumber = function(number, event)
 }
 
 /**
+ * @param {string} wordString
+ * @param {!Event} event
+ * @param {function(string, number, string):string=} customNumberHandler
+ * @return {?string}
+ */
+WebInspector.createReplacementString = function(wordString, event, customNumberHandler)
+{
+    var replacementString;
+    var prefix, suffix, number;
+
+    var matches;
+    matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
+    if (matches && matches.length) {
+        prefix = matches[1];
+        suffix = matches[3];
+        number = WebInspector._modifiedHexValue(matches[2], event);
+
+        replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
+    } else {
+        matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
+        if (matches && matches.length) {
+            prefix = matches[1];
+            suffix = matches[3];
+            number = WebInspector._modifiedFloatNumber(parseFloat(matches[2]), event);
+
+            // Need to check for null explicitly.
+            if (number === null)
+                return null;
+
+            replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
+        }
+    }
+    return replacementString || null;
+}
+
+/**
  * @param {!Event} event
  * @param {!Element} element
  * @param {function(string,string)=} finishHandler
@@ -399,31 +435,7 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
     if (suggestionHandler && suggestionHandler(wordString))
         return false;
 
-    var replacementString;
-    var prefix, suffix, number;
-
-    var matches;
-    matches = /(.*#)([\da-fA-F]+)(.*)/.exec(wordString);
-    if (matches && matches.length) {
-        prefix = matches[1];
-        suffix = matches[3];
-        number = WebInspector._modifiedHexValue(matches[2], event);
-
-        replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
-    } else {
-        matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
-        if (matches && matches.length) {
-            prefix = matches[1];
-            suffix = matches[3];
-            number = WebInspector._modifiedFloatNumber(parseFloat(matches[2]), event);
-
-            // Need to check for null explicitly.
-            if (number === null)
-                return false;
-
-            replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
-        }
-    }
+    var replacementString = WebInspector.createReplacementString(wordString, event, customNumberHandler);
 
     if (replacementString) {
         var replacementTextNode = createTextNode(replacementString);
@@ -632,27 +644,27 @@ WebInspector.manageBlackboxingButtonLabel = function()
 
 /**
  * @param {!Element} element
- * @return {boolean}
  */
 WebInspector.installComponentRootStyles = function(element)
 {
-    var wasInstalled = element.classList.contains("component-root");
-    if (wasInstalled)
-        return false;
-    element.classList.add("component-root", "platform-" + WebInspector.platform());
+    element.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorCommon.css"));
+    element.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorSyntaxHighlight.css"));
+    element.classList.add("platform-" + WebInspector.platform());
     if (Runtime.experiments.isEnabled("materialDesign"))
         element.classList.add("material");
-    return true;
 }
 
 /**
  * @param {!Element} element
+ * @return {!DocumentFragment}
  */
-WebInspector.uninstallComponentRootStyles = function(element)
+WebInspector.createShadowRootWithCoreStyles = function(element)
 {
-    element.classList.remove("component-root", "platform-" + WebInspector.platform());
-    if (Runtime.experiments.isEnabled("materialDesign"))
-        element.classList.remove("material");
+    var shadowRoot = element.createShadowRoot();
+    shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorCommon.css"));
+    shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/inspectorSyntaxHighlight.css"));
+    shadowRoot.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector), true);
+    return shadowRoot;
 }
 
 /**
@@ -692,14 +704,11 @@ WebInspector.currentFocusElement = function()
 }
 
 /**
- * @param {!Document} document
  * @param {!Event} event
  */
-WebInspector._focusChanged = function(document, event)
+WebInspector._focusChanged = function(event)
 {
-    var node = document.activeElement;
-    while (node && node.shadowRoot)
-        node = node.shadowRoot.activeElement;
+    var node = event.deepActiveElement();
     WebInspector.setCurrentFocusElement(node);
 }
 
@@ -762,46 +771,6 @@ WebInspector.restoreFocusFromElement = function(element)
 {
     if (element && element.isSelfOrAncestor(WebInspector.currentFocusElement()))
         WebInspector.setCurrentFocusElement(WebInspector.previousFocusElement());
-}
-
-/**
- * @param {!Document} document
- * @param {string} backgroundColor
- * @param {string} color
- */
-WebInspector.setToolbarColors = function(document, backgroundColor, color)
-{
-    if (!WebInspector._themeStyleElement) {
-        WebInspector._themeStyleElement = createElement("style");
-        document.head.appendChild(WebInspector._themeStyleElement);
-    }
-    var colorWithAlpha = WebInspector.Color.parse(color).setAlpha(0.9).asString(WebInspector.Color.Format.RGBA);
-    var prefix = WebInspector.isMac() ? "body:not(.undocked)" : "body";
-    WebInspector._themeStyleElement.textContent =
-        String.sprintf(
-            "%s .inspector-view-tabbed-pane.tabbed-pane::shadow .tabbed-pane-header {" +
-            "    background-image: none !important;" +
-            "    background-color: %s !important;" +
-            "    color: %s !important;" +
-            "}", prefix, backgroundColor, colorWithAlpha) +
-        String.sprintf(
-            "%s .inspector-view-tabbed-pane.tabbed-pane::shadow .tabbed-pane-header-tab:hover {" +
-             "   color: %s;" +
-             "}", prefix, color) +
-        String.sprintf(
-             "%s .inspector-view-toolbar.toolbar::shadow .toolbar-item {" +
-             "   color: %s;" +
-             "}", prefix, colorWithAlpha) +
-        String.sprintf(
-             "%s .inspector-view-toolbar.toolbar::shadow .toolbar-button-theme {" +
-             "   background-color: %s;" +
-             "}", prefix, colorWithAlpha);
-}
-
-WebInspector.resetToolbarColors = function()
-{
-    if (WebInspector._themeStyleElement)
-        WebInspector._themeStyleElement.textContent = "";
 }
 
 /**
@@ -1204,7 +1173,7 @@ WebInspector.initializeUIUtils = function(window)
 {
     window.addEventListener("focus", WebInspector._windowFocused.bind(WebInspector, window.document), false);
     window.addEventListener("blur", WebInspector._windowBlurred.bind(WebInspector, window.document), false);
-    window.document.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector, window.document), true);
+    window.document.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector), true);
     window.document.addEventListener("blur", WebInspector._documentBlurred.bind(WebInspector, window.document), true);
 }
 
@@ -1290,7 +1259,7 @@ function createCheckboxLabel(title, checked)
         createdCallback: function()
         {
             this.type = "button";
-            var root = this.createShadowRoot();
+            var root = WebInspector.createShadowRootWithCoreStyles(this);
             root.appendChild(WebInspector.Widget.createStyleElement("ui/textButton.css"));
             root.createChild("content");
         },
@@ -1306,8 +1275,7 @@ function createCheckboxLabel(title, checked)
         {
             this.radioElement = this.createChild("input", "dt-radio-button");
             this.radioElement.type = "radio";
-
-            var root = this.createShadowRoot();
+            var root = WebInspector.createShadowRootWithCoreStyles(this);
             root.appendChild(WebInspector.Widget.createStyleElement("ui/radioButton.css"));
             root.createChild("content").select = ".dt-radio-button";
             root.createChild("content");
@@ -1336,12 +1304,58 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            var root = this.createShadowRoot();
-            root.appendChild(WebInspector.Widget.createStyleElement("ui/checkboxTextLabel.css"));
-            this.checkboxElement = this.createChild("input", "dt-checkbox-button");
-            this.checkboxElement.type = "checkbox";
-            root.createChild("content").select = ".dt-checkbox-button";
-            root.createChild("content");
+            this._root = WebInspector.createShadowRootWithCoreStyles(this);
+            this._root.appendChild(WebInspector.Widget.createStyleElement("ui/checkboxTextLabel.css"));
+            var checkboxElement = createElementWithClass("input", "dt-checkbox-button");
+            checkboxElement.type = "checkbox";
+            this._root.appendChild(checkboxElement);
+            this.checkboxElement = checkboxElement;
+
+            this.addEventListener("click", toggleCheckbox.bind(this));
+
+            /**
+             * @param {!Event} event
+             * @this {Node}
+             */
+            function toggleCheckbox(event)
+            {
+                if (event.target !== checkboxElement && event.target !== this)
+                    checkboxElement.click();
+            }
+
+            this._root.createChild("content");
+        },
+
+        /**
+         * @param {string} color
+         * @this {Element}
+         */
+        set backgroundColor(color)
+        {
+            this.checkboxElement.classList.add("dt-checkbox-themed");
+            this.checkboxElement.style.backgroundColor = color;
+        },
+
+        /**
+         * @param {string} color
+         * @this {Element}
+         */
+        set checkColor(color)
+        {
+            this.checkboxElement.classList.add("dt-checkbox-themed");
+            var stylesheet = createElement("style");
+            stylesheet.textContent = "input.dt-checkbox-themed:checked:after { background-color: " + color + "}";
+            this._root.appendChild(stylesheet);
+        },
+
+        /**
+         * @param {string} color
+         * @this {Element}
+         */
+        set borderColor(color)
+        {
+            this.checkboxElement.classList.add("dt-checkbox-themed");
+            this.checkboxElement.style.borderColor = color;
         },
 
         __proto__: HTMLLabelElement.prototype
@@ -1353,7 +1367,7 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            var root = this.createShadowRoot();
+            var root = WebInspector.createShadowRootWithCoreStyles(this);
             root.appendChild(WebInspector.Widget.createStyleElement("ui/smallIcon.css"));
             this._iconElement = root.createChild("div");
             root.createChild("content");
@@ -1377,7 +1391,7 @@ function createCheckboxLabel(title, checked)
          */
         createdCallback: function()
         {
-            var root = this.createShadowRoot();
+            var root = WebInspector.createShadowRootWithCoreStyles(this);
             root.appendChild(WebInspector.Widget.createStyleElement("ui/closeButton.css"));
             this._buttonElement = root.createChild("div", "close-button");
         },

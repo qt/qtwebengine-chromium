@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_PROTOCOL_EMULATION_HANDLER_H_
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_EMULATION_HANDLER_H_
 
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 #include "content/browser/devtools/protocol/page_handler.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 
@@ -49,7 +49,11 @@ class EmulationHandler : public page::PageHandler::ScreencastListener {
                                     bool fit_window,
                                     const double* optional_scale,
                                     const double* optional_offset_x,
-                                    const double* optional_offset_y);
+                                    const double* optional_offset_y,
+                                    const int* screen_widget,
+                                    const int* screen_height,
+                                    const int* position_x,
+                                    const int* position_y);
   Response ClearDeviceMetricsOverride();
 
  private:

@@ -15,6 +15,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/trace_event/trace_event.h"
+#include "components/tracing/startup_tracing.h"
 #include "mandoline/app/core_services_initialization.h"
 #include "mandoline/app/desktop/launcher_process.h"
 #include "mojo/runner/context.h"
@@ -83,11 +84,15 @@ int LauncherProcessMain(int argc, char** argv) {
       *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kTraceStartup)) {
     g_tracing = true;
-    base::trace_event::CategoryFilter category_filter(
-        command_line.GetSwitchValueASCII(switches::kTraceStartup));
+    base::trace_event::TraceConfig trace_config(
+        command_line.GetSwitchValueASCII(switches::kTraceStartup),
+        base::trace_event::RECORD_UNTIL_FULL);
     base::trace_event::TraceLog::GetInstance()->SetEnabled(
-        category_filter, base::trace_event::TraceLog::RECORDING_MODE,
-        base::trace_event::TraceOptions(base::trace_event::RECORD_UNTIL_FULL));
+        trace_config, base::trace_event::TraceLog::RECORDING_MODE);
+  } else {
+    // |g_tracing| is not touched in this case and Telemetry will stop tracing
+    // on demand later.
+    tracing::EnableStartupTracingIfConfigFileExists();
   }
 
   // We want the runner::Context to outlive the MessageLoop so that pipes are
@@ -108,7 +113,7 @@ int LauncherProcessMain(int argc, char** argv) {
     message_loop.PostTask(FROM_HERE,
                           base::Bind(&mojo::runner::Context::Run,
                                      base::Unretained(&shell_context),
-                                     GURL("mojo:window_manager")));
+                                     GURL("mojo:browser")));
     message_loop.Run();
 
     // Must be called before |message_loop| is destroyed.

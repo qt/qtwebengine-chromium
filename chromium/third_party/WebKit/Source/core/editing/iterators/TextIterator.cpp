@@ -33,12 +33,14 @@
 #include "core/dom/FirstLetterPseudoElement.h"
 #include "core/dom/Position.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/iterators/CharacterIterator.h"
 #include "core/editing/iterators/WordAwareIterator.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -85,7 +87,7 @@ Node* pastLastNode(const Node& rangeEndContainer, int rangeEndOffset)
         if (Node* next = Strategy::childAt(rangeEndContainer, rangeEndOffset))
             return next;
     }
-    for (const Node* node = &rangeEndContainer; node; node = Strategy::parentOrShadowHostNode(*node)) {
+    for (const Node* node = &rangeEndContainer; node; node = parentCrossingShadowBoundaries<Strategy>(*node)) {
         if (Node* next = Strategy::nextSibling(*node))
             return next;
     }
@@ -133,6 +135,7 @@ TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const typename Strategy::
     , m_behavior(adjustBehaviorFlags<Strategy>(behavior))
     , m_handledFirstLetter(false)
     , m_shouldStop(false)
+    , m_handleShadowRoot(false)
     // The call to emitsOriginalText() must occur after m_behavior is initialized.
     , m_textState(emitsOriginalText())
 {
@@ -188,6 +191,17 @@ void TextIteratorAlgorithm<Strategy>::initialize(Node* startContainer, int start
 template<typename Strategy>
 TextIteratorAlgorithm<Strategy>::~TextIteratorAlgorithm()
 {
+    if (!m_handleShadowRoot)
+        return;
+    Document* document = ownerDocument();
+    if (!document)
+        return;
+    if (m_behavior & TextIteratorForInnerText)
+        UseCounter::count(document, UseCounter::InnerTextWithShadowTree);
+    if (m_behavior & TextIteratorForSelectionToString)
+        UseCounter::count(document, UseCounter::SelectionToStringWithShadowTree);
+    if (m_behavior & TextIteratorForWindowFind)
+        UseCounter::count(document, UseCounter::WindowFindWithShadowTree);
 }
 
 template<typename Strategy>
@@ -257,6 +271,7 @@ void TextIteratorAlgorithm<Strategy>::advance()
             if (m_node->isShadowRoot()) {
                 // A shadow root doesn't have a layoutObject, but we want to visit children anyway.
                 m_iterationProgress = m_iterationProgress < HandledNode ? HandledNode : m_iterationProgress;
+                m_handleShadowRoot = true;
             } else {
                 m_iterationProgress = HandledChildren;
             }
@@ -265,7 +280,7 @@ void TextIteratorAlgorithm<Strategy>::advance()
             if (m_iterationProgress < HandledOpenShadowRoots) {
                 if (entersOpenShadowRoots() && m_node->isElementNode() && toElement(m_node)->hasOpenShadowRoot()) {
                     ShadowRoot* youngestShadowRoot = toElement(m_node)->shadowRoot();
-                    ASSERT(youngestShadowRoot->type() == ShadowRoot::OpenShadowRoot);
+                    ASSERT(youngestShadowRoot->type() == ShadowRootType::Open);
                     m_node = youngestShadowRoot;
                     m_iterationProgress = HandledNone;
                     ++m_shadowDepth;
@@ -280,7 +295,7 @@ void TextIteratorAlgorithm<Strategy>::advance()
             if (m_iterationProgress < HandledUserAgentShadowRoot) {
                 if (entersTextControls() && layoutObject->isTextControl()) {
                     ShadowRoot* userAgentShadowRoot = toElement(m_node)->userAgentShadowRoot();
-                    ASSERT(userAgentShadowRoot->type() == ShadowRoot::UserAgentShadowRoot);
+                    ASSERT(userAgentShadowRoot->type() == ShadowRootType::UserAgent);
                     m_node = userAgentShadowRoot;
                     m_iterationProgress = HandledNone;
                     ++m_shadowDepth;
@@ -349,9 +364,9 @@ void TextIteratorAlgorithm<Strategy>::advance()
                     // 4. Reached the top of a shadow root. If it's created by author, then try to visit the next
                     // sibling shadow root, if any.
                     ShadowRoot* shadowRoot = toShadowRoot(m_node);
-                    if (shadowRoot->type() == ShadowRoot::OpenShadowRoot) {
+                    if (shadowRoot->type() == ShadowRootType::Open) {
                         ShadowRoot* nextShadowRoot = shadowRoot->olderShadowRoot();
-                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRoot::OpenShadowRoot) {
+                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRootType::Open) {
                             m_fullyClippedStack.pop();
                             m_node = nextShadowRoot;
                             m_iterationProgress = HandledNone;
@@ -366,7 +381,7 @@ void TextIteratorAlgorithm<Strategy>::advance()
                         }
                     } else {
                         // If we are in a user-agent shadow root, then go back to the host.
-                        ASSERT(shadowRoot->type() == ShadowRoot::UserAgentShadowRoot);
+                        ASSERT(shadowRoot->type() == ShadowRootType::UserAgent);
                         m_node = shadowRoot->host();
                         m_iterationProgress = HandledUserAgentShadowRoot;
                         --m_shadowDepth;
@@ -485,7 +500,7 @@ bool TextIteratorAlgorithm<Strategy>::handleTextNode()
 template<typename Strategy>
 void TextIteratorAlgorithm<Strategy>::handleTextBox()
 {
-    LayoutText* layoutObject = m_firstLetterText ? m_firstLetterText.get() : toLayoutText(m_node->layoutObject());
+    LayoutText* layoutObject = m_firstLetterText ? m_firstLetterText : toLayoutText(m_node->layoutObject());
 
     if (layoutObject->style()->visibility() != VISIBLE && !ignoresStyleVisibility()) {
         m_textBox = nullptr;
@@ -847,7 +862,7 @@ bool TextIteratorAlgorithm<Strategy>::shouldRepresentNodeOffsetZero()
     // and in that case we'll get null. We don't want to put in newlines at the start in that case.
     // The currPos.isNotNull() check is needed because positions in non-HTML content
     // (like SVG) do not have visible positions, and we don't want to emit for them either.
-    VisiblePosition startPos = VisiblePosition(Position(m_startContainer, m_startOffset, Position::PositionIsOffsetInAnchor), DOWNSTREAM);
+    VisiblePosition startPos = VisiblePosition(Position(m_startContainer, m_startOffset), DOWNSTREAM);
     VisiblePosition currPos = VisiblePosition(positionBeforeNode(m_node), DOWNSTREAM);
     return startPos.isNotNull() && currPos.isNotNull() && !inSameLine(startPos, currPos);
 }
@@ -956,17 +971,17 @@ void TextIteratorAlgorithm<Strategy>::emitText(Node* textNode, LayoutText* layou
 }
 
 template<typename Strategy>
-PassRefPtrWillBeRawPtr<Range> TextIteratorAlgorithm<Strategy>::createRange() const
+EphemeralRange TextIteratorAlgorithm<Strategy>::range() const
 {
     // use the current run information, if we have it
     if (m_textState.positionNode())
-        return m_textState.createRange();
+        return m_textState.range();
 
     // otherwise, return the end of the overall range we were given
     if (m_endContainer)
-        return Range::create(m_endContainer->document(), m_endContainer, m_endOffset, m_endContainer, m_endOffset);
+        return EphemeralRange(Position(m_endContainer, m_endOffset));
 
-    return nullptr;
+    return EphemeralRange();
 }
 
 template<typename Strategy>
@@ -1049,20 +1064,10 @@ int TextIteratorAlgorithm<Strategy>::rangeLength(const typename Strategy::Positi
 }
 
 template<typename Strategy>
-PassRefPtrWillBeRawPtr<Range> TextIteratorAlgorithm<Strategy>::subrange(Range* entireRange, int characterOffset, int characterCount)
-{
-    CharacterIterator entireRangeIterator(entireRange, TextIteratorEmitsObjectReplacementCharacter);
-    Position start;
-    Position end;
-    entireRangeIterator.calculateCharacterSubrange(characterOffset, characterCount, start, end);
-    return Range::create(entireRange->ownerDocument(), start, end);
-}
-
-template<typename Strategy>
-void TextIteratorAlgorithm<Strategy>::subrange(Position& start, Position& end, int characterOffset, int characterCount)
+EphemeralRange TextIteratorAlgorithm<Strategy>::subrange(const Position& start, const Position& end, int characterOffset, int characterCount)
 {
     CharacterIterator entireRangeIterator(start, end, TextIteratorEmitsObjectReplacementCharacter);
-    entireRangeIterator.calculateCharacterSubrange(characterOffset, characterCount, start, end);
+    return entireRangeIterator.calculateCharacterSubrange(characterOffset, characterCount);
 }
 
 // --------
@@ -1089,11 +1094,6 @@ static String createPlainText(const typename Strategy::PositionType& start, cons
     return builder.toString();
 }
 
-String plainText(const Range* r, TextIteratorBehaviorFlags behavior)
-{
-    return createPlainText<EditingStrategy>(r->startPosition(), r->endPosition(), behavior);
-}
-
 String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags behavior)
 {
     return createPlainText<EditingStrategy>(start, end, behavior);
@@ -1104,7 +1104,7 @@ String plainText(const PositionInComposedTree& start, const PositionInComposedTr
     return createPlainText<EditingInComposedTreeStrategy>(start, end, behavior);
 }
 
-template class CORE_EXPORT TextIteratorAlgorithm<EditingStrategy>;
-template class CORE_EXPORT TextIteratorAlgorithm<EditingInComposedTreeStrategy>;
+template class CORE_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingInComposedTreeStrategy>;
 
 } // namespace blink

@@ -28,6 +28,7 @@
     DoNotCheckConstants,
     GarbageCollected,
     TypeChecking=Interface,
+    ConstructorCallWith=ScriptState,
 ] interface Internals {
     DOMString address(Node node);
 
@@ -35,6 +36,7 @@
 
     [RaisesException, TypeChecking=Interface] DOMString elementLayoutTreeAsText(Element element);
     boolean isPreloaded(DOMString url);
+    boolean isPreloadedBy(DOMString url, Document document);
     boolean isLoadingFromMemoryCache(DOMString url);
 
     [TypeChecking=Interface] boolean isSharingStyle(Element element1, Element element2);
@@ -63,9 +65,13 @@
     [RaisesException] unsigned long updateStyleAndReturnAffectedElementCount();
     [RaisesException] unsigned long needsLayoutCount();
     [RaisesException] unsigned long hitTestCount(Document document);
+    [RaisesException] unsigned long hitTestCacheHits(Document document);
+    [RaisesException] Element? elementFromPoint(Document document, double x, double y, boolean ignoreClipping, boolean allowChildFrameContent);
+    [RaisesException] void clearHitTestCache(Document document);
 
-    // CSS Animation and Transition testing.
+    // Animation testing.
     [RaisesException] void pauseAnimations(double pauseTime);
+    bool isCompositedAnimation(Animation animation);
 
     // Modifies m_desiredFrameStartTime in BitmapImage to advance the next frame time
     // for testing whether animated images work properly.
@@ -173,6 +179,7 @@
     const unsigned short LAYER_TREE_INCLUDES_CLIP_AND_SCROLL_PARENTS = 16;
     const unsigned short LAYER_TREE_INCLUDES_SCROLL_BLOCKS_ON = 32;
     const unsigned short LAYER_TREE_INCLUDES_PAINT_INVALIDATION_OBJECTS = 64;
+    const unsigned short LAYER_TREE_INCLUDES_COMPOSITING_REASONS = 128;
     [RaisesException, TypeChecking=Interface] DOMString layerTreeAsText(Document document, optional unsigned short flags);
     [RaisesException, TypeChecking=Interface] DOMString elementLayerTreeAsText(Element element, optional unsigned short flags);
 
@@ -200,10 +207,11 @@
     [RaisesException] DOMString pageSizeAndMarginsInPixels(long pageIndex, long width, long height, long marginTop, long marginRight, long marginBottom, long marginLeft);
 
     [RaisesException] void setDeviceScaleFactor(float scaleFactor);
+    [RaisesException] void setPageScaleFactor(float scaleFactor);
+    [RaisesException] void setPageScaleFactorLimits(float minScaleFactor, float maxScaleFactor);
 
     [RaisesException, TypeChecking=Interface] void setIsCursorVisible(Document document, boolean isVisible);
 
-    [TypeChecking=Interface] void mediaPlayerRequestFullscreen(HTMLMediaElement mediaElement);
     [TypeChecking=Interface] double effectiveMediaVolume(HTMLMediaElement mediaElement);
     [TypeChecking=Interface] void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement mediaElement, boolean available);
     [TypeChecking=Interface] void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement mediaElement, boolean remote);
@@ -241,7 +249,7 @@
     [TypeChecking=Interface] DOMString getCurrentCursorInfo();
 
     readonly attribute boolean cursorUpdatePending;
-    
+
     [TypeChecking=Interface] DOMString markerTextForListItem(Element element);
 
     SerializedScriptValue deserializeBuffer(ArrayBuffer buffer);
@@ -293,13 +301,10 @@
     // This function is for testing HitRegions on Canvas2D.
     unsigned long countHitRegions(CanvasRenderingContext2D context);
 
+    [TypeChecking=Interface] boolean isInCanvasFontCache(Document document, DOMString fontString);
+    [TypeChecking=Interface] unsigned long canvasFontCacheMaxFonts();
+
     [TypeChecking=Interface] ClientRect boundsInViewportSpace(Element element);
-    DOMString serializeNavigationMarkup();
-    DOMString[] getTransitionElementIds();
-    ClientRectList getTransitionElementRects();
-    void hideAllTransitionElements();
-    void showAllTransitionElements();
-    void setExitTransitionStylesheetsEnabled(boolean enabled);
 
     [RaisesException, TypeChecking=Interface] void forcePluginPlaceholder(HTMLElement plugin, DocumentFragment fragment);
     [RaisesException, TypeChecking=Interface] void forcePluginPlaceholder(HTMLElement plugin, PluginPlaceholderOptions options);
@@ -322,4 +327,5 @@
     [Unscopeable] DOMString unscopeableMethod();
 
     ClientRectList focusRingRects(Element element);
+    void setCapsLockState(boolean enabled);
 };

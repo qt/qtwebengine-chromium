@@ -28,6 +28,7 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_pile_impl.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_gpu_memory_buffer_manager.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_task_graph_runner.h"
@@ -39,6 +40,8 @@ namespace cc {
 namespace {
 
 const size_t kMaxTransferBufferUsageBytes = 10000U;
+const size_t kMaxBytesPerCopyOperation = 1000U;
+
 // A resource of this dimension^2 * 4 must be greater than the above transfer
 // buffer constant.
 const size_t kLargeResourceDimension = 1000U;
@@ -66,12 +69,16 @@ class TestRasterTaskImpl : public RasterTask {
 
   // Overridden from Task:
   void RunOnWorkerThread() override {
-    raster_buffer_->Playback(picture_pile_.get(), gfx::Rect(0, 0, 1, 1), 1.0);
+    uint64_t new_content_id = 0;
+    raster_buffer_->Playback(picture_pile_.get(), gfx::Rect(1, 1),
+                             gfx::Rect(1, 1), new_content_id, 1.f);
   }
 
   // Overridden from TileTask:
   void ScheduleOnOriginThread(TileTaskClient* client) override {
-    raster_buffer_ = client->AcquireBufferForRaster(resource());
+    // The raster buffer has no tile ids associated with it for partial update,
+    // so doesn't need to provide a valid dirty rect.
+    raster_buffer_ = client->AcquireBufferForRaster(resource(), 0, 0);
   }
   void CompleteOnOriginThread(TileTaskClient* client) override {
     client->ReleaseBufferForRaster(raster_buffer_.Pass());
@@ -163,7 +170,7 @@ class TileTaskWorkerPoolTest
         tile_task_worker_pool_ = OneCopyTileTaskWorkerPool::Create(
             base::ThreadTaskRunnerHandle::Get().get(), &task_graph_runner_,
             context_provider_.get(), resource_provider_.get(),
-            staging_resource_pool_.get());
+            staging_resource_pool_.get(), kMaxBytesPerCopyOperation, false);
         break;
       case TILE_TASK_WORKER_POOL_TYPE_GPU:
         Create3dOutputSurfaceAndResourceProvider();
@@ -287,23 +294,21 @@ class TileTaskWorkerPoolTest
 
  private:
   void Create3dOutputSurfaceAndResourceProvider() {
-    output_surface_ = FakeOutputSurface::Create3d(
-                          context_provider_, worker_context_provider_).Pass();
+    output_surface_ = FakeOutputSurface::Create3d(context_provider_,
+                                                  worker_context_provider_);
     CHECK(output_surface_->BindToClient(&output_surface_client_));
     TestWebGraphicsContext3D* context3d = context_provider_->TestContext3d();
     context3d->set_support_sync_query(true);
-    resource_provider_ = ResourceProvider::Create(output_surface_.get(), NULL,
-                                                  &gpu_memory_buffer_manager_,
-                                                  NULL, 0, false, 1).Pass();
+    resource_provider_ = FakeResourceProvider::Create(
+        output_surface_.get(), nullptr, &gpu_memory_buffer_manager_);
   }
 
   void CreateSoftwareOutputSurfaceAndResourceProvider() {
     output_surface_ = FakeOutputSurface::CreateSoftware(
         make_scoped_ptr(new SoftwareOutputDevice));
     CHECK(output_surface_->BindToClient(&output_surface_client_));
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), &shared_bitmap_manager_,
-                                 NULL, NULL, 0, false, 1).Pass();
+    resource_provider_ = FakeResourceProvider::Create(
+        output_surface_.get(), &shared_bitmap_manager_, nullptr);
   }
 
   void OnTaskCompleted(scoped_ptr<ScopedResource> resource,
@@ -401,7 +406,9 @@ TEST_P(TileTaskWorkerPoolTest, LargeResources) {
         ScopedResource::Create(resource_provider_.get()));
     resource->Allocate(size, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
                        RGBA_8888);
-    EXPECT_GE(resource->bytes(), kMaxTransferBufferUsageBytes);
+    EXPECT_GE(Resource::UncheckedMemorySizeBytes(resource->size(),
+                                                 resource->format()),
+              kMaxTransferBufferUsageBytes);
   }
 
   AppendTask(0u, size);
@@ -427,6 +434,21 @@ TEST_P(TileTaskWorkerPoolTest, LostContext) {
   ASSERT_EQ(2u, completed_tasks().size());
   EXPECT_FALSE(completed_tasks()[0].canceled);
   EXPECT_FALSE(completed_tasks()[1].canceled);
+}
+
+TEST_P(TileTaskWorkerPoolTest, ScheduleEmptyStillTriggersCallback) {
+  // Don't append any tasks, just call ScheduleTasks.
+  ScheduleTasks();
+
+  EXPECT_FALSE(completed_task_sets_[REQUIRED_FOR_ACTIVATION]);
+  EXPECT_FALSE(completed_task_sets_[REQUIRED_FOR_DRAW]);
+  EXPECT_FALSE(completed_task_sets_[ALL]);
+
+  RunMessageLoopUntilAllTasksHaveCompleted();
+
+  EXPECT_TRUE(completed_task_sets_[REQUIRED_FOR_ACTIVATION]);
+  EXPECT_TRUE(completed_task_sets_[REQUIRED_FOR_DRAW]);
+  EXPECT_TRUE(completed_task_sets_[ALL]);
 }
 
 INSTANTIATE_TEST_CASE_P(

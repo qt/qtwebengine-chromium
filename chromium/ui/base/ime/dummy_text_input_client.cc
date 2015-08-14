@@ -32,10 +32,6 @@ void DummyTextInputClient::InsertText(const base::string16& text) {
 void DummyTextInputClient::InsertChar(base::char16 ch, int flags) {
 }
 
-gfx::NativeWindow DummyTextInputClient::GetAttachedWindow() const {
-  return NULL;
-}
-
 TextInputType DummyTextInputClient::GetTextInputType() const {
   return text_input_type_;
 }
@@ -104,15 +100,6 @@ void DummyTextInputClient::ExtendSelectionAndDelete(size_t before,
 }
 
 void DummyTextInputClient::EnsureCaretInRect(const gfx::Rect& rect)  {
-}
-
-void DummyTextInputClient::OnCandidateWindowShown() {
-}
-
-void DummyTextInputClient::OnCandidateWindowUpdated() {
-}
-
-void DummyTextInputClient::OnCandidateWindowHidden() {
 }
 
 bool DummyTextInputClient::IsEditCommandEnabled(int command_id) {

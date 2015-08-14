@@ -21,7 +21,7 @@ bool VideoCaptureDeviceFactoryAndroid::RegisterVideoCaptureDeviceFactory(
   return RegisterNativesImpl(env);
 }
 
-//static
+// static
 ScopedJavaLocalRef<jobject>
 VideoCaptureDeviceFactoryAndroid::createVideoCaptureAndroid(
     int id,
@@ -114,7 +114,7 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
         pixel_format = media::PIXEL_FORMAT_NV21;
         break;
       default:
-        break;
+        continue;
     }
     VideoCaptureFormat capture_format(
         gfx::Size(media::Java_VideoCaptureFactory_getCaptureFormatWidth(env,
@@ -125,7 +125,8 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
                                                                   format.obj()),
         pixel_format);
     capture_formats->push_back(capture_format);
-    DVLOG(1) << device.name() << " " << capture_format.ToString();
+    DVLOG(1) << device.name() << " "
+             << VideoCaptureFormat::ToString(capture_format);
   }
 }
 

@@ -225,14 +225,11 @@ double ProcessMetrics::GetCPUUsage() {
   if (time_delta == 0)
     return 0;
 
-  // We add time_delta / 2 so the result is rounded.
-  int cpu = static_cast<int>((system_time_delta * 100 + time_delta / 2) /
-                             time_delta);
 
   last_system_time_ = system_time;
   last_cpu_time_ = time;
 
-  return cpu;
+  return static_cast<double>(system_time_delta * 100.0) / time_delta;
 }
 
 bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
@@ -263,7 +260,7 @@ static BOOL InternalGetPerformanceInfo(
           GetProcAddress(psapi_dll, "GetPerformanceInfo"));
 
     if (!GetPerformanceInfo_func) {
-      // The function could be loaded!
+      // The function could not be loaded!
       memset(pPerformanceInformation, 0, cb);
       return FALSE;
     }

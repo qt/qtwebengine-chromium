@@ -8,7 +8,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/linked_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/frame_host/navigation_controller_delegate.h"
@@ -20,6 +20,7 @@
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
+class FrameTreeNode;
 class RenderFrameHostImpl;
 class NavigationEntryScreenshotManager;
 class SiteInstance;
@@ -39,7 +40,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   void SetBrowserContext(BrowserContext* browser_context) override;
   void Restore(int selected_navigation,
                RestoreType type,
-               std::vector<NavigationEntry*>* entries) override;
+               ScopedVector<NavigationEntry>* entries) override;
   NavigationEntryImpl* GetActiveEntry() const override;
   NavigationEntryImpl* GetVisibleEntry() const override;
   int GetCurrentEntryIndex() const override;
@@ -53,7 +54,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   NavigationEntryImpl* GetPendingEntry() const override;
   int GetPendingEntryIndex() const override;
   NavigationEntryImpl* GetTransientEntry() const override;
-  void SetTransientEntry(NavigationEntry* entry) override;
+  void SetTransientEntry(scoped_ptr<NavigationEntry> entry) override;
   void LoadURL(const GURL& url,
                const Referrer& referrer,
                ui::PageTransition type,
@@ -81,7 +82,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   void Reload(bool check_for_repost) override;
   void ReloadIgnoringCache(bool check_for_repost) override;
   void ReloadOriginalRequestURL(bool check_for_repost) override;
-  void NotifyEntryChanged(const NavigationEntry* entry, int index) override;
+  void NotifyEntryChanged(const NavigationEntry* entry) override;
   void CopyStateFrom(const NavigationController& source) override;
   void CopyStateFromAndPrune(NavigationController* source,
                              bool replace_entry) override;
@@ -110,11 +111,19 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Return the index of the entry with the given unique id, or -1 if not found.
   int GetEntryIndexWithUniqueID(int nav_entry_id) const;
 
-  // Return the entry with the corresponding instance and page_id, or NULL if
+  // Return the entry with the corresponding instance and page_id, or null if
   // not found.
   NavigationEntryImpl* GetEntryWithPageID(
       SiteInstance* instance,
       int32 page_id) const;
+
+  // Return the entry with the given unique id, or null if not found.
+  NavigationEntryImpl* GetEntryWithUniqueID(int nav_entry_id) const;
+
+  // Whether the given frame has committed any navigations yet.
+  // This currently only returns true in --site-per-process mode.
+  // TODO(creis): Create FrameNavigationEntries by default so this always works.
+  bool HasCommittedRealLoad(FrameTreeNode* frame_tree_node) const;
 
   NavigationControllerDelegate* delegate() const {
     return delegate_;
@@ -124,7 +133,7 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Allow renderer-initiated navigations to create a pending entry when the
   // provisional load starts.
-  void SetPendingEntry(content::NavigationEntryImpl* entry);
+  void SetPendingEntry(scoped_ptr<NavigationEntryImpl> entry);
 
   // Handles updating the navigation state after the renderer has navigated.
   // This is used by the WebContentsImpl.
@@ -145,11 +154,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   // so that we know to load URLs that were pending as "lazy" loads.
   void SetActive(bool is_active);
 
-  // Returns true if the given URL would be an in-page navigation (i.e. only
-  // the reference fragment is different) from the "last committed entry". We do
-  // not compare it against the "active entry" since the active entry can be
-  // pending and in page navigations only happen on committed pages. If there
-  // is no last committed entry, then nothing will be in-page.
+  // Returns true if the given URL would be an in-page navigation (i.e. only the
+  // reference fragment is different) from the last committed URL in the
+  // specified frame. If there is no last committed entry, then nothing will be
+  // in-page.
   //
   // Special note: if the URLs are the same, it does NOT automatically count as
   // an in-page navigation. Neither does an input URL that has no ref, even if
@@ -216,6 +224,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ManyDuplicates);
   FRIEND_TEST_ALL_PREFIXES(TimeSmoother, ClockBackwardsJump);
 
+  // Used for identifying which frames need to navigate.
+  using FrameLoadVector =
+      std::vector<std::pair<FrameTreeNode*, FrameNavigationEntry*>>;
+
   // Helper class to smooth out runs of duplicate timestamps while still
   // allowing time to jump backwards.
   class CONTENT_EXPORT TimeSmoother {
@@ -230,21 +242,27 @@ class CONTENT_EXPORT NavigationControllerImpl
     base::Time high_water_mark_;
   };
 
+  // Causes the controller to load the specified entry. The function assumes
+  // ownership of the pointer since it is put in the navigation list.
+  // NOTE: Do not pass an entry that the controller already owns!
+  void LoadEntry(scoped_ptr<NavigationEntryImpl> entry);
+
+  // Identifies which frames need to be navigated for the pending
+  // NavigationEntry and instructs their Navigator to navigate them.  Returns
+  // whether any frame successfully started a navigation.
+  bool NavigateToPendingEntryInternal(ReloadType reload_type);
+
+  // Recursively identifies which frames need to be navigated for the pending
+  // NavigationEntry, starting at |frame| and exploring its children.  Only used
+  // in --site-per-process.
+  void FindFramesToNavigate(FrameTreeNode* frame,
+                            FrameLoadVector* sameDocumentLoads,
+                            FrameLoadVector* differentDocumentLoads);
+
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
-  // This does the same as above (hopefully), but does so without any use of
-  // deprecated page id values. Once it bakes and is verified to behave the
-  // same, it will replace it. http://crbug.com/369661
-  NavigationType ClassifyNavigationWithoutPageID(
-      RenderFrameHostImpl* rfh,
-      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
-
-  // Causes the controller to load the specified entry. The function assumes
-  // ownership of the pointer since it is put in the navigation list.
-  // NOTE: Do not pass an entry that the controller already owns!
-  void LoadEntry(NavigationEntryImpl* entry);
 
   // Handlers for the different types of navigation types. They will actually
   // handle the navigations corresponding to the different NavClasses above.
@@ -268,10 +286,6 @@ class CONTENT_EXPORT NavigationControllerImpl
   void RendererDidNavigateToSamePage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
-  void RendererDidNavigateInPage(
-      RenderFrameHostImpl* rfh,
-      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
-      bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
@@ -301,7 +315,8 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Inserts a new entry or replaces the current entry with a new one, removing
   // all entries after it. The new entry will become the active one.
-  void InsertOrReplaceEntry(NavigationEntryImpl* entry, bool replace);
+  void InsertOrReplaceEntry(scoped_ptr<NavigationEntryImpl> entry,
+                            bool replace);
 
   // Removes the entry at |index|, as long as it is not the current entry.
   void RemoveEntryAtIndexInternal(int index);
@@ -343,7 +358,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   BrowserContext* browser_context_;
 
   // List of NavigationEntry for this tab
-  typedef std::vector<linked_ptr<NavigationEntryImpl> > NavigationEntries;
+  using NavigationEntries = ScopedVector<NavigationEntryImpl>;
   NavigationEntries entries_;
 
   // An entry we haven't gotten a response for yet.  This will be discarded

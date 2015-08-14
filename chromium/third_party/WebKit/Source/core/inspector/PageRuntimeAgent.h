@@ -32,6 +32,7 @@
 #define PageRuntimeAgent_h
 
 #include "bindings/core/v8/ScriptState.h"
+#include "core/CoreExport.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -40,34 +41,35 @@ namespace blink {
 class InspectorPageAgent;
 class SecurityOrigin;
 
-class PageRuntimeAgent final : public InspectorRuntimeAgent {
+class CORE_EXPORT PageRuntimeAgent final : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtrWillBeRawPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, InspectorRuntimeAgent::Client* client, ScriptDebugServer* scriptDebugServer, InspectorPageAgent* pageAgent)
+    static PassOwnPtrWillBeRawPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, InspectorRuntimeAgent::Client* client, V8Debugger* debugger, InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new PageRuntimeAgent(injectedScriptManager, client, scriptDebugServer, pageAgent));
+        return adoptPtrWillBeNoop(new PageRuntimeAgent(injectedScriptManager, client, debugger, pageAgent));
     }
     virtual ~PageRuntimeAgent();
     DECLARE_VIRTUAL_TRACE();
-    virtual void init() override;
-    virtual void enable(ErrorString*) override;
+    void init() override;
+    void enable(ErrorString*) override;
+    void disable(ErrorString*) override;
 
     void didClearDocumentOfWindowObject(LocalFrame*);
     void didCreateScriptContext(LocalFrame*, ScriptState*, SecurityOrigin*, int worldId);
     void willReleaseScriptContext(LocalFrame*, ScriptState*);
 
-    int debuggerId() const { return m_debuggerId; }
-
 private:
-    PageRuntimeAgent(InjectedScriptManager*, Client*, ScriptDebugServer*, InspectorPageAgent*);
+    PageRuntimeAgent(InjectedScriptManager*, Client*, V8Debugger*, InspectorPageAgent*);
 
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
     virtual void muteConsole() override;
     virtual void unmuteConsole() override;
     void reportExecutionContextCreation();
+    void reportExecutionContext(ScriptState*, bool isPageContext, const String& origin, const String& frameId);
 
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     bool m_mainWorldContextCreated;
-    int m_debuggerId;
+    typedef HashMap<RefPtr<ScriptState>, int> ScriptStateToId;
+    ScriptStateToId m_scriptStateToId;
 };
 
 } // namespace blink

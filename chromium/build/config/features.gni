@@ -2,14 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This file contains UI-related build flags. It should theoretically be in the
-# src/ui directory and only things that depend on the ui module should get the
-# definitions.
+# This file contains Chrome-feature-related build flags (see ui.gni for
+# UI-related ones). These should theoretically be moved to the build files of
+# the features themselves.
 #
 # However, today we have many "bad" dependencies on some of these flags from,
-# e.g. base, so they need to be global.
+# e.g. base, so they need to be global to match the GYP configuration. Also,
+# anything that needs a grit define must be in either this file or ui.gni.
 #
-# See also build/config/ui.gni
+# PLEASE TRY TO AVOID ADDING FLAGS TO THIS FILE in cases where grit isn't
+# required. See the declare_args block of BUILDCONFIG.gn for advice on how
+# to set up feature flags.
 
 import("//build/config/chrome_build.gni")
 if (is_android) {
@@ -122,6 +125,9 @@ use_udev = is_linux
 # Enable the spell checker.
 enable_spellcheck = !is_android
 
+# Use the operating system's spellchecker rather than hunspell.
+use_platform_spellchecker = is_android || is_mac
+
 enable_pepper_cdms = enable_plugins && (is_linux || is_mac || is_win)
 
 # Enable basic printing support and UI.
@@ -180,8 +186,6 @@ enable_chromevox_next = false
 # Use brlapi from brltty for braille display support.
 use_brlapi = is_chromeos
 
-enable_media_router = !is_ios && !is_android
-
 # Option controlling the use of GConf (the classic GNOME configuration
 # system).
 # TODO(GYP) also require !embedded to enable.
@@ -194,3 +198,6 @@ enable_hangout_services_extension = false
 
 # Whether to back up data before sync.
 enable_pre_sync_backup = is_win || is_mac || (is_linux && !is_chromeos)
+
+# WebVR support disabled until platform implementations have been added
+enable_webvr = false

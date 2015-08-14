@@ -34,7 +34,8 @@ MP4StreamParser::MP4StreamParser(const std::set<int>& audio_object_types,
       audio_object_types_(audio_object_types),
       has_sbr_(has_sbr),
       is_audio_track_encrypted_(false),
-      is_video_track_encrypted_(false) {
+      is_video_track_encrypted_(false),
+      num_top_level_box_skipped_(0) {
 }
 
 MP4StreamParser::~MP4StreamParser() {}
@@ -159,14 +160,15 @@ bool MP4StreamParser::ParseBox(bool* err) {
     // before the head of the 'moof', so keeping this box around is sufficient.)
     return !(*err);
   } else {
-    MEDIA_LOG(DEBUG, log_cb_) << "Skipping unrecognized top-level box: "
-                              << FourCCToString(reader->type());
+    // TODO(wolenetz,chcunningham): Enforce more strict adherence to MSE byte
+    // stream spec for ftyp and styp. See http://crbug.com/504514.
+    DVLOG(2) << "Skipping unrecognized top-level box: "
+             << FourCCToString(reader->type());
   }
 
   queue_.Pop(reader->size());
   return !(*err);
 }
-
 
 bool MP4StreamParser::ParseMoov(BoxReader* reader) {
   moov_.reset(new Movie);
@@ -285,13 +287,27 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       // TODO(strobe): Recover correct crop box
       gfx::Size coded_size(entry.width, entry.height);
       gfx::Rect visible_rect(coded_size);
-      gfx::Size natural_size = GetNaturalSize(visible_rect.size(),
-                                              entry.pixel_aspect.h_spacing,
-                                              entry.pixel_aspect.v_spacing);
+
+      // If PASP is available, use the coded size and PASP to calculate the
+      // natural size. Otherwise, use the size in track header for natural size.
+      gfx::Size natural_size(visible_rect.size());
+      if (entry.pixel_aspect.h_spacing != 1 ||
+          entry.pixel_aspect.v_spacing != 1) {
+        natural_size =
+            GetNaturalSize(visible_rect.size(), entry.pixel_aspect.h_spacing,
+                           entry.pixel_aspect.v_spacing);
+      } else if (track->header.width && track->header.height) {
+        // An even width makes things easier for YV12 and appears to be the
+        // behavior expected by WebKit layout tests. See GetNaturalSize().
+        natural_size =
+            gfx::Size(track->header.width & ~1, track->header.height);
+      }
+
       is_video_track_encrypted_ = entry.sinf.info.track_encryption.is_encrypted;
       DVLOG(1) << "is_video_track_encrypted_: " << is_video_track_encrypted_;
-      video_config.Initialize(kCodecH264, H264PROFILE_MAIN,  VideoFrame::YV12,
-                              coded_size, visible_rect, natural_size,
+      video_config.Initialize(kCodecH264, H264PROFILE_MAIN, VideoFrame::YV12,
+                              VideoFrame::COLOR_SPACE_UNSPECIFIED, coded_size,
+                              visible_rect, natural_size,
                               // No decoder-specific buffer needed for AVC;
                               // SPS/PPS are embedded in the video stream
                               NULL, 0, is_video_track_encrypted_, false);
@@ -306,11 +322,23 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
   if (moov_->extends.header.fragment_duration > 0) {
     params.duration = TimeDeltaFromRational(
         moov_->extends.header.fragment_duration, moov_->header.timescale);
+    params.liveness = DemuxerStream::LIVENESS_RECORDED;
   } else if (moov_->header.duration > 0 &&
              moov_->header.duration != kuint64max) {
     params.duration =
         TimeDeltaFromRational(moov_->header.duration, moov_->header.timescale);
+    params.liveness = DemuxerStream::LIVENESS_RECORDED;
+  } else {
+    // In ISO/IEC 14496-12:2005(E), 8.30.2: ".. If an MP4 file is created in
+    // real-time, such as used in live streaming, it is not likely that the
+    // fragment_duration is known in advance and this (mehd) box may be
+    // omitted."
+    // TODO(wolenetz): Investigate gating liveness detection on timeline_offset
+    // when it's populated. See http://crbug.com/312699
+    params.liveness = DemuxerStream::LIVENESS_LIVE;
   }
+
+  DVLOG(1) << "liveness: " << params.liveness;
 
   if (!init_cb_.is_null())
     base::ResetAndReturn(&init_cb_).Run(params);

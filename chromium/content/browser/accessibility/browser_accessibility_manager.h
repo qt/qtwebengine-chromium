@@ -54,11 +54,13 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
   virtual ~BrowserAccessibilityDelegate() {}
   virtual void AccessibilitySetFocus(int acc_obj_id) = 0;
   virtual void AccessibilityDoDefaultAction(int acc_obj_id) = 0;
-  virtual void AccessibilityShowMenu(const gfx::Point& global_point) = 0;
+  virtual void AccessibilityShowContextMenu(int acc_obj_id) = 0;
   virtual void AccessibilityScrollToMakeVisible(
       int acc_obj_id, const gfx::Rect& subfocus) = 0;
   virtual void AccessibilityScrollToPoint(
       int acc_obj_id, const gfx::Point& point) = 0;
+  virtual void AccessibilitySetScrollOffset(
+      int acc_obj_id, const gfx::Point& offset) = 0;
   virtual void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset) = 0;
   virtual void AccessibilitySetValue(
@@ -177,6 +179,10 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   void ScrollToPoint(
       const BrowserAccessibility& node, gfx::Point point);
 
+  // If |node| is itself a scrollable container, set its scroll
+  // offset to |offset|.
+  void SetScrollOffset(const BrowserAccessibility& node, gfx::Point offset);
+
   // Tell the renderer to set the value of an editable text node.
   void SetValue(
       const BrowserAccessibility& node, const base::string16& value);
@@ -240,11 +246,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   BrowserAccessibility* PreviousInTreeOrder(BrowserAccessibility* node);
 
   // AXTreeDelegate implementation.
-  void OnNodeWillBeDeleted(ui::AXNode* node) override;
-  void OnSubtreeWillBeDeleted(ui::AXNode* node) override;
-  void OnNodeCreated(ui::AXNode* node) override;
-  void OnNodeChanged(ui::AXNode* node) override;
+  void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnSubtreeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnNodeCreated(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnNodeChanged(ui::AXTree* tree, ui::AXNode* node) override;
   void OnAtomicUpdateFinished(
+      ui::AXTree* tree,
       bool root_changed,
       const std::vector<ui::AXTreeDelegate::Change>& changes) override;
 

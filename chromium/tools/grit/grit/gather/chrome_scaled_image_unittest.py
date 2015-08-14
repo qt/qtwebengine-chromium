@@ -79,11 +79,12 @@ def _If(expr, *body):
   return '<if expr="%s">\n%s\n</if>' % (expr, '\n'.join(body))
 
 
-def _RunBuildTest(self, structures, inputs, expected_outputs, skip_rc=False):
-  outputs = '\n'.join('<output filename="out/%s%s" type="%s" context="%s" />'
-                              % (context, ext, type, context)
+def _RunBuildTest(self, structures, inputs, expected_outputs, skip_rc=False, layout_fallback=''):
+  outputs = '\n'.join('<output filename="out/%s%s" type="%s" context="%s"%s />'
+                              % (context, ext, type, context, layout_fallback)
                       for ext, type in _OUTFILETYPES
                       for context in expected_outputs)
+
   infiles = {
     'in/in.grd': '''<?xml version="1.0" encoding="UTF-8"?>
       <grit latest_public_release="0" current_release="1">
@@ -172,3 +173,21 @@ class ChromeScaledImageUnittest(unittest.TestCase):
             ),
             {},  # no files
             {'tactile_123_percent': 'should fail before using this'})
+
+  def testNoFallbackToDefaultLayout(self):
+    d123a = _MakePNG([('AbCd', '')])
+    t123a = _MakePNG([('EfGh', '')])
+    d123b = _MakePNG([('IjKl', '')])
+    _RunBuildTest(self,
+        _Structures(None,
+            _Structure('IDR_A', 'a.png'),
+            _Structure('IDR_B', 'b.png'),
+        ),
+        {'default_123_percent/a.png': d123a,
+         'tactile_123_percent/a.png': t123a,
+         'default_123_percent/b.png': d123b,
+        },
+        {'default_123_percent': set([d123a, d123b]),
+         'tactile_123_percent': set([t123a]),
+        },
+        layout_fallback=' fallback_to_default_layout="false"')

@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/values.h"
@@ -34,7 +34,7 @@ SSLSocketParams::SSLSocketParams(
     const SSLConfig& ssl_config,
     PrivacyMode privacy_mode,
     int load_flags,
-    bool want_spdy_over_npn)
+    bool expect_spdy)
     : direct_params_(direct_params),
       socks_proxy_params_(socks_proxy_params),
       http_proxy_params_(http_proxy_params),
@@ -42,7 +42,7 @@ SSLSocketParams::SSLSocketParams(
       ssl_config_(ssl_config),
       privacy_mode_(privacy_mode),
       load_flags_(load_flags),
-      want_spdy_over_npn_(want_spdy_over_npn),
+      expect_spdy_(expect_spdy),
       ignore_limits_(false) {
   if (direct_params_.get()) {
     DCHECK(!socks_proxy_params_.get());
@@ -339,7 +339,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   }
 
   // If we want SPDY over ALPN/NPN, make sure it succeeded.
-  if (params_->want_spdy_over_npn() &&
+  if (params_->expect_spdy() &&
       !NextProtoIsSPDY(ssl_socket_->GetNegotiatedProtocol())) {
     return ERR_NPN_NEGOTIATION_FAILED;
   }
@@ -349,7 +349,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     DCHECK(!connect_timing_.ssl_start.is_null());
     base::TimeDelta connect_duration =
         connect_timing_.ssl_end - connect_timing_.ssl_start;
-    if (params_->want_spdy_over_npn()) {
+    if (params_->expect_spdy()) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyConnectionLatency_2",
                                  connect_duration,
                                  base::TimeDelta::FromMilliseconds(1),
@@ -617,11 +617,11 @@ LoadState SSLClientSocketPool::GetLoadState(
   return base_.GetLoadState(group_name, handle);
 }
 
-base::DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
+scoped_ptr<base::DictionaryValue> SSLClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
     bool include_nested_pools) const {
-  base::DictionaryValue* dict = base_.GetInfoAsValue(name, type);
+  scoped_ptr<base::DictionaryValue> dict(base_.GetInfoAsValue(name, type));
   if (include_nested_pools) {
     base::ListValue* list = new base::ListValue();
     if (transport_pool_) {
@@ -641,7 +641,7 @@ base::DictionaryValue* SSLClientSocketPool::GetInfoAsValue(
     }
     dict->Set("nested_pools", list);
   }
-  return dict;
+  return dict.Pass();
 }
 
 base::TimeDelta SSLClientSocketPool::ConnectionTimeout() const {

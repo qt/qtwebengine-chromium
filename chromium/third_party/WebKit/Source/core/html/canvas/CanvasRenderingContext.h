@@ -40,13 +40,30 @@ namespace blink {
 
 class CanvasImageSource;
 class HTMLCanvasElement;
+class ImageData;
 
-class CORE_EXPORT CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext>, public ActiveDOMObject {
+class CORE_EXPORT CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext>, public ActiveDOMObject, public ScriptWrappable {
     WTF_MAKE_NONCOPYABLE(CanvasRenderingContext);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CanvasRenderingContext);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(CanvasRenderingContext);
 public:
-    virtual ~CanvasRenderingContext() { }
+    ~CanvasRenderingContext() override { }
+
+    // A Canvas can either be "2D" or "webgl" but never both. If you request a 2D canvas and the existing
+    // context is already 2D, just return that. If the existing context is WebGL, then destroy it
+    // before creating a new 2D context. Vice versa when requesting a WebGL canvas. Requesting a
+    // context with any other type string will destroy any existing context.
+    enum ContextType {
+        // Do not change assigned numbers of existing items: add new features to the end of the list.
+        Context2d = 0,
+        ContextExperimentalWebgl = 2,
+        ContextWebgl = 3,
+        ContextWebgl2 = 4,
+        ContextTypeCount,
+    };
+
+    static ContextType contextTypeFromId(const String& id);
+    static ContextType resolveContextTypeAliases(ContextType);
 
 #if !ENABLE(OILPAN)
     void ref() { m_canvas->ref(); }
@@ -55,16 +72,48 @@ public:
 
     HTMLCanvasElement* canvas() const { return m_canvas; }
 
-    virtual bool is2d() const { return false; }
-    virtual bool is3d() const { return false; }
+    virtual ContextType contextType() const = 0;
     virtual bool isAccelerated() const { return false; }
     virtual bool hasAlpha() const { return true; }
     virtual void setIsHidden(bool) = 0;
+    virtual bool isContextLost() const { return true; }
 
     // Return true if the content is updated.
     virtual bool paintRenderingResultsToCanvas(SourceDrawingBuffer) { return false; }
 
     virtual WebLayer* platformLayer() const { return nullptr; }
+
+    enum LostContextMode {
+        NotLostContext,
+
+        // Lost context occurred at the graphics system level.
+        RealLostContext,
+
+        // Lost context provoked by WEBGL_lose_context.
+        WebGLLoseContextLostContext,
+
+        // Lost context occurred due to internal implementation reasons.
+        SyntheticLostContext,
+    };
+    virtual void loseContext(LostContextMode) { }
+
+    // Canvas2D-specific interface
+    virtual bool is2d() const { return false; }
+    virtual void restoreCanvasMatrixClipStack() { }
+    virtual void reset() { }
+    virtual void clearRect(float x, float y, float width, float height) { }
+    virtual void didSetSurfaceSize() { }
+    virtual void setShouldAntialias(bool) { }
+    virtual unsigned hitRegionsCount() const { return 0; }
+    virtual void setFont(const String&) { }
+
+    // WebGL-specific interface
+    virtual bool is3d() const { return false; }
+    virtual void setFilterQuality(SkFilterQuality) { ASSERT_NOT_REACHED(); }
+    virtual void reshape(int width, int height) { ASSERT_NOT_REACHED(); }
+    virtual void markLayerComposited() { ASSERT_NOT_REACHED(); }
+    virtual ImageData* paintRenderingResultsToImageData(SourceDrawingBuffer) { ASSERT_NOT_REACHED(); return nullptr; }
+    virtual int externallyAllocatedBytesPerPixel() { ASSERT_NOT_REACHED(); return 0; }
 
     bool wouldTaintOrigin(CanvasImageSource*);
     void didMoveToNewDocument(Document*);
@@ -74,7 +123,7 @@ protected:
     DECLARE_VIRTUAL_TRACE();
 
     // ActiveDOMObject notifications
-    bool hasPendingActivity() const override final;
+    bool hasPendingActivity() const final;
     void stop() override = 0;
 
 private:

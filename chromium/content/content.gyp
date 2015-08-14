@@ -287,6 +287,7 @@
               'dependencies': [
                 'content_child',
                 'content_common',
+                'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
               ],
             },
           ],
@@ -429,17 +430,19 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../device/battery/battery.gyp:device_battery_java',
-            '../device/bluetooth/bluetooth.gyp:device_bluetooth_java',
             '../device/vibration/vibration.gyp:device_vibration_java',
             '../media/media.gyp:media_java',
             '../mojo/mojo_base.gyp:mojo_application_bindings',
             '../mojo/mojo_base.gyp:mojo_system_java',
             '../net/net.gyp:net',
+            '../skia/skia.gyp:skia_mojo',
             '../third_party/mojo/mojo_public.gyp:mojo_bindings_java',
             '../ui/android/ui_android.gyp:ui_java',
             '../ui/touch_selection/ui_touch_selection.gyp:selection_event_type_java',
             '../ui/touch_selection/ui_touch_selection.gyp:touch_handle_orientation_java',
+            '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
             '../third_party/WebKit/public/blink_headers.gyp:blink_headers_java',
+            '../ui/mojo/geometry/mojo_bindings.gyp:mojo_geometry_bindings',
             'common_aidl',
             'console_message_level_java',
             'content_common',
@@ -454,6 +457,15 @@
             'speech_recognition_error_java',
             'top_controls_state_java',
             'screen_orientation_values_java',
+            'accessibility_java',
+          ],
+          # TODO(sgurun) remove this when M is public. crbug/512264.
+          'conditions': [
+            ['android_sdk_version != "M"', {
+              'dependencies': [
+                '../third_party/android_tools/android_tools.gyp:preview_java_sources',
+              ],
+            }],
           ],
           'variables': {
             'java_in_dir': '../content/public/android/java',
@@ -560,6 +572,14 @@
           'type': 'none',
           'variables': {
             'source_file': 'public/common/screen_orientation_values.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
+          'target_name': 'accessibility_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'browser/accessibility/browser_accessibility_manager_android.h',
           },
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },

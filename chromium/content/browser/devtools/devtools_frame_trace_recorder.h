@@ -24,10 +24,11 @@ class DevToolsFrameTraceRecorder {
 
   void OnSwapCompositorFrame(
       RenderFrameHostImpl* host,
-      const cc::CompositorFrameMetadata& frame_metadata);
+      const cc::CompositorFrameMetadata& frame_metadata,
+      bool do_capture);
 
  private:
-  base::WeakPtr<DevToolsFrameTraceRecorderData> last_event_data_;
+  scoped_refptr<DevToolsFrameTraceRecorderData> pending_frame_data_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsFrameTraceRecorder);
 };
 

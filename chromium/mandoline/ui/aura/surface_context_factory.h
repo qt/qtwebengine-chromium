@@ -5,6 +5,8 @@
 #ifndef MANDOLINE_UI_AURA_SURFACE_CONTEXT_FACTORY_H_
 #define MANDOLINE_UI_AURA_SURFACE_CONTEXT_FACTORY_H_
 
+#include "components/view_manager/gles2/mojo_gpu_memory_buffer_manager.h"
+#include "components/view_manager/gles2/raster_thread_helper.h"
 #include "mandoline/ui/aura/surface_binding.h"
 #include "ui/compositor/compositor.h"
 
@@ -30,7 +32,8 @@ class SurfaceContextFactory : public ui::ContextFactory {
   scoped_refptr<cc::ContextProvider> SharedMainThreadContextProvider() override;
   void RemoveCompositor(ui::Compositor* compositor) override;
   bool DoesCreateTestContexts() override;
-  uint32 GetImageTextureTarget() override;
+  uint32 GetImageTextureTarget(gfx::GpuMemoryBuffer::Format format,
+                               gfx::GpuMemoryBuffer::Usage usage) override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
@@ -40,6 +43,8 @@ class SurfaceContextFactory : public ui::ContextFactory {
 
   SurfaceBinding surface_binding_;
   uint32_t next_surface_id_namespace_;
+  gles2::RasterThreadHelper raster_thread_helper_;
+  gles2::MojoGpuMemoryBufferManager gpu_memory_buffer_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(SurfaceContextFactory);
 };

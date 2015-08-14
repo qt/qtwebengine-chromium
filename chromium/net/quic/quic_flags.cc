@@ -40,8 +40,24 @@ int64 FLAGS_quic_time_wait_list_seconds = 5;
 int64 FLAGS_quic_time_wait_list_max_connections = 50000;
 
 // Enables server-side support for QUIC stateless rejects.
-bool FLAGS_enable_quic_stateless_reject_support = false;
+bool FLAGS_enable_quic_stateless_reject_support = true;
 
-// If true, stop processing quic data as soon as the connection is closed rather
-// than processing a full packet.
-bool FLAGS_quic_stop_early = true;
+// If true, flow controller may grow the receive window size if necessary.
+bool FLAGS_quic_auto_tune_receive_window = true;
+
+// Don't ack acks in QUIC, even when there is a recent missing packet.
+bool FLAGS_quic_dont_ack_acks = true;
+
+// Enables sending of FEC packet only when FEC alarm goes off.
+bool FLAGS_quic_send_fec_packet_only_on_fec_alarm = true;
+
+// Change from using IsPacketRemovable to IsPacketUseless in
+// QuicUnackedPacketMap.
+bool FLAGS_quic_use_is_useless_packet = true;
+
+// Delay setting QUIC's retransmission alarm until an ack is fully
+// processed or a write is complete.
+bool FLAGS_quic_delay_retransmission_alarm = true;
+
+// Enables server-side path MTU discovery in QUIC.
+bool FLAGS_quic_do_path_mtu_discovery = true;

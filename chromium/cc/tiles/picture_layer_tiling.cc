@@ -9,7 +9,10 @@
 #include <limits>
 #include <set>
 
+#include "base/containers/hash_tables.h"
+#include "base/containers/small_map.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
@@ -67,7 +70,8 @@ PictureLayerTiling::PictureLayerTiling(
       has_visible_rect_tiles_(false),
       has_skewport_rect_tiles_(false),
       has_soon_border_rect_tiles_(false),
-      has_eventually_rect_tiles_(false) {
+      has_eventually_rect_tiles_(false),
+      all_tiles_done_(true) {
   DCHECK(!raster_source->IsSolidColor());
   gfx::Size content_bounds = gfx::ToCeiledSize(
       gfx::ScaleSize(raster_source_->GetSize(), contents_scale));
@@ -108,6 +112,7 @@ Tile* PictureLayerTiling::CreateTile(int i, int j) {
   if (!raster_source_->CoversRect(tile_rect, contents_scale_))
     return nullptr;
 
+  all_tiles_done_ = false;
   ScopedTilePtr tile = client_->CreateTile(contents_scale_, tile_rect);
   Tile* raw_ptr = tile.get();
   tile->set_tiling_index(i, j);
@@ -120,13 +125,13 @@ void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   for (TilingData::Iterator iter(&tiling_data_, live_tiles_rect_,
                                  include_borders);
        iter; ++iter) {
-    TileMapKey key = iter.index();
+    TileMapKey key(iter.index());
     TileMap::iterator find = tiles_.find(key);
     if (find != tiles_.end())
       continue;
 
-    if (ShouldCreateTileAt(key.first, key.second))
-      CreateTile(key.first, key.second);
+    if (ShouldCreateTileAt(key.index_x, key.index_y))
+      CreateTile(key.index_x, key.index_y);
   }
   VerifyLiveTilesRect(false);
 }
@@ -150,13 +155,16 @@ void PictureLayerTiling::TakeTilesAndPropertiesFrom(
 
   if (tiles_.empty()) {
     tiles_.swap(pending_twin->tiles_);
+    all_tiles_done_ = pending_twin->all_tiles_done_;
   } else {
     while (!pending_twin->tiles_.empty()) {
       TileMapKey key = pending_twin->tiles_.begin()->first;
       tiles_.set(key, pending_twin->tiles_.take_and_erase(key));
     }
+    all_tiles_done_ &= pending_twin->all_tiles_done_;
   }
   DCHECK(pending_twin->tiles_.empty());
+  pending_twin->all_tiles_done_ = true;
 
   if (create_missing_tiles)
     CreateMissingTilesInLiveTilesRect();
@@ -259,39 +267,53 @@ void PictureLayerTiling::RemoveTilesInRegion(const Region& layer_invalidation,
   // twin, so it's slated for removal in the future.
   if (live_tiles_rect_.IsEmpty())
     return;
-  std::vector<TileMapKey> new_tile_keys;
+  // Pick 16 for the size of the SmallMap before it promotes to a hash_map.
+  // 4x4 tiles should cover most small invalidations, and walking a vector of
+  // 16 is fast enough. If an invalidation is huge we will fall back to a
+  // hash_map instead of a vector in the SmallMap.
+  base::SmallMap<base::hash_map<TileMapKey, gfx::Rect>, 16> remove_tiles;
   gfx::Rect expanded_live_tiles_rect =
       tiling_data_.ExpandRectIgnoringBordersToTileBounds(live_tiles_rect_);
   for (Region::Iterator iter(layer_invalidation); iter.has_rect();
        iter.next()) {
     gfx::Rect layer_rect = iter.rect();
-    gfx::Rect content_rect =
+    // The pixels which are invalid in content space.
+    gfx::Rect invalid_content_rect =
         gfx::ScaleToEnclosingRect(layer_rect, contents_scale_);
     // Consider tiles inside the live tiles rect even if only their border
     // pixels intersect the invalidation. But don't consider tiles outside
     // the live tiles rect with the same conditions, as they won't exist.
+    gfx::Rect coverage_content_rect = invalid_content_rect;
     int border_pixels = tiling_data_.border_texels();
-    content_rect.Inset(-border_pixels, -border_pixels);
+    coverage_content_rect.Inset(-border_pixels, -border_pixels);
     // Avoid needless work by not bothering to invalidate where there aren't
     // tiles.
-    content_rect.Intersect(expanded_live_tiles_rect);
-    if (content_rect.IsEmpty())
+    coverage_content_rect.Intersect(expanded_live_tiles_rect);
+    if (coverage_content_rect.IsEmpty())
       continue;
     // Since the content_rect includes border pixels already, don't include
     // borders when iterating to avoid double counting them.
     bool include_borders = false;
-    for (
-        TilingData::Iterator iter(&tiling_data_, content_rect, include_borders);
-        iter; ++iter) {
-      if (RemoveTileAt(iter.index_x(), iter.index_y())) {
-        if (recreate_tiles)
-          new_tile_keys.push_back(iter.index());
-      }
+    for (TilingData::Iterator iter(&tiling_data_, coverage_content_rect,
+                                   include_borders);
+         iter; ++iter) {
+      // This also adds the TileMapKey to the map.
+      remove_tiles[TileMapKey(iter.index())].Union(invalid_content_rect);
     }
   }
 
-  for (const auto& key : new_tile_keys)
-    CreateTile(key.first, key.second);
+  for (const auto& pair : remove_tiles) {
+    const TileMapKey& key = pair.first;
+    const gfx::Rect& invalid_content_rect = pair.second;
+    // TODO(danakj): This old_tile will not exist if we are committing to a
+    // pending tree since there is no tile there to remove, which prevents
+    // tiles from knowing the invalidation rect and content id. crbug.com/490847
+    ScopedTilePtr old_tile = TakeTileAt(key.index_x, key.index_y);
+    if (recreate_tiles && old_tile) {
+      if (Tile* tile = CreateTile(key.index_x, key.index_y))
+        tile->SetInvalidated(invalid_content_rect, old_tile->id());
+    }
+  }
 }
 
 bool PictureLayerTiling::ShouldCreateTileAt(int i, int j) const {
@@ -489,6 +511,13 @@ gfx::RectF PictureLayerTiling::CoverageIterator::texture_rect() const {
   return texture_rect;
 }
 
+ScopedTilePtr PictureLayerTiling::TakeTileAt(int i, int j) {
+  TileMap::iterator found = tiles_.find(TileMapKey(i, j));
+  if (found == tiles_.end())
+    return nullptr;
+  return tiles_.take_and_erase(found);
+}
+
 bool PictureLayerTiling::RemoveTileAt(int i, int j) {
   TileMap::iterator found = tiles_.find(TileMapKey(i, j));
   if (found == tiles_.end())
@@ -500,6 +529,7 @@ bool PictureLayerTiling::RemoveTileAt(int i, int j) {
 void PictureLayerTiling::Reset() {
   live_tiles_rect_ = gfx::Rect();
   tiles_.clear();
+  all_tiles_done_ = true;
 }
 
 gfx::Rect PictureLayerTiling::ComputeSkewport(
@@ -566,13 +596,19 @@ bool PictureLayerTiling::ComputeTilePriorityRects(
     float ideal_contents_scale,
     double current_frame_time_in_seconds,
     const Occlusion& occlusion_in_layer_space) {
+  // If we have, or had occlusions, mark the tiles as 'not done' to ensure that
+  // we reiterate the tiles for rasterization.
+  if (occlusion_in_layer_space.HasOcclusion() ||
+      current_occlusion_in_layer_space_.HasOcclusion()) {
+    set_all_tiles_done(false);
+  }
+
   if (!NeedsUpdateForFrameAtTimeAndViewport(current_frame_time_in_seconds,
                                             viewport_in_layer_space)) {
     // This should never be zero for the purposes of has_ever_been_updated().
     DCHECK_NE(current_frame_time_in_seconds, 0.0);
     return false;
   }
-
   gfx::Rect visible_rect_in_content_space =
       gfx::ScaleToEnclosingRect(viewport_in_layer_space, contents_scale_);
 
@@ -665,8 +701,8 @@ void PictureLayerTiling::SetLiveTilesRect(
                                            live_tiles_rect_);
        iter; ++iter) {
     TileMapKey key(iter.index());
-    if (ShouldCreateTileAt(key.first, key.second))
-      CreateTile(key.first, key.second);
+    if (ShouldCreateTileAt(key.index_x, key.index_y))
+      CreateTile(key.index_x, key.index_y);
   }
 
   live_tiles_rect_ = new_live_tiles_rect;
@@ -678,19 +714,19 @@ void PictureLayerTiling::VerifyLiveTilesRect(bool is_on_recycle_tree) const {
   for (auto it = tiles_.begin(); it != tiles_.end(); ++it) {
     if (!it->second)
       continue;
-    DCHECK(it->first.first < tiling_data_.num_tiles_x())
-        << this << " " << it->first.first << "," << it->first.second
-        << " num_tiles_x " << tiling_data_.num_tiles_x() << " live_tiles_rect "
+    TileMapKey key = it->first;
+    DCHECK(key.index_x < tiling_data_.num_tiles_x())
+        << this << " " << key.index_x << "," << key.index_y << " num_tiles_x "
+        << tiling_data_.num_tiles_x() << " live_tiles_rect "
         << live_tiles_rect_.ToString();
-    DCHECK(it->first.second < tiling_data_.num_tiles_y())
-        << this << " " << it->first.first << "," << it->first.second
-        << " num_tiles_y " << tiling_data_.num_tiles_y() << " live_tiles_rect "
+    DCHECK(key.index_y < tiling_data_.num_tiles_y())
+        << this << " " << key.index_x << "," << key.index_y << " num_tiles_y "
+        << tiling_data_.num_tiles_y() << " live_tiles_rect "
         << live_tiles_rect_.ToString();
-    DCHECK(tiling_data_.TileBounds(it->first.first, it->first.second)
+    DCHECK(tiling_data_.TileBounds(key.index_x, key.index_y)
                .Intersects(live_tiles_rect_))
-        << this << " " << it->first.first << "," << it->first.second
-        << " tile bounds "
-        << tiling_data_.TileBounds(it->first.first, it->first.second).ToString()
+        << this << " " << key.index_x << "," << key.index_y << " tile bounds "
+        << tiling_data_.TileBounds(key.index_x, key.index_y).ToString()
         << " live_tiles_rect " << live_tiles_rect_.ToString();
   }
 #endif
@@ -845,25 +881,22 @@ TilePriority PictureLayerTiling::ComputePriorityForTile(
     const Tile* tile,
     PriorityRectType priority_rect_type) const {
   // TODO(vmpstr): See if this can be moved to iterators.
-  TilePriority::PriorityBin max_tile_priority_bin =
-      client_->GetMaxTilePriorityBin();
-
   DCHECK_EQ(ComputePriorityRectTypeForTile(tile), priority_rect_type);
   DCHECK_EQ(TileAt(tile->tiling_i_index(), tile->tiling_j_index()), tile);
 
-  TilePriority::PriorityBin priority_bin = max_tile_priority_bin;
-
+  TilePriority::PriorityBin priority_bin = client_->HasValidTilePriorities()
+                                               ? TilePriority::NOW
+                                               : TilePriority::EVENTUALLY;
   switch (priority_rect_type) {
     case VISIBLE_RECT:
       return TilePriority(resolution_, priority_bin, 0);
     case PENDING_VISIBLE_RECT:
-      if (max_tile_priority_bin <= TilePriority::SOON)
-        return TilePriority(resolution_, TilePriority::SOON, 0);
-      priority_bin = TilePriority::EVENTUALLY;
-      break;
+      if (priority_bin < TilePriority::SOON)
+        priority_bin = TilePriority::SOON;
+      return TilePriority(resolution_, priority_bin, 0);
     case SKEWPORT_RECT:
     case SOON_BORDER_RECT:
-      if (max_tile_priority_bin <= TilePriority::SOON)
+      if (priority_bin < TilePriority::SOON)
         priority_bin = TilePriority::SOON;
       break;
     case EVENTUALLY_RECT:
@@ -914,7 +947,7 @@ void PictureLayerTiling::GetAllPrioritizedTilesForTracing(
 
 void PictureLayerTiling::AsValueInto(
     base::trace_event::TracedValue* state) const {
-  state->SetInteger("num_tiles", tiles_.size());
+  state->SetInteger("num_tiles", base::saturated_cast<int>(tiles_.size()));
   state->SetDouble("content_scale", contents_scale_);
   MathUtil::AddToTracedValue("visible_rect", current_visible_rect_, state);
   MathUtil::AddToTracedValue("skewport_rect", current_skewport_rect_, state);

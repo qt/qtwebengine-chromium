@@ -5,14 +5,18 @@
 #ifndef NET_CERT_CERT_DATABASE_H_
 #define NET_CERT_CERT_DATABASE_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
 #include "net/cert/x509_certificate.h"
 
 template <typename T> struct DefaultSingletonTraits;
-template <class ObserverType> class ObserverListThreadSafe;
+
+namespace base {
+template <class ObserverType>
+class ObserverListThreadSafe;
+}
 
 namespace net {
 
@@ -106,7 +110,7 @@ class NET_EXPORT CertDatabase {
   CertDatabase();
   ~CertDatabase();
 
-  const scoped_refptr<ObserverListThreadSafe<Observer> > observer_list_;
+  const scoped_refptr<base::ObserverListThreadSafe<Observer>> observer_list_;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   class Notifier;

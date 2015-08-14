@@ -65,8 +65,8 @@ namespace cast {
 // See comment in end2end_unittest.cc for details on this value.
 const double kVideoAcceptedPSNR = 38.0;
 
-void SavePipelineStatus(PipelineStatus* out_status, PipelineStatus in_status) {
-  *out_status = in_status;
+void SaveDecoderInitResult(bool* out_result, bool in_result) {
+  *out_result = in_result;
 }
 
 void SaveOperationalStatus(OperationalStatus* out_status,
@@ -90,7 +90,7 @@ class MetadataRecorder : public base::RefCountedThreadSafe<MetadataRecorder> {
                                    expected_reference_time});
   }
 
-  void CompareFrameWithExpected(scoped_ptr<EncodedFrame> encoded_frame) {
+  void CompareFrameWithExpected(scoped_ptr<SenderEncodedFrame> encoded_frame) {
     ASSERT_LT(0u, expectations_.size());
     auto e = expectations_.front();
     expectations_.pop();
@@ -132,20 +132,20 @@ class EndToEndFrameChecker
   explicit EndToEndFrameChecker(const VideoDecoderConfig& config)
       : decoder_(base::MessageLoop::current()->task_runner()),
         count_frames_checked_(0) {
-    PipelineStatus pipeline_status;
+    bool decoder_init_result;
     decoder_.Initialize(
-        config, false, base::Bind(&SavePipelineStatus, &pipeline_status),
+        config, false, base::Bind(&SaveDecoderInitResult, &decoder_init_result),
         base::Bind(&EndToEndFrameChecker::CompareFrameWithExpected,
                    base::Unretained(this)));
     base::MessageLoop::current()->RunUntilIdle();
-    EXPECT_EQ(PIPELINE_OK, pipeline_status);
+    EXPECT_TRUE(decoder_init_result);
   }
 
   void PushExpectation(const scoped_refptr<VideoFrame>& frame) {
     expectations_.push(frame);
   }
 
-  void EncodeDone(scoped_ptr<EncodedFrame> encoded_frame) {
+  void EncodeDone(scoped_ptr<SenderEncodedFrame> encoded_frame) {
     auto buffer = DecoderBuffer::CopyFrom(encoded_frame->bytes(),
                                           encoded_frame->data.size());
     decoder_.Decode(buffer, base::Bind(&EndToEndFrameChecker::DecodeDone,
@@ -193,7 +193,7 @@ void CreateFrameAndMemsetPlane(VideoFrameFactory* const video_frame_factory) {
 }
 
 void NoopFrameEncodedCallback(
-    scoped_ptr<media::cast::EncodedFrame> /*encoded_frame*/) {
+    scoped_ptr<media::cast::SenderEncodedFrame> /*encoded_frame*/) {
 }
 
 class TestPowerSource : public base::PowerMonitorSource {
@@ -225,8 +225,8 @@ class H264VideoToolboxEncoderTest : public ::testing::Test {
 
     cast_environment_ = new CastEnvironment(
         scoped_ptr<base::TickClock>(clock_).Pass(),
-        message_loop_.message_loop_proxy(), message_loop_.message_loop_proxy(),
-        message_loop_.message_loop_proxy());
+        message_loop_.task_runner(), message_loop_.task_runner(),
+        message_loop_.task_runner());
     encoder_.reset(new H264VideoToolboxEncoder(
         cast_environment_, video_sender_config_,
         base::Bind(&SaveOperationalStatus, &operational_status_)));

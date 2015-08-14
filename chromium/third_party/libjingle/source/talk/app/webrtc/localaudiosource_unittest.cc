@@ -43,9 +43,10 @@ using webrtc::PeerConnectionFactoryInterface;
 
 TEST(LocalAudioSourceTest, SetValidOptions) {
   webrtc::FakeConstraints constraints;
-  constraints.AddMandatory(MediaConstraintsInterface::kEchoCancellation, false);
+  constraints.AddMandatory(
+      MediaConstraintsInterface::kGoogEchoCancellation, false);
   constraints.AddOptional(
-      MediaConstraintsInterface::kExperimentalEchoCancellation, true);
+      MediaConstraintsInterface::kExtendedFilterEchoCancellation, true);
   constraints.AddOptional(MediaConstraintsInterface::kDAEchoCancellation, true);
   constraints.AddOptional(MediaConstraintsInterface::kAutoGainControl, true);
   constraints.AddOptional(
@@ -61,7 +62,7 @@ TEST(LocalAudioSourceTest, SetValidOptions) {
   bool value;
   EXPECT_TRUE(source->options().echo_cancellation.Get(&value));
   EXPECT_FALSE(value);
-  EXPECT_TRUE(source->options().experimental_aec.Get(&value));
+  EXPECT_TRUE(source->options().extended_filter_aec.Get(&value));
   EXPECT_TRUE(value);
   EXPECT_TRUE(source->options().delay_agnostic_aec.Get(&value));
   EXPECT_TRUE(value);
@@ -88,8 +89,10 @@ TEST(LocalAudioSourceTest, OptionNotSet) {
 
 TEST(LocalAudioSourceTest, MandatoryOverridesOptional) {
   webrtc::FakeConstraints constraints;
-  constraints.AddMandatory(MediaConstraintsInterface::kEchoCancellation, false);
-  constraints.AddOptional(MediaConstraintsInterface::kEchoCancellation, true);
+  constraints.AddMandatory(
+      MediaConstraintsInterface::kGoogEchoCancellation, false);
+  constraints.AddOptional(
+      MediaConstraintsInterface::kGoogEchoCancellation, true);
 
   rtc::scoped_refptr<LocalAudioSource> source =
       LocalAudioSource::Create(PeerConnectionFactoryInterface::Options(),

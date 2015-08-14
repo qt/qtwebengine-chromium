@@ -39,6 +39,9 @@
 #include "core/css/Rect.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/transforms/RotateTransformOperation.h"
+#include "platform/transforms/ScaleTransformOperation.h"
+#include "platform/transforms/TranslateTransformOperation.h"
 
 namespace blink {
 
@@ -130,7 +133,7 @@ static FontDescription::GenericFamilyType convertGenericFamily(CSSValueID valueI
 static bool convertFontFamilyName(StyleResolverState& state, CSSPrimitiveValue* primitiveValue,
     FontDescription::GenericFamilyType& genericFamily, AtomicString& familyName)
 {
-    if (primitiveValue->isString()) {
+    if (primitiveValue->isCustomIdent()) {
         genericFamily = FontDescription::NoFamily;
         familyName = AtomicString(primitiveValue->getStringValue());
     } else if (state.document().settings()) {
@@ -401,7 +404,7 @@ GridPosition StyleBuilderConverter::convertGridPosition(StyleResolverState&, CSS
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
         // We translate <custom-ident> to <string> during parsing as it
         // makes handling it more simple.
-        if (primitiveValue->isString()) {
+        if (primitiveValue->isCustomIdent()) {
             position.setNamedGridArea(primitiveValue->getStringValue());
             return position;
         }
@@ -432,7 +435,7 @@ GridPosition StyleBuilderConverter::convertGridPosition(StyleResolverState&, CSS
         currentValue = it != values->end() ? toCSSPrimitiveValue(it->get()) : 0;
     }
 
-    if (currentValue && currentValue->isString()) {
+    if (currentValue && currentValue->isCustomIdent()) {
         gridLineName = currentValue->getStringValue();
         ++it;
     }
@@ -557,8 +560,10 @@ Length StyleBuilderConverter::convertLengthSizing(StyleResolverState& state, CSS
         return Length(Intrinsic);
     case CSSValueMinIntrinsic:
         return Length(MinIntrinsic);
+    case CSSValueMinContent:
     case CSSValueWebkitMinContent:
         return Length(MinContent);
+    case CSSValueMaxContent:
     case CSSValueWebkitMaxContent:
         return Length(MaxContent);
     case CSSValueWebkitFillAvailable:
@@ -649,7 +654,7 @@ static Length convertPositionLength(StyleResolverState& state, CSSPrimitiveValue
     return StyleBuilderConverter::convertLength(state, primitiveValue);
 }
 
-LengthPoint StyleBuilderConverter::convertObjectPosition(StyleResolverState& state, CSSValue* value)
+LengthPoint StyleBuilderConverter::convertPosition(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Pair* pair = primitiveValue->getPairValue();
@@ -866,15 +871,6 @@ StyleColor StyleBuilderConverter::convertStyleColor(StyleResolverState& state, C
     return state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, Color(), forVisitedLink);
 }
 
-Color StyleBuilderConverter::convertSVGColor(StyleResolverState& state, CSSValue* value)
-{
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->isRGBColor())
-        return primitiveValue->getRGBA32Value();
-    ASSERT(primitiveValue->getValueID() == CSSValueCurrentcolor);
-    return state.style()->color();
-}
-
 float StyleBuilderConverter::convertTextStrokeWidth(StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
@@ -899,6 +895,87 @@ TransformOrigin StyleBuilderConverter::convertTransformOrigin(StyleResolverState
         convertOriginLength<CSSValueTop, CSSValueBottom>(state, primitiveValueY),
         StyleBuilderConverter::convertComputedLength<float>(state, primitiveValueZ)
     );
+}
+
+ScrollSnapPoints StyleBuilderConverter::convertSnapPoints(StyleResolverState& state, CSSValue* value)
+{
+    // Handles: none | repeat(<length>)
+    ScrollSnapPoints points;
+    points.hasRepeat = false;
+
+    if (!value->isFunctionValue())
+        return points;
+
+    CSSFunctionValue* repeatFunction = toCSSFunctionValue(value);
+    ASSERT_WITH_SECURITY_IMPLICATION(repeatFunction->length() == 1);
+    points.repeatOffset = convertLength(state, toCSSPrimitiveValue(repeatFunction->item(0)));
+    points.hasRepeat = true;
+
+    return points;
+}
+
+Vector<LengthPoint> StyleBuilderConverter::convertSnapCoordinates(StyleResolverState& state, CSSValue* value)
+{
+    // Handles: none | <position>#
+    Vector<LengthPoint> coordinates;
+
+    if (!value->isValueList())
+        return coordinates;
+
+    CSSValueList* valueList = toCSSValueList(value);
+    coordinates.reserveInitialCapacity(valueList->length());
+    for (auto& snapCoordinate : *valueList) {
+        coordinates.uncheckedAppend(convertPosition(state, snapCoordinate.get()));
+    }
+
+    return coordinates;
+}
+
+PassRefPtr<TranslateTransformOperation> StyleBuilderConverter::convertTranslate(StyleResolverState& state, CSSValue* value)
+{
+    CSSValueList& list = *toCSSValueList(value);
+    ASSERT(list.length() <= 3);
+    Length tx = convertLength(state, list.item(0));
+    Length ty(0, Fixed);
+    double tz = 0;
+    if (list.length() >= 2)
+        ty = convertLength(state, list.item(1));
+    if (list.length() == 3)
+        tz = toCSSPrimitiveValue(list.item(2))->getDoubleValue();
+
+    return TranslateTransformOperation::create(tx, ty, tz, TransformOperation::Translate3D);
+}
+
+PassRefPtr<RotateTransformOperation> StyleBuilderConverter::convertRotate(StyleResolverState& state, CSSValue* value)
+{
+    CSSValueList& list = *toCSSValueList(value);
+    ASSERT(list.length() == 1 || list.length() == 4);
+    double angle = toCSSPrimitiveValue(list.item(0))->computeDegrees();
+    double x = 0;
+    double y = 0;
+    double z = 1;
+    if (list.length() == 4) {
+        x = toCSSPrimitiveValue(list.item(1))->getDoubleValue();
+        y = toCSSPrimitiveValue(list.item(2))->getDoubleValue();
+        z = toCSSPrimitiveValue(list.item(3))->getDoubleValue();
+    }
+
+    return RotateTransformOperation::create(x, y, z, angle, TransformOperation::Rotate3D);
+}
+
+PassRefPtr<ScaleTransformOperation> StyleBuilderConverter::convertScale(StyleResolverState& state, CSSValue* value)
+{
+    CSSValueList& list = *toCSSValueList(value);
+    ASSERT(list.length() <= 3);
+    double sx = toCSSPrimitiveValue(list.item(0))->getDoubleValue();
+    double sy = sx;
+    double sz = 1;
+    if (list.length() >= 2)
+        sy = toCSSPrimitiveValue(list.item(1))->getDoubleValue();
+    if (list.length() == 3)
+        sz = toCSSPrimitiveValue(list.item(2))->getDoubleValue();
+
+    return ScaleTransformOperation::create(sx, sy, sz, TransformOperation::Scale3D);
 }
 
 } // namespace blink

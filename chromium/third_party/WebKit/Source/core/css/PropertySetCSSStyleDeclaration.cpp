@@ -27,7 +27,6 @@
 #include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StylePropertySet.h"
-#include "core/css/parser/CSSParser.h"
 #include "core/dom/Element.h"
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
@@ -44,7 +43,6 @@ class StyleAttributeMutationScope {
 public:
     StyleAttributeMutationScope(AbstractPropertySetCSSStyleDeclaration* decl)
     {
-        InspectorInstrumentation::willMutateStyle(decl);
         ++s_scopeCount;
 
         if (s_scopeCount != 1) {
@@ -88,7 +86,6 @@ public:
         // We have to clear internal state before calling Inspector's code.
         AbstractPropertySetCSSStyleDeclaration* localCopyStyleDecl = s_currentDecl;
         s_currentDecl = 0;
-        InspectorInstrumentation::didMutateStyle(localCopyStyleDecl, localCopyStyleDecl->parentElement());
 
         if (!s_shouldNotifyInspector)
             return;
@@ -266,11 +263,6 @@ StyleSheetContents* AbstractPropertySetCSSStyleDeclaration::contextStyleSheet() 
 {
     CSSStyleSheet* cssStyleSheet = parentStyleSheet();
     return cssStyleSheet ? cssStyleSheet->contents() : 0;
-}
-
-PassRefPtrWillBeRawPtr<MutableStylePropertySet> AbstractPropertySetCSSStyleDeclaration::copyProperties() const
-{
-    return propertySet().mutableCopy();
 }
 
 bool AbstractPropertySetCSSStyleDeclaration::cssPropertyMatches(CSSPropertyID propertyID, const CSSValue* propertyValue) const

@@ -7,28 +7,35 @@
   width: 0.6em;
 }
 
-paper-input-decorator /deep/ ::-webkit-input-placeholder {
-  color: rgb(241, 241, 241);
+paper-input-container /deep/ .focused-line {
+  visibility: hidden;
 }
 
-paper-input-decorator /deep/ .focused-underline {
-  background-color: rgb(241, 241, 241);
+paper-input-container /deep/ .unfocused-line {
+  visibility: hidden;
 }
 
-paper-input-decorator /deep/ .unfocused-underline {
-  background-color: transparent;
+paper-input-container {
+  padding: 0;
 }
 
-paper-input-decorator:hover /deep/ .unfocused-underline {
-  background-color: rgb(241, 241, 241);
-}
-
-#input {
-  margin: 0;
+input#input {
+  color: #fff;
+  font-size: 1em;
+  line-height: 20px;
+  padding: 3px;
   text-align: right;
 }
 
+input#input:focus,
+input#input:hover {
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+}
+
 #pagelength {
-  color: rgb(144, 202, 251);
+  color: #fff;
   font-size: 0.7em;
+  font-weight: 400;
+  padding-left: 3px;
 }

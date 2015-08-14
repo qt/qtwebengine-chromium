@@ -27,6 +27,7 @@
 #include "core/dom/TransformSource.h"
 #include "core/editing/markup.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/fetch/RawResource.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/FrameConsole.h"
@@ -45,7 +46,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuffer.h"
-#include "wtf/unicode/UTF8.h"
+#include "wtf/text/UTF8.h"
 #include <libxslt/imports.h>
 #include <libxslt/security.h>
 #include <libxslt/variables.h>
@@ -83,14 +84,14 @@ void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
 }
 
 // FIXME: There seems to be no way to control the ctxt pointer for loading here, thus we have globals.
-static XSLTProcessor* globalProcessor = 0;
-static ResourceFetcher* globalResourceFetcher = 0;
+static XSLTProcessor* globalProcessor = nullptr;
+static ResourceFetcher* globalResourceFetcher = nullptr;
 
 static xmlDocPtr docLoaderFunc(
     const xmlChar* uri, xmlDictPtr, int options, void* ctxt, xsltLoadType type)
 {
     if (!globalProcessor)
-        return 0;
+        return nullptr;
 
     switch (type) {
     case XSLT_LOAD_DOCUMENT: {
@@ -102,11 +103,11 @@ static xmlDocPtr docLoaderFunc(
         ResourceLoaderOptions fetchOptions(ResourceFetcher::defaultResourceOptions());
         FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, fetchOptions);
         request.setOriginRestriction(FetchRequest::RestrictToSameOrigin);
-        ResourcePtr<Resource> resource = globalResourceFetcher->fetchSynchronously(request);
+        ResourcePtr<Resource> resource = RawResource::fetchSynchronously(request, globalResourceFetcher);
         if (!resource || !globalProcessor)
-            return 0;
+            return nullptr;
 
-        FrameConsole* console = 0;
+        FrameConsole* console = nullptr;
         LocalFrame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
         if (frame)
             console = &frame->console();
@@ -116,7 +117,7 @@ static xmlDocPtr docLoaderFunc(
         // We don't specify an encoding here. Neither Gecko nor WinIE respects
         // the encoding specified in the HTTP headers.
         SharedBuffer* data = resource->resourceBuffer();
-        xmlDocPtr doc = data ? xmlReadMemory(data->data(), data->size(), (const char*)uri, 0, options) : 0;
+        xmlDocPtr doc = data ? xmlReadMemory(data->data(), data->size(), (const char*)uri, 0, options) : nullptr;
 
         xmlSetStructuredErrorFunc(0, 0);
         xmlSetGenericErrorFunc(0, 0);
@@ -129,7 +130,7 @@ static xmlDocPtr docLoaderFunc(
         break;
     }
 
-    return 0;
+    return nullptr;
 }
 
 static inline void setXSLTLoadCallBack(xsltDocLoaderFunc func, XSLTProcessor* processor, ResourceFetcher* fetcher)
@@ -190,7 +191,7 @@ static bool saveResultToString(xmlDocPtr resultDoc, xsltStylesheetPtr sheet, Str
 static const char** xsltParamArrayFromParameterMap(XSLTProcessor::ParameterMap& parameters)
 {
     if (parameters.isEmpty())
-        return 0;
+        return nullptr;
 
     const char** parameterArray = static_cast<const char**>(fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*)));
 
@@ -234,7 +235,7 @@ static xsltStylesheetPtr xsltStylesheetPointer(Document* document, RefPtrWillBeM
     }
 
     if (!cachedStylesheet || !cachedStylesheet->document())
-        return 0;
+        return nullptr;
 
     return cachedStylesheet->compileStyleSheet();
 }
@@ -244,7 +245,7 @@ static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
     RefPtrWillBeRawPtr<Document> ownerDocument(sourceNode->document());
     bool sourceIsDocument = (sourceNode == ownerDocument.get());
 
-    xmlDocPtr sourceDoc = 0;
+    xmlDocPtr sourceDoc = nullptr;
     if (sourceIsDocument && ownerDocument->transformSource())
         sourceDoc = (xmlDocPtr)ownerDocument->transformSource()->platformSource();
     if (!sourceDoc) {
@@ -261,7 +262,7 @@ static inline String resultMIMEType(xmlDocPtr resultDoc, xsltStylesheetPtr sheet
     // HTML (create an HTML document), XML (create an XML document),
     // and text (wrap in a <pre> and create an XML document).
 
-    const xmlChar* resultType = 0;
+    const xmlChar* resultType = nullptr;
     XSLT_GET_IMPORT_PTR(resultType, sheet, method);
     if (!resultType && resultDoc->type == XML_HTML_DOCUMENT_NODE)
         resultType = (const xmlChar*)"html";

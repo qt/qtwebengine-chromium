@@ -34,8 +34,8 @@ void WebRtcIlbcfix_CbMemEnergy(
     int16_t lTarget,   /* (i) Length of the target vector */
     int16_t *energyW16,  /* (o) Energy in the CB vectors */
     int16_t *energyShifts, /* (o) Shift value of the energy */
-    int16_t scale,   /* (i) The scaling of all energy values */
-    int16_t base_size  /* (i) Index to where the energy values should be stored */
+    int scale,   /* (i) The scaling of all energy values */
+    int16_t base_size  /* (i) Index to where energy values should be stored */
                                ) {
   int16_t *ppi, *ppo, *pp;
   int32_t energy, tmp32;

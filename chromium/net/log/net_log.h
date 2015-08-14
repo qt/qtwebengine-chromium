@@ -67,11 +67,12 @@ class NET_EXPORT NetLog {
     SOURCE_COUNT
   };
 
-  // A callback function that return a Value representation of the parameters
-  // associated with an event.  If called, it will be called synchonously,
+  // A callback that returns a Value representation of the parameters
+  // associated with an event.  If called, it will be called synchronously,
   // so it need not have owning references.  May be called more than once, or
   // not at all.  May return NULL.
-  typedef base::Callback<base::Value*(NetLogCaptureMode)> ParametersCallback;
+  typedef base::Callback<scoped_ptr<base::Value>(NetLogCaptureMode)>
+      ParametersCallback;
 
   // Identifies the entity that generated this log. The |id| field should
   // uniquely identify the source, and is used by log observers to infer
@@ -88,7 +89,7 @@ class NET_EXPORT NetLog {
     void AddToEventParameters(base::DictionaryValue* event_params) const;
 
     // Returns a callback that returns a dictionary with a single entry
-    // named "source_dependecy" that describes |this|.
+    // named "source_dependency" that describes |this|.
     ParametersCallback ToEventParametersCallback() const;
 
     // Attempts to extract a Source from a set of event parameters.  Returns
@@ -311,7 +312,7 @@ class NET_EXPORT NetLog {
   base::subtle::Atomic32 is_capturing_;
 
   // |lock_| must be acquired whenever reading or writing to this.
-  ObserverList<ThreadSafeObserver, true> observers_;
+  base::ObserverList<ThreadSafeObserver, true> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(NetLog);
 };

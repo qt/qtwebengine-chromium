@@ -11,8 +11,11 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/swap_result.h"
 #include "ui/ozone/ozone_export.h"
 #include "ui/ozone/platform/drm/gpu/overlay_plane.h"
+#include "ui/ozone/platform/drm/gpu/page_flip_request.h"
+#include "ui/ozone/public/surface_ozone_egl.h"
 
 class SkBitmap;
 
@@ -26,14 +29,19 @@ namespace ui {
 class DrmBuffer;
 class DrmDeviceManager;
 class HardwareDisplayController;
+struct OverlayCheck_Params;
+class ScanoutBufferGenerator;
 class ScreenManager;
 
-// A delegate of the platform window (DrmWindow) on the GPU process. This is
-// used to keep track of window state changes such that each platform window is
-// correctly associated with a display.
-// A window is associated with the display whose bounds contains the window
-// bounds. If there's no suitable display, the window is disconnected and its
-// contents will not be visible.
+// The GPU object representing a window.
+//
+// The main purpose of this object is to associate drawing surfaces with
+// displays. A surface created with the same id as the window (from
+// GetAcceleratedWidget()) will paint onto that window. A window with
+// the same bounds as a display will paint onto that display.
+//
+// If there's no display whose bounds match the window's, the window is
+// disconnected and its contents will not be visible to the user.
 class OZONE_EXPORT DrmWindow {
  public:
   DrmWindow(gfx::AcceleratedWidget widget,
@@ -48,7 +56,7 @@ class OZONE_EXPORT DrmWindow {
 
   void Shutdown();
 
-  // Returns the accelerated widget associated with the delegate.
+  // Returns the accelerated widget associated with the window.
   gfx::AcceleratedWidget GetAcceleratedWidget();
 
   // Returns the current controller the window is displaying on. Callers should
@@ -79,7 +87,10 @@ class OZONE_EXPORT DrmWindow {
   // immediately, otherwise queue up on the window and forward when the hardware
   // is once again ready.
   void QueueOverlayPlane(const OverlayPlane& plane);
-  bool SchedulePageFlip(bool is_sync, const base::Closure& callback);
+
+  bool SchedulePageFlip(bool is_sync, const SwapCompletionCallback& callback);
+  bool TestPageFlip(const std::vector<OverlayCheck_Params>& planes,
+                    ScanoutBufferGenerator* buffer_generator);
 
   // Returns the last buffer associated with this window.
   const OverlayPlane* GetLastModesetBuffer();
@@ -105,23 +116,23 @@ class OZONE_EXPORT DrmWindow {
 
   // The controller associated with the current window. This may be nullptr if
   // the window isn't over an active display.
-  HardwareDisplayController* controller_;
+  HardwareDisplayController* controller_ = nullptr;
 
   base::RepeatingTimer<DrmWindow> cursor_timer_;
 
   scoped_refptr<DrmBuffer> cursor_buffers_[2];
-  int cursor_frontbuffer_;
+  int cursor_frontbuffer_ = 0;
 
   std::vector<SkBitmap> cursor_bitmaps_;
   gfx::Point cursor_location_;
-  int cursor_frame_;
-  int cursor_frame_delay_ms_;
+  int cursor_frame_ = 0;
+  int cursor_frame_delay_ms_ = 0;
 
   // Planes and flips currently being queued in the absence of hardware display
   // controller.
   OverlayPlaneList pending_planes_;
   OverlayPlaneList last_submitted_planes_;
-  bool last_swap_sync_;
+  bool last_swap_sync_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(DrmWindow);
 };

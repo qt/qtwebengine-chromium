@@ -14,8 +14,7 @@ class DisplayListRasterSource;
 
 class CC_EXPORT DisplayListRecordingSource : public RecordingSource {
  public:
-  DisplayListRecordingSource(const gfx::Size& grid_cell_size,
-                             bool use_cached_picture);
+  explicit DisplayListRecordingSource(const gfx::Size& grid_cell_size);
   ~DisplayListRecordingSource() override;
 
   // RecordingSource overrides.
@@ -36,11 +35,17 @@ class CC_EXPORT DisplayListRecordingSource : public RecordingSource {
   bool IsSuitableForGpuRasterization() const override;
   void SetUnsuitableForGpuRasterizationForTesting() override;
   gfx::Size GetTileGridSizeForTesting() const override;
+  // Returns true if the new recorded viewport exposes enough new area to be
+  // worth re-recording.
+  static bool ExposesEnoughNewArea(
+      const gfx::Rect& current_recorded_viewport,
+      const gfx::Rect& potential_new_recorded_viewport,
+      const gfx::Size& layer_size);
+
+  gfx::Rect recorded_viewport() const { return recorded_viewport_; }
 
  protected:
   void Clear();
-
-  const bool use_cached_picture_;
 
   gfx::Rect recorded_viewport_;
   gfx::Size size_;
@@ -48,6 +53,7 @@ class CC_EXPORT DisplayListRecordingSource : public RecordingSource {
   bool gather_pixel_refs_;
   bool requires_clear_;
   bool is_solid_color_;
+  bool clear_canvas_with_debug_color_;
   SkColor solid_color_;
   SkColor background_color_;
   int pixel_record_distance_;

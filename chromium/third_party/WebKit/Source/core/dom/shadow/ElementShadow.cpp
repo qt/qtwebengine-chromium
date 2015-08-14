@@ -31,6 +31,7 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/DistributedNodes.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLShadowElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -142,13 +143,21 @@ ElementShadow::~ElementShadow()
 #endif
 }
 
-ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType type)
+ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRootType type)
 {
     EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
-    if (type == ShadowRoot::OpenShadowRoot && (!youngestShadowRoot() || youngestShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot))
-        shadowHost.willAddFirstOpenShadowRoot();
+    if (type == ShadowRootType::Open) {
+        if (!youngestShadowRoot()) {
+            shadowHost.willAddFirstAuthorShadowRoot();
+        } else if (youngestShadowRoot()->type() == ShadowRootType::UserAgent) {
+            shadowHost.willAddFirstAuthorShadowRoot();
+            UseCounter::countDeprecation(shadowHost.document(), UseCounter::ElementCreateShadowRootMultipleWithUserAgentShadowRoot);
+        } else {
+            UseCounter::countDeprecation(shadowHost.document(), UseCounter::ElementCreateShadowRootMultiple);
+        }
+    }
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
         root->lazyReattachIfAttached();
@@ -160,6 +169,9 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::Shadow
     setNeedsDistributionRecalc();
 
     shadowRoot->insertedInto(&shadowHost);
+    shadowHost.setChildNeedsStyleRecalc();
+    shadowHost.setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Shadow));
+
     InspectorInstrumentation::didPushShadowRoot(&shadowHost, shadowRoot.get());
 
     return *shadowRoot;

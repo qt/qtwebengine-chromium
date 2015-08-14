@@ -26,7 +26,7 @@ namespace test_util {
 bool RemovePrefix(const std::string& input,
                   const std::string& prefix,
                   std::string* output) {
-  if (!StartsWithASCII(input, prefix, true /* case sensitive */))
+  if (!base::StartsWithASCII(input, prefix, true /* case sensitive */))
     return false;
 
   *output = input.substr(prefix.size());
@@ -96,7 +96,8 @@ scoped_ptr<net::test_server::BasicHttpResponse> CreateHttpResponseFromFile(
     return scoped_ptr<net::test_server::BasicHttpResponse>();
 
   std::string content_type = "text/plain";
-  if (EndsWith(file_path.AsUTF8Unsafe(), ".json", true /* case sensitive */))
+  if (base::EndsWith(file_path.AsUTF8Unsafe(), ".json",
+                     true /* case sensitive */))
     content_type = "application/json";
 
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(

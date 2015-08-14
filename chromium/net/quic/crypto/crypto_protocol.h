@@ -53,10 +53,15 @@ const QuicTag kSRBF = TAG('S', 'R', 'B', 'F');   // Socket receive buffer
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');   // TCP cubic
 
 // Connection options (COPT) values
+const QuicTag kAFCW = TAG('A', 'F', 'C', 'W');   // Auto-tune flow control
+                                                 // receive windows.
 const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
 const QuicTag kBYTE = TAG('B', 'Y', 'T', 'E');   // TCP cubic or reno in bytes
+const QuicTag kIW03 = TAG('I', 'W', '0', '3');   // Force ICWND to 3
 const QuicTag kIW10 = TAG('I', 'W', '1', '0');   // Force ICWND to 10
+const QuicTag kIW20 = TAG('I', 'W', '2', '0');   // Force ICWND to 20
+const QuicTag kIW50 = TAG('I', 'W', '5', '0');   // Force ICWND to 50
 const QuicTag k1CON = TAG('1', 'C', 'O', 'N');   // Emulate a single connection
 const QuicTag kNTLP = TAG('N', 'T', 'L', 'P');   // No tail loss probe
 const QuicTag kNCON = TAG('N', 'C', 'O', 'N');   // N Connection Congestion Ctrl
@@ -73,10 +78,17 @@ const QuicTag kTCID = TAG('T', 'C', 'I', 'D');   // Connection ID truncation.
 
 // FEC options
 const QuicTag kFHDR = TAG('F', 'H', 'D', 'R');   // FEC protect headers
+const QuicTag kFSTR = TAG('F', 'S', 'T', 'R');   // FEC protect all streams
+// Set FecSendPolicy for sending FEC packet only when FEC alarm goes off.
+const QuicTag kFSPA = TAG('F', 'S', 'P', 'A');
 
 // Enable bandwidth resumption experiment.
 const QuicTag kBWRE = TAG('B', 'W', 'R', 'E');  // Bandwidth resumption.
 const QuicTag kBWMX = TAG('B', 'W', 'M', 'X');  // Max bandwidth resumption.
+
+// Enable path MTU discovery experiment.
+const QuicTag kMTUH = TAG('M', 'T', 'U', 'H');  // High-target MTU discovery.
+const QuicTag kMTUL = TAG('M', 'T', 'U', 'L');  // Low-target MTU discovery.
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R

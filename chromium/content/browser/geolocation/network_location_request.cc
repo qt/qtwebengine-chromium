@@ -221,7 +221,7 @@ void FormUploadData(const WifiData& wifi_data,
   AddWifiData(wifi_data, age, &request);
   if (!access_token.empty())
     request.SetString(kAccessTokenString, access_token);
-  base::JSONWriter::Write(&request, upload_data);
+  base::JSONWriter::Write(request, upload_data);
 }
 
 void AddString(const std::string& property_name, const std::string& value,
@@ -366,8 +366,9 @@ bool ParseServerResponse(const std::string& response_body,
 
   // Parse the response, ignoring comments.
   std::string error_msg;
-  scoped_ptr<base::Value> response_value(base::JSONReader::ReadAndReturnError(
-      response_body, base::JSON_PARSE_RFC, NULL, &error_msg));
+  scoped_ptr<base::Value> response_value(
+      base::JSONReader::DeprecatedReadAndReturnError(
+          response_body, base::JSON_PARSE_RFC, NULL, &error_msg));
   if (response_value == NULL) {
     LOG(WARNING) << "ParseServerResponse() : JSONReader failed : "
                  << error_msg;

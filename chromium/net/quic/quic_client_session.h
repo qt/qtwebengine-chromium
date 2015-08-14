@@ -44,6 +44,18 @@ class QuicClientSessionPeer;
 class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
                                              public QuicPacketReader::Visitor {
  public:
+  // Reasons to disable QUIC, that is under certain pathological
+  // connection errors.  Note: these values must be kept in sync with
+  // the corresponding values of QuicDisabledReason in:
+  // tools/metrics/histograms/histograms.xml
+  enum QuicDisabledReason {
+    QUIC_DISABLED_NOT = 0,  // default, not disabled
+    QUIC_DISABLED_PUBLIC_RESET_POST_HANDSHAKE = 1,
+    QUIC_DISABLED_TIMEOUT_WITH_OPEN_STREAMS = 2,
+    QUIC_DISABLED_BAD_PACKET_LOSS_RATE = 3,
+    QUIC_DISABLED_MAX = 4,
+  };
+
   // An interface for observing events on a session.
   class NET_EXPORT_PRIVATE Observer {
    public:
@@ -95,21 +107,18 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
   QuicClientSession(QuicConnection* connection,
                     scoped_ptr<DatagramClientSocket> socket,
                     QuicStreamFactory* stream_factory,
+                    QuicCryptoClientStreamFactory* crypto_client_stream_factory,
                     TransportSecurityState* transport_security_state,
                     scoped_ptr<QuicServerInfo> server_info,
+                    const QuicServerId& server_id,
                     int cert_verify_flags,
                     const QuicConfig& config,
+                    QuicCryptoClientConfig* crypto_config,
                     const char* const connection_description,
                     base::TimeTicks dns_resolution_end_time,
                     base::TaskRunner* task_runner,
                     NetLog* net_log);
   ~QuicClientSession() override;
-
-  // Initialize session's connection to |server_id|.
-  void InitializeSession(
-      const QuicServerId& server_id,
-      QuicCryptoClientConfig* config,
-      QuicCryptoClientStreamFactory* crypto_client_stream_factory);
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -129,7 +138,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
 
   // QuicSession methods:
   void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) override;
-  QuicReliableClientStream* CreateOutgoingDataStream() override;
+  QuicReliableClientStream* CreateOutgoingDynamicStream() override;
   QuicCryptoClientStream* GetCryptoStream() override;
   void CloseStream(QuicStreamId stream_id) override;
   void SendRstStream(QuicStreamId id,
@@ -179,7 +188,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
   void CloseSessionOnErrorAndNotifyFactoryLater(int error,
                                                 QuicErrorCode quic_error);
 
-  base::Value* GetInfoAsValue(const std::set<HostPortPair>& aliases);
+  scoped_ptr<base::Value> GetInfoAsValue(const std::set<HostPortPair>& aliases);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -197,9 +206,11 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
 
   const QuicServerId& server_id() const { return server_id_; }
 
+  QuicDisabledReason disabled_reason() const { return disabled_reason_; }
+
  protected:
   // QuicSession methods:
-  QuicDataStream* CreateIncomingDataStream(QuicStreamId id) override;
+  QuicDataStream* CreateIncomingDynamicStream(QuicStreamId id) override;
 
  private:
   friend class test::QuicClientSessionPeer;
@@ -250,7 +261,6 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
   TransportSecurityState* transport_security_state_;
   scoped_ptr<QuicServerInfo> server_info_;
   scoped_ptr<CertVerifyResult> cert_verify_result_;
-  int cert_verify_flags_;
   std::string pinning_failure_log_;
   ObserverSet observers_;
   StreamRequestQueue stream_requests_;
@@ -265,6 +275,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase,
   // True when the session is going away, and streams may no longer be created
   // on this session. Existing stream will continue to be processed.
   bool going_away_;
+  QuicDisabledReason disabled_reason_;
   base::WeakPtrFactory<QuicClientSession> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClientSession);

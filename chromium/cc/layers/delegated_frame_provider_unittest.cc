@@ -7,8 +7,10 @@
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/quads/texture_draw_quad.h"
+#include "cc/resources/resource_provider.h"
 #include "cc/resources/returned_resource.h"
 #include "cc/resources/transferable_resource.h"
+#include "cc/trees/layer_tree_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -35,15 +37,14 @@ class DelegatedFrameProviderTest
   }
 
   void AddTransferableResource(DelegatedFrameData* frame,
-                               ResourceProvider::ResourceId resource_id) {
+                               ResourceId resource_id) {
     TransferableResource resource;
     resource.id = resource_id;
     resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
     frame->resource_list.push_back(resource);
   }
 
-  void AddTextureQuad(DelegatedFrameData* frame,
-                      ResourceProvider::ResourceId resource_id) {
+  void AddTextureQuad(DelegatedFrameData* frame, ResourceId resource_id) {
     SharedQuadState* sqs =
         frame->render_pass_list[0]->CreateAndAppendSharedQuadState();
     TextureDrawQuad* quad =
@@ -90,6 +91,7 @@ class DelegatedFrameProviderTest
   scoped_refptr<DelegatedFrameProvider> frame_provider_;
   bool resources_available_;
   ReturnedResourceArray resources_;
+  LayerSettings layer_settings_;
 };
 
 TEST_F(DelegatedFrameProviderTest, SameResources) {
@@ -153,9 +155,9 @@ TEST_F(DelegatedFrameProviderTest, RefResources) {
   SetFrameProvider(frame.Pass());
 
   scoped_refptr<DelegatedRendererLayer> observer1 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
   scoped_refptr<DelegatedRendererLayer> observer2 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
 
   gfx::RectF damage;
 
@@ -211,9 +213,9 @@ TEST_F(DelegatedFrameProviderTest, RefResourcesInFrameProvider) {
   SetFrameProvider(frame.Pass());
 
   scoped_refptr<DelegatedRendererLayer> observer1 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
   scoped_refptr<DelegatedRendererLayer> observer2 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
 
   gfx::RectF damage;
 
@@ -253,9 +255,9 @@ TEST_F(DelegatedFrameProviderTest, RefResourcesInFrameProviderUntilDestroy) {
   SetFrameProvider(frame.Pass());
 
   scoped_refptr<DelegatedRendererLayer> observer1 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
   scoped_refptr<DelegatedRendererLayer> observer2 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
 
   gfx::RectF damage;
 
@@ -297,9 +299,9 @@ TEST_F(DelegatedFrameProviderTest, Damage) {
   SetFrameProvider(frame.Pass());
 
   scoped_refptr<DelegatedRendererLayer> observer1 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
   scoped_refptr<DelegatedRendererLayer> observer2 =
-      DelegatedRendererLayer::Create(frame_provider_);
+      DelegatedRendererLayer::Create(layer_settings_, frame_provider_);
 
   gfx::RectF damage;
 

@@ -475,18 +475,27 @@ bool SrtpFilter::ParseKeyParams(const std::string& key_params,
 
 bool SrtpSession::inited_ = false;
 
+// This lock protects SrtpSession::inited_ and SrtpSession::sessions_.
+rtc::GlobalLockPod SrtpSession::lock_;
+
 SrtpSession::SrtpSession()
     : session_(NULL),
       rtp_auth_tag_len_(0),
       rtcp_auth_tag_len_(0),
       srtp_stat_(new SrtpStat()),
       last_send_seq_num_(-1) {
-  sessions()->push_back(this);
+  {
+    rtc::GlobalLockScope ls(&lock_);
+    sessions()->push_back(this);
+  }
   SignalSrtpError.repeat(srtp_stat_->SignalSrtpError);
 }
 
 SrtpSession::~SrtpSession() {
-  sessions()->erase(std::find(sessions()->begin(), sessions()->end(), this));
+  {
+    rtc::GlobalLockScope ls(&lock_);
+    sessions()->erase(std::find(sessions()->begin(), sessions()->end(), this));
+  }
   if (session_) {
     srtp_dealloc(session_);
   }
@@ -691,6 +700,7 @@ bool SrtpSession::SetKey(int type, const std::string& cs,
 
   int err = srtp_create(&session_, &policy);
   if (err != err_status_ok) {
+    session_ = NULL;
     LOG(LS_ERROR) << "Failed to create SRTP session, err=" << err;
     return false;
   }
@@ -702,6 +712,8 @@ bool SrtpSession::SetKey(int type, const std::string& cs,
 }
 
 bool SrtpSession::Init() {
+  rtc::GlobalLockScope ls(&lock_);
+
   if (!inited_) {
     int err;
     err = srtp_init();
@@ -729,6 +741,8 @@ bool SrtpSession::Init() {
 }
 
 void SrtpSession::Terminate() {
+  rtc::GlobalLockScope ls(&lock_);
+
   if (inited_) {
     int err = srtp_shutdown();
     if (err) {
@@ -760,6 +774,8 @@ void SrtpSession::HandleEvent(const srtp_event_data_t* ev) {
 }
 
 void SrtpSession::HandleEventThunk(srtp_event_data_t* ev) {
+  rtc::GlobalLockScope ls(&lock_);
+
   for (std::list<SrtpSession*>::iterator it = sessions()->begin();
        it != sessions()->end(); ++it) {
     if ((*it)->session_ == ev->session) {
@@ -770,7 +786,7 @@ void SrtpSession::HandleEventThunk(srtp_event_data_t* ev) {
 }
 
 std::list<SrtpSession*>* SrtpSession::sessions() {
-  LIBJINGLE_DEFINE_STATIC_LOCAL(std::list<SrtpSession*>, sessions, ());
+  RTC_DEFINE_STATIC_LOCAL(std::list<SrtpSession*>, sessions, ());
   return &sessions;
 }
 

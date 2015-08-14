@@ -16,13 +16,14 @@ namespace net {
 // Handles host resolution for a single request and sends a response when done.
 // Also detects connection errors for HostResolverRequestClient and cancels the
 // outstanding resolve request. Owned by MojoHostResolverImpl.
-class MojoHostResolverImpl::Job : public mojo::ErrorHandler {
+class MojoHostResolverImpl::Job {
  public:
   Job(MojoHostResolverImpl* resolver_service,
       net::HostResolver* resolver,
       const net::HostResolver::RequestInfo& request_info,
+      const BoundNetLog& net_log,
       interfaces::HostResolverRequestClientPtr client);
-  ~Job() override;
+  ~Job();
 
   void Start();
 
@@ -30,20 +31,22 @@ class MojoHostResolverImpl::Job : public mojo::ErrorHandler {
   // Completion callback for the HostResolver::Resolve request.
   void OnResolveDone(int result);
 
-  // Overridden from mojo::ErrorHandler:
-  void OnConnectionError() override;
+  // Mojo error handler.
+  void OnConnectionError();
 
   MojoHostResolverImpl* resolver_service_;
   net::HostResolver* resolver_;
   net::HostResolver::RequestInfo request_info_;
+  const BoundNetLog net_log_;
   interfaces::HostResolverRequestClientPtr client_;
   net::HostResolver::RequestHandle handle_;
   AddressList result_;
   base::ThreadChecker thread_checker_;
 };
 
-MojoHostResolverImpl::MojoHostResolverImpl(net::HostResolver* resolver)
-    : resolver_(resolver) {
+MojoHostResolverImpl::MojoHostResolverImpl(net::HostResolver* resolver,
+                                           const BoundNetLog& net_log)
+    : resolver_(resolver), net_log_(net_log) {
 }
 
 MojoHostResolverImpl::~MojoHostResolverImpl() {
@@ -57,7 +60,7 @@ void MojoHostResolverImpl::Resolve(
   DCHECK(thread_checker_.CalledOnValidThread());
   Job* job = new Job(this, resolver_,
                      request_info->To<net::HostResolver::RequestInfo>(),
-                     client.Pass());
+                     net_log_, client.Pass());
   pending_jobs_.insert(job);
   job->Start();
 }
@@ -73,23 +76,25 @@ MojoHostResolverImpl::Job::Job(
     MojoHostResolverImpl* resolver_service,
     net::HostResolver* resolver,
     const net::HostResolver::RequestInfo& request_info,
+    const BoundNetLog& net_log,
     interfaces::HostResolverRequestClientPtr client)
     : resolver_service_(resolver_service),
       resolver_(resolver),
       request_info_(request_info),
+      net_log_(net_log),
       client_(client.Pass()),
       handle_(nullptr) {
-  client_.set_error_handler(this);
+  client_.set_connection_error_handler(base::Bind(
+      &MojoHostResolverImpl::Job::OnConnectionError, base::Unretained(this)));
 }
 
 void MojoHostResolverImpl::Job::Start() {
   DVLOG(1) << "Resolve " << request_info_.host_port_pair().ToString();
-  BoundNetLog net_log;
   int result =
       resolver_->Resolve(request_info_, DEFAULT_PRIORITY, &result_,
                          base::Bind(&MojoHostResolverImpl::Job::OnResolveDone,
                                     base::Unretained(this)),
-                         &handle_, net_log);
+                         &handle_, net_log_);
 
   if (result != ERR_IO_PENDING)
     OnResolveDone(result);

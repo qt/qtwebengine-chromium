@@ -31,7 +31,6 @@
 #define InjectedScriptHost_h
 
 #include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InjectedScriptHostClient.h"
 #include "wtf/Functional.h"
@@ -39,6 +38,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace blink {
 
@@ -46,11 +46,10 @@ class EventTarget;
 class InjectedScriptHostClient;
 class InspectorConsoleAgent;
 class InspectorDebuggerAgent;
-class InspectorInspectorAgent;
 class JSONValue;
 class Node;
-class ScriptDebugServer;
 class ScriptValue;
+class V8Debugger;
 
 struct EventListenerInfo;
 
@@ -59,8 +58,7 @@ struct EventListenerInfo;
 // InjectedScriptHost must never implemment methods that have more power over the page than the
 // page already has itself (e.g. origin restriction bypasses).
 
-class InjectedScriptHost : public RefCountedWillBeGarbageCollectedFinalized<InjectedScriptHost>, public ScriptWrappable {
-    DEFINE_WRAPPERTYPEINFO();
+class InjectedScriptHost : public RefCountedWillBeGarbageCollectedFinalized<InjectedScriptHost> {
 public:
     static PassRefPtrWillBeRawPtr<InjectedScriptHost> create();
     ~InjectedScriptHost();
@@ -68,12 +66,12 @@ public:
 
     using InspectCallback = Function<void(PassRefPtr<TypeBuilder::Runtime::RemoteObject>, PassRefPtr<JSONObject>)>;
 
-    void init(InspectorConsoleAgent* consoleAgent, InspectorDebuggerAgent* debuggerAgent, PassOwnPtr<InspectCallback> inspectCallback, ScriptDebugServer* scriptDebugServer, PassOwnPtr<InjectedScriptHostClient> injectedScriptHostClient)
+    void init(InspectorConsoleAgent* consoleAgent, InspectorDebuggerAgent* debuggerAgent, PassOwnPtr<InspectCallback> inspectCallback, V8Debugger* debugger, PassOwnPtr<InjectedScriptHostClient> injectedScriptHostClient)
     {
         m_consoleAgent = consoleAgent;
         m_debuggerAgent = debuggerAgent;
         m_inspectCallback = inspectCallback;
-        m_scriptDebugServer = scriptDebugServer;
+        m_debugger = debugger;
         m_client = injectedScriptHostClient;
     }
 
@@ -102,8 +100,12 @@ public:
     void monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName);
     void unmonitorFunction(const String& scriptId, int lineNumber, int columnNumber);
 
-    ScriptDebugServer& scriptDebugServer() { return *m_scriptDebugServer; }
+    V8Debugger& debugger() { return *m_debugger; }
     InjectedScriptHostClient* client() { return m_client.get(); }
+
+    // FIXME: store this template in per isolate data
+    void setWrapperTemplate(v8::Local<v8::FunctionTemplate> wrapperTemplate, v8::Isolate* isolate) { m_wrapperTemplate.Reset(isolate, wrapperTemplate); }
+    v8::Local<v8::FunctionTemplate> wrapperTemplate(v8::Isolate* isolate) { return v8::Local<v8::FunctionTemplate>::New(isolate, m_wrapperTemplate); }
 
 private:
     InjectedScriptHost();
@@ -111,10 +113,11 @@ private:
     RawPtrWillBeMember<InspectorConsoleAgent> m_consoleAgent;
     RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
     OwnPtr<InspectCallback> m_inspectCallback;
-    RawPtrWillBeMember<ScriptDebugServer> m_scriptDebugServer;
+    RawPtrWillBeMember<V8Debugger> m_debugger;
     Vector<OwnPtr<InspectableObject> > m_inspectedObjects;
     OwnPtr<InspectableObject> m_defaultInspectableObject;
     OwnPtr<InjectedScriptHostClient> m_client;
+    v8::Global<v8::FunctionTemplate> m_wrapperTemplate;
 };
 
 } // namespace blink

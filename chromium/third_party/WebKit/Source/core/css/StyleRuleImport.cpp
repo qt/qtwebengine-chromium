@@ -111,11 +111,12 @@ void StyleRuleImport::requestStyleSheet()
         return;
 
     KURL absURL;
-    if (!m_parentStyleSheet->baseURL().isNull())
+    if (!m_parentStyleSheet->baseURL().isNull()) {
         // use parent styleheet's URL as the base URL
         absURL = KURL(m_parentStyleSheet->baseURL(), m_strHref);
-    else
+    } else {
         absURL = document->completeURL(m_strHref);
+    }
 
     // Check for a cycle in our import chain.  If we encounter a stylesheet
     // in our parent chain with the same URL, then just bail.
@@ -128,7 +129,7 @@ void StyleRuleImport::requestStyleSheet()
     }
 
     FetchRequest request(ResourceRequest(absURL), FetchInitiatorTypeNames::css, m_parentStyleSheet->charset());
-    m_resource = fetcher->fetchCSSStyleSheet(request);
+    m_resource = CSSStyleSheetResource::fetch(request, fetcher);
     if (m_resource) {
         // if the import rule is issued dynamically, the sheet may be
         // removed from the pending sheet count, so let the doc know

@@ -9,9 +9,11 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_picture_pile_impl.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/tiles/picture_layer_tiling.h"
+#include "cc/trees/layer_tree_settings.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -35,13 +37,8 @@ class PictureLayerTilingPerfTest : public testing::Test {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
-                                                  shared_bitmap_manager_.get(),
-                                                  NULL,
-                                                  NULL,
-                                                  0,
-                                                  false,
-                                                  1).Pass();
+    resource_provider_ = FakeResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get());
   }
 
   void SetUp() override {

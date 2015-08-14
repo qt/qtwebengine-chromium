@@ -158,7 +158,10 @@ PassRefPtrWillBeRawPtr<Range> TextCheckingParagraph::paragraphRange() const
 PassRefPtrWillBeRawPtr<Range> TextCheckingParagraph::subrange(int characterOffset, int characterCount) const
 {
     ASSERT(m_checkingRange);
-    return TextIterator::subrange(paragraphRange().get(), characterOffset, characterCount);
+    EphemeralRange range = TextIterator::subrange(paragraphRange()->startPosition(), paragraphRange()->endPosition(), characterOffset, characterCount);
+    if (range.isNull())
+        return nullptr;
+    return Range::create(range.document(), range.startPosition(), range.endPosition());
 }
 
 int TextCheckingParagraph::offsetTo(const Position& position, ExceptionState& exceptionState) const
@@ -191,7 +194,7 @@ const String& TextCheckingParagraph::text() const
 {
     ASSERT(m_checkingRange);
     if (m_text.isEmpty())
-        m_text = plainText(paragraphRange().get());
+        m_text = plainText(paragraphRange()->startPosition(), paragraphRange()->endPosition());
     return m_text;
 }
 
@@ -261,19 +264,17 @@ String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, boo
             if (misspellingLocation >= 0 && misspellingLength > 0 && misspellingLocation < length && misspellingLength <= length && misspellingLocation + misspellingLength <= length) {
 
                 // Compute range of misspelled word
-                Position misspellingStart = m_start;
-                Position misspellingEnd = m_end;
-                TextIterator::subrange(misspellingStart, misspellingEnd, currentChunkOffset + misspellingLocation, misspellingLength);
+                const EphemeralRange misspellingRange = TextIterator::subrange(m_start, m_end, currentChunkOffset + misspellingLocation, misspellingLength);
 
                 // Remember first-encountered misspelling and its offset.
                 if (!firstMisspelling) {
                     firstMisspellingOffset = currentChunkOffset + misspellingLocation;
                     firstMisspelling = it.substring(misspellingLocation, misspellingLength);
-                    firstMisspellingRange = Range::create(misspellingStart.containerNode()->document(), m_start, m_end);
+                    firstMisspellingRange = Range::create(misspellingRange.document(), m_start, m_end);
                 }
 
                 // Store marker for misspelled word.
-                misspellingStart.containerNode()->document().markers().addMarker(misspellingStart, misspellingEnd, DocumentMarker::Spelling);
+                misspellingRange.document().markers().addMarker(misspellingRange.startPosition(), misspellingRange.endPosition(), DocumentMarker::Spelling);
 
                 // Bail out if we're marking only the first misspelling, and not all instances.
                 if (!markAll)

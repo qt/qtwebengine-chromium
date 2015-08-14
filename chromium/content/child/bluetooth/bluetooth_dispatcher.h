@@ -21,6 +21,9 @@ namespace IPC {
 class Message;
 }
 
+struct BluetoothCharacteristicRequest;
+struct BluetoothPrimaryServiceRequest;
+
 namespace content {
 class ThreadSafeSender;
 
@@ -47,10 +50,24 @@ class BluetoothDispatcher : public WorkerTaskRunner::Observer {
   void OnMessageReceived(const IPC::Message& msg);
 
   // Corresponding to WebBluetoothImpl methods.
-  void requestDevice(blink::WebBluetoothRequestDeviceCallbacks* callbacks);
+  void requestDevice(const blink::WebRequestDeviceOptions& options,
+                     blink::WebBluetoothRequestDeviceCallbacks* callbacks);
   void connectGATT(const blink::WebString& device_instance_id,
                    blink::WebBluetoothConnectGATTCallbacks* callbacks);
-  void SetBluetoothMockDataSetForTesting(const std::string& name);
+  void getPrimaryService(
+      const blink::WebString& device_instance_id,
+      const blink::WebString& service_uuid,
+      blink::WebBluetoothGetPrimaryServiceCallbacks* callbacks);
+
+  void getCharacteristic(
+      const blink::WebString& service_instance_id,
+      const blink::WebString& characteristic_uuid,
+      blink::WebBluetoothGetCharacteristicCallbacks* callbacks);
+  void readValue(const blink::WebString& characteristic_instance_id,
+                 blink::WebBluetoothReadValueCallbacks* callbacks);
+  void writeValue(const blink::WebString& characteristic_instance_id,
+                  const std::vector<uint8_t>& value,
+                  blink::WebBluetoothWriteValueCallbacks*);
 
   // WorkerTaskRunner::Observer implementation.
   void OnWorkerRunLoopStopped() override;
@@ -62,11 +79,44 @@ class BluetoothDispatcher : public WorkerTaskRunner::Observer {
                               const BluetoothDevice& device);
   void OnRequestDeviceError(int thread_id,
                             int request_id,
-                            BluetoothError error_type);
+                            BluetoothError error_type,
+                            const std::string& error_message);
 
   void OnConnectGATTSuccess(int thread_id,
                             int request_id,
                             const std::string& message);
+
+  void OnConnectGATTError(int thread_id,
+                          int request_id,
+                          BluetoothError error_type,
+                          const std::string& error_message);
+  void OnGetPrimaryServiceSuccess(int thread_id,
+                                  int request_id,
+                                  const std::string& service_instance_id);
+  void OnGetPrimaryServiceError(int thread_id,
+                                int request_id,
+                                BluetoothError error_type,
+                                const std::string& error_message);
+  void OnGetCharacteristicSuccess(
+      int thread_id,
+      int request_id,
+      const std::string& characteristic_instance_id);
+  void OnGetCharacteristicError(int thread_id,
+                                int request_id,
+                                BluetoothError error_type,
+                                const std::string& error_message);
+  void OnReadValueSuccess(int thread_id,
+                          int request_id,
+                          const std::vector<uint8_t>& value);
+  void OnReadValueError(int thread_id,
+                        int request_id,
+                        BluetoothError error_type,
+                        const std::string& error_message);
+  void OnWriteValueSuccess(int thread_id, int request_id);
+  void OnWriteValueError(int thread_id,
+                         int request_id,
+                         BluetoothError error_type,
+                         const std::string& error_message);
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
@@ -78,6 +128,18 @@ class BluetoothDispatcher : public WorkerTaskRunner::Observer {
   // Owns callback objects.
   IDMap<blink::WebBluetoothConnectGATTCallbacks, IDMapOwnPointer>
       pending_connect_requests_;
+  // Tracks requests to get a primary service from a device.
+  // Owns request objects.
+  IDMap<BluetoothPrimaryServiceRequest, IDMapOwnPointer>
+      pending_primary_service_requests_;
+  // Tracks requests to get a characteristic from a service.
+  IDMap<BluetoothCharacteristicRequest, IDMapOwnPointer>
+      pending_characteristic_requests_;
+  // Tracks requests to read from a characteristics.
+  IDMap<blink::WebBluetoothReadValueCallbacks, IDMapOwnPointer>
+      pending_read_value_requests_;
+  IDMap<blink::WebBluetoothWriteValueCallbacks, IDMapOwnPointer>
+      pending_write_value_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothDispatcher);
 };

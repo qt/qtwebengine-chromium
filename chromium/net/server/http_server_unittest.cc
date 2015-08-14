@@ -11,15 +11,16 @@
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
@@ -58,10 +59,9 @@ void SetTimedOutAndQuitLoop(const base::WeakPtr<bool> timed_out,
 bool RunLoopWithTimeout(base::RunLoop* run_loop) {
   bool timed_out = false;
   base::WeakPtrFactory<bool> timed_out_weak_factory(&timed_out);
-  base::MessageLoop::current()->PostDelayedTask(
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&SetTimedOutAndQuitLoop,
-                 timed_out_weak_factory.GetWeakPtr(),
+      base::Bind(&SetTimedOutAndQuitLoop, timed_out_weak_factory.GetWeakPtr(),
                  run_loop->QuitClosure()),
       base::TimeDelta::FromSeconds(1));
   run_loop->Run();
@@ -270,9 +270,8 @@ TEST_F(HttpServerTest, Request) {
   ASSERT_EQ("/test", GetRequest(0).path);
   ASSERT_EQ("", GetRequest(0).data);
   ASSERT_EQ(0u, GetRequest(0).headers.size());
-  ASSERT_TRUE(StartsWithASCII(GetRequest(0).peer.ToString(),
-                              "127.0.0.1",
-                              true));
+  ASSERT_TRUE(base::StartsWith(GetRequest(0).peer.ToString(), "127.0.0.1",
+                               base::CompareCase::SENSITIVE));
 }
 
 TEST_F(HttpServerTest, RequestWithHeaders) {
@@ -420,7 +419,7 @@ TEST_F(HttpServerTest, RequestWithTooLargeBody) {
   TestURLFetcherDelegate delegate(run_loop.QuitClosure());
 
   scoped_refptr<URLRequestContextGetter> request_context_getter(
-      new TestURLRequestContextGetter(base::MessageLoopProxy::current()));
+      new TestURLRequestContextGetter(base::ThreadTaskRunnerHandle::Get()));
   scoped_ptr<URLFetcher> fetcher =
       URLFetcher::Create(GURL(base::StringPrintf("http://127.0.0.1:%d/test",
                                                  server_address_.port())),
@@ -443,8 +442,10 @@ TEST_F(HttpServerTest, Send200) {
 
   std::string response;
   ASSERT_TRUE(client.ReadResponse(&response));
-  ASSERT_TRUE(StartsWithASCII(response, "HTTP/1.1 200 OK", true));
-  ASSERT_TRUE(EndsWith(response, "Response!", true));
+  ASSERT_TRUE(base::StartsWith(response, "HTTP/1.1 200 OK",
+                               base::CompareCase::SENSITIVE));
+  ASSERT_TRUE(
+      base::EndsWith(response, "Response!", base::CompareCase::SENSITIVE));
 }
 
 TEST_F(HttpServerTest, SendRaw) {
@@ -592,8 +593,10 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   server_->Send200(client_connection_id, "Content for /test", "text/plain");
   std::string response1;
   ASSERT_TRUE(client.ReadResponse(&response1));
-  ASSERT_TRUE(StartsWithASCII(response1, "HTTP/1.1 200 OK", true));
-  ASSERT_TRUE(EndsWith(response1, "Content for /test", true));
+  ASSERT_TRUE(base::StartsWith(response1, "HTTP/1.1 200 OK",
+                               base::CompareCase::SENSITIVE));
+  ASSERT_TRUE(base::EndsWith(response1, "Content for /test",
+                             base::CompareCase::SENSITIVE));
 
   client.Send("GET /test2 HTTP/1.1\r\n\r\n");
   ASSERT_TRUE(RunUntilRequestsReceived(2));
@@ -603,7 +606,8 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   server_->Send404(client_connection_id);
   std::string response2;
   ASSERT_TRUE(client.ReadResponse(&response2));
-  ASSERT_TRUE(StartsWithASCII(response2, "HTTP/1.1 404 Not Found", true));
+  ASSERT_TRUE(base::StartsWith(response2, "HTTP/1.1 404 Not Found",
+                               base::CompareCase::SENSITIVE));
 
   client.Send("GET /test3 HTTP/1.1\r\n\r\n");
   ASSERT_TRUE(RunUntilRequestsReceived(3));
@@ -613,8 +617,10 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   server_->Send200(client_connection_id, "Content for /test3", "text/plain");
   std::string response3;
   ASSERT_TRUE(client.ReadResponse(&response3));
-  ASSERT_TRUE(StartsWithASCII(response3, "HTTP/1.1 200 OK", true));
-  ASSERT_TRUE(EndsWith(response3, "Content for /test3", true));
+  ASSERT_TRUE(base::StartsWith(response3, "HTTP/1.1 200 OK",
+                               base::CompareCase::SENSITIVE));
+  ASSERT_TRUE(base::EndsWith(response3, "Content for /test3",
+                             base::CompareCase::SENSITIVE));
 }
 
 class CloseOnConnectHttpServerTest : public HttpServerTest {

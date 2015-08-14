@@ -46,6 +46,7 @@
 
 namespace blink {
 class WebFrame;
+class WebLocalFrame;
 }
 
 namespace content {
@@ -110,7 +111,12 @@ class CONTENT_EXPORT HistoryController {
   explicit HistoryController(RenderViewImpl* render_view);
   ~HistoryController();
 
-  void GoToEntry(scoped_ptr<HistoryEntry> entry,
+  void set_provisional_entry(scoped_ptr<HistoryEntry> entry) {
+    provisional_entry_ = entry.Pass();
+  }
+
+  void GoToEntry(blink::WebLocalFrame* main_frame,
+                 scoped_ptr<HistoryEntry> entry,
                  scoped_ptr<NavigationParams> navigation_params,
                  blink::WebURLRequest::CachePolicy cache_policy);
 

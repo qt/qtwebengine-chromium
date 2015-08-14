@@ -123,8 +123,7 @@ class WebRtcVideoEngine2 : public sigslot::has_slots<> {
   void SetCallFactory(WebRtcCallFactory* call_factory);
 
   // Basic video engine implementation.
-  bool Init(rtc::Thread* worker_thread);
-  void Terminate();
+  void Init();
 
   int GetCapabilities();
   bool SetDefaultEncoderConfig(const VideoEncoderConfig& config);
@@ -158,7 +157,6 @@ class WebRtcVideoEngine2 : public sigslot::has_slots<> {
  private:
   std::vector<VideoCodec> GetSupportedCodecs() const;
 
-  rtc::Thread* worker_thread_;
   WebRtcVoiceEngine* voice_engine_;
   std::vector<VideoCodec> video_codecs_;
   std::vector<RtpHeaderExtension> rtp_header_extensions_;
@@ -378,6 +376,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
         EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
     const std::vector<uint32> ssrcs_;
+    const std::vector<SsrcGroup> ssrc_groups_;
     webrtc::Call* const call_;
     WebRtcVideoEncoderFactory* const external_encoder_factory_
         GUARDED_BY(lock_);
@@ -402,8 +401,8 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
   class WebRtcVideoReceiveStream : public webrtc::VideoRenderer {
    public:
     WebRtcVideoReceiveStream(
-        webrtc::Call*,
-        const std::vector<uint32>& ssrcs,
+        webrtc::Call* call,
+        const StreamParams& sp,
         WebRtcVideoDecoderFactory* external_decoder_factory,
         bool default_stream,
         const webrtc::VideoReceiveStream::Config& config,
@@ -417,7 +416,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     void SetRecvCodecs(const std::vector<VideoCodecSettings>& recv_codecs);
     void SetRtpExtensions(const std::vector<webrtc::RtpExtension>& extensions);
 
-    void RenderFrame(const webrtc::I420VideoFrame& frame,
+    void RenderFrame(const webrtc::VideoFrame& frame,
                      int time_to_render_ms) override;
     bool IsTextureSupported() const override;
     bool IsDefaultStream() const;
@@ -449,6 +448,7 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
 
     webrtc::Call* const call_;
     const std::vector<uint32> ssrcs_;
+    const std::vector<SsrcGroup> ssrc_groups_;
 
     webrtc::VideoReceiveStream* stream_;
     const bool default_stream_;

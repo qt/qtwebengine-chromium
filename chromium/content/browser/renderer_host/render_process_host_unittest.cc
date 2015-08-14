@@ -20,7 +20,7 @@ TEST_F(RenderProcessHostUnitTest, GuestsAreNotSuitableHosts) {
   GURL test_url("http://foo.com");
 
   MockRenderProcessHost guest_host(browser_context());
-  guest_host.set_is_isolated_guest(true);
+  guest_host.set_is_for_guests_only(true);
 
   EXPECT_FALSE(RenderProcessHostImpl::IsSuitableHost(
       &guest_host, browser_context(), test_url));
@@ -33,13 +33,11 @@ TEST_F(RenderProcessHostUnitTest, GuestsAreNotSuitableHosts) {
 
 #if !defined(OS_ANDROID)
 TEST_F(RenderProcessHostUnitTest, RendererProcessLimit) {
-  // This test shouldn't run with --site-per-process or
-  // --enable-strict-site-isolation modes, since they don't allow renderer
-  // process reuse, which this test explicitly exercises.
+  // This test shouldn't run with --site-per-process mode, which prohibits
+  // the renderer process reuse this test explicitly exercises.
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess) ||
-      command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
+  if (command_line.HasSwitch(switches::kSitePerProcess))
     return;
 
   // Disable any overrides.

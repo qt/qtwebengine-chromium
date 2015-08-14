@@ -93,22 +93,21 @@ void RunTwoClosures(const base::Closure* first, const base::Closure* second) {
 static void ProxyLocaltimeCallToBrowser(time_t input, struct tm* output,
                                         char* timezone_out,
                                         size_t timezone_out_len) {
-  Pickle request;
+  base::Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_LOCALTIME);
   request.WriteString(
       std::string(reinterpret_cast<char*>(&input), sizeof(input)));
 
   uint8_t reply_buf[512];
-  const ssize_t r = UnixDomainSocket::SendRecvMsg(
-      GetSandboxFD(), reply_buf, sizeof(reply_buf), NULL,
-      request);
+  const ssize_t r = base::UnixDomainSocket::SendRecvMsg(
+      GetSandboxFD(), reply_buf, sizeof(reply_buf), NULL, request);
   if (r == -1) {
     memset(output, 0, sizeof(struct tm));
     return;
   }
 
-  Pickle reply(reinterpret_cast<char*>(reply_buf), r);
-  PickleIterator iter(reply);
+  base::Pickle reply(reinterpret_cast<char*>(reply_buf), r);
+  base::PickleIterator iter(reply);
   std::string result, timezone;
   if (!iter.ReadString(&result) ||
       !iter.ReadString(&timezone) ||
@@ -338,19 +337,18 @@ static void ZygotePreSandboxInit() {
   // cached and there's no more need to access the file system.
   scoped_ptr<icu::TimeZone> zone(icu::TimeZone::createDefault());
 
-#if defined(USE_NSS_CERTS)
+#if defined(USE_OPENSSL)
+  // Pass BoringSSL a copy of the /dev/urandom file descriptor so RAND_bytes
+  // will work inside the sandbox.
+  RAND_set_urandom_fd(base::GetUrandomFD());
+#endif
+#if !defined(USE_OPENSSL) || defined(USE_NSS_CERTS)
   // NSS libraries are loaded before sandbox is activated. This is to allow
   // successful initialization of NSS which tries to load extra library files.
+  //
+  // TODO(davidben): This can be removed from USE_OPENSSL builds when remoting
+  // no longer depends on it. https://crbug.com/506323.
   crypto::LoadNSSLibraries();
-#elif defined(USE_OPENSSL)
-  // Read a random byte in order to cause BoringSSL to open a file descriptor
-  // for /dev/urandom.
-  uint8_t scratch;
-  RAND_bytes(&scratch, 1);
-#else
-  // It's possible that another hypothetical crypto stack would not require
-  // pre-sandbox init, but more likely this is just a build configuration error.
-  #error Which SSL library are you using?
 #endif
 #if defined(ENABLE_PLUGINS)
   // Ensure access to the Pepper plugins before the sandbox is turned on.
@@ -431,15 +429,15 @@ static void EnterNamespaceSandbox(LinuxSandbox* linux_sandbox,
 }
 
 #if defined(SANITIZER_COVERAGE)
-const size_t kSanitizerMaxMessageLength = 1 * 1024 * 1024;
+static int g_sanitizer_message_length = 1 * 1024 * 1024;
 
 // A helper process which collects code coverage data from the renderers over a
 // socket and dumps it to a file. See http://crbug.com/336212 for discussion.
 static void SanitizerCoverageHelper(int socket_fd, int file_fd) {
-  scoped_ptr<char[]> buffer(new char[kSanitizerMaxMessageLength]);
+  scoped_ptr<char[]> buffer(new char[g_sanitizer_message_length]);
   while (true) {
     ssize_t received_size = HANDLE_EINTR(
-        recv(socket_fd, buffer.get(), kSanitizerMaxMessageLength, 0));
+        recv(socket_fd, buffer.get(), g_sanitizer_message_length, 0));
     PCHECK(received_size >= 0);
     if (received_size == 0)
       // All clients have closed the socket. We should die.
@@ -462,6 +460,21 @@ static void CreateSanitizerCoverageSocketPair(int fds[2]) {
   PCHECK(0 == socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
   PCHECK(0 == shutdown(fds[0], SHUT_WR));
   PCHECK(0 == shutdown(fds[1], SHUT_RD));
+
+  // Find the right buffer size for sending coverage data.
+  // The kernel will silently set the buffer size to the allowed maximum when
+  // the specified size is too large, so we set our desired size and read it
+  // back.
+  int* buf_size = &g_sanitizer_message_length;
+  socklen_t option_length = sizeof(*buf_size);
+  PCHECK(0 == setsockopt(fds[1], SOL_SOCKET, SO_SNDBUF,
+                         buf_size, option_length));
+  PCHECK(0 == getsockopt(fds[1], SOL_SOCKET, SO_SNDBUF,
+                         buf_size, &option_length));
+  DCHECK_EQ(sizeof(*buf_size), option_length);
+  // The kernel returns the doubled buffer size.
+  *buf_size /= 2;
+  PCHECK(*buf_size > 0);
 }
 
 static pid_t ForkSanitizerCoverageHelper(
@@ -529,7 +542,7 @@ bool ZygoteMain(const MainFunctionParams& params,
   linux_sandbox->sanitizer_args()->coverage_sandboxed = 1;
   linux_sandbox->sanitizer_args()->coverage_fd = sancov_socket_fds[1];
   linux_sandbox->sanitizer_args()->coverage_max_block_size =
-      kSanitizerMaxMessageLength;
+      g_sanitizer_message_length;
   // Zygote termination will block until the helper process exits, which will
   // not happen until the write end of the socket is closed everywhere. Make
   // sure the init process does not hold on to it.
@@ -557,10 +570,10 @@ bool ZygoteMain(const MainFunctionParams& params,
 
   if (using_layer1_sandbox) {
     // Let the ZygoteHost know we're booting up.
-    CHECK(UnixDomainSocket::SendMsg(kZygoteSocketPairFd,
-                                    kZygoteBootMessage,
-                                    sizeof(kZygoteBootMessage),
-                                    std::vector<int>()));
+    CHECK(base::UnixDomainSocket::SendMsg(kZygoteSocketPairFd,
+                                          kZygoteBootMessage,
+                                          sizeof(kZygoteBootMessage),
+                                          std::vector<int>()));
   }
 
   VLOG(1) << "ZygoteMain: initializing " << fork_delegates.size()

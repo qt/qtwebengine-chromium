@@ -134,14 +134,14 @@ ImageData* ImageData::create(DOMUint8ClampedArray* data, unsigned width, unsigne
 
 v8::Local<v8::Object> ImageData::associateWithWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperType, v8::Local<v8::Object> wrapper)
 {
-    ScriptWrappable::associateWithWrapper(isolate, wrapperType, wrapper);
+    wrapper = ScriptWrappable::associateWithWrapper(isolate, wrapperType, wrapper);
 
     if (!wrapper.IsEmpty() && m_data.get()) {
         // Create a V8 Uint8ClampedArray object and set the "data" property
         // of the ImageData object to the created v8 object, eliminating the
         // C++ callback when accessing the "data" property.
         v8::Local<v8::Value> pixelArray = toV8(m_data.get(), wrapper, isolate);
-        if (pixelArray.IsEmpty() || !v8CallBoolean(wrapper->ForceSet(isolate->GetCurrentContext(), v8AtomicString(isolate, "data"), pixelArray, v8::ReadOnly)))
+        if (pixelArray.IsEmpty() || !v8CallBoolean(wrapper->DefineOwnProperty(isolate->GetCurrentContext(), v8AtomicString(isolate, "data"), pixelArray, v8::ReadOnly)))
             return v8::Local<v8::Object>();
     }
     return wrapper;

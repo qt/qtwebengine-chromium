@@ -27,14 +27,14 @@ bool PushDispatcher::ShouldHandleMessage(const IPC::Message& msg) const {
   // of the API functionality requires a direct association with a document and
   // a frame, and for those cases the IPC messages are handled by a
   // RenderFrameObserver.
-  return msg.type() == PushMessagingMsg_RegisterFromWorkerSuccess::ID ||
-         msg.type() == PushMessagingMsg_RegisterFromWorkerError::ID ||
+  return msg.type() == PushMessagingMsg_SubscribeFromWorkerSuccess::ID ||
+         msg.type() == PushMessagingMsg_SubscribeFromWorkerError::ID ||
          msg.type() == PushMessagingMsg_GetRegistrationSuccess::ID ||
          msg.type() == PushMessagingMsg_GetRegistrationError::ID ||
          msg.type() == PushMessagingMsg_GetPermissionStatusSuccess::ID ||
          msg.type() == PushMessagingMsg_GetPermissionStatusError::ID ||
-         msg.type() == PushMessagingMsg_UnregisterSuccess::ID ||
-         msg.type() == PushMessagingMsg_UnregisterError::ID;
+         msg.type() == PushMessagingMsg_UnsubscribeSuccess::ID ||
+         msg.type() == PushMessagingMsg_UnsubscribeError::ID;
 }
 
 void PushDispatcher::OnFilteredMessageReceived(const IPC::Message& msg) {
@@ -47,7 +47,7 @@ bool PushDispatcher::GetWorkerThreadIdForMessage(const IPC::Message& msg,
                                                  int* ipc_thread_id) {
   int request_id = -1;
 
-  const bool success = PickleIterator(msg).ReadInt(&request_id);
+  const bool success = base::PickleIterator(msg).ReadInt(&request_id);
   DCHECK(success);
 
   base::AutoLock lock(request_id_map_lock_);

@@ -15,16 +15,18 @@
 #include "base/debug/leak_annotations.h"
 #include "base/debug/profiler.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/metrics/field_trial.h"
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/tracked_objects.h"
@@ -40,7 +42,6 @@
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/geofencing/geofencing_message_filter.h"
 #include "content/child/mojo/mojo_application.h"
-#include "content/child/navigator_connect/navigator_connect_dispatcher.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/push_messaging/push_dispatcher.h"
@@ -53,6 +54,7 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/in_process_child_thread_params.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/attachment_broker.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
@@ -65,6 +67,14 @@
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
 #include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "content/child/child_io_surface_manager_mac.h"
+#endif
+
+#if defined(OS_WIN)
+#include "ipc/attachment_broker_win.h"
 #endif
 
 using tracked_objects::ThreadData;
@@ -163,6 +173,29 @@ class SuicideOnChannelErrorFilter : public IPC::MessageFilter {
 };
 
 #endif  // OS(POSIX)
+
+#if defined(OS_MACOSX)
+class IOSurfaceManagerFilter : public IPC::MessageFilter {
+ public:
+  // Overridden from IPC::MessageFilter:
+  bool OnMessageReceived(const IPC::Message& message) override {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(IOSurfaceManagerFilter, message)
+      IPC_MESSAGE_HANDLER(ChildProcessMsg_SetIOSurfaceManagerToken,
+                          OnSetIOSurfaceManagerToken)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+ protected:
+  ~IOSurfaceManagerFilter() override {}
+
+  void OnSetIOSurfaceManagerToken(const IOSurfaceManagerToken& token) {
+    ChildIOSurfaceManager::GetInstance()->set_token(token);
+  }
+};
+#endif
 
 #if defined(OS_ANDROID)
 // A class that allows for triggering a clean shutdown from another
@@ -292,7 +325,7 @@ ChildThreadImpl::ChildThreadImpl(const Options& options)
 scoped_refptr<base::SequencedTaskRunner> ChildThreadImpl::GetIOTaskRunner() {
   if (IsInBrowserProcess())
     return browser_process_io_runner_;
-  return ChildProcess::current()->io_message_loop_proxy();
+  return ChildProcess::current()->io_task_runner();
 }
 
 void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
@@ -302,13 +335,14 @@ void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
     scoped_refptr<base::SequencedTaskRunner> io_task_runner = GetIOTaskRunner();
     DCHECK(io_task_runner);
     channel_->Init(IPC::ChannelMojo::CreateClientFactory(
-                       nullptr, io_task_runner, channel_name_),
+                       io_task_runner, channel_name_, attachment_broker_.get()),
                    create_pipe_now);
     return;
   }
 
   VLOG(1) << "Mojo is disabled on child";
-  channel_->Init(channel_name_, IPC::Channel::MODE_CLIENT, create_pipe_now);
+  channel_->Init(channel_name_, IPC::Channel::MODE_CLIENT, create_pipe_now,
+                 attachment_broker_.get());
 }
 
 void ChildThreadImpl::Init(const Options& options) {
@@ -323,12 +357,16 @@ void ChildThreadImpl::Init(const Options& options) {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
-  channel_ = IPC::SyncChannel::Create(
-      this, ChildProcess::current()->io_message_loop_proxy(),
-      ChildProcess::current()->GetShutDownEvent());
+  channel_ =
+      IPC::SyncChannel::Create(this, ChildProcess::current()->io_task_runner(),
+                               ChildProcess::current()->GetShutDownEvent());
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!IsInBrowserProcess())
     IPC::Logging::GetInstance()->SetIPCSender(this);
+#endif
+
+#if defined(OS_WIN)
+  attachment_broker_.reset(new IPC::AttachmentBrokerWin());
 #endif
 
   mojo_application_.reset(new MojoApplication(GetIOTaskRunner()));
@@ -336,7 +374,7 @@ void ChildThreadImpl::Init(const Options& options) {
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
   thread_safe_sender_ = new ThreadSafeSender(
-      base::MessageLoopProxy::current().get(), sync_message_filter_.get());
+      message_loop_->task_runner(), sync_message_filter_.get());
 
   resource_dispatcher_.reset(new ResourceDispatcher(
       this, message_loop()->task_runner()));
@@ -361,8 +399,6 @@ void ChildThreadImpl::Init(const Options& options) {
   notification_dispatcher_ =
       new NotificationDispatcher(thread_safe_sender_.get());
   push_dispatcher_ = new PushDispatcher(thread_safe_sender_.get());
-  navigator_connect_dispatcher_ =
-      new NavigatorConnectDispatcher(thread_safe_sender_.get());
 
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
@@ -373,13 +409,12 @@ void ChildThreadImpl::Init(const Options& options) {
   channel_->AddFilter(service_worker_message_filter_->GetFilter());
   channel_->AddFilter(geofencing_message_filter_->GetFilter());
   channel_->AddFilter(bluetooth_message_filter_->GetFilter());
-  channel_->AddFilter(navigator_connect_dispatcher_->GetFilter());
 
   if (!IsInBrowserProcess()) {
     // In single process mode, browser-side tracing will cover the whole
     // process including renderers.
     channel_->AddFilter(new tracing::ChildTraceMessageFilter(
-        ChildProcess::current()->io_message_loop_proxy()));
+        ChildProcess::current()->io_task_runner()));
   }
 
   // In single process mode we may already have a power monitor
@@ -399,6 +434,10 @@ void ChildThreadImpl::Init(const Options& options) {
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
 
+#if defined(OS_MACOSX)
+  channel_->AddFilter(new IOSurfaceManagerFilter());
+#endif
+
   // Add filters passed here via options.
   for (auto startup_filter : options.startup_filters) {
     channel_->AddFilter(startup_filter);
@@ -416,10 +455,9 @@ void ChildThreadImpl::Init(const Options& options) {
       connection_timeout = temp;
   }
 
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&ChildThreadImpl::EnsureConnected,
-                 channel_connected_factory_.GetWeakPtr()),
+  message_loop_->task_runner()->PostDelayedTask(
+      FROM_HERE, base::Bind(&ChildThreadImpl::EnsureConnected,
+                            channel_connected_factory_.GetWeakPtr()),
       base::TimeDelta::FromSeconds(connection_timeout));
 
 #if defined(OS_ANDROID)
@@ -428,7 +466,7 @@ void ChildThreadImpl::Init(const Options& options) {
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
   trace_memory_controller_.reset(new base::trace_event::TraceMemoryController(
-      message_loop_->message_loop_proxy(), ::HeapProfilerWithPseudoStackStart,
+      message_loop_->task_runner(), ::HeapProfilerWithPseudoStackStart,
       ::HeapProfilerStop, ::GetHeapProfile));
 #endif
 
@@ -504,6 +542,10 @@ void ChildThreadImpl::ReleaseCachedFonts() {
   Send(new ChildProcessHostMsg_ReleaseCachedFonts());
 }
 #endif
+
+IPC::AttachmentBroker* ChildThreadImpl::GetAttachmentBroker() {
+  return attachment_broker_.get();
+}
 
 MessageRouter* ChildThreadImpl::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());

@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "base/metrics/histogram.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/media_client.h"
 #include "media/base/media_keys.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
@@ -65,11 +66,6 @@ blink::WebMediaPlayer::NetworkState PipelineErrorToNetworkState(
     case PIPELINE_ERROR_ABORT:
     case PIPELINE_ERROR_OPERATION_PENDING:
     case PIPELINE_ERROR_INVALID_STATE:
-      return blink::WebMediaPlayer::NetworkStateDecodeError;
-
-    case PIPELINE_ERROR_DECRYPT:
-      // TODO(xhwang): Change to use NetworkStateDecryptError once it's added in
-      // Webkit (see http://crbug.com/124486).
       return blink::WebMediaPlayer::NetworkStateDecodeError;
 
     case PIPELINE_OK:
@@ -182,6 +178,80 @@ blink::WebEncryptedMediaInitDataType ConvertToWebInitDataType(
 
   NOTREACHED();
   return blink::WebEncryptedMediaInitDataType::Unknown;
+}
+
+namespace {
+// This class wraps a scoped WebSetSinkIdCB pointer such that
+// copying objects of this class actually performs moving, thus
+// maintaining clear ownership of the WebSetSinkIdCB pointer.
+// The rationale for this class is that the SwichOutputDevice method
+// can make a copy of its base::Callback parameter, which implies
+// copying its bound parameters.
+// SwitchOutputDevice actually wants to move its base::Callback
+// parameter since only the final copy will be run, but base::Callback
+// does not support move semantics and there is no base::MovableCallback.
+// Since scoped pointers are not copyable, we cannot bind them directly
+// to a base::Callback in this case. Thus, we use this helper class,
+// whose copy constructor transfers ownership of the scoped pointer.
+
+class SetSinkIdCallback {
+ public:
+  explicit SetSinkIdCallback(WebSetSinkIdCB* web_callback)
+      : web_callback_(web_callback) {}
+  SetSinkIdCallback(const SetSinkIdCallback& other)
+      : web_callback_(other.web_callback_.Pass()) {}
+  ~SetSinkIdCallback() {}
+  friend void RunSetSinkIdCallback(const SetSinkIdCallback& callback,
+                                   SwitchOutputDeviceResult result);
+
+ private:
+  // Mutable is required so that Pass() can be called in the copy
+  // constructor.
+  mutable scoped_ptr<WebSetSinkIdCB> web_callback_;
+};
+
+void RunSetSinkIdCallback(const SetSinkIdCallback& callback,
+                          SwitchOutputDeviceResult result) {
+  DVLOG(1) << __FUNCTION__;
+  if (!callback.web_callback_)
+    return;
+
+  switch (result) {
+    case SWITCH_OUTPUT_DEVICE_RESULT_SUCCESS:
+      callback.web_callback_->onSuccess();
+      break;
+    case SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_FOUND:
+      callback.web_callback_->onError(new blink::WebSetSinkIdError(
+          blink::WebSetSinkIdError::ErrorTypeNotFound, "Device not found"));
+      break;
+    case SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_AUTHORIZED:
+      callback.web_callback_->onError(new blink::WebSetSinkIdError(
+          blink::WebSetSinkIdError::ErrorTypeSecurity,
+          "No permission to access device"));
+      break;
+    case SWITCH_OUTPUT_DEVICE_RESULT_ERROR_OBSOLETE:
+      callback.web_callback_->onError(new blink::WebSetSinkIdError(
+          blink::WebSetSinkIdError::ErrorTypeAbort,
+          "The requested operation became obsolete and was aborted"));
+      break;
+    case SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED:
+      callback.web_callback_->onError(new blink::WebSetSinkIdError(
+          blink::WebSetSinkIdError::ErrorTypeAbort,
+          "The requested operation cannot be performed and was aborted"));
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  callback.web_callback_ = nullptr;
+}
+
+}  // namespace
+
+SwitchOutputDeviceCB ConvertToSwitchOutputDeviceCB(
+    WebSetSinkIdCB* web_callbacks) {
+  return media::BindToCurrentLoop(
+      base::Bind(RunSetSinkIdCallback, SetSinkIdCallback(web_callbacks)));
 }
 
 }  // namespace media

@@ -6,22 +6,29 @@
 
 #include "base/callback_helpers.h"
 #include "net/base/net_errors.h"
-#include "net/quic/quic_session.h"
+#include "net/quic/quic_spdy_session.h"
 #include "net/quic/quic_write_blocked_list.h"
 
 namespace net {
 
 QuicReliableClientStream::QuicReliableClientStream(QuicStreamId id,
-                                                   QuicSession* session,
+                                                   QuicSpdySession* session,
                                                    const BoundNetLog& net_log)
-    : QuicDataStream(id, session),
-      net_log_(net_log),
-      delegate_(nullptr) {
+    : QuicDataStream(id, session), net_log_(net_log), delegate_(nullptr) {
 }
 
 QuicReliableClientStream::~QuicReliableClientStream() {
   if (delegate_)
     delegate_->OnClose(connection_error());
+}
+
+void QuicReliableClientStream::OnStreamHeadersComplete(bool fin,
+                                                       size_t frame_len) {
+  QuicDataStream::OnStreamHeadersComplete(fin, frame_len);
+  if (delegate_) {
+    delegate_->OnHeadersAvailable(decompressed_headers());
+    MarkHeadersConsumed(decompressed_headers().length());
+  }
 }
 
 uint32 QuicReliableClientStream::ProcessData(const char* data,
@@ -30,6 +37,11 @@ uint32 QuicReliableClientStream::ProcessData(const char* data,
   if (!delegate_) {
     DLOG(ERROR) << "Missing delegate";
     Reset(QUIC_STREAM_CANCELLED);
+    return 0;
+  }
+
+  if (!FinishedReadingHeaders()) {
+    // Buffer the data in the sequencer until the headers have been read.
     return 0;
   }
 

@@ -53,6 +53,31 @@ class GritNodeUnittest(unittest.TestCase):
         })
     self.assertEqual({}, id_dict.get('devtools.grd', None))
 
+  # Verifies that GetInputFiles() returns the correct list of files
+  # corresponding to ChromeScaledImage nodes when assets are missing.
+  def testGetInputFilesChromeScaledImage(self):
+    xml = '''<?xml version="1.0" encoding="utf-8"?>
+      <grit latest_public_release="0" current_release="1">
+        <outputs>
+          <output filename="default.pak" type="data_package" context="default_100_percent" />
+          <output filename="special.pak" type="data_package" context="special_100_percent" fallback_to_default_layout="false" />
+        </outputs>
+        <release seq="1">
+          <structures fallback_to_low_resolution="true">
+            <structure type="chrome_scaled_image" name="IDR_A" file="a.png" />
+            <structure type="chrome_scaled_image" name="IDR_B" file="b.png" />
+          </structures>
+        </release>
+      </grit>'''
+
+    grd = grd_reader.Parse(StringIO.StringIO(xml), util.PathFromRoot('grit/testdata'))
+    expected = ['default_100_percent/a.png', 'default_100_percent/b.png', 'special_100_percent/a.png']
+    actual = [os.path.relpath(path, util.PathFromRoot('grit/testdata')) for path in grd.GetInputFiles()]
+    # Convert path separator for Windows paths.
+    actual = [path.replace('\\', '/') for path in actual]
+    self.assertEquals(expected, actual)
+
+
 class IfNodeUnittest(unittest.TestCase):
   def testIffyness(self):
     grd = grd_reader.Parse(StringIO.StringIO('''

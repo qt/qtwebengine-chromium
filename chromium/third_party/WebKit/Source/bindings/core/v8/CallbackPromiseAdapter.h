@@ -46,10 +46,12 @@ namespace blink {
 //
 // class MyClass ... {
 //    typedef blink::WebMyClass WebType;
+//
+//    // Takes ownership of |webInstance|.
 //    static PassRefPtr<MyClass> take(ScriptPromiseResolver* resolver,
-//                                    blink::WebMyClass* webInstance) {
+//                                    PassOwnPtr<blink::WebMyClass> webInstance) {
 //        // convert/create as appropriate, but often it's just:
-//        return MyClass::create(adoptPtr(webInstance));
+//        return MyClass::create(webInstance);
 //
 //        // Since promise resolving is done as an async task, it's not
 //        // guaranteed that the script context has seen the promise resolve
@@ -60,21 +62,16 @@ namespace blink {
 //        resolver->promise().then(...);
 //    }
 //
-//    // Called when aborting to resolve/reject a promise due to an empty
-//    // execution context.
-//    static void dispose(blink::WebMyClass* webInstance) {
-//        // delete as appropriate, but often it's just:
-//        delete webInstance;
-//    }
-//
 // Now when calling into a WebKit API that requires a WebCallbacks<blink::WebMyClass, blink::WebMyClass>*:
 //
 //    // call signature: callSomeMethod(WebCallbacks<MyClass, MyClass>* callbacks)
 //    webObject->callSomeMethod(new CallbackPromiseAdapter<MyClass, MyClass>(resolver, scriptExecutionContext));
 //
-// Note that this class does not manage its own lifetime. In this
-// example that ownership of the WebCallbacks instance is being passed
-// in and it is up to the callee to free the WebCallbacks instace.
+// Note:
+// - This class does not manage its own lifetime. In this example that ownership
+//   of the WebCallbacks instance is being passed in and it is up to the callee
+//   to free the WebCallbacks instance.
+// - onSuccess and onError take ownership of the given WebType instance.
 template<typename S, typename T>
 class CallbackPromiseAdapter final : public WebCallbacks<typename S::WebType, typename T::WebType> {
     WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
@@ -84,29 +81,28 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess(typename S::WebType* result) override
+    // Takes ownership of |result|.
+    void onSuccess(typename S::WebType* result) override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            if (result)
-                S::dispose(result);
+        OwnPtr<typename S::WebType> ownPtr = adoptPtr(result);
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
         if (!result) {
             m_resolver->resolve(v8::Null(m_resolver->scriptState()->isolate()));
             return;
         }
-        m_resolver->resolve(S::take(m_resolver.get(), result));
+        m_resolver->resolve(S::take(m_resolver.get(), ownPtr.release()));
     }
 
-    virtual void onError(typename T::WebType* error) override
+    // Takes ownership of |error|.
+    void onError(typename T::WebType* error) override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            T::dispose(error);
+        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
-        m_resolver->reject(T::take(m_resolver.get(), error));
+        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
     }
 
 private:
@@ -122,22 +118,22 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess() override
+    void onSuccess() override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
         m_resolver->resolve();
     }
 
-    virtual void onError(typename T::WebType* error) override
+    // Takes ownership of |error|.
+    void onError(typename T::WebType* error) override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            T::dispose(error);
+        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
-        m_resolver->reject(T::take(m_resolver.get(), error));
+        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
     }
 
 private:
@@ -153,18 +149,18 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess(typename S::WebType* result) override
+    // Takes ownership of |result|.
+    void onSuccess(typename S::WebType* result) override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            S::dispose(result);
+        OwnPtr<typename S::WebType> ownPtr = adoptPtr(result);
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
-        m_resolver->resolve(S::take(m_resolver.get(), result));
+        m_resolver->resolve(S::take(m_resolver.get(), ownPtr.release()));
     }
 
-    virtual void onError() override
+    void onError() override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
@@ -184,22 +180,24 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess(bool* result) override
+    // TODO(nhiroki): onSuccess should take ownership of a bool object for
+    // consistency. (http://crbug.com/493531)
+    void onSuccess(bool* result) override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
         m_resolver->resolve(*result);
     }
 
-    virtual void onError(typename T::WebType* error) override
+    // Takes ownership of |error|.
+    void onError(typename T::WebType* error) override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            T::dispose(error);
+        OwnPtr<typename T::WebType> ownPtr = adoptPtr(error);
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
-        m_resolver->reject(T::take(m_resolver.get(), error));
+        m_resolver->reject(T::take(m_resolver.get(), ownPtr.release()));
     }
 
 private:
@@ -215,16 +213,16 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess() override
+    void onSuccess() override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
         m_resolver->resolve();
     }
 
-    virtual void onError() override
+    void onError() override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
@@ -244,16 +242,18 @@ public:
     {
         ASSERT(m_resolver);
     }
-    virtual ~CallbackPromiseAdapter() { }
+    ~CallbackPromiseAdapter() override { }
 
-    virtual void onSuccess(bool* result) override
+    // TODO(nhiroki): onSuccess should take ownership of a bool object for
+    // consistency. (http://crbug.com/493531)
+    void onSuccess(bool* result) override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
         m_resolver->resolve(*result);
     }
 
-    virtual void onError() override
+    void onError() override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;

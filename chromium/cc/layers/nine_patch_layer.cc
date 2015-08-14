@@ -5,20 +5,20 @@
 #include "cc/layers/nine_patch_layer.h"
 
 #include "cc/layers/nine_patch_layer_impl.h"
-#include "cc/resources/prioritized_resource.h"
-#include "cc/resources/resource_update.h"
-#include "cc/resources/resource_update_queue.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/trees/layer_tree_host.h"
 
 namespace cc {
 
-scoped_refptr<NinePatchLayer> NinePatchLayer::Create() {
-  return make_scoped_refptr(new NinePatchLayer());
+scoped_refptr<NinePatchLayer> NinePatchLayer::Create(
+    const LayerSettings& settings) {
+  return make_scoped_refptr(new NinePatchLayer(settings));
 }
 
-NinePatchLayer::NinePatchLayer() : fill_center_(false) {}
+NinePatchLayer::NinePatchLayer(const LayerSettings& settings)
+    : UIResourceLayer(settings), fill_center_(false) {
+}
 
 NinePatchLayer::~NinePatchLayer() {}
 

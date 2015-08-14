@@ -128,10 +128,21 @@ AutomationPredicate.visitedLink = function(node) {
  * @param {chrome.automation.AutomationNode} node
  * @return {boolean}
  */
+AutomationPredicate.focused = function(node) {
+  return node.state.focused;
+};
+
+/**
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
 AutomationPredicate.leaf = function(node) {
   return !node.firstChild ||
       node.role == RoleType.button ||
+      node.role == RoleType.buttonDropDown ||
+      node.role == RoleType.popUpButton ||
       node.role == RoleType.slider ||
+      node.role == RoleType.textField ||
       node.children.every(function(n) {
         return n.state.invisible;
       });
@@ -143,7 +154,7 @@ AutomationPredicate.leaf = function(node) {
  */
 AutomationPredicate.leafWithText = function(node) {
   return AutomationPredicate.leaf(node) &&
-      !!(node.attributes.name || node.attributes.value);
+      !!(node.name || node.value);
 };
 
 /**
@@ -160,13 +171,17 @@ AutomationPredicate.linebreak = function(first, second) {
 };
 
 /**
- * Leaf nodes that should be ignored.
+ * Leaf nodes that should be ignored while traversing the automation tree. For
+ * example, apply this predicate when moving to the next element.
  * @param {chrome.automation.AutomationNode} node
  * @return {boolean}
  */
 AutomationPredicate.shouldIgnoreLeaf = function(node) {
   return AutomationPredicate.leaf(node) &&
-      node.role == RoleType.client;
+      (node.role == RoleType.client ||
+      node.role == RoleType.div ||
+      (node.role == 'image' && node.name == '') ||
+      (node.role == 'staticText' && node.value == ''));
 };
 
 });  // goog.scope

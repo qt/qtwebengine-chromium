@@ -50,7 +50,7 @@ struct GraphicsLayerPaintInfo {
     IntSize offsetFromLayoutObject;
     bool offsetFromLayoutObjectSet;
 
-    GraphicsLayerPaintInfo() : paintLayer(0), offsetFromLayoutObjectSet(false) { }
+    GraphicsLayerPaintInfo() : paintLayer(nullptr), offsetFromLayoutObjectSet(false) { }
 };
 
 enum GraphicsLayerUpdateScope {
@@ -132,8 +132,11 @@ public:
     bool hasUnpositionedOverflowControlsLayers() const;
 
     // Returns true if the assignment actually changed the assigned squashing layer.
-    bool updateSquashingLayerAssignment(DeprecatedPaintLayer* squashedLayer, const DeprecatedPaintLayer& owningLayer, size_t nextSquashedLayerIndex);
+    bool updateSquashingLayerAssignment(DeprecatedPaintLayer* squashedLayer, size_t nextSquashedLayerIndex);
     void removeLayerFromSquashingGraphicsLayer(const DeprecatedPaintLayer*);
+#if ENABLE(ASSERT)
+    bool verifyLayerInSquashingVector(const DeprecatedPaintLayer*);
+#endif
 
     void finishAccumulatingSquashingLayers(size_t nextSquashedLayerIndex);
     void updateRenderingContext();
@@ -189,7 +192,7 @@ public:
         return m_squashingLayerOffsetFromTransformedAncestor;
     }
 
-    // If there is a squashed layer painting into this CLM that is an ancestor of the given LayoutObject, return it. Otherwise return 0.
+    // If there is a squashed layer painting into this CLM that is an ancestor of the given LayoutObject, return it. Otherwise return nullptr.
     const GraphicsLayerPaintInfo* containingSquashedLayer(const LayoutObject*, unsigned maxSquashedLayerIndex);
 
     void updateScrollingBlockSelection();
@@ -295,6 +298,10 @@ private:
     bool owningLayerClippedByLayerNotAboveCompositedAncestor(DeprecatedPaintLayer* scrollParent);
 
     DeprecatedPaintLayer* scrollParent();
+
+    // Clear the groupedMapping entry on the layer at the given index, only if that layer does
+    // not appear earlier in the set of layers for this object.
+    void clearLayerGroupingIfNoPrecedingEntry(size_t);
 
     DeprecatedPaintLayer& m_owningLayer;
 

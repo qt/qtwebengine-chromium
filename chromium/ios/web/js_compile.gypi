@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# This file should be deprecated in favor of js_compile_checked.gypi or
+# eventually third_party/closure_compiler/compile_js.gypi as iOS JS code
+# becomes error free. See http://crbug.com/487804
 {
   'variables': {
     'closure_compiler_path': '<(DEPTH)/third_party/closure_compiler/compiler/compiler.jar',

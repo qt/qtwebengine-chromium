@@ -26,6 +26,7 @@
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/referrer.h"
 #include "jni/DownloadController_jni.h"
 #include "net/cookies/cookie_options.h"
@@ -403,7 +404,8 @@ void DownloadControllerAndroidImpl::OnDownloadUpdated(DownloadItem* item) {
           env, GetJavaObject()->Controller(env).obj(),
           base::android::GetApplicationContext(), jurl.obj(), jmime_type.obj(),
           jfilename.obj(), jpath.obj(), item->GetReceivedBytes(), true,
-          item->GetId(), item->PercentComplete(), time_delta.InMilliseconds());
+          item->GetId(), item->PercentComplete(), time_delta.InMilliseconds(),
+          item->HasUserGesture());
       break;
     }
     case DownloadItem::COMPLETE:
@@ -416,7 +418,7 @@ void DownloadControllerAndroidImpl::OnDownloadUpdated(DownloadItem* item) {
           env, GetJavaObject()->Controller(env).obj(),
           base::android::GetApplicationContext(), jurl.obj(), jmime_type.obj(),
           jfilename.obj(), jpath.obj(), item->GetReceivedBytes(), true,
-          item->GetId());
+          item->GetId(), item->HasUserGesture());
       break;
     case DownloadItem::CANCELLED:
     // TODO(shashishekhar): An interrupted download can be resumed. Android
@@ -428,7 +430,7 @@ void DownloadControllerAndroidImpl::OnDownloadUpdated(DownloadItem* item) {
           env, GetJavaObject()->Controller(env).obj(),
           base::android::GetApplicationContext(), jurl.obj(), jmime_type.obj(),
           jfilename.obj(), jpath.obj(), item->GetReceivedBytes(), false,
-          item->GetId());
+          item->GetId(), item->HasUserGesture());
       break;
     case DownloadItem::MAX_DOWNLOAD_STATE:
       NOTREACHED();
@@ -485,7 +487,8 @@ DownloadControllerAndroidImpl::JavaObject*
 }
 
 void DownloadControllerAndroidImpl::StartContextMenuDownload(
-    const ContextMenuParams& params, WebContents* web_contents, bool is_link) {
+    const ContextMenuParams& params, WebContents* web_contents, bool is_link,
+    const std::string& extra_headers) {
   const GURL& url = is_link ? params.link_url : params.src_url;
   const GURL& referring_url = params.frame_url.is_empty() ?
       params.page_url : params.frame_url;
@@ -500,7 +503,11 @@ void DownloadControllerAndroidImpl::StartContextMenuDownload(
   dl_params->set_referrer(referrer);
   if (is_link)
     dl_params->set_referrer_encoding(params.frame_charset);
-  else
+  net::HttpRequestHeaders headers;
+  headers.AddHeadersFromString(extra_headers);
+  for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();)
+    dl_params->add_request_header(it.name(), it.value());
+  if (!is_link && extra_headers.empty())
     dl_params->set_prefer_cache(true);
   dl_params->set_prompt(false);
   dlm->DownloadUrl(dl_params.Pass());
@@ -531,6 +538,8 @@ DownloadControllerAndroidImpl::DownloadInfoAndroid::DownloadInfoAndroid(
 
   request->extra_request_headers().GetHeader(
       net::HttpRequestHeaders::kUserAgent, &user_agent);
+  if (user_agent.empty())
+    user_agent = GetContentClient()->GetUserAgent();
   GURL referer_url(request->referrer());
   if (referer_url.is_valid())
     referer = referer_url.spec();

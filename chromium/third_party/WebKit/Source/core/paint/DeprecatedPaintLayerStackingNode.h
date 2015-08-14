@@ -45,6 +45,7 @@
 #ifndef DeprecatedPaintLayerStackingNode_h
 #define DeprecatedPaintLayerStackingNode_h
 
+#include "core/CoreExport.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -57,16 +58,15 @@ class DeprecatedPaintLayerCompositor;
 class ComputedStyle;
 class LayoutBoxModelObject;
 
-class DeprecatedPaintLayerStackingNode {
+class CORE_EXPORT DeprecatedPaintLayerStackingNode {
     WTF_MAKE_NONCOPYABLE(DeprecatedPaintLayerStackingNode);
 public:
-    explicit DeprecatedPaintLayerStackingNode(DeprecatedPaintLayer*);
+    explicit DeprecatedPaintLayerStackingNode(LayoutBoxModelObject&);
     ~DeprecatedPaintLayerStackingNode();
 
-    int zIndex() const { return layoutObject()->style()->zIndex(); }
+    int zIndex() const { return layoutObject().style()->zIndex(); }
 
-    // A stacking context is a layer that has a non-auto z-index.
-    bool isStackingContext() const { return !layoutObject()->style()->hasAutoZIndex(); }
+    bool isStackingContext() const { return layoutObject().style()->isStackingContext(); }
 
     // Update our normal and z-index lists.
     void updateLayerListsIfNeeded();
@@ -80,17 +80,16 @@ public:
     bool hasPositiveZOrderList() const { return posZOrderList() && posZOrderList()->size(); }
     bool hasNegativeZOrderList() const { return negZOrderList() && negZOrderList()->size(); }
 
-    // FIXME: should check for dirtiness here?
-    bool isNormalFlowOnly() const { return m_isNormalFlowOnly; }
-    void updateIsNormalFlowOnly();
-    bool normalFlowListDirty() const { return m_normalFlowListDirty; }
-    void dirtyNormalFlowList();
+    bool isTreatedAsStackingContextForPainting() const { return m_isTreatedAsStackingContextForPainting; }
+    void updateIsTreatedAsStackingContextForPainting();
 
     void updateStackingNodesAfterStyleChange(const ComputedStyle* oldStyle);
 
     DeprecatedPaintLayerStackingNode* ancestorStackingContextNode() const;
 
-    DeprecatedPaintLayer* layer() const { return m_layer; }
+    // FIXME: A lot of code depends on this function but shouldn't. We should
+    // build our code on top of LayoutBoxModelObject, not DeprecatedPaintLayer.
+    DeprecatedPaintLayer* layer() const;
 
 #if ENABLE(ASSERT)
     bool layerListMutationAllowed() const { return m_layerListMutationAllowed; }
@@ -109,12 +108,6 @@ private:
         return m_posZOrderList.get();
     }
 
-    Vector<DeprecatedPaintLayerStackingNode*>* normalFlowList() const
-    {
-        ASSERT(!m_normalFlowListDirty);
-        return m_normalFlowList.get();
-    }
-
     Vector<DeprecatedPaintLayerStackingNode*>* negZOrderList() const
     {
         ASSERT(!m_zOrderListsDirty);
@@ -123,27 +116,22 @@ private:
     }
 
     void rebuildZOrderLists();
-    void collectLayers(OwnPtr<Vector<DeprecatedPaintLayerStackingNode*>>& posZOrderList, OwnPtr<Vector<DeprecatedPaintLayerStackingNode*>>& negZOrderList);
 
 #if ENABLE(ASSERT)
     bool isInStackingParentZOrderLists() const;
-    bool isInStackingParentNormalFlowList() const;
     void updateStackingParentForZOrderLists(DeprecatedPaintLayerStackingNode* stackingParent);
-    void updateStackingParentForNormalFlowList(DeprecatedPaintLayerStackingNode* stackingParent);
     void setStackingParent(DeprecatedPaintLayerStackingNode* stackingParent) { m_stackingParent = stackingParent; }
 #endif
 
-    bool shouldBeNormalFlowOnly() const;
-
-    void updateNormalFlowList();
+    bool shouldBeTreatedAsStackingContextForPainting() const { return layoutObject().style()->isTreatedAsStackingContextForPainting(); }
 
     bool isDirtyStackingContext() const { return m_zOrderListsDirty && isStackingContext(); }
 
     DeprecatedPaintLayerCompositor* compositor() const;
     // We can't return a LayoutBox as LayoutInline can be a stacking context.
-    LayoutBoxModelObject* layoutObject() const;
+    LayoutBoxModelObject& layoutObject() const { return m_layoutObject; }
 
-    DeprecatedPaintLayer* m_layer;
+    LayoutBoxModelObject& m_layoutObject;
 
     // m_posZOrderList holds a sorted list of all the descendant nodes within
     // that have z-indices of 0 or greater (auto will count as 0).
@@ -152,12 +140,8 @@ private:
     OwnPtr<Vector<DeprecatedPaintLayerStackingNode*>> m_posZOrderList;
     OwnPtr<Vector<DeprecatedPaintLayerStackingNode*>> m_negZOrderList;
 
-    // This list contains child nodes that cannot create stacking contexts.
-    OwnPtr<Vector<DeprecatedPaintLayerStackingNode*>> m_normalFlowList;
-
     unsigned m_zOrderListsDirty : 1;
-    unsigned m_normalFlowListDirty: 1;
-    unsigned m_isNormalFlowOnly : 1;
+    unsigned m_isTreatedAsStackingContextForPainting : 1;
 
 #if ENABLE(ASSERT)
     unsigned m_layerListMutationAllowed : 1;

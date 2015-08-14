@@ -20,13 +20,11 @@
 #ifndef SVGTextChunkBuilder_h
 #define SVGTextChunkBuilder_h
 
-#include "core/layout/svg/SVGTextChunk.h"
-#include "platform/transforms/AffineTransform.h"
-#include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
+class AffineTransform;
 class SVGInlineTextBox;
 struct SVGTextFragment;
 
@@ -41,22 +39,34 @@ class SVGTextChunkBuilder {
 public:
     SVGTextChunkBuilder();
 
-    const Vector<SVGTextChunk>& textChunks() const { return m_textChunks; }
-    AffineTransform transformationForTextBox(SVGInlineTextBox*) const;
+    void processTextChunks(const Vector<SVGInlineTextBox*>&);
 
-    void buildTextChunks(Vector<SVGInlineTextBox*>& lineLayoutBoxes);
-    void layoutTextChunks(Vector<SVGInlineTextBox*>& lineLayoutBoxes);
+protected:
+    typedef Vector<SVGInlineTextBox*>::const_iterator BoxListConstIterator;
+
+    virtual void handleTextChunk(BoxListConstIterator boxStart, BoxListConstIterator boxEnd);
 
 private:
-    void addTextChunk(Vector<SVGInlineTextBox*>& lineLayoutBoxes, unsigned boxPosition, unsigned boxCount);
-    void processTextChunk(const SVGTextChunk&);
-
     void processTextLengthSpacingCorrection(bool isVerticalText, float textLengthShift, Vector<SVGTextFragment>&, unsigned& atCharacter);
+    void applyTextLengthScaleAdjustment(const AffineTransform&, Vector<SVGTextFragment>&);
     void processTextAnchorCorrection(bool isVerticalText, float textAnchorShift, Vector<SVGTextFragment>&);
+};
+
+class SVGTextPathChunkBuilder final : public SVGTextChunkBuilder {
+    WTF_MAKE_NONCOPYABLE(SVGTextPathChunkBuilder);
+public:
+    SVGTextPathChunkBuilder();
+
+    float totalLength() const { return m_totalLength; }
+    unsigned totalCharacters() const { return m_totalCharacters; }
+    float totalTextAnchorShift() const { return m_totalTextAnchorShift; }
 
 private:
-    Vector<SVGTextChunk> m_textChunks;
-    HashMap<SVGInlineTextBox*, AffineTransform> m_textBoxTransformations;
+    void handleTextChunk(BoxListConstIterator boxStart, BoxListConstIterator boxEnd) override;
+
+    float m_totalLength;
+    unsigned m_totalCharacters;
+    float m_totalTextAnchorShift;
 };
 
 } // namespace blink

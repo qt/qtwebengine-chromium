@@ -22,7 +22,9 @@ class DecoderBufferClear : public DecoderBufferBase {
   explicit DecoderBufferClear(const scoped_refptr<DecoderBufferBase>& buffer);
 
   // DecoderBufferBase implementation.
+  StreamId stream_id() const override;
   base::TimeDelta timestamp() const override;
+  void set_timestamp(const base::TimeDelta& timestamp) override;
   const uint8* data() const override;
   uint8* writable_data() const override;
   size_t data_size() const override;
@@ -45,8 +47,16 @@ DecoderBufferClear::DecoderBufferClear(
 DecoderBufferClear::~DecoderBufferClear() {
 }
 
+StreamId DecoderBufferClear::stream_id() const {
+  return buffer_->stream_id();
+}
+
 base::TimeDelta DecoderBufferClear::timestamp() const {
   return buffer_->timestamp();
+}
+
+void DecoderBufferClear::set_timestamp(const base::TimeDelta& timestamp) {
+  buffer_->set_timestamp(timestamp);
 }
 
 const uint8* DecoderBufferClear::data() const {

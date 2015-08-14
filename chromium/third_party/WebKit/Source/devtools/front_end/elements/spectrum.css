@@ -37,7 +37,7 @@
 .spectrum-hue, .spectrum-alpha {
     position: absolute;
     right: 16px;
-    width: 162px;
+    width: 130px;
     height: 11px;
     border-radius: 2px;
 }
@@ -89,7 +89,7 @@
     margin: 0;
     position: absolute;
     top: 148px;
-    left: 16px;
+    left: 48px;
     background-image: url(Images/checker.png);
     border-radius: 16px;
 }
@@ -122,7 +122,6 @@
     line-height: 20px;
     font-size: 11px;
     padding: 0;
-    -webkit-user-modify: read-write-plaintext-only;
     color: #333;
     white-space: nowrap;
 }
@@ -171,4 +170,12 @@
 
 .spectrum-display-switcher:hover {
     background-color: #EEEEEE;
+}
+
+.spectrum-eye-dropper {
+    width: 32px;
+    height: 24px;
+    position: absolute;
+    left: 12px;
+    top: 144px;
 }

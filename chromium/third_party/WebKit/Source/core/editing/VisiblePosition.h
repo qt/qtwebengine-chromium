@@ -57,6 +57,7 @@ public:
     // otherwise it will be converted to DOWNSTREAM
     VisiblePosition() : m_affinity(VP_DEFAULT_AFFINITY) { }
     explicit VisiblePosition(const Position&, EAffinity = VP_DEFAULT_AFFINITY);
+    explicit VisiblePosition(const PositionInComposedTree&, EAffinity = VP_DEFAULT_AFFINITY);
     explicit VisiblePosition(const PositionWithAffinity&);
 
     void clear() { m_deepPosition.clear(); }
@@ -89,9 +90,9 @@ public:
     // FIXME: This does not handle [table, 0] correctly.
     Element* rootEditableElement() const { return m_deepPosition.isNotNull() ? m_deepPosition.deprecatedNode()->rootEditableElement() : 0; }
 
-    void getInlineBoxAndOffset(InlineBox*& inlineBox, int& caretOffset) const
+    InlineBoxPosition computeInlineBoxPosition() const
     {
-        m_deepPosition.getInlineBoxAndOffset(m_affinity, inlineBox, caretOffset);
+        return m_deepPosition.computeInlineBoxPosition(m_affinity);
     }
 
     // Rect is local to the returned layoutObject
@@ -111,8 +112,8 @@ public:
 #endif
 
 private:
-    void init(const Position&, EAffinity);
-    Position canonicalPosition(const Position&);
+    template<typename PositionType>
+    void init(const PositionType&, EAffinity);
 
     Position leftVisuallyDistinctCandidate() const;
     Position rightVisuallyDistinctCandidate() const;
@@ -138,6 +139,11 @@ bool setEnd(Range*, const VisiblePosition&);
 VisiblePosition startVisiblePosition(const Range*, EAffinity);
 
 Element* enclosingBlockFlowElement(const VisiblePosition&);
+
+CORE_EXPORT Position canonicalPositionOf(const Position&);
+CORE_EXPORT PositionInComposedTree canonicalPositionOf(const PositionInComposedTree&);
+PositionWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionWithAffinity&, const Position& anchor);
+PositionInComposedTreeWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionInComposedTreeWithAffinity&, const PositionInComposedTree& anchor);
 
 bool isFirstVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);
 bool isLastVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);

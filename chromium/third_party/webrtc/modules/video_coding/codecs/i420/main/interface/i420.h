@@ -48,7 +48,7 @@ class I420Encoder : public VideoEncoder {
 //
 // Return value                 : WEBRTC_VIDEO_CODEC_OK if OK.
 //                                <0 - Error
-  int Encode(const I420VideoFrame& inputImage,
+  int Encode(const VideoFrame& inputImage,
              const CodecSpecificInfo* /*codecSpecificInfo*/,
              const std::vector<VideoFrameType>* /*frame_types*/) override;
 
@@ -102,11 +102,6 @@ class I420Decoder : public VideoDecoder {
   int InitDecode(const VideoCodec* codecSettings,
                  int /*numberOfCores*/) override;
 
-  int SetCodecConfigParameters(const uint8_t* /*buffer*/,
-                               int /*size*/) override {
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
-
 // Decode encoded image (as a part of a video stream). The decoded image
 // will be returned to the user through the decode complete callback.
 //
@@ -150,7 +145,7 @@ class I420Decoder : public VideoDecoder {
                                       uint16_t* width,
                                       uint16_t* height);
 
-  I420VideoFrame              _decodedImage;
+  VideoFrame _decodedImage;
   int                         _width;
   int                         _height;
   bool                        _inited;

@@ -9,6 +9,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "media/base/key_systems.h"
+#include "media/base/media_client.h"
 #include "media/base/media_permission.h"
 #include "media/blink/webcontentdecryptionmodule_impl.h"
 #include "media/blink/webcontentdecryptionmoduleaccess_impl.h"
@@ -16,6 +17,7 @@
 #include "third_party/WebKit/public/platform/WebEncryptedMediaRequest.h"
 #include "third_party/WebKit/public/platform/WebMediaKeySystemConfiguration.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 namespace media {
 
@@ -94,6 +96,19 @@ WebEncryptedMediaClientImpl::~WebEncryptedMediaClientImpl() {
 void WebEncryptedMediaClientImpl::requestMediaKeySystemAccess(
     blink::WebEncryptedMediaRequest request) {
   GetReporter(request.keySystem())->ReportRequested();
+
+  if (GetMediaClient()) {
+    GURL security_origin(request.securityOrigin().toString());
+
+    GetMediaClient()->RecordRapporURL("Media.OriginUrl.EME", security_origin);
+
+    blink::WebString error_message;
+    if (!request.securityOrigin().isPotentiallyTrustworthy(error_message)) {
+      GetMediaClient()->RecordRapporURL("Media.OriginUrl.EME.Insecure",
+                                        security_origin);
+    }
+  }
+
   key_system_config_selector_.SelectConfig(
       request.keySystem(), request.supportedConfigurations(),
       request.securityOrigin(), are_secure_codecs_supported_cb_.Run(),
@@ -107,9 +122,9 @@ void WebEncryptedMediaClientImpl::CreateCdm(
     const blink::WebString& key_system,
     const blink::WebSecurityOrigin& security_origin,
     const CdmConfig& cdm_config,
-    blink::WebContentDecryptionModuleResult result) {
+    scoped_ptr<blink::WebContentDecryptionModuleResult> result) {
   WebContentDecryptionModuleImpl::Create(
-      cdm_factory_, key_system, security_origin, cdm_config, result);
+      cdm_factory_, key_system, security_origin, cdm_config, result.Pass());
 }
 
 void WebEncryptedMediaClientImpl::OnRequestSucceeded(

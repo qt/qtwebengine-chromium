@@ -40,7 +40,6 @@ namespace aura {
 // frontend process, which forwards input events to this class.
 class AURA_EXPORT RemoteWindowTreeHostWin
     : public WindowTreeHost,
-      public ui::EventSource,
       public ui::internal::RemoteInputMethodDelegateWin {
  public:
   // Returns the current RemoteWindowTreeHostWin. This does *not* create a
@@ -118,8 +117,8 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   // WindowTreeHost overrides:
   ui::EventSource* GetEventSource() override;
   gfx::AcceleratedWidget GetAcceleratedWidget() override;
-  void Show() override;
-  void Hide() override;
+  void ShowImpl() override;
+  void HideImpl() override;
   gfx::Rect GetBounds() const override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Point GetLocationOnNativeScreen() const override;
@@ -128,9 +127,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToNative(const gfx::Point& location) override;
   void OnCursorVisibilityChangedNative(bool show) override;
-
-  // ui::EventSource:
-  ui::EventProcessor* GetEventProcessor() override;
 
   // ui::internal::RemoteInputMethodDelegateWin overrides:
   void CancelComposition() override;

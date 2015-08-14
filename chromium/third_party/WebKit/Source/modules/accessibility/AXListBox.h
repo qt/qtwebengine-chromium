@@ -38,16 +38,16 @@ class AXObjectCacheImpl;
 class AXListBox final : public AXLayoutObject {
 
 private:
-    AXListBox(LayoutObject*, AXObjectCacheImpl*);
+    AXListBox(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtr<AXListBox> create(LayoutObject*, AXObjectCacheImpl*);
-    virtual ~AXListBox();
+    static PassRefPtrWillBeRawPtr<AXListBox> create(LayoutObject*, AXObjectCacheImpl&);
+    ~AXListBox() override;
 
-    virtual AccessibilityRole determineAccessibilityRole() override final;
-    virtual bool isAXListBox() const override { return true; }
-    virtual bool shouldFocusActiveDescendant() const override { return true; }
-    virtual AXObject* activeDescendant() const override;
+    AccessibilityRole determineAccessibilityRole() final;
+    bool isAXListBox() const override { return true; }
+    bool shouldFocusActiveDescendant() const override { return true; }
+    AXObject* activeDescendant() const override;
 
     void activeIndexChanged();
 

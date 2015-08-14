@@ -20,48 +20,24 @@
 #include "ipc/ipc_channel_reader.h"
 #include "ipc/ipc_message_attachment_set.h"
 
-#if !defined(OS_MACOSX)
-// On Linux, the seccomp sandbox makes it very expensive to call
-// recvmsg() and sendmsg(). The restriction on calling read() and write(), which
-// are cheap, is that we can't pass file descriptors over them.
-//
-// As we cannot anticipate when the sender will provide us with file
-// descriptors, we have to make the decision about whether we call read() or
-// recvmsg() before we actually make the call. The easiest option is to
-// create a dedicated socketpair() for exchanging file descriptors. Any file
-// descriptors are split out of a message, with the non-file-descriptor payload
-// going over the normal connection, and the file descriptors being sent
-// separately over the other channel. When read()ing from a channel, we'll
-// notice if the message was supposed to have come with file descriptors and
-// use recvmsg on the other socketpair to retrieve them and combine them
-// back with the rest of the message.
-//
-// Mac can also run in IPC_USES_READWRITE mode if necessary, but at this time
-// doesn't take a performance hit from recvmsg and sendmsg, so it doesn't
-// make sense to waste resources on having the separate dedicated socketpair.
-// It is however useful for debugging between Linux and Mac to be able to turn
-// this switch 'on' on the Mac as well.
-//
-// The HELLO message from the client to the server is always sent using
-// sendmsg because it will contain the file descriptor that the server
-// needs to send file descriptors in later messages.
-#define IPC_USES_READWRITE 1
-#endif
-
 namespace IPC {
 
 class IPC_EXPORT ChannelPosix : public Channel,
                                 public internal::ChannelReader,
                                 public base::MessageLoopForIO::Watcher {
  public:
-  ChannelPosix(const IPC::ChannelHandle& channel_handle, Mode mode,
-               Listener* listener);
+  // |broker| must outlive the newly created object.
+  ChannelPosix(const IPC::ChannelHandle& channel_handle,
+               Mode mode,
+               Listener* listener,
+               AttachmentBroker* broker);
   ~ChannelPosix() override;
 
   // Channel implementation
   bool Connect() override;
   void Close() override;
   bool Send(Message* message) override;
+  AttachmentBroker* GetAttachmentBroker() override;
   base::ProcessId GetPeerPID() const override;
   base::ProcessId GetSelfPID() const override;
   int GetClientFileDescriptor() const override;
@@ -106,14 +82,6 @@ class IPC_EXPORT ChannelPosix : public Channel,
   bool WillDispatchInputMessage(Message* msg) override;
   bool DidEmptyInputBuffers() override;
   void HandleInternalMessage(const Message& msg) override;
-
-#if defined(IPC_USES_READWRITE)
-  // Reads the next message from the fd_pipe_ and appends them to the
-  // input_fds_ queue. Returns false if there was a message receiving error.
-  // True means there was a message and it was processed properly, or there was
-  // no messages.
-  bool ReadFileDescriptorsFromFDPipe();
-#endif
 
   // Finds the set of file descriptors in the given message.  On success,
   // appends the descriptors to the input_fds_ member and returns true
@@ -161,12 +129,6 @@ class IPC_EXPORT ChannelPosix : public Channel,
   base::ScopedFD client_pipe_;
   mutable base::Lock client_pipe_lock_;  // Lock that protects |client_pipe_|.
 
-#if defined(IPC_USES_READWRITE)
-  // Linux/BSD use a dedicated socketpair() for passing file descriptors.
-  base::ScopedFD fd_pipe_;
-  base::ScopedFD remote_fd_pipe_;
-#endif
-
   // The "name" of our pipe.  On Windows this is the global identifier for
   // the pipe.  On POSIX it's used as a key in a local map of file descriptors.
   std::string pipe_name_;
@@ -181,18 +143,14 @@ class IPC_EXPORT ChannelPosix : public Channel,
       MessageAttachmentSet::kMaxDescriptorsPerMessage;
 
   // Buffer size for file descriptors used for recvmsg. On Mac the CMSG macros
-  // don't seem to be constant so we have to pick a "large enough" value.
+  // are not constant so we have to pick a "large enough" padding for headers.
 #if defined(OS_MACOSX)
-  static const size_t kMaxReadFDBuffer = 1024;
+  static const size_t kMaxReadFDBuffer = 1024 + sizeof(int) * kMaxReadFDs;
 #else
   static const size_t kMaxReadFDBuffer = CMSG_SPACE(sizeof(int) * kMaxReadFDs);
 #endif
-
-  // Temporary buffer used to receive the file descriptors from recvmsg.
-  // Code that writes into this should immediately read them out and save
-  // them to input_fds_, since this buffer will be re-used anytime we call
-  // recvmsg.
-  char input_cmsg_buf_[kMaxReadFDBuffer];
+  static_assert(kMaxReadFDBuffer <= 8192,
+                "kMaxReadFDBuffer too big for a stack buffer");
 
   // File descriptors extracted from messages coming off of the channel. The
   // handles may span messages and come off different channels from the message
@@ -220,6 +178,9 @@ class IPC_EXPORT ChannelPosix : public Channel,
   // If non-zero, overrides the process ID sent in the hello message.
   static int global_pid_;
 #endif  // OS_LINUX
+
+  // |broker_| must outlive this instance.
+  AttachmentBroker* broker_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChannelPosix);
 };

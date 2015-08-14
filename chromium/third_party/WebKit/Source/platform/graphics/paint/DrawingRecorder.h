@@ -8,7 +8,7 @@
 #include "platform/PlatformExport.h"
 
 #include "platform/geometry/FloatRect.h"
-#include "platform/graphics/paint/DisplayItem.h"
+#include "platform/graphics/paint/DrawingDisplayItem.h"
 
 #ifndef NDEBUG
 #include "wtf/text/WTFString.h"
@@ -20,30 +20,22 @@ class GraphicsContext;
 
 class PLATFORM_EXPORT DrawingRecorder {
 public:
+    static bool useCachedDrawingIfPossible(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type);
+
     DrawingRecorder(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type, const FloatRect& cullRect);
     ~DrawingRecorder();
 
-    bool canUseCachedDrawing() const
-    {
 #if ENABLE(ASSERT)
-        m_checkedCachedDrawing = true;
-#endif
-        return m_canUseCachedDrawing;
-    }
-
-#if ENABLE(ASSERT)
-    void setSkipUnderInvalidationChecking() { m_skipUnderInvalidationChecking = true; }
+    void setUnderInvalidationCheckingMode(DrawingDisplayItem::UnderInvalidationCheckingMode mode) { m_underInvalidationCheckingMode = mode; }
 #endif
 
 private:
     GraphicsContext& m_context;
     DisplayItemClientWrapper m_displayItemClient;
     const DisplayItem::Type m_displayItemType;
-    bool m_canUseCachedDrawing;
 #if ENABLE(ASSERT)
-    mutable bool m_checkedCachedDrawing;
     size_t m_displayItemPosition;
-    bool m_skipUnderInvalidationChecking;
+    DrawingDisplayItem::UnderInvalidationCheckingMode m_underInvalidationCheckingMode;
 #endif
 };
 

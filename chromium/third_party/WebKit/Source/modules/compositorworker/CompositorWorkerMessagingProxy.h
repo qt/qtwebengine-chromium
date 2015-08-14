@@ -11,12 +11,12 @@ namespace blink {
 
 class CompositorWorkerMessagingProxy final : public WorkerMessagingProxy {
 public:
-    CompositorWorkerMessagingProxy(InProcessWorkerBase*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    explicit CompositorWorkerMessagingProxy(InProcessWorkerBase*);
 
 protected:
-    virtual ~CompositorWorkerMessagingProxy();
+    ~CompositorWorkerMessagingProxy() override;
 
-    virtual PassRefPtr<WorkerThread> createWorkerThread(double originTime) override;
+    PassRefPtr<WorkerThread> createWorkerThread(double originTime) override;
 };
 
 } // namespace blink

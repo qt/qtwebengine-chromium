@@ -15,29 +15,26 @@
 #include "public/web/WebDocument.h"
 #include "public/web/WebPerformance.h"
 #include "public/web/WebRange.h"
+#include "public/web/WebTreeScopeType.h"
 #include "web/RemoteBridgeFrameOwner.h"
 #include "web/WebViewImpl.h"
 #include <v8/include/v8.h>
 
 namespace blink {
 
-WebRemoteFrame* WebRemoteFrame::create(WebRemoteFrameClient* client)
+WebRemoteFrame* WebRemoteFrame::create(WebTreeScopeType scope, WebRemoteFrameClient* client)
 {
-    WebRemoteFrameImpl* frame = new WebRemoteFrameImpl(client);
+    return WebRemoteFrameImpl::create(scope, client);
+}
+
+WebRemoteFrame* WebRemoteFrameImpl::create(WebTreeScopeType scope, WebRemoteFrameClient* client)
+{
+    WebRemoteFrameImpl* frame = new WebRemoteFrameImpl(scope, client);
 #if ENABLE(OILPAN)
     return frame;
 #else
     return adoptRef(frame).leakRef();
 #endif
-}
-
-WebRemoteFrameImpl::WebRemoteFrameImpl(WebRemoteFrameClient* client)
-    : m_frameClient(this)
-    , m_client(client)
-#if ENABLE(OILPAN)
-    , m_selfKeepAlive(this)
-#endif
-{
 }
 
 WebRemoteFrameImpl::~WebRemoteFrameImpl()
@@ -335,7 +332,8 @@ void WebRemoteFrameImpl::loadHTMLString(
 
 void WebRemoteFrameImpl::stopLoading()
 {
-    ASSERT_NOT_REACHED();
+    // TODO(dcheng,japhet): Calling this method should stop loads
+    // in all subframes, both remote and local.
 }
 
 WebDataSource* WebRemoteFrameImpl::provisionalDataSource() const
@@ -716,15 +714,9 @@ WebString WebRemoteFrameImpl::layerTreeAsText(bool showDebugInfo) const
     return WebString();
 }
 
-// TODO(alexmos): Remove once Chromium side is updated to take previous sibling.
-WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client)
+WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)
 {
-    return createLocalChild(name, sandboxFlags, client, lastChild());
-}
-
-WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)
-{
-    WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(client));
+    WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
         m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags)));
     insertAfter(child, previousSibling);
@@ -739,6 +731,7 @@ WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSa
     return child;
 }
 
+
 void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name)
 {
     setCoreFrame(RemoteFrame::create(&m_frameClient, host, owner));
@@ -746,9 +739,9 @@ void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner,
     m_frame->tree().setName(name, nullAtom);
 }
 
-WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(const WebString& name, WebSandboxFlags sandboxFlags, WebRemoteFrameClient* client)
+WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebRemoteFrameClient* client)
 {
-    WebRemoteFrameImpl* child = toWebRemoteFrameImpl(WebRemoteFrame::create(client));
+    WebRemoteFrameImpl* child = toWebRemoteFrameImpl(WebRemoteFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
         m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags)));
     appendChild(child);
@@ -772,9 +765,13 @@ void WebRemoteFrameImpl::initializeFromFrame(WebLocalFrame* source) const
 {
     ASSERT(source);
     WebLocalFrameImpl* localFrameImpl = toWebLocalFrameImpl(source);
+
+    // TODO(bokan): The scale_factor argument here used to be the now-removed
+    // FrameView::visibleContentScaleFactor but the callee uses this parameter
+    // to set the device scale factor. crbug.com/493262
     client()->initializeChildFrame(
         localFrameImpl->frame()->view()->frameRect(),
-        localFrameImpl->frame()->view()->visibleContentScaleFactor());
+        1);
 }
 
 void WebRemoteFrameImpl::setReplicatedOrigin(const WebSecurityOrigin& origin) const
@@ -814,6 +811,16 @@ void WebRemoteFrameImpl::didStopLoading()
             toWebLocalFrameImpl(parent()->toWebLocalFrame());
         parentFrame->frame()->loader().checkCompleted();
     }
+}
+
+WebRemoteFrameImpl::WebRemoteFrameImpl(WebTreeScopeType scope, WebRemoteFrameClient* client)
+    : WebRemoteFrame(scope)
+    , m_frameClient(this)
+    , m_client(client)
+#if ENABLE(OILPAN)
+    , m_selfKeepAlive(this)
+#endif
+{
 }
 
 } // namespace blink

@@ -34,6 +34,7 @@
 
 namespace blink {
 
+class FetchRequest;
 class ResourceFetcher;
 class FontPlatformData;
 class FontCustomPlatformData;
@@ -42,38 +43,52 @@ class FontResource final : public Resource {
 public:
     typedef ResourceClient ClientType;
 
-    FontResource(const ResourceRequest&);
-    virtual ~FontResource();
+    static ResourcePtr<FontResource> fetch(FetchRequest&, ResourceFetcher*);
+    ~FontResource() override;
 
-    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
+    void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
 
-    virtual void didAddClient(ResourceClient*) override;
+    void didAddClient(ResourceClient*) override;
 
-    virtual void allClientsRemoved() override;
+    void allClientsRemoved() override;
     void beginLoadIfNeeded(ResourceFetcher* dl);
-    virtual bool stillNeedsLoad() const override { return m_state != LoadInitiated; }
+    bool stillNeedsLoad() const override { return m_state != LoadInitiated; }
     bool exceedsFontLoadWaitLimit() const { return m_exceedsFontLoadWaitLimit; }
 
     bool loadScheduled() const { return m_state != Unloaded; }
     void didScheduleLoad();
     void didUnscheduleLoad();
 
-    void setCORSFailed() { m_corsFailed = true; }
+    void setCORSFailed() override { m_corsFailed = true; }
     bool isCORSFailed() const { return m_corsFailed; }
+    String otsParsingMessage() const { return m_otsParsingMessage; }
 
     bool ensureCustomFontData();
     FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = FontOrientation::Horizontal);
 
 protected:
-    virtual bool isSafeToUnlock() const override;
+    bool isSafeToUnlock() const override;
 
 private:
-    virtual void checkNotify() override;
+    class FontResourceFactory : public ResourceFactory {
+    public:
+        FontResourceFactory()
+            : ResourceFactory(Resource::Font) { }
+
+        Resource* create(const ResourceRequest& request, const String& charset) const override
+        {
+            return new FontResource(request);
+        }
+    };
+    FontResource(const ResourceRequest&);
+
+    void checkNotify() override;
     void fontLoadWaitLimitCallback(Timer<FontResource>*);
 
     enum State { Unloaded, LoadScheduled, LoadInitiated };
 
     OwnPtr<FontCustomPlatformData> m_fontData;
+    String m_otsParsingMessage;
     State m_state;
     bool m_exceedsFontLoadWaitLimit;
     bool m_corsFailed;
@@ -86,12 +101,12 @@ DEFINE_RESOURCE_TYPE_CASTS(Font);
 
 class FontResourceClient : public ResourceClient {
 public:
-    virtual ~FontResourceClient() { }
+    ~FontResourceClient() override {}
     static ResourceClientType expectedType() { return FontType; }
-    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
-    virtual void fontLoaded(FontResource*) { }
-    virtual void didStartFontLoad(FontResource*) { }
-    virtual void fontLoadWaitLimitExceeded(FontResource*) { }
+    ResourceClientType resourceClientType() const final { return expectedType(); }
+    virtual void fontLoaded(FontResource*) {}
+    virtual void didStartFontLoad(FontResource*) {}
+    virtual void fontLoadWaitLimitExceeded(FontResource*) {}
 };
 
 }

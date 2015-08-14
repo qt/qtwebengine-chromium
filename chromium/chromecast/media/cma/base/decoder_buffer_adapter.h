@@ -20,11 +20,17 @@ namespace media {
 // into a DecoderBufferBase.
 class DecoderBufferAdapter : public DecoderBufferBase {
  public:
+  // Using explicit constructor without providing stream Id will set it to
+  // kPrimary by default.
   explicit DecoderBufferAdapter(
-      const scoped_refptr< ::media::DecoderBuffer>& buffer);
+      const scoped_refptr<::media::DecoderBuffer>& buffer);
+  DecoderBufferAdapter(
+      StreamId stream_id, const scoped_refptr<::media::DecoderBuffer>& buffer);
 
   // DecoderBufferBase implementation.
+  StreamId stream_id() const override;
   base::TimeDelta timestamp() const override;
+  void set_timestamp(const base::TimeDelta& timestamp) override;
   const uint8* data() const override;
   uint8* writable_data() const override;
   size_t data_size() const override;
@@ -34,7 +40,8 @@ class DecoderBufferAdapter : public DecoderBufferBase {
  private:
   ~DecoderBufferAdapter() override;
 
-  scoped_refptr< ::media::DecoderBuffer> const buffer_;
+  StreamId stream_id_;
+  scoped_refptr<::media::DecoderBuffer> const buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(DecoderBufferAdapter);
 };

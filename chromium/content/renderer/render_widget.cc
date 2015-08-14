@@ -65,14 +65,12 @@
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPagePopup.h"
-#include "third_party/WebKit/public/web/WebPopupMenu.h"
 #include "third_party/WebKit/public/web/WebPopupMenuInfo.h"
 #include "third_party/WebKit/public/web/WebRange.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -105,8 +103,6 @@ using blink::WebNavigationPolicy;
 using blink::WebNode;
 using blink::WebPagePopup;
 using blink::WebPoint;
-using blink::WebPopupMenu;
-using blink::WebPopupMenuInfo;
 using blink::WebPopupType;
 using blink::WebRange;
 using blink::WebRect;
@@ -382,9 +378,14 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
     widget_->screen_info_.availableRect = original_screen_info_.availableRect;
     widget_->window_screen_rect_ = original_window_screen_rect_;
   } else {
-    applied_widget_rect_.set_origin(gfx::Point(0, 0));
-    widget_->screen_info_.rect = applied_widget_rect_;
-    widget_->screen_info_.availableRect = applied_widget_rect_;
+    applied_widget_rect_.set_origin(params_.viewPosition);
+    gfx::Rect screen_rect = applied_widget_rect_;
+    if (!params_.screenSize.isEmpty()) {
+      screen_rect =
+          gfx::Rect(0, 0, params_.screenSize.width, params_.screenSize.height);
+    }
+    widget_->screen_info_.rect = screen_rect;
+    widget_->screen_info_.availableRect = screen_rect;
     widget_->window_screen_rect_ = applied_widget_rect_;
   }
 
@@ -490,6 +491,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       display_mode_(blink::WebDisplayModeUndefined),
       has_focus_(false),
       handling_input_event_(false),
+      handling_event_overscroll_(nullptr),
       handling_ime_event_(false),
       handling_event_type_(WebInputEvent::Undefined),
       ignore_ack_for_mouse_move_from_debugger_(false),
@@ -578,9 +580,6 @@ blink::WebWidget* RenderWidget::CreateWebWidget(RenderWidget* render_widget) {
   switch (render_widget->popup_type_) {
     case blink::WebPopupTypeNone:  // Nothing to create.
       break;
-    case blink::WebPopupTypeSelect:
-    case blink::WebPopupTypeSuggestion:
-      return WebPopupMenu::create(render_widget);
     case blink::WebPopupTypePage:
       return WebPagePopup::create(render_widget);
     default:
@@ -706,17 +705,6 @@ void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
     screen_metrics_emulator_->OnShowContextMenu(params);
 }
 
-void RenderWidget::ScheduleCompositeWithForcedRedraw() {
-  if (compositor_) {
-    // Regardless of whether threaded compositing is enabled, always
-    // use this mechanism to force the compositor to redraw. However,
-    // the invalidation code path below is still needed for the
-    // non-threaded case.
-    compositor_->SetNeedsForcedRedraw();
-  }
-  scheduleComposite();
-}
-
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidget, message)
@@ -741,10 +729,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_WasShown, OnWasShown)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
-    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowShown, OnCandidateWindowShown)
-    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowUpdated,
-                        OnCandidateWindowUpdated)
-    IPC_MESSAGE_HANDLER(ViewMsg_CandidateWindowHidden, OnCandidateWindowHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_Repaint, OnRepaint)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
@@ -979,7 +963,7 @@ void RenderWidget::OnWasShown(bool needs_repainting,
         compositor_->CreateLatencyInfoSwapPromiseMonitor(&swap_latency_info));
     compositor_->SetNeedsForcedRedraw();
   }
-  scheduleComposite();
+  ScheduleComposite();
 }
 
 void RenderWidget::OnRequestMoveAck() {
@@ -1067,7 +1051,7 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
 void RenderWidget::OnSwapBuffersAborted() {
   TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersAborted");
   // Schedule another frame so the compositor learns about it.
-  scheduleComposite();
+  ScheduleComposite();
 }
 
 void RenderWidget::OnSwapBuffersPosted() {
@@ -1084,12 +1068,20 @@ void RenderWidget::OnSwapBuffersComplete() {
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
                                       const ui::LatencyInfo& latency_info,
                                       bool is_keyboard_shortcut) {
-  base::AutoReset<bool> handling_input_event_resetter(
-      &handling_input_event_, true);
   if (!input_event)
     return;
+  base::AutoReset<bool> handling_input_event_resetter(&handling_input_event_,
+                                                      true);
   base::AutoReset<WebInputEvent::Type> handling_event_type_resetter(
       &handling_event_type_, input_event->type);
+
+  // Calls into |didOverscroll()| while handling this event will populate
+  // |event_overscroll|, which in turn will be bundled with the event ack.
+  scoped_ptr<DidOverscrollParams> event_overscroll;
+  base::AutoReset<scoped_ptr<DidOverscrollParams>*>
+      handling_event_overscroll_resetter(&handling_event_overscroll_,
+                                         &event_overscroll);
+
 #if defined(OS_ANDROID)
   // On Android, when a key is pressed or sent from the Keyboard using IME,
   // |AdapterInputConnection| generates input key events to make sure all JS
@@ -1216,7 +1208,10 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   // that they can be used to produce the elastic overscroll effect on Mac.
   if (input_event->type == WebInputEvent::MouseWheel) {
     ObserveWheelEventAndResult(
-        static_cast<const WebMouseWheelEvent&>(*input_event), processed);
+        static_cast<const WebMouseWheelEvent&>(*input_event),
+        event_overscroll ? event_overscroll->latest_overscroll_delta
+                         : gfx::Vector2dF(),
+        processed);
   }
 
   bool frame_pending = compositor_ && compositor_->BeginMainFrameRequested();
@@ -1240,11 +1235,11 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   // by reentrant calls for events after the paused one.
   bool no_ack = ignore_ack_for_mouse_move_from_debugger_ &&
       input_event->type == WebInputEvent::MouseMove;
-  if (!WebInputEventTraits::IgnoresAckDisposition(*input_event) && !no_ack) {
-    InputHostMsg_HandleInputEvent_ACK_Params ack;
-    ack.type = input_event->type;
-    ack.state = ack_result;
-    ack.latency = swap_latency_info;
+  if (WebInputEventTraits::WillReceiveAckFromRenderer(*input_event) &&
+      !no_ack) {
+    InputEventAck ack(input_event->type, ack_result, swap_latency_info,
+                      event_overscroll.Pass(),
+                      WebInputEventTraits::GetUniqueTouchEventId(*input_event));
     scoped_ptr<IPC::Message> response(
         new InputHostMsg_HandleInputEvent_ACK(routing_id_, ack));
     if (rate_limiting_wanted && frame_pending && !is_hidden_) {
@@ -1269,6 +1264,8 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     } else {
       Send(response.release());
     }
+  } else {
+    DCHECK(!event_overscroll) << "Unexpected overscroll for un-acked event";
   }
   if (!no_ack && RenderThreadImpl::current()) {
     RenderThreadImpl::current()
@@ -1295,8 +1292,6 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   if (!prevent_default) {
     if (WebInputEvent::isKeyboardEventType(input_event->type))
       DidHandleKeyEvent();
-    if (WebInputEvent::isMouseEventType(input_event->type))
-      DidHandleMouseEvent(*(static_cast<const WebMouseEvent*>(input_event)));
   }
 
 // TODO(rouslan): Fix ChromeOS and Windows 8 behavior of autofill popup with
@@ -1398,7 +1393,7 @@ blink::WebLayerTreeView* RenderWidget::layerTreeView() {
   return compositor_.get();
 }
 
-void RenderWidget::willBeginCompositorFrame() {
+void RenderWidget::WillBeginCompositorFrame() {
   TRACE_EVENT0("gpu", "RenderWidget::willBeginCompositorFrame");
 
   // The following two can result in further layout and possibly
@@ -1411,11 +1406,6 @@ void RenderWidget::willBeginCompositorFrame() {
   UpdateSelectionBounds();
 }
 
-void RenderWidget::didBecomeReadyForAdditionalInput() {
-  TRACE_EVENT0("renderer", "RenderWidget::didBecomeReadyForAdditionalInput");
-  FlushPendingInputEventAck();
-}
-
 void RenderWidget::DidCommitCompositorFrame() {
   FOR_EACH_OBSERVER(RenderFrameImpl, render_frames_,
                     DidCommitCompositorFrame());
@@ -1425,6 +1415,55 @@ void RenderWidget::DidCommitCompositorFrame() {
   FOR_EACH_OBSERVER(RenderFrameImpl, video_hole_frames_,
                     DidCommitCompositorFrame());
 #endif  // defined(VIDEO_HOLE)
+  FlushPendingInputEventAck();
+}
+
+void RenderWidget::DidCommitAndDrawCompositorFrame() {
+  // NOTE: Tests may break if this event is renamed or moved. See
+  // tab_capture_performancetest.cc.
+  TRACE_EVENT0("gpu", "RenderWidget::DidCommitAndDrawCompositorFrame");
+  // Notify subclasses that we initiated the paint operation.
+  DidInitiatePaint();
+}
+
+void RenderWidget::DidCompleteSwapBuffers() {
+  TRACE_EVENT0("renderer", "RenderWidget::DidCompleteSwapBuffers");
+
+  // Notify subclasses threaded composited rendering was flushed to the screen.
+  DidFlushPaint();
+
+  if (!next_paint_flags_ &&
+      !need_update_rect_for_auto_resize_ &&
+      !plugin_window_moves_.size()) {
+    return;
+  }
+
+  ViewHostMsg_UpdateRect_Params params;
+  params.view_size = size_;
+  params.plugin_window_moves.swap(plugin_window_moves_);
+  params.flags = next_paint_flags_;
+
+  Send(new ViewHostMsg_UpdateRect(routing_id_, params));
+  next_paint_flags_ = 0;
+  need_update_rect_for_auto_resize_ = false;
+}
+
+void RenderWidget::ScheduleComposite() {
+  if (compositor_ &&
+      compositor_deps_->GetCompositorImplThreadTaskRunner().get()) {
+    compositor_->setNeedsAnimate();
+  }
+}
+
+void RenderWidget::ScheduleCompositeWithForcedRedraw() {
+  if (compositor_) {
+    // Regardless of whether threaded compositing is enabled, always
+    // use this mechanism to force the compositor to redraw. However,
+    // the invalidation code path below is still needed for the
+    // non-threaded case.
+    compositor_->SetNeedsForcedRedraw();
+  }
+  ScheduleComposite();
 }
 
 // static
@@ -1471,43 +1510,6 @@ void RenderWidget::QueueMessage(IPC::Message* msg,
     // call SetNeedsUpdateLayers instead of SetNeedsCommit so that
     // can_cancel_commit is not unset.
     compositor_->SetNeedsUpdateLayers();
-  }
-}
-
-void RenderWidget::didCommitAndDrawCompositorFrame() {
-  // NOTE: Tests may break if this event is renamed or moved. See
-  // tab_capture_performancetest.cc.
-  TRACE_EVENT0("gpu", "RenderWidget::didCommitAndDrawCompositorFrame");
-  // Notify subclasses that we initiated the paint operation.
-  DidInitiatePaint();
-}
-
-void RenderWidget::didCompleteSwapBuffers() {
-  TRACE_EVENT0("renderer", "RenderWidget::didCompleteSwapBuffers");
-
-  // Notify subclasses threaded composited rendering was flushed to the screen.
-  DidFlushPaint();
-
-  if (!next_paint_flags_ &&
-      !need_update_rect_for_auto_resize_ &&
-      !plugin_window_moves_.size()) {
-    return;
-  }
-
-  ViewHostMsg_UpdateRect_Params params;
-  params.view_size = size_;
-  params.plugin_window_moves.swap(plugin_window_moves_);
-  params.flags = next_paint_flags_;
-
-  Send(new ViewHostMsg_UpdateRect(routing_id_, params));
-  next_paint_flags_ = 0;
-  need_update_rect_for_auto_resize_ = false;
-}
-
-void RenderWidget::scheduleComposite() {
-  if (compositor_ &&
-      compositor_deps_->GetCompositorImplThreadTaskRunner().get()) {
-    compositor_->setNeedsAnimate();
   }
 }
 
@@ -1667,18 +1669,6 @@ void RenderWidget::OnSetInputMethodActive(bool is_active) {
   input_method_is_active_ = is_active;
 }
 
-void RenderWidget::OnCandidateWindowShown() {
-  webwidget_->didShowCandidateWindow();
-}
-
-void RenderWidget::OnCandidateWindowUpdated() {
-  webwidget_->didUpdateCandidateWindow();
-}
-
-void RenderWidget::OnCandidateWindowHidden() {
-  webwidget_->didHideCandidateWindow();
-}
-
 void RenderWidget::OnImeSetComposition(
     const base::string16& text,
     const std::vector<WebCompositionUnderline>& underlines,
@@ -1800,9 +1790,7 @@ bool RenderWidget::SendAckForMouseMoveFromDebugger() {
     // If we pause multiple times during a single mouse move event, we should
     // only send ACK once.
     if (!ignore_ack_for_mouse_move_from_debugger_) {
-      InputHostMsg_HandleInputEvent_ACK_Params ack;
-      ack.type = handling_event_type_;
-      ack.state = INPUT_EVENT_ACK_STATE_CONSUMED;
+      InputEventAck ack(handling_event_type_, INPUT_EVENT_ACK_STATE_CONSUMED);
       Send(new InputHostMsg_HandleInputEvent_ACK(routing_id_, ack));
       return true;
     }
@@ -1819,7 +1807,7 @@ void RenderWidget::SetDeviceScaleFactor(float device_scale_factor) {
     return;
 
   device_scale_factor_ = device_scale_factor;
-  scheduleComposite();
+  ScheduleComposite();
 }
 
 bool RenderWidget::SetDeviceColorProfile(
@@ -2242,6 +2230,32 @@ void RenderWidget::didHandleGestureEvent(
 #endif
 }
 
+void RenderWidget::didOverscroll(
+    const blink::WebFloatSize& unusedDelta,
+    const blink::WebFloatSize& accumulatedRootOverScroll,
+    const blink::WebFloatPoint& position,
+    const blink::WebFloatSize& velocity) {
+  DidOverscrollParams params;
+  params.accumulated_overscroll = gfx::Vector2dF(
+      accumulatedRootOverScroll.width, accumulatedRootOverScroll.height);
+  params.latest_overscroll_delta =
+      gfx::Vector2dF(unusedDelta.width, unusedDelta.height);
+  // TODO(sataya.m): don't negate velocity once http://crbug.com/499743 is
+  // fixed.
+  params.current_fling_velocity =
+      gfx::Vector2dF(-velocity.width, -velocity.height);
+  params.causal_event_viewport_point = gfx::PointF(position.x, position.y);
+
+  // If we're currently handling an event, stash the overscroll data such that
+  // it can be bundled in the event ack.
+  if (handling_event_overscroll_) {
+    handling_event_overscroll_->reset(new DidOverscrollParams(params));
+    return;
+  }
+
+  Send(new InputHostMsg_DidOverscroll(routing_id_, params));
+}
+
 void RenderWidget::StartCompositor() {
   // For widgets that are never visible, we don't need the compositor to run
   // at all.
@@ -2297,23 +2311,15 @@ bool RenderWidget::WillHandleGestureEvent(
 
 void RenderWidget::ObserveWheelEventAndResult(
     const blink::WebMouseWheelEvent& wheel_event,
+    const gfx::Vector2dF& wheel_unused_delta,
     bool event_processed) {
   if (!compositor_deps_->IsElasticOverscrollEnabled())
     return;
 
-  // Blink does not accurately compute scroll bubbling or overscroll. For now,
-  // assume that an unprocessed event was entirely an overscroll, and that a
-  // processed event was entirely scroll.
-  // TODO(ccameron): Retrieve an accurate scroll result from Blink.
-  // http://crbug.com/442859
   cc::InputHandlerScrollResult scroll_result;
-  if (event_processed) {
-    scroll_result.did_scroll = true;
-  } else {
-    scroll_result.did_overscroll_root = true;
-    scroll_result.unused_scroll_delta =
-        gfx::Vector2dF(-wheel_event.deltaX, -wheel_event.deltaY);
-  }
+  scroll_result.did_scroll = event_processed;
+  scroll_result.did_overscroll_root = !wheel_unused_delta.IsZero();
+  scroll_result.unused_scroll_delta = wheel_unused_delta;
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   InputHandlerManager* input_handler_manager =
@@ -2348,10 +2354,6 @@ void RenderWidget::setTouchAction(
   if (handling_event_type_ != WebInputEvent::TouchStart)
     return;
 
-// TODO(dtapuska): A dependant change needs to land in blink to change
-// the blink::WebTouchAction enum; in the meantime don't do
-// a static cast between the values. (http://crbug.com/476556)
-#if 0
   // Verify the same values are used by the types so we can cast between them.
    STATIC_ASSERT_WTI_ENUM_MATCH(Auto,      AUTO);
    STATIC_ASSERT_WTI_ENUM_MATCH(None,      NONE);
@@ -2365,18 +2367,6 @@ void RenderWidget::setTouchAction(
 
    content::TouchAction content_touch_action =
        static_cast<content::TouchAction>(web_touch_action);
-#else
-  content::TouchAction content_touch_action = TOUCH_ACTION_AUTO;
-  if (web_touch_action & blink::WebTouchActionNone)
-    content_touch_action |= TOUCH_ACTION_NONE;
-  if (web_touch_action & blink::WebTouchActionPanX)
-    content_touch_action |= TOUCH_ACTION_PAN_X;
-  if (web_touch_action & blink::WebTouchActionPanY)
-    content_touch_action |= TOUCH_ACTION_PAN_Y;
-  if (web_touch_action & blink::WebTouchActionPinchZoom)
-    content_touch_action |= TOUCH_ACTION_PINCH_ZOOM;
-
-#endif
   Send(new InputHostMsg_SetTouchAction(routing_id_, content_touch_action));
 }
 

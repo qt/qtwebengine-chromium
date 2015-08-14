@@ -29,6 +29,7 @@ class STORAGE_EXPORT RecursiveOperationDelegate
  public:
   typedef FileSystemOperation::StatusCallback StatusCallback;
   typedef FileSystemOperation::FileEntryList FileEntryList;
+  typedef FileSystemOperation::ErrorBehavior ErrorBehavior;
 
   virtual ~RecursiveOperationDelegate();
 
@@ -103,9 +104,12 @@ class STORAGE_EXPORT RecursiveOperationDelegate
   // PostProcessDirectory(b2_dir)
   // PostProcessDirectory(a_dir)
   //
+  // |error_behavior| is to specify how this behaves when an operation have
+  // failed.
   // |callback| is fired with base::File::FILE_OK when every file/directory
   // under |root| is processed, or fired earlier when any suboperation fails.
   void StartRecursiveOperation(const FileSystemURL& root,
+                               ErrorBehavior error_behavior,
                                const StatusCallback& callback);
 
   FileSystemContext* file_system_context() { return file_system_context_; }
@@ -120,6 +124,7 @@ class STORAGE_EXPORT RecursiveOperationDelegate
   virtual void OnCancel();
 
  private:
+  void TryProcessFile(const FileSystemURL& root);
   void DidTryProcessFile(const FileSystemURL& root,
                          base::File::Error error);
   void ProcessNextDirectory();
@@ -129,7 +134,7 @@ class STORAGE_EXPORT RecursiveOperationDelegate
                         const FileEntryList& entries,
                         bool has_more);
   void ProcessPendingFiles();
-  void DidProcessFile(base::File::Error error);
+  void DidProcessFile(const FileSystemURL& url, base::File::Error error);
   void ProcessSubDirectory();
   void DidPostProcessDirectory(base::File::Error error);
 
@@ -143,6 +148,8 @@ class STORAGE_EXPORT RecursiveOperationDelegate
   std::queue<FileSystemURL> pending_files_;
   int inflight_operations_;
   bool canceled_;
+  ErrorBehavior error_behavior_;
+  bool failed_some_operations_;
 
   DISALLOW_COPY_AND_ASSIGN(RecursiveOperationDelegate);
 };

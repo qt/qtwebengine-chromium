@@ -46,23 +46,17 @@ namespace WTF {
 
 class DefaultAllocatorDummyVisitor;
 
-class DefaultAllocatorQuantizer {
+class WTF_EXPORT DefaultAllocator {
 public:
-    template<typename T>
-    static size_t quantizedSize(size_t count)
-    {
-        RELEASE_ASSERT(count <= kMaxUnquantizedAllocation / sizeof(T));
-        return partitionAllocActualSize(Partitions::getBufferPartition(), count * sizeof(T));
-    }
-    static const size_t kMaxUnquantizedAllocation = kGenericMaxDirectMapped;
-};
-
-class DefaultAllocator {
-public:
-    typedef DefaultAllocatorQuantizer Quantizer;
     typedef DefaultAllocatorDummyVisitor Visitor;
     static const bool isGarbageCollected = false;
 
+    template<typename T>
+    static size_t quantizedSize(size_t count)
+    {
+        RELEASE_ASSERT(count <= kGenericMaxDirectMapped / sizeof(T));
+        return partitionAllocActualSize(Partitions::bufferPartition(), count * sizeof(T));
+    }
     template <typename T>
     static T* allocateVectorBacking(size_t size)
     {
@@ -73,12 +67,11 @@ public:
     {
         return reinterpret_cast<T*>(allocateBacking(size));
     }
-    WTF_EXPORT static void freeVectorBacking(void* address);
+    static void freeVectorBacking(void* address);
     static inline bool expandVectorBacking(void*, size_t)
     {
         return false;
     }
-
     static inline bool shrinkVectorBacking(void* address, size_t quantizedCurrentSize, size_t quantizedShrunkSize)
     {
         // Optimization: if we're downsizing inside the same allocator bucket,
@@ -103,7 +96,7 @@ public:
         memset(result, 0, size);
         return reinterpret_cast<T*>(result);
     }
-    WTF_EXPORT static void freeHashTableBacking(void* address);
+    static void freeHashTableBacking(void* address);
 
     template <typename Return, typename Metadata>
     static Return malloc(size_t size)
@@ -111,7 +104,7 @@ public:
         return reinterpret_cast<Return>(fastMalloc(size));
     }
 
-    WTF_EXPORT static inline bool expandHashTableBacking(void*, size_t)
+    static inline bool expandHashTableBacking(void*, size_t)
     {
         return false;
     }
@@ -131,6 +124,12 @@ public:
     }
 
     static bool isAllocationAllowed() { return true; }
+    template<typename T>
+    static bool isHeapObjectAlive(T* object)
+    {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
 
     static void markNoTracing(...)
     {
@@ -183,7 +182,7 @@ public:
     static void leaveGCForbiddenScope() { }
 
 private:
-    WTF_EXPORT static void* allocateBacking(size_t);
+    static void* allocateBacking(size_t);
 };
 
 // The Windows compiler seems to be very eager to instantiate things it won't

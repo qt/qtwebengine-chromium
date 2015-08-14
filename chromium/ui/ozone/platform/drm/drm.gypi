@@ -14,6 +14,7 @@
       'dri',
       'drm',
     ],
+    'use_drm_atomic%': 0,
   },
   'targets': [
     {
@@ -42,8 +43,6 @@
         'common/drm_util.h',
         'common/scoped_drm_types.cc',
         'common/scoped_drm_types.h',
-        'drm_surface_factory.cc',
-        'drm_surface_factory.h',
         'gpu/crtc_controller.cc',
         'gpu/crtc_controller.h',
         'gpu/display_change_observer.h',
@@ -65,6 +64,8 @@
         'gpu/drm_gpu_platform_support.h',
         'gpu/drm_surface.cc',
         'gpu/drm_surface.h',
+        'gpu/drm_surface_factory.cc',
+        'gpu/drm_surface_factory.h',
         'gpu/drm_vsync_provider.cc',
         'gpu/drm_vsync_provider.h',
         'gpu/drm_window.cc',
@@ -88,12 +89,18 @@
         'host/drm_cursor.h',
         'host/drm_device_handle.cc',
         'host/drm_device_handle.h',
+        'host/drm_display_host.cc',
+        'host/drm_display_host.h',
         'host/drm_display_host_manager.cc',
         'host/drm_display_host_manager.h',
         'host/drm_gpu_platform_support_host.cc',
         'host/drm_gpu_platform_support_host.h',
         'host/drm_native_display_delegate.cc',
         'host/drm_native_display_delegate.h',
+        'host/drm_overlay_candidates_host.cc',
+        'host/drm_overlay_candidates_host.h',
+        'host/drm_overlay_manager.cc',
+        'host/drm_overlay_manager.h',
         'host/drm_window_host.cc',
         'host/drm_window_host.h',
         'host/drm_window_host_manager.cc',
@@ -102,6 +109,19 @@
         'ozone_platform_drm.h',
         'scanout_buffer.h',
       ],
+      'conditions': [
+        ['use_drm_atomic == 1', {
+          'sources': [
+            'gpu/hardware_display_plane_atomic.cc',
+            'gpu/hardware_display_plane_atomic.h',
+            'gpu/hardware_display_plane_manager_atomic.cc',
+            'gpu/hardware_display_plane_manager_atomic.h',
+          ],
+          'defines': [
+            'USE_DRM_ATOMIC=1',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'ozone_platform_drm_unittests',
@@ -109,6 +129,7 @@
       'dependencies': [
         '../../build/linux/system.gyp:libdrm',
         '../../skia/skia.gyp:skia',
+        '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'ozone.gyp:ozone',
       ],

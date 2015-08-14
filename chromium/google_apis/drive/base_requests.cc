@@ -152,6 +152,7 @@ google_apis::DriveApiErrorCode MapJsonError(
   const char kErrorReasonRateLimitExceeded[] = "rateLimitExceeded";
   const char kErrorReasonUserRateLimitExceeded[] = "userRateLimitExceeded";
   const char kErrorReasonQuotaExceeded[] = "quotaExceeded";
+  const char kErrorReasonResponseTooLarge[] = "responseTooLarge";
 
   scoped_ptr<const base::Value> value(google_apis::ParseJson(error_body));
   const base::DictionaryValue* dictionary = NULL;
@@ -177,6 +178,8 @@ google_apis::DriveApiErrorCode MapJsonError(
       }
       if (reason == kErrorReasonQuotaExceeded)
         return google_apis::DRIVE_NO_SPACE;
+      if (reason == kErrorReasonResponseTooLarge)
+        return google_apis::DRIVE_RESPONSE_TOO_LARGE;
     }
   }
 
@@ -190,7 +193,7 @@ namespace google_apis {
 scoped_ptr<base::Value> ParseJson(const std::string& json) {
   int error_code = -1;
   std::string error_message;
-  scoped_ptr<base::Value> value(base::JSONReader::ReadAndReturnError(
+  scoped_ptr<base::Value> value(base::JSONReader::DeprecatedReadAndReturnError(
       json, base::JSON_PARSE_RFC, &error_code, &error_message));
 
   if (!value.get()) {

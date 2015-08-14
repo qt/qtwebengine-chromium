@@ -4,7 +4,9 @@ darin@chromium.org
 davidben@chromium.org
 jam@chromium.org
 jochen@chromium.org
+kinuko@chromium.org
 nasko@chromium.org
+nick@chromium.org
 piman@chromium.org
 sievers@chromium.org
 
@@ -16,7 +18,8 @@ per-file content_nacl_nonsfi.gyp=*
 
 # Mac Sandbox profiles.
 per-file *.sb=set noparent
-per-file *.sb=jeremy@chromium.org
+per-file *.sb=rsesek@chromium.org
 
-per-file *.isolate=csharp@chromium.org
 per-file *.isolate=maruel@chromium.org
+per-file *.isolate=tandrii@chromium.org
+per-file *.isolate=vadimsh@chromium.org

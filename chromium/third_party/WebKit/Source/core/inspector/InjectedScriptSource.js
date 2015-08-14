@@ -31,10 +31,10 @@
 
 /**
  * @param {!InjectedScriptHostClass} InjectedScriptHost
- * @param {!Window} inspectedWindow
+ * @param {!Window|!WorkerGlobalScope} inspectedGlobalObject
  * @param {number} injectedScriptId
  */
-(function (InjectedScriptHost, inspectedWindow, injectedScriptId) {
+(function (InjectedScriptHost, inspectedGlobalObject, injectedScriptId) {
 
 /**
  * Protect against Object overwritten by the user code.
@@ -244,7 +244,7 @@ function doesAttributeHaveObservableSideEffectOnGet(object, attribute)
 {
     for (var interfaceName in domAttributesWithObservableSideEffectOnGet) {
         var isInstance = InjectedScriptHost.suppressWarningsAndCallFunction(function(object, interfaceName) {
-            return /* suppressBlacklist */ typeof inspectedWindow[interfaceName] === "function" && object instanceof inspectedWindow[interfaceName];
+            return /* suppressBlacklist */ typeof inspectedGlobalObject[interfaceName] === "function" && object instanceof inspectedGlobalObject[interfaceName];
         }, null, [object, interfaceName]);
         if (isInstance) {
             return attribute in domAttributesWithObservableSideEffectOnGet[interfaceName];
@@ -288,13 +288,13 @@ InjectedScript.prototype = {
     /**
      * @param {*} object
      * @param {string} groupName
-     * @param {boolean} canAccessInspectedWindow
+     * @param {boolean} canAccessInspectedGlobalObject
      * @param {boolean} generatePreview
      * @return {!RuntimeAgent.RemoteObject}
      */
-    wrapObject: function(object, groupName, canAccessInspectedWindow, generatePreview)
+    wrapObject: function(object, groupName, canAccessInspectedGlobalObject, generatePreview)
     {
-        if (canAccessInspectedWindow)
+        if (canAccessInspectedGlobalObject)
             return this._wrapObject(object, groupName, false, generatePreview);
         return this._fallbackWrapper(object);
     },
@@ -326,14 +326,14 @@ InjectedScript.prototype = {
     },
 
     /**
-     * @param {boolean} canAccessInspectedWindow
+     * @param {boolean} canAccessInspectedGlobalObject
      * @param {!Object} table
      * @param {!Array.<string>|string|boolean} columns
      * @return {!RuntimeAgent.RemoteObject}
      */
-    wrapTable: function(canAccessInspectedWindow, table, columns)
+    wrapTable: function(canAccessInspectedGlobalObject, table, columns)
     {
-        if (!canAccessInspectedWindow)
+        if (!canAccessInspectedGlobalObject)
             return this._fallbackWrapper(table);
         var columnNames = null;
         if (typeof columns === "string")
@@ -424,7 +424,7 @@ InjectedScript.prototype = {
         var argsArray = /** @type {!Array.<*>} */ (InjectedScriptHost.eval("(" + args + ")"));
         var result = InjectedScriptHost.callFunction(this[methodName], this, argsArray);
         if (typeof result === "undefined") {
-            inspectedWindow.console.error("Web Inspector error: InjectedScript.%s returns undefined", methodName);
+            inspectedGlobalObject.console.error("Web Inspector error: InjectedScript.%s returns undefined", methodName);
             result = null;
         }
         return result;
@@ -482,11 +482,10 @@ InjectedScript.prototype = {
         var descriptors = [];
         var internalProperties = InjectedScriptHost.getInternalProperties(object);
         if (internalProperties) {
-            for (var i = 0; i < internalProperties.length; i++) {
-                var property = internalProperties[i];
+            for (var i = 0; i < internalProperties.length; i += 2) {
                 var descriptor = {
-                    name: property.name,
-                    value: this._wrapObject(property.value, objectGroupName),
+                    name: internalProperties[i],
+                    value: this._wrapObject(internalProperties[i + 1], objectGroupName),
                     __proto__: null
                 };
                 push(descriptors, descriptor);
@@ -741,7 +740,7 @@ InjectedScript.prototype = {
         try {
 
             var remoteObjectAPI = { bindRemoteObject: bind(wrap, this), __proto__: null};
-            InjectedScriptHost.setNonEnumProperty(inspectedWindow, "__remoteObjectAPI", remoteObjectAPI);
+            InjectedScriptHost.setNonEnumProperty(inspectedGlobalObject, "__remoteObjectAPI", remoteObjectAPI);
 
             var func = InjectedScriptHost.eval("with (typeof __remoteObjectAPI !== 'undefined' ? __remoteObjectAPI : { __proto__: null }) {(" + expression + ")}");
             if (typeof func !== "function")
@@ -754,7 +753,7 @@ InjectedScript.prototype = {
             return this._createThrownValue(e, objectGroup, false);
         } finally {
             try {
-                delete inspectedWindow["__remoteObjectAPI"];
+                delete inspectedGlobalObject["__remoteObjectAPI"];
             } catch(e) {
             }
         }
@@ -878,19 +877,19 @@ InjectedScript.prototype = {
 
         var scopeExtensionForEval = (callFrame && injectCommandLineAPI) ? new CommandLineAPI(this._commandLineAPIImpl, callFrame) : undefined;
 
-        injectCommandLineAPI = !scopeExtensionForEval && !callFrame && injectCommandLineAPI && !("__commandLineAPI" in inspectedWindow);
-        var injectScopeChain = scopeChain && scopeChain.length && !("__scopeChainForEval" in inspectedWindow);
+        injectCommandLineAPI = !scopeExtensionForEval && !callFrame && injectCommandLineAPI && !("__commandLineAPI" in inspectedGlobalObject);
+        var injectScopeChain = scopeChain && scopeChain.length && !("__scopeChainForEval" in inspectedGlobalObject);
 
         try {
             var prefix = "";
             var suffix = "";
             if (injectCommandLineAPI) {
-                InjectedScriptHost.setNonEnumProperty(inspectedWindow, "__commandLineAPI", new CommandLineAPI(this._commandLineAPIImpl, callFrame));
+                InjectedScriptHost.setNonEnumProperty(inspectedGlobalObject, "__commandLineAPI", new CommandLineAPI(this._commandLineAPIImpl, callFrame));
                 prefix = "with (typeof __commandLineAPI !== 'undefined' ? __commandLineAPI : { __proto__: null }) {";
                 suffix = "}";
             }
             if (injectScopeChain) {
-                InjectedScriptHost.setNonEnumProperty(inspectedWindow, "__scopeChainForEval", scopeChain);
+                InjectedScriptHost.setNonEnumProperty(inspectedGlobalObject, "__scopeChainForEval", scopeChain);
                 for (var i = 0; i < scopeChain.length; ++i) {
                     prefix = "with (typeof __scopeChainForEval !== 'undefined' ? __scopeChainForEval[" + i + "] : { __proto__: null }) {" + (suffix ? " " : "") + prefix;
                     if (suffix)
@@ -909,13 +908,13 @@ InjectedScript.prototype = {
         } finally {
             if (injectCommandLineAPI) {
                 try {
-                    delete inspectedWindow["__commandLineAPI"];
+                    delete inspectedGlobalObject["__commandLineAPI"];
                 } catch(e) {
                 }
             }
             if (injectScopeChain) {
                 try {
-                    delete inspectedWindow["__scopeChainForEval"];
+                    delete inspectedGlobalObject["__scopeChainForEval"];
                 } catch(e) {
                 }
             }
@@ -1108,10 +1107,10 @@ InjectedScript.prototype = {
         delete this._modules[name];
         var moduleFunction = InjectedScriptHost.eval("(" + source + ")");
         if (typeof moduleFunction !== "function") {
-            inspectedWindow.console.error("Web Inspector error: A function was expected for module %s evaluation", name);
+            inspectedGlobalObject.console.error("Web Inspector error: A function was expected for module %s evaluation", name);
             return null;
         }
-        var module = /** @type {!Object} */ (InjectedScriptHost.callFunction(moduleFunction, inspectedWindow, [InjectedScriptHost, inspectedWindow, injectedScriptId, this]));
+        var module = /** @type {!Object} */ (InjectedScriptHost.callFunction(moduleFunction, inspectedGlobalObject, [InjectedScriptHost, inspectedGlobalObject, injectedScriptId, this]));
         this._modules[name] = module;
         return module;
     },
@@ -1213,9 +1212,10 @@ InjectedScript.prototype = {
             try {
                 var stack = obj.stack;
                 var message = obj.message && obj.message.length ? ": " + obj.message : "";
-                var stackMessageEnd = stack ? indexOf(stack, "\n") : -1;
+                var firstCallFrame = /^\s+at\s/m.exec(stack);
+                var stackMessageEnd = firstCallFrame ? firstCallFrame.index : -1;
                 if (stackMessageEnd !== -1) {
-                    var stackTrace = stack.substr(stackMessageEnd + 1);
+                    var stackTrace = stack.substr(stackMessageEnd);
                     return className + message + "\n" + stackTrace;
                 }
                 return className + message;
@@ -1322,11 +1322,11 @@ InjectedScript.RemoteObject.prototype = {
          */
         function logError(error)
         {
-            Promise.resolve().then(inspectedWindow.console.error.bind(inspectedWindow.console, "Custom Formatter Failed: " + error.message));
+            Promise.resolve().then(inspectedGlobalObject.console.error.bind(inspectedGlobalObject.console, "Custom Formatter Failed: " + error.message));
         }
 
         try {
-            var formatters = inspectedWindow["devtoolsFormatters"];
+            var formatters = inspectedGlobalObject["devtoolsFormatters"];
             if (!formatters || !isArrayLike(formatters))
                 return null;
 
@@ -1398,11 +1398,16 @@ InjectedScript.RemoteObject.prototype = {
                 return preview;
 
             // Add internal properties to preview.
-            var internalProperties = InjectedScriptHost.getInternalProperties(object) || [];
-            for (var i = 0; i < internalProperties.length; ++i) {
-                internalProperties[i] = nullifyObjectProto(internalProperties[i]);
-                internalProperties[i].isOwn = true;
-                internalProperties[i].enumerable = true;
+            var rawInternalProperties = InjectedScriptHost.getInternalProperties(object) || [];
+            var internalProperties = [];
+            for (var i = 0; i < rawInternalProperties.length; i += 2) {
+                push(internalProperties, {
+                    name: rawInternalProperties[i],
+                    value: rawInternalProperties[i + 1],
+                    isOwn: true,
+                    enumerable: true,
+                    __proto__: null
+                });
             }
             this._appendPropertyDescriptors(preview, internalProperties, propertiesThreshold, secondLevelKeys, isTable);
 
@@ -1685,7 +1690,7 @@ function CommandLineAPI(commandLineAPIImpl, callFrame)
     function inScopeVariables(member)
     {
         if (!callFrame)
-            return (member in inspectedWindow);
+            return (member in inspectedGlobalObject);
 
         var scopeChain = callFrame.scopeChain;
         for (var i = 0; i < scopeChain.length; ++i) {
@@ -1769,7 +1774,7 @@ CommandLineAPIImpl.prototype = {
         if (this._canQuerySelectorOnNode(opt_startNode))
             return opt_startNode.querySelector(selector);
 
-        return inspectedWindow.document.querySelector(selector);
+        return inspectedGlobalObject.document.querySelector(selector);
     },
 
     /**
@@ -1781,7 +1786,7 @@ CommandLineAPIImpl.prototype = {
     {
         if (this._canQuerySelectorOnNode(opt_startNode))
             return opt_startNode.querySelectorAll(selector);
-        return inspectedWindow.document.querySelectorAll(selector);
+        return inspectedGlobalObject.document.querySelectorAll(selector);
     },
 
     /**
@@ -1800,7 +1805,7 @@ CommandLineAPIImpl.prototype = {
      */
     $x: function(xpath, opt_startNode)
     {
-        var doc = (opt_startNode && opt_startNode.ownerDocument) || inspectedWindow.document;
+        var doc = (opt_startNode && opt_startNode.ownerDocument) || inspectedGlobalObject.document;
         var result = doc.evaluate(xpath, opt_startNode || doc, null, XPathResult.ANY_TYPE, null);
         switch (result.resultType) {
         case XPathResult.NUMBER_TYPE:
@@ -1823,7 +1828,7 @@ CommandLineAPIImpl.prototype = {
      */
     dir: function(var_args)
     {
-        return InjectedScriptHost.callFunction(inspectedWindow.console.dir, inspectedWindow.console, slice(arguments));
+        return InjectedScriptHost.callFunction(inspectedGlobalObject.console.dir, inspectedGlobalObject.console, slice(arguments));
     },
 
     /**
@@ -1831,7 +1836,7 @@ CommandLineAPIImpl.prototype = {
      */
     dirxml: function(var_args)
     {
-        return InjectedScriptHost.callFunction(inspectedWindow.console.dirxml, inspectedWindow.console, slice(arguments));
+        return InjectedScriptHost.callFunction(inspectedGlobalObject.console.dirxml, inspectedGlobalObject.console, slice(arguments));
     },
 
     /**
@@ -1858,7 +1863,7 @@ CommandLineAPIImpl.prototype = {
      */
     profile: function(opt_title)
     {
-        return InjectedScriptHost.callFunction(inspectedWindow.console.profile, inspectedWindow.console, slice(arguments));
+        return InjectedScriptHost.callFunction(inspectedGlobalObject.console.profile, inspectedGlobalObject.console, slice(arguments));
     },
 
     /**
@@ -1866,7 +1871,7 @@ CommandLineAPIImpl.prototype = {
      */
     profileEnd: function(opt_title)
     {
-        return InjectedScriptHost.callFunction(inspectedWindow.console.profileEnd, inspectedWindow.console, slice(arguments));
+        return InjectedScriptHost.callFunction(inspectedGlobalObject.console.profileEnd, inspectedGlobalObject.console, slice(arguments));
     },
 
     /**
@@ -1977,7 +1982,7 @@ CommandLineAPIImpl.prototype = {
 
     table: function(data, opt_columns)
     {
-        InjectedScriptHost.callFunction(inspectedWindow.console.table, inspectedWindow.console, slice(arguments));
+        InjectedScriptHost.callFunction(inspectedGlobalObject.console.table, inspectedGlobalObject.console, slice(arguments));
     },
 
     /**
@@ -1995,18 +2000,20 @@ CommandLineAPIImpl.prototype = {
     _normalizeEventTypes: function(types)
     {
         if (typeof types === "undefined")
-            types = ["mouse", "key", "touch", "control", "load", "unload", "abort", "error", "select", "input", "change", "submit", "reset", "focus", "blur", "resize", "scroll", "search", "devicemotion", "deviceorientation"];
+            types = ["mouse", "key", "touch", "pointer", "control", "load", "unload", "abort", "error", "select", "input", "change", "submit", "reset", "focus", "blur", "resize", "scroll", "search", "devicemotion", "deviceorientation"];
         else if (typeof types === "string")
             types = [types];
 
         var result = [];
         for (var i = 0; i < types.length; ++i) {
             if (types[i] === "mouse")
-                push(result, "mousedown", "mouseup", "click", "dblclick", "mousemove", "mouseover", "mouseout", "mousewheel");
+                push(result, "click", "dblclick", "mousedown", "mouseeenter", "mouseleave", "mousemove", "mouseout", "mouseover", "mouseup", "mouseleave", "mousewheel");
             else if (types[i] === "key")
                 push(result, "keydown", "keyup", "keypress", "textInput");
             else if (types[i] === "touch")
                 push(result, "touchstart", "touchmove", "touchend", "touchcancel");
+            else if (types[i] === "pointer")
+                push(result, "pointerover", "pointerout", "pointerenter", "pointerleave", "pointerdown", "pointerup", "pointermove", "pointercancel", "gotpointercapture", "lostpointercapture");
             else if (types[i] === "control")
                 push(result, "resize", "scroll", "zoom", "focus", "blur", "select", "input", "change", "submit", "reset");
             else
@@ -2020,7 +2027,7 @@ CommandLineAPIImpl.prototype = {
      */
     _logEvent: function(event)
     {
-        inspectedWindow.console.log(event.type, event);
+        inspectedGlobalObject.console.log(event.type, event);
     }
 }
 

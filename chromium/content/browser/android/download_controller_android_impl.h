@@ -97,7 +97,8 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   void OnDownloadStarted(DownloadItem* download_item) override;
   void StartContextMenuDownload(const ContextMenuParams& params,
                                 WebContents* web_contents,
-                                bool is_link) override;
+                                bool is_link,
+                                const std::string& extra_headers) override;
   void DangerousDownloadValidated(WebContents* web_contents,
                                   int download_id,
                                   bool accept) override;

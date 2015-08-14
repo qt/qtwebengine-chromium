@@ -10,7 +10,6 @@
 #include "GrTexture.h"
 #include "gl/GrGLCaps.h"
 #include "gl/GrGLProcessor.h"
-#include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
@@ -56,30 +55,28 @@ GrGLFragmentProcessor* GrSimpleTextureEffect::createGLInstance() const  {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrSimpleTextureEffect);
 
-GrFragmentProcessor* GrSimpleTextureEffect::TestCreate(SkRandom* random,
-                                                       GrContext*,
-                                                       const GrDrawTargetCaps&,
-                                                       GrTexture* textures[]) {
-    int texIdx = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                      GrProcessorUnitTest::kAlphaTextureIdx;
+GrFragmentProcessor* GrSimpleTextureEffect::TestCreate(GrProcessorTestData* d) {
+    int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
+                                          GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {
         SkShader::kClamp_TileMode,
         SkShader::kRepeat_TileMode,
         SkShader::kMirror_TileMode,
     };
     SkShader::TileMode tileModes[] = {
-        kTileModes[random->nextULessThan(SK_ARRAY_COUNT(kTileModes))],
-        kTileModes[random->nextULessThan(SK_ARRAY_COUNT(kTileModes))],
+        kTileModes[d->fRandom->nextULessThan(SK_ARRAY_COUNT(kTileModes))],
+        kTileModes[d->fRandom->nextULessThan(SK_ARRAY_COUNT(kTileModes))],
     };
-    GrTextureParams params(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
-                                                           GrTextureParams::kNone_FilterMode);
+    GrTextureParams params(tileModes, d->fRandom->nextBool() ? GrTextureParams::kBilerp_FilterMode :
+                                                               GrTextureParams::kNone_FilterMode);
 
     static const GrCoordSet kCoordSets[] = {
         kLocal_GrCoordSet,
         kDevice_GrCoordSet
     };
-    GrCoordSet coordSet = kCoordSets[random->nextULessThan(SK_ARRAY_COUNT(kCoordSets))];
+    GrCoordSet coordSet = kCoordSets[d->fRandom->nextULessThan(SK_ARRAY_COUNT(kCoordSets))];
 
-    const SkMatrix& matrix = GrTest::TestMatrix(random);
-    return GrSimpleTextureEffect::Create(textures[texIdx], matrix, coordSet);
+    const SkMatrix& matrix = GrTest::TestMatrix(d->fRandom);
+    return GrSimpleTextureEffect::Create(d->fProcDataManager, d->fTextures[texIdx], matrix,
+                                         coordSet);
 }

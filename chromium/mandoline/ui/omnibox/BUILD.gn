@@ -2,8 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/mojo/src/mojo/public/mojo_application.gni")
-import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
+import("//mojo/public/mojo_application.gni")
 
 mojo_native_application("omnibox") {
   sources = [
@@ -13,11 +12,14 @@ mojo_native_application("omnibox") {
   deps = [
     ":lib",
     "//mandoline/services/navigation/public/interfaces",
-    "//mojo/application",
-    "//mojo/application/public/interfaces",
-    "//mojo/common:common",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
-    "//third_party/mojo/src/mojo/public/cpp/utility",
+    "//mandoline/ui/common/resources",
+    "//mojo/application/public/cpp",
+    "//third_party/icu:icudata",
+  ]
+
+  resources = [
+    "$root_out_dir/icudtl.dat",
+    "$root_out_dir/mandoline_ui.pak",
   ]
 }
 
@@ -32,12 +34,11 @@ source_set("lib") {
     "//components/view_manager/public/cpp",
     "//mandoline/services/navigation/public/interfaces",
     "//mandoline/ui/aura",
-    "//mandoline/ui/browser:interfaces",
+    "//mandoline/ui/browser/public/interfaces",
     "//mojo/application/public/interfaces",
     "//mojo/converters/geometry",
     "//skia",
     "//third_party/mojo/src/mojo/public/cpp/bindings",
-    "//third_party/mojo/src/mojo/public/cpp/utility",
     "//ui/gfx/geometry",
     "//ui/mojo/events:interfaces",
   ]

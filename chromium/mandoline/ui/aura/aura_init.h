@@ -5,20 +5,25 @@
 #ifndef MANDOLINE_UI_AURA_AURA_INIT_H_
 #define MANDOLINE_UI_AURA_AURA_INIT_H_
 
-#include "base/memory/scoped_ptr.h"
+#include "ui/mojo/init/ui_init.h"
+
+namespace mojo {
+class Shell;
+class View;
+}
 
 namespace mandoline {
-
-class ScreenMojo;
 
 // Sets up necessary state for aura when run with the viewmanager.
 class AuraInit {
  public:
-  AuraInit();
+  AuraInit(mojo::View* root, mojo::Shell* shell);
   ~AuraInit();
 
  private:
-  scoped_ptr<ScreenMojo> screen_;
+  void InitializeResources(mojo::Shell* shell);
+
+  ui::mojo::UIInit ui_init_;
 
   DISALLOW_COPY_AND_ASSIGN(AuraInit);
 };

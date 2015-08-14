@@ -121,6 +121,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
   void SetLock(base::Lock*) override;
+  bool IsGpuChannelLost() override;
 
   // The serializer interface to the GPU service (i.e. thread).
   class Service {
@@ -209,6 +210,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
                               gfx::GpuMemoryBuffer::Format format,
                               uint32 internalformat);
   void DestroyImageOnGpuThread(int32 id);
+  void SetGetBufferOnGpuThread(int32 shm_id, base::WaitableEvent* completion);
 
   // Callbacks:
   void OnContextLost();
@@ -220,7 +222,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   // Members accessed on the gpu thread (possibly with the exception of
   // creation):
   bool context_lost_;
-  scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
+  scoped_refptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<GpuScheduler> gpu_scheduler_;
   scoped_ptr<gles2::GLES2Decoder> decoder_;
   scoped_refptr<gfx::GLContext> context_;

@@ -2,12 +2,6 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-/* We introduce a wrapper animatable element and set the overflow since
- * core-transition interferes with the box-shadow from paper-shadow. */
-#animatable {
-  overflow: visible;
-}
-
 /* We introduce a wrapper aligner element as setting the relevant attributes
  * (horizontal justified layout center) have no effect on the core-toolbar. */
 #aligner {
@@ -32,6 +26,14 @@
   text-align: right;
 }
 
+#buttons > paper-icon-button {
+  margin-right: 8px;
+}
+
+viewer-toolbar-dropdown {
+  margin-right: 4px;
+}
+
 paper-progress {
   height: 56px;
   position: absolute;
@@ -39,16 +41,13 @@ paper-progress {
   z-index: 3;
 }
 
-paper-progress::shadow #activeProgress {
-  background-color: rgb(27, 168, 243);
+paper-progress {
+  --paper-progress-active-color: rgb(50, 54, 57);
+  --paper-progress-container-color: rgb(34, 36, 38);
 }
 
-paper-progress::shadow #progressContainer {
-  background-color: rgb(100, 181, 246);
-}
-
-core-toolbar {
-  background-color: rgb(27, 168, 243);
+paper-toolbar {
+  background-color: transparent;
   color: rgb(241, 241, 241);
   font-size: 1.5em;
   height: 56px;
@@ -57,8 +56,12 @@ core-toolbar {
   z-index: 3;
 }
 
-core-toolbar /deep/ ::selection {
-  background: rgb(187, 222, 251);
+paper-toolbar /deep/ ::selection {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+paper-toolbar /deep/ .toolbar-tools {
+  height: 56px;
 }
 
 .invisible {

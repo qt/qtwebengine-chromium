@@ -299,7 +299,7 @@ void MCSProbe::Start() {
                                 &recorder_));
   gcm_store_.reset(
       new GCMStoreImpl(gcm_store_path_,
-                       file_thread_.message_loop_proxy(),
+                       file_thread_.task_runner(),
                        make_scoped_ptr<Encryptor>(new FakeEncryptor)));
   mcs_client_.reset(new MCSClient("probe",
                                   &clock_,
@@ -307,7 +307,8 @@ void MCSProbe::Start() {
                                   gcm_store_.get(),
                                   &recorder_));
   run_loop_.reset(new base::RunLoop());
-  gcm_store_->Load(base::Bind(&MCSProbe::LoadCallback,
+  gcm_store_->Load(GCMStore::CREATE_IF_MISSING,
+                   base::Bind(&MCSProbe::LoadCallback,
                               base::Unretained(this)));
   run_loop_->Run();
 }
@@ -376,14 +377,9 @@ void MCSProbe::InitializeNetworkState() {
 
   transport_security_state_.reset(new net::TransportSecurityState());
   url_security_manager_.reset(net::URLSecurityManager::Create(NULL, NULL));
-  http_auth_handler_factory_.reset(
-      net::HttpAuthHandlerRegistryFactory::Create(
-          std::vector<std::string>(1, "basic"),
-          url_security_manager_.get(),
-          host_resolver_.get(),
-          std::string(),
-          false,
-          false));
+  http_auth_handler_factory_.reset(net::HttpAuthHandlerRegistryFactory::Create(
+      std::vector<std::string>(1, "basic"), url_security_manager_.get(),
+      host_resolver_.get(), std::string(), std::string(), false, false));
   http_server_properties_.reset(new net::HttpServerPropertiesImpl());
   host_mapping_rules_.reset(new net::HostMappingRules());
   proxy_service_.reset(net::ProxyService::CreateDirectWithNetLog(&net_log_));
@@ -481,7 +477,7 @@ int MCSProbeMain(int argc, char* argv[]) {
   // For check-in and creating registration ids.
   const scoped_refptr<MyTestURLRequestContextGetter> context_getter =
       new MyTestURLRequestContextGetter(
-          base::MessageLoop::current()->message_loop_proxy());
+          base::MessageLoop::current()->task_runner());
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();

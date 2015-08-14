@@ -33,12 +33,11 @@ class LayoutCounter final : public LayoutText {
 public:
     LayoutCounter(Document*, const CounterContent&);
     virtual ~LayoutCounter();
-    virtual void destroy() override;
 
     static void destroyCounterNodes(LayoutObject&);
     static void destroyCounterNode(LayoutObject&, const AtomicString& identifier);
     static void layoutObjectSubtreeAttached(LayoutObject*);
-    static void layoutObjectRemovedFromTree(LayoutObject*);
+    static void layoutObjectSubtreeWillBeDetached(LayoutObject*);
     static void layoutObjectStyleChanged(LayoutObject&, const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
 
     void updateCounter();
@@ -68,7 +67,7 @@ DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutCounter, isCounter());
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showCounterLayoutTree(const blink::LayoutObject*, const char* counterName = 0);
+void showCounterLayoutTree(const blink::LayoutObject*, const char* counterName = nullptr);
 #endif
 
 #endif // LayoutCounter_h

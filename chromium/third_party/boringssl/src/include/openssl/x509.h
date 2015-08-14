@@ -73,13 +73,14 @@
 #include <openssl/cipher.h>
 #include <openssl/dh.h>
 #include <openssl/dsa.h>
-#include <openssl/ec.h>
 #include <openssl/ecdh.h>
 #include <openssl/ecdsa.h>
+#include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
 #include <openssl/stack.h>
+#include <openssl/thread.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -204,7 +205,7 @@ typedef struct X509_req_st
 	X509_REQ_INFO *req_info;
 	X509_ALGOR *sig_alg;
 	ASN1_BIT_STRING *signature;
-	int references;
+	CRYPTO_refcount_t references;
 	} X509_REQ;
 
 typedef struct x509_cinf_st
@@ -243,7 +244,7 @@ struct x509_st
 	X509_ALGOR *sig_alg;
 	ASN1_BIT_STRING *signature;
 	int valid;
-	int references;
+	CRYPTO_refcount_t references;
 	char *name;
 	CRYPTO_EX_DATA ex_data;
 	/* These contain copies of various extension values */
@@ -420,7 +421,7 @@ struct X509_crl_st
 	X509_CRL_INFO *crl;
 	X509_ALGOR *sig_alg;
 	ASN1_BIT_STRING *signature;
-	int references;
+	CRYPTO_refcount_t references;
 	int flags;
 	/* Copies of various extensions */
 	AUTHORITY_KEYID *akid;
@@ -457,8 +458,6 @@ typedef struct private_key_st
 
 	/* expanded version of 'enc_algor' */
 	EVP_CIPHER_INFO cipher;
-
-	int references;
 	} X509_PKEY;
 
 #ifndef OPENSSL_NO_EVP
@@ -472,7 +471,6 @@ typedef struct X509_info_st
 	int enc_len;
 	char *enc_data;
 
-	int references;
 	} X509_INFO;
 
 DECLARE_STACK_OF(X509_INFO)
@@ -1278,6 +1276,8 @@ OPENSSL_EXPORT int PKCS7_get_PEM_CRLs(STACK_OF(X509_CRL) *out_crls,
 #define X509_F_x509_name_ex_new 156
 #define X509_F_pkcs7_parse_header 157
 #define X509_F_PKCS7_get_CRLs 158
+#define X509_F_X509_REQ_print_ex 159
+#define X509_F_X509_REQ_print_fp 160
 #define X509_R_AKID_MISMATCH 100
 #define X509_R_BAD_PKCS7_VERSION 101
 #define X509_R_BAD_X509_FILETYPE 102

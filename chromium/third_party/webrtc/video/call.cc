@@ -72,6 +72,10 @@ class Call : public webrtc::Call, public PacketReceiver {
 
   PacketReceiver* Receiver() override;
 
+  webrtc::AudioSendStream* CreateAudioSendStream(
+      const webrtc::AudioSendStream::Config& config) override;
+  void DestroyAudioSendStream(webrtc::AudioSendStream* send_stream) override;
+
   webrtc::AudioReceiveStream* CreateAudioReceiveStream(
       const webrtc::AudioReceiveStream::Config& config) override;
   void DestroyAudioReceiveStream(
@@ -117,6 +121,7 @@ class Call : public webrtc::Call, public PacketReceiver {
   // and receivers.
   rtc::CriticalSection network_enabled_crit_;
   bool network_enabled_ GUARDED_BY(network_enabled_crit_);
+  TransportAdapter transport_adapter_;
 
   rtc::scoped_ptr<RWLockWrapper> receive_crit_;
   std::map<uint32_t, AudioReceiveStream*> audio_receive_ssrcs_
@@ -147,11 +152,12 @@ namespace internal {
 Call::Call(const Call::Config& config)
     : num_cpu_cores_(CpuInfo::DetectNumberOfCores()),
       module_process_thread_(ProcessThread::Create()),
-      channel_group_(new ChannelGroup(module_process_thread_.get(), nullptr)),
+      channel_group_(new ChannelGroup(module_process_thread_.get())),
       base_channel_id_(0),
       next_channel_id_(base_channel_id_ + 1),
       config_(config),
       network_enabled_(true),
+      transport_adapter_(nullptr),
       receive_crit_(RWLockWrapper::CreateRWLock()),
       send_crit_(RWLockWrapper::CreateRWLock()) {
   DCHECK(config.send_transport != nullptr);
@@ -169,8 +175,8 @@ Call::Call(const Call::Config& config)
 
   // TODO(pbos): Remove base channel when CreateReceiveChannel no longer
   // requires one.
-  CHECK(channel_group_->CreateSendChannel(base_channel_id_, 0, num_cpu_cores_,
-                                          true));
+  CHECK(channel_group_->CreateSendChannel(
+      base_channel_id_, 0, &transport_adapter_, num_cpu_cores_, true));
 
   if (config.overuse_callback) {
     overuse_observer_proxy_.reset(
@@ -193,6 +199,14 @@ Call::~Call() {
 }
 
 PacketReceiver* Call::Receiver() { return this; }
+
+webrtc::AudioSendStream* Call::CreateAudioSendStream(
+    const webrtc::AudioSendStream::Config& config) {
+  return nullptr;
+}
+
+void Call::DestroyAudioSendStream(webrtc::AudioSendStream* send_stream) {
+}
 
 webrtc::AudioReceiveStream* Call::CreateAudioReceiveStream(
     const webrtc::AudioReceiveStream::Config& config) {

@@ -40,14 +40,10 @@ enum ServiceWorkerState {
 
 [
     ActiveDOMObject,
-    RuntimeEnabled=ServiceWorker,
     TypeChecking=Interface,
 ] interface ServiceWorker : EventTarget {
 
-    // FIXME: Should inherit this from Worker.
-    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional sequence<Transferable> transfer);
-
-    [RaisesException] void terminate();
+    [PostMessage, RaisesException] void postMessage(SerializedScriptValue message, optional sequence<Transferable> transfer);
 
     readonly attribute USVString scriptURL;
     readonly attribute ServiceWorkerState  state;

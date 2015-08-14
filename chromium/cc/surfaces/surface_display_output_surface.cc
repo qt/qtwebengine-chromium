@@ -59,14 +59,14 @@ void SurfaceDisplayOutputSurface::SwapBuffers(CompositorFrame* frame) {
   display_client_->display()->SetSurfaceId(surface_id_,
                                            frame->metadata.device_scale_factor);
 
+  client_->DidSwapBuffers();
+
   scoped_ptr<CompositorFrame> frame_copy(new CompositorFrame());
   frame->AssignTo(frame_copy.get());
   factory_.SubmitFrame(
       surface_id_, frame_copy.Pass(),
       base::Bind(&SurfaceDisplayOutputSurface::SwapBuffersComplete,
                  base::Unretained(this)));
-
-  client_->DidSwapBuffers();
 }
 
 bool SurfaceDisplayOutputSurface::BindToClient(OutputSurfaceClient* client) {

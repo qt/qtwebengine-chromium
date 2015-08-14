@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -24,6 +24,7 @@
 #include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/stream_socket.h"
+#include "url/url_constants.h"
 
 namespace net {
 
@@ -181,8 +182,8 @@ bool ExtractPortFromPASVResponse(const FtpCtrlResponse& response, int* port) {
 
   // Split the line into comma-separated pieces and extract
   // the last two.
-  std::vector<std::string> pieces;
-  base::SplitString(line, ',', &pieces);
+  std::vector<base::StringPiece> pieces = base::SplitStringPiece(
+      line, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (pieces.size() != 6)
     return false;
 
@@ -956,8 +957,10 @@ int FtpNetworkTransaction::ProcessResponseEPSV(
       int port;
       if (!ExtractPortFromEPSVResponse(response, &port))
         return Stop(ERR_INVALID_RESPONSE);
-      if (port < 1024 || !IsPortAllowedByFtp(port))
+      if (IsWellKnownPort(port) ||
+          !IsPortAllowedForScheme(port, url::kFtpScheme)) {
         return Stop(ERR_UNSAFE_PORT);
+      }
       data_connection_port_ = static_cast<uint16>(port);
       next_state_ = STATE_DATA_CONNECT;
       break;
@@ -992,8 +995,10 @@ int FtpNetworkTransaction::ProcessResponsePASV(
       int port;
       if (!ExtractPortFromPASVResponse(response, &port))
         return Stop(ERR_INVALID_RESPONSE);
-      if (port < 1024 || !IsPortAllowedByFtp(port))
+      if (IsWellKnownPort(port) ||
+          !IsPortAllowedForScheme(port, url::kFtpScheme)) {
         return Stop(ERR_UNSAFE_PORT);
+      }
       data_connection_port_ = static_cast<uint16>(port);
       next_state_ = STATE_DATA_CONNECT;
       break;

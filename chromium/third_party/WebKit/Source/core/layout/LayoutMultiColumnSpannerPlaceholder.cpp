@@ -29,9 +29,28 @@ LayoutMultiColumnSpannerPlaceholder* LayoutMultiColumnSpannerPlaceholder::create
 }
 
 LayoutMultiColumnSpannerPlaceholder::LayoutMultiColumnSpannerPlaceholder(LayoutBox* layoutObjectInFlowThread)
-    : LayoutBox(0)
+    : LayoutBox(nullptr)
     , m_layoutObjectInFlowThread(layoutObjectInFlowThread)
 {
+}
+
+void LayoutMultiColumnSpannerPlaceholder::layoutObjectInFlowThreadStyleDidChange(const ComputedStyle* oldStyle)
+{
+    LayoutBox* objectInFlowThread = m_layoutObjectInFlowThread;
+    if (flowThread()->removeSpannerPlaceholderIfNoLongerValid(objectInFlowThread)) {
+        // No longer a valid spanner, due to style changes. |this| is now dead.
+        if (objectInFlowThread->style()->hasOutOfFlowPosition() && !oldStyle->hasOutOfFlowPosition()) {
+            // We went from being a spanner to being out-of-flow positioned. When an object becomes
+            // out-of-flow positioned, we need to lay out its parent, since that's where the
+            // now-out-of-flow object gets added to the right containing block for out-of-flow
+            // positioned objects. Since neither a spanner nor an out-of-flow object is guaranteed
+            // to have this parent in its containing block chain, we need to mark it here, or we
+            // risk that the object isn't laid out.
+            objectInFlowThread->parent()->setNeedsLayout(LayoutInvalidationReason::ColumnsChanged);
+        }
+        return;
+    }
+    updateMarginProperties();
 }
 
 void LayoutMultiColumnSpannerPlaceholder::updateMarginProperties()
@@ -43,8 +62,13 @@ void LayoutMultiColumnSpannerPlaceholder::updateMarginProperties()
 
 void LayoutMultiColumnSpannerPlaceholder::willBeRemovedFromTree()
 {
-    if (m_layoutObjectInFlowThread)
+    if (m_layoutObjectInFlowThread) {
+        LayoutBox* exSpanner = m_layoutObjectInFlowThread;
         m_layoutObjectInFlowThread->clearSpannerPlaceholder();
+        // Even if the placeholder is going away, the object in the flow thread might live on. Since
+        // it's not a spanner anymore, it needs to be relaid out.
+        exSpanner->setNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::ColumnsChanged);
+    }
     LayoutBox::willBeRemovedFromTree();
 }
 

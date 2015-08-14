@@ -2,13 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-Node.prototype.role;
-
-/**
- * @type {boolean}
- */
-document.webkitHidden;
-
 /**
  * External functions for MathJax bridge.
  * @typedef {Object}
@@ -147,7 +140,7 @@ MathJax.HTML;
  * Creates an HTML element from a node tag, an object with attributes and an
  * array of text content.
  * @param {string} tag
- * @param {Object<string, string>} attribs
+ * @param {Object<string>} attribs
  * @param {Array<string>} text
  */
 MathJax.HTML.Element = function(tag, attribs, text) { };

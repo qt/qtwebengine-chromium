@@ -36,6 +36,7 @@
 #include "core/css/parser/SizesAttributeParser.h"
 #include "core/dom/Document.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -111,6 +112,8 @@ public:
     StartTagScanner(const StringImpl* tagImpl, PassRefPtr<MediaValues> mediaValues)
         : m_tagImpl(tagImpl)
         , m_linkIsStyleSheet(false)
+        , m_linkIsPreconnect(false)
+        , m_linkIsImport(false)
         , m_matchedMediaAttribute(true)
         , m_inputIsImage(false)
         , m_sourceSize(0)
@@ -158,26 +161,40 @@ public:
             processAttribute(htmlTokenAttribute.name, htmlTokenAttribute.value);
     }
 
-    void handlePictureSourceURL(String& sourceURL)
+    void handlePictureSourceURL(PictureData& pictureData)
     {
-        if (match(m_tagImpl, sourceTag) && m_matchedMediaAttribute && sourceURL.isEmpty())
-            sourceURL = m_srcsetImageCandidate.toString();
-        else if (match(m_tagImpl, imgTag) && !sourceURL.isEmpty())
-            setUrlToLoad(sourceURL, AllowURLReplacement);
+        if (match(m_tagImpl, sourceTag) && m_matchedMediaAttribute && pictureData.sourceURL.isEmpty()) {
+            pictureData.sourceURL = m_srcsetImageCandidate.toString();
+            pictureData.sourceSizeSet = m_sourceSizeSet;
+            pictureData.sourceSize = m_sourceSize;
+            pictureData.picked = true;
+        } else if (match(m_tagImpl, imgTag) && !pictureData.sourceURL.isEmpty()) {
+            setUrlToLoad(pictureData.sourceURL, AllowURLReplacement);
+        }
     }
 
-    PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source, const ClientHintsPreferences& clientHintsPreferences)
+    PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source, const ClientHintsPreferences& clientHintsPreferences, const PictureData& pictureData)
     {
-        if (!shouldPreload() || !m_matchedMediaAttribute)
+        PreloadRequest::RequestType requestType = PreloadRequest::RequestTypePreload;
+        if (shouldPreconnect())
+            requestType = PreloadRequest::RequestTypePreconnect;
+        else if (!shouldPreload() || !m_matchedMediaAttribute)
             return nullptr;
 
         TextPosition position = TextPosition(source.currentLine(), source.currentColumn());
         FetchRequest::ResourceWidth resourceWidth;
-        if (m_sourceSizeSet && m_srcsetImageCandidate.resourceWidth() != UninitializedDescriptor) {
-            resourceWidth.width = m_sourceSize;
+        float sourceSize = m_sourceSize;
+        bool sourceSizeSet = m_sourceSizeSet;
+        if (pictureData.picked) {
+            sourceSizeSet = pictureData.sourceSizeSet;
+            sourceSize = pictureData.sourceSize;
+        }
+        if (sourceSizeSet) {
+            resourceWidth.width = sourceSize;
             resourceWidth.isSet = true;
         }
-        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), resourceWidth, clientHintsPreferences);
+
+        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), resourceWidth, clientHintsPreferences, requestType);
         if (isCORSEnabled())
             request->setCrossOriginEnabled(allowStoredCredentials());
         request->setCharset(charset());
@@ -226,14 +243,18 @@ private:
     void processLinkAttribute(const NameType& attributeName, const String& attributeValue)
     {
         // FIXME - Don't set rel/media/crossorigin multiple times.
-        if (match(attributeName, hrefAttr))
+        if (match(attributeName, hrefAttr)) {
             setUrlToLoad(attributeValue, DisallowURLReplacement);
-        else if (match(attributeName, relAttr))
-            m_linkIsStyleSheet = relAttributeIsStyleSheet(attributeValue);
-        else if (match(attributeName, mediaAttr))
+        } else if (match(attributeName, relAttr)) {
+            LinkRelAttribute rel(attributeValue);
+            m_linkIsStyleSheet = rel.isStyleSheet() && !rel.isAlternate() && rel.iconType() == InvalidIcon && !rel.isDNSPrefetch();
+            m_linkIsPreconnect = rel.isPreconnect();
+            m_linkIsImport = rel.isImport();
+        } else if (match(attributeName, mediaAttr)) {
             m_matchedMediaAttribute = mediaAttributeMatches(*m_mediaValues, attributeValue);
-        else if (match(attributeName, crossoriginAttr))
+        } else if (match(attributeName, crossoriginAttr)) {
             setCrossOriginAllowed(attributeValue);
+        }
     }
 
     template<typename NameType>
@@ -291,12 +312,6 @@ private:
             processVideoAttribute(attributeName, attributeValue);
     }
 
-    static bool relAttributeIsStyleSheet(const String& attributeValue)
-    {
-        LinkRelAttribute rel(attributeValue);
-        return rel.isStyleSheet() && !rel.isAlternate() && rel.iconType() == InvalidIcon && !rel.isDNSPrefetch();
-    }
-
     void setUrlToLoad(const String& value, URLReplacement replacement)
     {
         // We only respect the first src/href, per HTML5:
@@ -325,15 +340,24 @@ private:
             return Resource::Image;
         if (match(m_tagImpl, linkTag) && m_linkIsStyleSheet)
             return Resource::CSSStyleSheet;
+        if (m_linkIsPreconnect)
+            return Resource::Raw;
+        if (match(m_tagImpl, linkTag) && m_linkIsImport)
+            return Resource::ImportResource;
         ASSERT_NOT_REACHED();
         return Resource::Raw;
+    }
+
+    bool shouldPreconnect() const
+    {
+        return match(m_tagImpl, linkTag) && m_linkIsPreconnect && !m_urlToLoad.isEmpty();
     }
 
     bool shouldPreload() const
     {
         if (m_urlToLoad.isEmpty())
             return false;
-        if (match(m_tagImpl, linkTag) && !m_linkIsStyleSheet)
+        if (match(m_tagImpl, linkTag) && !m_linkIsStyleSheet && !m_linkIsImport)
             return false;
         if (match(m_tagImpl, inputTag) && !m_inputIsImage)
             return false;
@@ -374,6 +398,8 @@ private:
     ImageCandidate m_srcsetImageCandidate;
     String m_charset;
     bool m_linkIsStyleSheet;
+    bool m_linkIsPreconnect;
+    bool m_linkIsImport;
     bool m_matchedMediaAttribute;
     bool m_inputIsImage;
     String m_imgSrcUrl;
@@ -450,6 +476,9 @@ static void handleMetaViewport(const String& attributeValue, CachedDocumentParam
 template<typename Token>
 void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& source, PreloadRequestStream& requests)
 {
+    if (!m_documentParameters->doHtmlPreloadScanning)
+        return;
+
     // Disable preload for documents with AppCache.
     if (m_isAppCacheEnabled)
         return;
@@ -509,10 +538,13 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
             const typename Token::Attribute* equivAttribute = token.getAttributeItem(http_equivAttr);
             if (equivAttribute) {
                 String equivAttributeValue(equivAttribute->value);
-                if (equalIgnoringCase(equivAttributeValue, "content-security-policy"))
+                if (equalIgnoringCase(equivAttributeValue, "content-security-policy")) {
                     m_isCSPEnabled = true;
-                else if (equalIgnoringCase(equivAttributeValue, "accept-ch"))
-                    handleAcceptClientHintsHeader(equivAttributeValue, m_clientHintsPreferences);
+                } else if (equalIgnoringCase(equivAttributeValue, "accept-ch")) {
+                    const typename Token::Attribute* contentAttribute = token.getAttributeItem(contentAttr);
+                    if (contentAttribute)
+                        handleAcceptClientHintsHeader(String(contentAttribute->value), m_clientHintsPreferences, nullptr);
+                }
                 return;
             }
             const typename Token::Attribute* nameAttribute = token.getAttributeItem(nameAttr);
@@ -526,15 +558,15 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
 
         if (match(tagImpl, pictureTag)) {
             m_inPicture = true;
-            m_pictureSourceURL = String();
+            m_pictureData = PictureData();
             return;
         }
 
         StartTagScanner scanner(tagImpl, m_documentParameters->mediaValues);
         scanner.processAttributes(token.attributes());
         if (m_inPicture)
-            scanner.handlePictureSourceURL(m_pictureSourceURL);
-        OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source, m_clientHintsPreferences);
+            scanner.handlePictureSourceURL(m_pictureData);
+        OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source, m_clientHintsPreferences, m_pictureData);
         if (request)
             requests.append(request.release());
         return;
@@ -596,6 +628,7 @@ CachedDocumentParameters::CachedDocumentParameters(Document* document, PassRefPt
 {
     ASSERT(isMainThread());
     ASSERT(document);
+    doHtmlPreloadScanning = !document->settings() || document->settings()->doHtmlPreloadScanning();
     if (givenMediaValues)
         mediaValues = givenMediaValues;
     else

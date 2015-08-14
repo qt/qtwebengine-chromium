@@ -754,13 +754,16 @@ WebInspector.TabbedPane.prototype = {
 
     _updateTabSlider: function()
     {
+        if (!this._currentTab)
+            return;
         if (!this._sliderEnabled)
             return;
         var left = 0;
         for (var i = 0; this._currentTab !== this._tabs[i] && this._tabs[i]._shown && i < this._tabs.length; i++)
             left += this._tabs[i]._measuredWidth;
         var sliderWidth = this._currentTab._shown ? this._currentTab._measuredWidth : this._dropDownButton.offsetWidth;
-        this._tabSlider.style.transform = "translateX(" + left + "px) scaleX(" + sliderWidth + ")";
+        this._tabSlider.style.transform = "translateX(" + left + "px)";
+        this._tabSlider.style.width = sliderWidth + "px";
     },
 
     /**
@@ -811,6 +814,11 @@ WebInspector.TabbedPane.prototype = {
     {
         element.classList.add("tabbed-pane-header-after");
         this.element.appendChild(element);
+    },
+
+    renderWithNoHeaderBackground: function()
+    {
+        this._headerElement.classList.add("tabbed-pane-no-header-background");
     },
 
     __proto__: WebInspector.VBox.prototype
@@ -884,10 +892,8 @@ WebInspector.TabbedPaneTab.prototype = {
             return false;
         this._iconType = iconType;
         this._iconTooltip = iconTooltip;
-        if (this._iconElement)
-            this._iconElement.remove();
-        if (this._iconType && this._tabElement)
-            this._iconElement = this._createIconElement(this._tabElement, this._titleElement);
+        if (this._tabElement)
+            this._createIconElement(this._tabElement, this._titleElement);
         delete this._measuredWidth;
         return true;
     },
@@ -972,14 +978,23 @@ WebInspector.TabbedPaneTab.prototype = {
         this._delegate = delegate;
     },
 
+    /**
+     * @param {!Element} tabElement
+     * @param {!Element} titleElement
+     */
     _createIconElement: function(tabElement, titleElement)
     {
-        var iconElement = createElementWithClass("label", "", "dt-icon-label");
+        if (tabElement.__iconElement)
+            tabElement.__iconElement.remove();
+        if (!this._iconType)
+            return;
+
+        var iconElement = createElementWithClass("label", "tabbed-pane-header-tab-icon", "dt-icon-label");
         iconElement.type = this._iconType;
         if (this._iconTooltip)
             iconElement.title = this._iconTooltip;
         tabElement.insertBefore(iconElement, titleElement);
-        return iconElement;
+        tabElement.__iconElement = iconElement;
     },
 
     /**
@@ -996,8 +1011,7 @@ WebInspector.TabbedPaneTab.prototype = {
         var titleElement = tabElement.createChild("span", "tabbed-pane-header-tab-title");
         titleElement.textContent = this.title;
         titleElement.title = this.tooltip || "";
-        if (this._iconType)
-            this._createIconElement(tabElement, titleElement);
+        this._createIconElement(tabElement, titleElement);
         if (!measuring)
             this._titleElement = titleElement;
 

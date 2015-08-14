@@ -5,8 +5,8 @@
   <include src="reset_profile_settings_banner.html">
   <include src="automatic_settings_reset_banner.html">
 <if expr="chromeos">
-  <link rel="import" href="chrome://resources/cr_elements/cr_network_icon/cr_network_icon.html">
-  <link rel="import" href="chrome://resources/cr_elements/cr_onc/cr_onc_data.html">
+  <link rel="import" href="chrome://resources/cr_elements/v1_0/cr_network_icon/cr_network_icon.html">
+  <link rel="import" href="chrome://resources/cr_elements/v1_0/cr_onc/cr_onc_types.html">
   <include src="secondary_user_banner.html">
   <section>
     <div id="network-section-header" class="section-header">
@@ -107,15 +107,9 @@
     <h3 i18n-content="sectionTitleDevice"></h3>
     <div>
       <span i18n-content="deviceGroupDescription"></span>
-      <div class="settings-row" id="battery" hidden>
-        <div id="battery-icon" hidden></div>
-        <span id="battery-status"></span>
+      <div class="settings-row" id="power-row" hidden>
         <a is="action-link" id="power-settings-button"
             i18n-content="powerSettingsButton"></a>
-      </div>
-      <div class="settings-row">
-        <button id="battery-button" i18n-content="batteryButton"></button>
-        <button id="stored-data-button" i18n-content="storageButton"></button>
       </div>
       <div id="touchpad-settings" class="settings-row" hidden>
         <span class="option-name" i18n-content="touchpadSpeed"></span>
@@ -421,8 +415,8 @@
           </span>
         </label>
       </div>
-<if expr="_google_chrome">
-      <div class="checkbox controlled-setting-with-label">
+      <div id="spelling-enabled-container"
+          class="checkbox controlled-setting-with-label">
         <label>
           <input id="spelling-enabled-control" type="checkbox"
               metric="Options_SpellingServiceCheckbox"
@@ -435,6 +429,7 @@
             </span>
         </label>
       </div>
+<if expr="_google_chrome">
       <div id="metrics-reporting-setting"
           class="checkbox controlled-setting-with-label">
 <if expr="chromeos">
@@ -618,10 +613,6 @@
   <section id="web-content-section">
     <h3 i18n-content="advancedSectionTitleContent"></h3>
     <div>
-      <div id="website-settings-section" class="settings-row" hidden>
-        <button id="website-management-button"
-            i18n-content="websitesManage"></button>
-      </div>
       <div class="settings-row">
         <label class="web-content-select-label">
           <span i18n-content="defaultFontSizeLabel"></span>
@@ -893,12 +884,28 @@
       <div class="checkbox controlled-setting-with-label">
         <label>
           <input
+              id="accessibility-screen-magnifier-check"
               pref="settings.a11y.screen_magnifier" type="checkbox"
               metric="Options_AccessibilityScreenMagnifier">
           <span>
             <span i18n-content="accessibilityScreenMagnifier"></span>
             <span class="controlled-setting-indicator"
                 pref="settings.a11y.screen_magnifier"></span>
+          </span>
+        </label>
+      </div>
+      <div class="checkbox controlled-setting-with-label">
+        <!-- No whitespace between elements. -->
+        <input type="checkbox" class="spacer-checkbox">
+        <label>
+          <input
+              id = "accessibility-screen-magnifier-center-focus-check"
+              pref="settings.a11y.screen_magnifier_center_focus" type="checkbox"
+              metric="Options_AccessibilityScreenMagnifierCenterFocus">
+          <span>
+            <span i18n-content="accessibilityScreenMagnifierCenterFocus"></span>
+            <span class="controlled-setting-indicator"
+                pref="settings.a11y.screen_magnifier_center_focus"></span>
           </span>
         </label>
       </div>

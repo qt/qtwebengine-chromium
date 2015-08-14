@@ -37,13 +37,12 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameElementBase.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InstanceCounters.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "wtf/PassOwnPtr.h"
@@ -69,6 +68,7 @@ DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
 
 Frame::~Frame()
 {
+    InstanceCounters::decrementCounter(InstanceCounters::FrameCounter);
     ASSERT(!m_owner);
 #ifndef NDEBUG
     frameCounter.decrement();
@@ -82,14 +82,15 @@ DEFINE_TRACE(Frame)
     visitor->trace(m_owner);
 }
 
-void Frame::detach()
+void Frame::detach(FrameDetachType type)
 {
     ASSERT(m_client);
+    m_client->setOpener(0);
     domWindow()->resetLocation();
     disconnectOwnerElement();
     // After this, we must no longer talk to the client since this clears
     // its owning reference back to our owning LocalFrame.
-    m_client->detached();
+    m_client->detached(type);
     m_client = nullptr;
     m_host = nullptr;
 }
@@ -102,7 +103,7 @@ void Frame::detachChildren()
     for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling())
         childrenToDetach.append(child);
     for (const auto& child : childrenToDetach)
-        child->detach();
+        child->detach(FrameDetachType::Remove);
 }
 
 void Frame::disconnectOwnerElement()
@@ -156,17 +157,13 @@ static ChromeClient& emptyChromeClient()
 ChromeClient& Frame::chromeClient() const
 {
     if (Page* page = this->page())
-        return page->chrome().client();
+        return page->chromeClient();
     return emptyChromeClient();
 }
 
 void Frame::finishSwapFrom(Frame* old)
 {
     WindowProxyManager* oldManager = old->windowProxyManager();
-    // FIXME: In the future, the Blink API layer will be calling detach() on the
-    // old frame prior to completing the swap. However, detach calls
-    // clearForClose() instead of clearForNavigation(). Make sure this doesn't
-    // become a no-op when that lands, since it's important to detach the global.
     oldManager->clearForNavigation();
     windowProxyManager()->takeGlobalFrom(oldManager);
 }
@@ -300,6 +297,8 @@ Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
     , m_frameID(generateFrameID())
     , m_isLoading(false)
 {
+    InstanceCounters::incrementCounter(InstanceCounters::FrameCounter);
+
     ASSERT(page());
 
 #ifndef NDEBUG

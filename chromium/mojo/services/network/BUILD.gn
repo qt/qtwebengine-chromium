@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/mojo/src/mojo/public/mojo_application.gni")
+import("//mojo/public/mojo_application.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -13,6 +13,10 @@ if (is_android) {
     output_name = "network_service"
     input_so = "$root_out_dir/lib.stripped/libnetwork_service.so"
     input_dex_jar = java_library_path
+    deps = [
+      ":java_library",
+      ":native_library",
+    ]
   }
 
   shared_library("native_library") {
@@ -72,6 +76,8 @@ source_set("lib") {
     "tcp_server_socket_impl.h",
     "udp_socket_impl.cc",
     "udp_socket_impl.h",
+    "url_loader_factory_impl.cc",
+    "url_loader_factory_impl.h",
     "url_loader_impl.cc",
     "url_loader_impl.h",
     "web_socket_impl.cc",
@@ -80,15 +86,13 @@ source_set("lib") {
 
   deps = [
     "//base",
-    "//mojo/application",
-    "//mojo/common",
-    "//mojo/environment:chromium",
+    "//mojo/application/public/cpp",
     "//mojo/services/network/public/cpp",
     "//mojo/services/network/public/interfaces",
     "//net",
     "//net:http_server",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//url",
+    "//sql/mojo",
   ]
 }
 
@@ -102,7 +106,7 @@ source_set("sources") {
   deps = [
     ":lib",
     "//base",
-    "//mojo/application",
+    "//mojo/application/public/cpp",
     "//mojo/services/network/public/cpp",
     "//mojo/services/network/public/interfaces",
     "//third_party/mojo/src/mojo/public/c/system:for_shared_library",
@@ -124,15 +128,12 @@ mojo_native_application("apptests") {
     ":lib",
     ":network",
     "//base",
-    "//mojo/application",
-    "//mojo/application:test_support",
-    "//mojo/common",
+    "//mojo/application/public/cpp:test_support",
     "//mojo/services/network/public/cpp",
     "//mojo/services/network/public/interfaces",
     "//net",
     "//net:test_support",
     "//testing/gtest",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//third_party/mojo/src/mojo/public/cpp/bindings:callback",
   ]
 }

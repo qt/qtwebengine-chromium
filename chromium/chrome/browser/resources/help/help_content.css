@@ -72,7 +72,7 @@
 }
 
 #update-status-icon.up-to-date {
-  background-image: url(chrome://theme/IDR_CHECKMARK);
+  background-image: url(check_circle.svg);
   background-size: 18px;
 }
 
@@ -140,11 +140,11 @@
   width: 240px;
 }
 
-#product-label-container {
+#regulatory-label-container {
   padding-top: 32px;
 }
 
-#product-label {
+#regulatory-label {
   display: block;
   width: 330px;
 }

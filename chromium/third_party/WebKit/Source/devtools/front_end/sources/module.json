@@ -16,7 +16,7 @@
         },
         {
             "type": "@WebInspector.ContextMenu.Provider",
-            "contextTypes": ["WebInspector.UISourceCode", "WebInspector.RemoteObject", "WebInspector.NetworkRequest"],
+            "contextTypes": ["WebInspector.UISourceCode", "WebInspector.UILocation", "WebInspector.RemoteObject", "WebInspector.NetworkRequest"],
             "className": "WebInspector.SourcesPanel.ContextMenuProvider"
         },
         {
@@ -249,10 +249,15 @@
         {
             "type": "setting",
             "category": "Sources",
-            "title": "Show whitespace characters",
+            "title": "Show whitespace characters:",
             "settingName": "showWhitespacesInEditor",
-            "settingType": "boolean",
-            "defaultValue": false
+            "settingType": "enum",
+            "defaultValue": "original",
+            "options": [
+                ["None", "none"],
+                ["All", "all"],
+                ["Trailing", "trailing"]
+            ]
         },
         {
             "type": "setting",
@@ -318,7 +323,8 @@
         "SourcesPanel.js",
         "WorkspaceMappingTip.js",
         "XHRBreakpointsSidebarPane.js",
-        "JavaScriptCompiler.js"
+        "JavaScriptCompiler.js",
+        "ObjectEventListenersSidebarPane.js"
     ],
     "skip_compilation": [
         "jsdifflib.js"

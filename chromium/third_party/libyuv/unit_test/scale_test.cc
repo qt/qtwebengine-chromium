@@ -15,6 +15,9 @@
 #include "libyuv/scale.h"
 #include "../unit_test/unit_test.h"
 
+#define STRINGIZE(line) #line
+#define FILELINESTR(file, line) file ":" STRINGIZE(line)
+
 namespace libyuv {
 
 // Test scaling with C vs Opt and return maximum pixel difference. 0 = exact.
@@ -27,8 +30,8 @@ static int TestFilter(int src_width, int src_height,
   int src_width_uv = (Abs(src_width) + 1) >> 1;
   int src_height_uv = (Abs(src_height) + 1) >> 1;
 
-  int src_y_plane_size = (Abs(src_width) + b * 2) * (Abs(src_height) + b * 2);
-  int src_uv_plane_size = (src_width_uv + b * 2) * (src_height_uv + b * 2);
+  int64 src_y_plane_size = (Abs(src_width) + b * 2) * (Abs(src_height) + b * 2);
+  int64 src_uv_plane_size = (src_width_uv + b * 2) * (src_height_uv + b * 2);
 
   int src_stride_y = b * 2 + Abs(src_width);
   int src_stride_uv = b * 2 + src_width_uv;
@@ -36,6 +39,10 @@ static int TestFilter(int src_width, int src_height,
   align_buffer_page_end(src_y, src_y_plane_size)
   align_buffer_page_end(src_u, src_uv_plane_size)
   align_buffer_page_end(src_v, src_uv_plane_size)
+  if (!src_y || !src_u || !src_v) {
+    printf("Skipped.  Alloc failed " FILELINESTR(__FILE__, __LINE__) "\n");
+    return 0;
+  }
   srandom(time(NULL));
   MemRandomize(src_y, src_y_plane_size);
   MemRandomize(src_u, src_uv_plane_size);
@@ -44,8 +51,8 @@ static int TestFilter(int src_width, int src_height,
   int dst_width_uv = (dst_width + 1) >> 1;
   int dst_height_uv = (dst_height + 1) >> 1;
 
-  int dst_y_plane_size = (dst_width + b * 2) * (dst_height + b * 2);
-  int dst_uv_plane_size = (dst_width_uv + b * 2) * (dst_height_uv + b * 2);
+  int64 dst_y_plane_size = (dst_width + b * 2) * (dst_height + b * 2);
+  int64 dst_uv_plane_size = (dst_width_uv + b * 2) * (dst_height_uv + b * 2);
 
   int dst_stride_y = b * 2 + dst_width;
   int dst_stride_uv = b * 2 + dst_width_uv;
@@ -56,6 +63,11 @@ static int TestFilter(int src_width, int src_height,
   align_buffer_page_end(dst_y_opt, dst_y_plane_size)
   align_buffer_page_end(dst_u_opt, dst_uv_plane_size)
   align_buffer_page_end(dst_v_opt, dst_uv_plane_size)
+  if (!dst_y_c || !dst_u_c || !dst_v_c ||
+      !dst_y_opt|| !dst_u_opt|| !dst_v_opt) {
+    printf("Skipped.  Alloc failed " FILELINESTR(__FILE__, __LINE__) "\n");
+    return 0;
+  }
 
   MaskCpuFlags(disable_cpu_flags);  // Disable all CPU optimization.
   double c_time = get_time();
@@ -142,8 +154,9 @@ static int TestFilter_16(int src_width, int src_height,
   int src_width_uv = (Abs(src_width) + 1) >> 1;
   int src_height_uv = (Abs(src_height) + 1) >> 1;
 
-  int src_y_plane_size = (Abs(src_width) + b * 2) * (Abs(src_height) + b * 2);
-  int src_uv_plane_size = (src_width_uv + b * 2) * (src_height_uv + b * 2);
+  int64 src_y_plane_size = (Abs(src_width) + b * 2) *
+      (Abs(src_height) + b * 2);
+  int64 src_uv_plane_size = (src_width_uv + b * 2) * (src_height_uv + b * 2);
 
   int src_stride_y = b * 2 + Abs(src_width);
   int src_stride_uv = b * 2 + src_width_uv;
@@ -260,39 +273,49 @@ static int TestFilter_16(int src_width, int src_height,
   return max_diff;
 }
 
-#define TEST_FACTOR1(name, filter, hfactor, vfactor, max_diff)                 \
+// The following adjustments in dimensions ensure the scale factor will be
+// exactly achieved.
+// 2 is chroma subsample
+#define DX(x, nom, denom) ((int)(Abs(x) / nom / 2) * nom * 2)
+#define SX(x, nom, denom) ((int)(x / nom / 2) * denom * 2)
+
+#define TEST_FACTOR1(name, filter, nom, denom, max_diff)                       \
     TEST_F(libyuvTest, ScaleDownBy##name##_##filter) {                         \
-      int diff = TestFilter(benchmark_width_, benchmark_height_,               \
-                            Abs(benchmark_width_) * hfactor,                   \
-                            Abs(benchmark_height_) * vfactor,                  \
+      int diff = TestFilter(SX(benchmark_width_, nom, denom),                  \
+                            SX(benchmark_height_, nom, denom),                 \
+                            DX(benchmark_width_, nom, denom),                  \
+                            DX(benchmark_height_, nom, denom),                 \
                             kFilter##filter, benchmark_iterations_,            \
                             disable_cpu_flags_);                               \
       EXPECT_LE(diff, max_diff);                                               \
     }                                                                          \
     TEST_F(libyuvTest, DISABLED_ScaleDownBy##name##_##filter##_16) {           \
-      int diff = TestFilter_16(benchmark_width_, benchmark_height_,            \
-                               Abs(benchmark_width_) * hfactor,                \
-                               Abs(benchmark_height_) * vfactor,               \
+      int diff = TestFilter_16(SX(benchmark_width_, nom, denom),               \
+                               SX(benchmark_height_, nom, denom),              \
+                               DX(benchmark_width_, nom, denom),               \
+                               DX(benchmark_height_, nom, denom),              \
                                kFilter##filter, benchmark_iterations_);        \
       EXPECT_LE(diff, max_diff);                                               \
     }
 
 // Test a scale factor with all 4 filters.  Expect unfiltered to be exact, but
 // filtering is different fixed point implementations for SSSE3, Neon and C.
-#define TEST_FACTOR(name, hfactor, vfactor)                                    \
-    TEST_FACTOR1(name, None, hfactor, vfactor, 0)                              \
-    TEST_FACTOR1(name, Linear, hfactor, vfactor, 3)                            \
-    TEST_FACTOR1(name, Bilinear, hfactor, vfactor, 3)                          \
-    TEST_FACTOR1(name, Box, hfactor, vfactor, 3)                               \
+#define TEST_FACTOR(name, nom, denom)                                          \
+    TEST_FACTOR1(name, None, nom, denom, 0)                                    \
+    TEST_FACTOR1(name, Linear, nom, denom, 3)                                  \
+    TEST_FACTOR1(name, Bilinear, nom, denom, 3)                                \
+    TEST_FACTOR1(name, Box, nom, denom, 3)
 
-TEST_FACTOR(2, 1 / 2, 1 / 2)
-TEST_FACTOR(4, 1 / 4, 1 / 4)
-TEST_FACTOR(8, 1 / 8, 1 / 8)
-TEST_FACTOR(3by4, 3 / 4, 3 / 4)
-TEST_FACTOR(3by8, 3 / 8, 3 / 8)
-TEST_FACTOR(3, 1 / 3, 1 / 3)
+TEST_FACTOR(2, 1, 2)
+TEST_FACTOR(4, 1, 4)
+TEST_FACTOR(8, 1, 8)
+TEST_FACTOR(3by4, 3, 4)
+TEST_FACTOR(3by8, 3, 8)
+TEST_FACTOR(3, 1, 3)
 #undef TEST_FACTOR1
 #undef TEST_FACTOR
+#undef SX
+#undef DX
 
 #define TEST_SCALETO1(name, width, height, filter, max_diff)                   \
     TEST_F(libyuvTest, name##To##width##x##height##_##filter) {                \

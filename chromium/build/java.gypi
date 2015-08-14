@@ -70,7 +70,6 @@
     'res_extra_dirs': [],
     'res_extra_files': [],
     'res_v14_skip%': 0,
-    'res_v14_verify_only%': 0,
     'resource_input_paths': ['>@(res_extra_files)'],
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
     'compile_stamp': '<(intermediate_dir)/compile.stamp',
@@ -80,8 +79,11 @@
     'never_lint%': 0,
     'findbugs_stamp': '<(intermediate_dir)/findbugs.stamp',
     'run_findbugs%': 0,
+    'java_in_dir_suffix%': '/src',
     'proguard_config%': '',
     'proguard_preprocess%': '0',
+    'enable_errorprone%': '0',
+    'errorprone_exe_path': '<(PRODUCT_DIR)/bin.java/chromium_errorprone',
     'variables': {
       'variables': {
         'proguard_preprocess%': 0,
@@ -161,9 +163,6 @@
               ['res_v14_skip == 1', {
                 'process_resources_options': ['--v14-skip']
               }],
-              ['res_v14_verify_only == 1', {
-                'process_resources_options': ['--v14-verify-only']
-              }],
             ],
           },
           'inputs': [
@@ -180,7 +179,7 @@
           'action': [
             'python', '<(DEPTH)/build/android/gyp/process_resources.py',
             '--android-sdk', '<(android_sdk)',
-            '--android-sdk-tools', '<(android_sdk_tools)',
+            '--aapt-path', '<(android_aapt_path)',
             '--non-constant-id',
 
             '--android-manifest', '<(android_manifest)',
@@ -248,13 +247,28 @@
         },
       ],
     }],
+    ['enable_errorprone == 1', {
+      'dependencies': [
+        '<(DEPTH)/third_party/errorprone/errorprone.gyp:chromium_errorprone',
+      ],
+    }],
   ],
   'actions': [
     {
       'action_name': 'javac_<(_target_name)',
       'message': 'Compiling <(_target_name) java sources',
       'variables': {
-        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")'],
+        'extra_args': [],
+        'extra_inputs': [],
+        'java_sources': ['>!@(find >(java_in_dir)>(java_in_dir_suffix) >(additional_src_dirs) -name "*.java")'],
+        'conditions': [
+          ['enable_errorprone == 1', {
+            'extra_inputs': [
+              '<(errorprone_exe_path)',
+            ],
+            'extra_args': [ '--use-errorprone-path=<(errorprone_exe_path)' ],
+          }],
+        ],
       },
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
@@ -262,6 +276,7 @@
         '>@(java_sources)',
         '>@(input_jars_paths)',
         '>@(additional_input_paths)',
+        '<@(extra_inputs)',
       ],
       'outputs': [
         '<(compile_stamp)',
@@ -269,6 +284,7 @@
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/javac.py',
+        '--bootclasspath=<(android_sdk_jar)',
         '--classpath=>(input_jars_paths)',
         '--src-gendirs=>(generated_src_dirs)',
         '--javac-includes=<(javac_includes)',
@@ -277,6 +293,7 @@
         '--jar-excluded-classes=<(jar_excluded_classes)',
         '--stamp=<(compile_stamp)',
         '>@(java_sources)',
+        '<@(extra_args)',
       ]
     },
     {
@@ -299,7 +316,7 @@
     {
       'variables': {
         'src_dirs': [
-          '<(java_in_dir)/src',
+          '<(java_in_dir)<(java_in_dir_suffix)',
           '>@(additional_src_dirs)',
         ],
         'stamp_path': '<(lint_stamp)',

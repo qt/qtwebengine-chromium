@@ -6,8 +6,8 @@
  */
 #include <memory>
 #include "Benchmark.h"
+#include "SkAtomics.h"
 #include "SkRefCnt.h"
-#include "SkThread.h"
 #include "SkWeakRefCnt.h"
 
 enum {
@@ -89,8 +89,6 @@ private:
 
 class PlacedRefCnt : public SkRefCnt {
 public:
-    SK_DECLARE_INST_COUNT(PlacedRefCnt)
-
     PlacedRefCnt() : SkRefCnt() { }
     void operator delete(void*) { }
 

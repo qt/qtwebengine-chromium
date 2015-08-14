@@ -5,11 +5,6 @@
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
 
-declare_args() {
-  # Enable to include Polymer 0.8 in the binary.
-  enable_polymer_v08 = false
-}
-
 # GYP version: ui/resources/ui_resources.gyp:ui_resources
 group("resources") {
   deps = [
@@ -40,11 +35,6 @@ grit("ui_unscaled_resources_grd") {
   ]
 }
 
-webui_grit_defines = []
-if (enable_polymer_v08) {
-  webui_grit_defines += [ "enable_polymer_v08" ]
-}
-
 grit("webui_resources_grd") {
   source = "../webui/resources/webui_resources.grd"
   outputs = [
@@ -53,7 +43,6 @@ grit("webui_resources_grd") {
     "grit/webui_resources_map.h",
     "webui_resources.pak",
   ]
-  defines = webui_grit_defines
 }
 
 if (!is_mac) {
@@ -77,7 +66,7 @@ if (!is_mac) {
 #              (copy_ui_test_pak action)
 if (is_ios || is_mac) {
   group("ui_test_pak") {
-    deps = [
+    public_deps = [
       ":repack_ui_test_pak",
       ":repack_ui_test_mac_locale_pack",
     ]
@@ -90,7 +79,7 @@ if (is_ios || is_mac) {
     outputs = [
       "$root_out_dir/ui/en-US.pak",
     ]
-    deps = [
+    public_deps = [
       ":repack_ui_test_pak",
     ]
   }
@@ -131,6 +120,12 @@ repack("repack_ui_test_pak") {
       "//ui/chromeos/resources",
       "//ui/chromeos/strings",
     ]
+  }
+
+  if (toolkit_views) {
+    deps += [ "//ui/views/resources" ]
+    sources +=
+        [ "$root_gen_dir/ui/views/resources/views_resources_100_percent.pak" ]
   }
 }
 

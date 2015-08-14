@@ -31,6 +31,7 @@
 #define DocumentLoader_h
 
 #include "core/CoreExport.h"
+#include "core/dom/WeakIdentifierMap.h"
 #include "core/fetch/ClientHintsPreferences.h"
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceLoaderOptions.h"
@@ -48,6 +49,7 @@
 #include "wtf/RefPtr.h"
 
 namespace blink {
+
     class ApplicationCacheHost;
     class ResourceFetcher;
     class DocumentInit;
@@ -57,26 +59,24 @@ namespace blink {
     class ResourceLoader;
     class ThreadedDataReceiver;
 
-    class CORE_EXPORT DocumentLoader : public RefCounted<DocumentLoader>, private RawResourceClient {
-        WTF_MAKE_FAST_ALLOCATED(DocumentLoader);
+    class CORE_EXPORT DocumentLoader : public RefCountedWillBeGarbageCollectedFinalized<DocumentLoader>, private RawResourceClient {
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentLoader);
     public:
-        static PassRefPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
+        static PassRefPtrWillBeRawPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
         {
-            return adoptRef(new DocumentLoader(frame, request, data));
+            return adoptRefWillBeNoop(new DocumentLoader(frame, request, data));
         }
-        virtual ~DocumentLoader();
+        ~DocumentLoader() override;
 
         LocalFrame* frame() const { return m_frame; }
 
-        void detachFromFrame();
+        virtual void detachFromFrame();
 
         unsigned long mainResourceIdentifier() const;
 
         void replaceDocumentWhileExecutingJavaScriptURL(const DocumentInit&, const String& source, Document*);
 
         const AtomicString& mimeType() const;
-
-        void setUserChosenEncoding(const String& charset);
 
         const ResourceRequest& originalRequest() const;
 
@@ -104,7 +104,7 @@ namespace blink {
         bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
         void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) { m_replacesCurrentHistoryItem = replacesCurrentHistoryItem; }
 
-        bool shouldContinueForNavigationPolicy(const ResourceRequest&, ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy, NavigationPolicy = NavigationPolicyCurrentTab, bool isTransitionNavigation = false);
+        bool shouldContinueForNavigationPolicy(const ResourceRequest&, ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy, NavigationPolicy = NavigationPolicyCurrentTab);
         NavigationType navigationType() const { return m_navigationType; }
         void setNavigationType(NavigationType navigationType) { m_navigationType = navigationType; }
 
@@ -139,6 +139,12 @@ namespace blink {
         };
         InitialScrollState& initialScrollState() { return m_initialScrollState; }
 
+        bool loadingMultipartContent() const;
+
+        void startPreload(Resource::Type, FetchRequest&);
+
+        DECLARE_VIRTUAL_TRACE();
+
     protected:
         DocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&);
 
@@ -167,11 +173,11 @@ namespace blink {
         void finishedLoading(double finishTime);
         void mainReceivedError(const ResourceError&);
         void cancelLoadAfterXFrameOptionsOrCSPDenied(const ResourceResponse&);
-        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) override final;
-        virtual void updateRequest(Resource*, const ResourceRequest&) override final;
-        virtual void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override final;
-        virtual void dataReceived(Resource*, const char* data, unsigned length) override final;
-        virtual void notifyFinished(Resource*) override final;
+        void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) final;
+        void updateRequest(Resource*, const ResourceRequest&) final;
+        void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) final;
+        void dataReceived(Resource*, const char* data, unsigned length) final;
+        void notifyFinished(Resource*) final;
 
         bool maybeLoadEmpty();
 
@@ -179,12 +185,12 @@ namespace blink {
 
         bool shouldContinueForResponse() const;
 
-        LocalFrame* m_frame;
-        RefPtrWillBePersistent<ResourceFetcher> m_fetcher;
+        RawPtrWillBeMember<LocalFrame> m_frame;
+        PersistentWillBeMember<ResourceFetcher> m_fetcher;
 
         ResourcePtr<RawResource> m_mainResource;
 
-        RefPtrWillBePersistent<DocumentWriter> m_writer;
+        RefPtrWillBeMember<DocumentWriter> m_writer;
 
         // A reference to actual request used to create the data source.
         // The only part of this request that should change is the url, and
@@ -208,20 +214,22 @@ namespace blink {
 
         NavigationType m_navigationType;
 
-        RefPtrWillBePersistent<MHTMLArchive> m_archive;
+        RefPtrWillBeMember<MHTMLArchive> m_archive;
 
         bool m_loadingMainResource;
         DocumentLoadTiming m_documentLoadTiming;
 
         double m_timeOfLastDataReceived;
 
-        friend class ApplicationCacheHost;  // for substitute resource delivery
-        OwnPtrWillBePersistent<ApplicationCacheHost> m_applicationCacheHost;
+        PersistentWillBeMember<ApplicationCacheHost> m_applicationCacheHost;
 
         RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
         ClientHintsPreferences m_clientHintsPreferences;
         InitialScrollState m_initialScrollState;
     };
-}
+
+    DECLARE_WEAK_IDENTIFIER_MAP(DocumentLoader);
+
+} // namespace blink
 
 #endif // DocumentLoader_h

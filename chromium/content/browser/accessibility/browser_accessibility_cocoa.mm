@@ -623,8 +623,11 @@ bool InitializeAccessibilityTreeSearch(
 }
 
 - (NSString*)dropeffect {
-  return NSStringForStringAttribute(
-      browserAccessibility_, ui::AX_ATTR_DROPEFFECT);
+  std::string dropEffect;
+  if (browserAccessibility_->GetHtmlAttribute("aria-dropeffect", &dropEffect))
+    return base::SysUTF8ToNSString(dropEffect);
+
+  return nil;
 }
 
 - (NSNumber*)enabled {
@@ -645,8 +648,12 @@ bool InitializeAccessibilityTreeSearch(
 }
 
 - (NSNumber*)grabbed {
-  bool boolValue = browserAccessibility_->GetBoolAttribute(ui::AX_ATTR_GRABBED);
-  return [NSNumber numberWithBool:boolValue];
+  std::string grabbed;
+  if (browserAccessibility_->GetHtmlAttribute("aria-grabbed", &grabbed) &&
+      grabbed == "true")
+    return [NSNumber numberWithBool:YES];
+
+  return [NSNumber numberWithBool:NO];
 }
 
 - (id)header {
@@ -964,6 +971,9 @@ bool InitializeAccessibilityTreeSearch(
   case ui::AX_ROLE_MAIN:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_MAIN_CONTENT));
+  case ui::AX_ROLE_MARK:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_MARK));
   case ui::AX_ROLE_MATH:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_MATH));
@@ -1373,9 +1383,9 @@ bool InitializeAccessibilityTreeSearch(
       return [NSNumber numberWithInt:static_cast<int>(line_breaks.size())];
     }
     if ([attribute isEqualToString:NSAccessibilitySelectedTextAttribute]) {
-      std::string value = browserAccessibility_->GetStringAttribute(
+      base::string16 value = browserAccessibility_->GetString16Attribute(
           ui::AX_ATTR_VALUE);
-      return base::SysUTF8ToNSString(value.substr(selStart, selLength));
+      return base::SysUTF16ToNSString(value.substr(selStart, selLength));
     }
     if ([attribute isEqualToString:NSAccessibilitySelectedTextRangeAttribute]) {
       return [NSValue valueWithRange:NSMakeRange(selStart, selLength)];
@@ -1401,9 +1411,9 @@ bool InitializeAccessibilityTreeSearch(
   if ([attribute isEqualToString:
       NSAccessibilityStringForRangeParameterizedAttribute]) {
     NSRange range = [(NSValue*)parameter rangeValue];
-    std::string value = browserAccessibility_->GetStringAttribute(
+    base::string16 value = browserAccessibility_->GetString16Attribute(
         ui::AX_ATTR_VALUE);
-    return base::SysUTF8ToNSString(value.substr(range.location, range.length));
+    return base::SysUTF16ToNSString(value.substr(range.location, range.length));
   }
 
   if ([attribute isEqualToString:
@@ -1784,15 +1794,15 @@ bool InitializeAccessibilityTreeSearch(
         nil]];
   }
 
-  if (browserAccessibility_->HasStringAttribute(
-          ui::AX_ATTR_DROPEFFECT)) {
+  std::string dropEffect;
+  if (browserAccessibility_->GetHtmlAttribute("aria-dropeffect", &dropEffect)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXDropEffects",
         nil]];
   }
 
-  // Add aria-grabbed attribute only if it has true.
-  if (browserAccessibility_->HasBoolAttribute(ui::AX_ATTR_GRABBED)) {
+  std::string grabbed;
+  if (browserAccessibility_->GetHtmlAttribute("aria-grabbed", &grabbed)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXGrabbed",
         nil]];
@@ -1892,12 +1902,8 @@ bool InitializeAccessibilityTreeSearch(
     [self delegate]->AccessibilityDoDefaultAction(
         browserAccessibility_->GetId());
   } else if ([action isEqualToString:NSAccessibilityShowMenuAction]) {
-    NSPoint objOrigin = [self origin];
-    NSSize size = [[self size] sizeValue];
-    gfx::Point origin = [self delegate]->AccessibilityOriginInScreen(
-        gfx::Rect(objOrigin.x, objOrigin.y, size.width, size.height));
-    origin.Offset(size.width / 2, size.height / 2);
-    [self delegate]->AccessibilityShowMenu(origin);
+    [self delegate]->AccessibilityShowContextMenu(
+        browserAccessibility_->GetId());
   }
 }
 

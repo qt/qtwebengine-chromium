@@ -41,7 +41,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
     : public base::RefCounted<BluetoothAdapter> {
  public:
   // Interface for observing changes from bluetooth adapters.
-  class Observer {
+  class DEVICE_BLUETOOTH_EXPORT Observer {
    public:
     virtual ~Observer() {}
 
@@ -422,7 +422,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   //      success.
   //
   // |discovery_filter| passed to AddDiscoverySession and RemoveDiscoverySession
-  // is owned by other objects and shall not be freed.
+  // is owned by other objects and shall not be freed.  When the count is
+  // greater than 0 and AddDiscoverySession or RemoveDiscoverySession is called
+  // the filter being used by the underlying controller must be updated.
   //
   // These methods invoke |callback| for success and |error_callback| for
   // failures.
@@ -433,6 +435,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       BluetoothDiscoveryFilter* discovery_filter,
       const base::Closure& callback,
       const ErrorCallback& error_callback) = 0;
+
+  // Used to set and update the discovery filter used by the underlying
+  // Bluetooth controller.
   virtual void SetDiscoveryFilter(
       scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
       const base::Closure& callback,
@@ -461,7 +466,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       BluetoothDiscoverySession* discovery_session);
 
   // Observers of BluetoothAdapter, notified from implementation subclasses.
-  ObserverList<device::BluetoothAdapter::Observer> observers_;
+  base::ObserverList<device::BluetoothAdapter::Observer> observers_;
 
   // Devices paired with, connected to, discovered by, or visible to the
   // adapter. The key is the Bluetooth address of the device and the value is

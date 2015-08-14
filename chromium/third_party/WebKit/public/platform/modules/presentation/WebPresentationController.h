@@ -18,13 +18,6 @@ class BLINK_PLATFORM_EXPORT WebPresentationController {
 public:
     virtual ~WebPresentationController() { }
 
-    // Called when the presentation screen availability changes.
-    // May not be called if there's no registered listener for the event.
-    virtual void didChangeAvailability(bool available) = 0;
-
-    // Indicates if the frame has listeners to the |availablechange| event.
-    virtual bool isAvailableChangeWatched() const = 0;
-
     // Called when the presentation session is started by the embedder using
     // the default presentation URL and id.
     virtual void didStartDefaultSession(WebPresentationSessionClient*) = 0;
@@ -34,6 +27,9 @@ public:
 
     // Called when a text message of a session is received.
     virtual void didReceiveSessionTextMessage(WebPresentationSessionClient*, const WebString& message) = 0;
+
+    // Called when a binary message of a session is received.
+    virtual void didReceiveSessionBinaryMessage(WebPresentationSessionClient*, const uint8_t* data, size_t length) = 0;
 };
 
 } // namespace blink

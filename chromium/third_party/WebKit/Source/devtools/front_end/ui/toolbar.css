@@ -6,12 +6,13 @@
 
 :host {
     flex: none;
+    padding: 0 2px;
 }
 
 .toolbar-shadow {
     position: relative;
     white-space: nowrap;
-    height: 24px;
+    height: 26px;
     overflow: hidden;
     z-index: 12;
     display: flex;
@@ -19,14 +20,10 @@
     align-items: center;
 }
 
-.material.toolbar-shadow {
-    height: 28px;
-}
-
 .toolbar-shadow.vertical {
     flex-direction: column;
     height: auto;
-    width: 32px;
+    width: 26px;
 }
 
 .toolbar-shadow.floating {
@@ -35,29 +32,21 @@
     background-color: white;
     border: 1px solid #ccc;
     margin-top: -1px;
-    width: 32px;
-}
-
-.toolbar-shadow > div {
-    display: inline-flex;
-    overflow: visible;
-    margin: 0 2px;
+    width: 26px;
+    left: -2px;
 }
 
 .toolbar-item {
     position: relative;
     display: flex;
-    border: 0 transparent none;
     background-color: transparent;
     flex: none;
     align-items: center;
     justify-content: center;
     padding: 0;
-    height: 24px;
-}
-
-.material .toolbar-item {
-    height: 28px;
+    height: 26px;
+    border: none;
+    color: #5a5a5a;
 }
 
 .toolbar-text {
@@ -73,32 +62,22 @@
 }
 
 .toolbar-item:hover .toolbar-button-text {
-    opacity: 1;
+    color: #333;
 }
 
 .toolbar-item .toolbar-button-text {
     font-weight: bold;
-    color: rgba(0, 0, 0, 0.75);
-    opacity: 0.8;
+    color: #5a5a5a;
 }
 
 .long-click-glyph {
-    background-color: rgba(0, 0, 0, 0.75);
+    background-color: #595959;
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
     -webkit-mask-position: -288px -48px;
-    -webkit-mask-size: 320px 144px;
+    -webkit-mask-size: 352px 144px;
     z-index: 1;
     width: 32px;
-    height: 24px;
-}
-
-.narrow .long-click-glyph {
-    top: -2px;
-    left: -7px;
-}
-
-.material .long-click-glyph {
-    top: 2px;
+    height: 26px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
@@ -107,36 +86,25 @@
 }
 } /* media */
 
-.narrow button.toolbar-item {
-    width: 26px;
-}
-
-.narrow button.toolbar-item .glyph {
-    margin: 0 -3px;
-}
-
 button.toolbar-item {
-    width: 30px;
-}
-
-.material button.toolbar-item {
-    width: 32px;
-}
-
-.material button.toolbar-item:hover {
-    background-color: rgba(105, 105, 105, 0.1);
+    width: 26px;
 }
 
 button.toolbar-item.toggled-on .glyph {
     background-color: rgb(66, 129, 235) !important;
 }
 
-button.toolbar-item:hover .glyph {
-    opacity: 1;
+button.toolbar-item:enabled:hover .glyph {
+    background-color: #333;
+}
+
+.toolbar-counter:hover,
+.toolbar-item.checkbox:hover {
+    color: #333;
 }
 
 button.toolbar-item:active .glyph {
-    opacity: 0.8;
+    background-color: #5a5a5a !important;
 }
 
 button.toolbar-item:disabled {
@@ -159,7 +127,7 @@ button.toolbar-item.extension {
 
 .toolbar-select-arrow {
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
+    background-size: 352px 144px;
     opacity: 0.7;
     width: 12px;
     height: 12px;
@@ -203,21 +171,26 @@ select.toolbar-item {
 }
 
 .toolbar-item.checkbox {
-    margin: auto 6px auto 0;
-    height: auto;
-    display: flex;
+    padding: 0 5px 0 2px;
 }
 
 .toolbar-item > .glyph {
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 144px;
-    background-color: rgba(0, 0, 0, 0.75);
-    opacity: 0.8;
+    -webkit-mask-size: 352px 144px;
+    background-color: #5a5a5a;
     z-index: 1;
     width: 32px;
     height: 24px;
 }
 
+.toolbar-item > .glyph {
+    position: relative;
+    left: -3px;
+}
+
+.toolbar-item > .long-click-glyph {
+    left: -5px;
+}
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .toolbar-item > .glyph {
@@ -232,11 +205,7 @@ select.toolbar-item {
 .toolbar-counter {
     cursor: pointer;
     padding: 0 2px;
-}
-
-.toolbar-counter:hover .toolbar-counter-item {
-    border-bottom: 1px solid rgb(96, 96, 96);
-    margin-bottom: -1px;
+    min-width: 26px;
 }
 
 .toolbar-counter-item {
@@ -256,16 +225,17 @@ select.toolbar-item {
 }
 
 .toolbar-divider {
-    margin-left: 7px;
-    border-right: 1px solid #CCC;
+    background-color: #ccc;
+    width: 1px;
+    margin: 2px 4px;
+    height: 17px;
 }
 
 .toolbar-group-label {
-    margin-left: 6px;
+    margin-left: 5px;
     margin-right: 3px;
     color: #888;
 }
-
 
 /* Predefined items */
 
@@ -294,18 +264,18 @@ select.toolbar-item {
 }
 
 .emulation-toolbar-item .glyph {
-    -webkit-mask-position: -160px 0;
+    -webkit-mask-position: -160px 1px;
 }
 
 .emulation-toolbar-item.warning::after {
     background-image: url(Images/toolbarButtonGlyphs.png);
-    background-size: 320px 144px;
-    width: 13px;
-    height: 11px;
+    background-size: 352px 144px;
+    width: 10px;
+    height: 12px;
     content: "";
-    position: relative;
-    top: 4px;
-    left: -1px;
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
     background-position: -202px -107px;
     z-index: 1;
 }
@@ -353,7 +323,7 @@ button.record-toolbar-item.toggled-on .glyph {
     background-color: rgb(216, 0, 0) !important;
 }
 
-.record-filmstrip-toolbar-item .glyph {
+.camera-toolbar-item .glyph {
     -webkit-mask-position: -96px -24px;
 }
 
@@ -443,7 +413,11 @@ button.record-toolbar-item.toggled-on .glyph {
 }
 
 .filter-toolbar-item.toggled-shown .glyph {
-    background-color: rgb(66, 129, 235);
+    background-color: rgb(66, 129, 235) !important;
+}
+
+.filter-toolbar-item.toggled-shown {
+    background-color: #f3f3f3;
 }
 
 .filter-toolbar-item.toggled-active .glyph {
@@ -466,16 +440,37 @@ button.record-toolbar-item.toggled-on .glyph {
     -webkit-mask-position: -160px -120px;
 }
 
-.element-state-toolbar-item .glyph {
+.pin-toolbar-item .glyph {
     -webkit-mask-position: -256px -120px;
+}
+
+.pin-toolbar-item.toggled-on,
+.animation-toolbar-item.toggled-on {
+    background-color: #f3f3f3;
 }
 
 .animation-toolbar-item .glyph {
     -webkit-mask-position: -192px -120px;
 }
 
+.eyedropper-toolbar-item .glyph {
+    -webkit-mask-position: -288px -120px;
+}
+
 .add-toolbar-item .glyph {
     -webkit-mask-position: -224px -120px;
+}
+
+.pause-outline-toolbar-item .glyph {
+    -webkit-mask-position: -320px 0px;
+}
+
+.replay-outline-toolbar-item .glyph {
+    -webkit-mask-position: -320px -24px;
+}
+
+.play-outline-toolbar-item .glyph {
+    -webkit-mask-position: -320px -48px;
 }
 
 .case-sensitive-search-toolbar-item.toggled-on .toolbar-button-text {

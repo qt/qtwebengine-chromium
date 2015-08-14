@@ -15,13 +15,12 @@
     </structures>
     <includes>
       <if expr="is_android">
-        <include name="IDR_MOBILE_YOUTUBE_PLUGIN_HTML" file="mobile_youtube_plugin.html" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_MOBILE_YOUTUBE_PLUGIN_HTML" file="plugins/mobile_youtube_plugin.html" flattenhtml="true" type="BINDATA" />
       </if>
-      <include name="IDR_BLOCKED_PLUGIN_HTML" file="blocked_plugin.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_DISABLED_PLUGIN_HTML" file="disabled_plugin.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_ERROR_APP_HTML" file="error_app.html" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_BLOCKED_PLUGIN_HTML" file="plugins/blocked_plugin.html" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_DISABLED_PLUGIN_HTML" file="plugins/disabled_plugin.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_NET_ERROR_HTML" file="neterror.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_PLUGIN_POSTER_HTML" file="plugin_poster.html" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_PLUGIN_POSTER_HTML" file="plugins/plugin_poster.html" flattenhtml="true" type="BINDATA" />
 
       <!-- Searchbox API -->
       <if expr="enable_extensions or is_android">
@@ -84,6 +83,7 @@
         <include name="IDR_TAG_WATCHER_JS" file="extensions\tag_watcher.js" type="BINDATA" />
         <include name="IDR_TTS_CUSTOM_BINDINGS_JS" file="extensions\tts_custom_bindings.js" type="BINDATA" />
         <include name="IDR_TTS_ENGINE_CUSTOM_BINDINGS_JS" file="extensions\tts_engine_custom_bindings.js" type="BINDATA" />
+        <include name="IDR_WEBRTC_DESKTOP_CAPTURE_PRIVATE_CUSTOM_BINDINGS_JS" file="extensions\webrtc_desktop_capture_private_custom_bindings.js" type="BINDATA" />
         <include name="IDR_WEBSTORE_CUSTOM_BINDINGS_JS" file="extensions\webstore_custom_bindings.js" type="BINDATA" />
 
         <!-- Platform app support. -->

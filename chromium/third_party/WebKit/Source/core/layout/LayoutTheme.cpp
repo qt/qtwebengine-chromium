@@ -43,10 +43,10 @@
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SpinButtonElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/style/AuthorStyleInfo.h"
-#include "core/style/ComputedStyle.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
+#include "core/style/AuthorStyleInfo.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/FileMetadata.h"
 #include "platform/FloatConversion.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -397,10 +397,10 @@ bool LayoutTheme::isControlStyled(const ComputedStyle& style, const AuthorStyleI
     }
 }
 
-void LayoutTheme::adjustPaintInvalidationRect(const LayoutObject* o, IntRect& r)
+void LayoutTheme::addVisualOverflow(const LayoutObject& object, IntRect& borderBox)
 {
 #if USE(NEW_THEME)
-    m_platformTheme->inflateControlPaintRect(o->style()->appearance(), controlStatesForLayoutObject(o), r, o->style()->effectiveZoom());
+    m_platformTheme->addVisualOverflow(object.style()->appearance(), controlStatesForLayoutObject(&object), object.style()->effectiveZoom(), borderBox);
 #endif
 }
 

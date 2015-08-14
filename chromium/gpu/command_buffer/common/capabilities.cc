@@ -29,6 +29,7 @@ Capabilities::Capabilities()
       max_combined_fragment_uniform_components(0),
       max_combined_uniform_blocks(0),
       max_combined_vertex_uniform_components(0),
+      max_copy_texture_chromium_size(0),
       max_draw_buffers(0),
       max_element_index(0),
       max_elements_indices(0),
@@ -39,6 +40,7 @@ Capabilities::Capabilities()
       max_program_texel_offset(0),
       max_samples(0),
       max_server_wait_timeout(0),
+      max_texture_lod_bias(0.f),
       max_transform_feedback_interleaved_components(0),
       max_transform_feedback_separate_attribs(0),
       max_transform_feedback_separate_components(0),
@@ -71,6 +73,8 @@ Capabilities::Capabilities()
       blend_equation_advanced(false),
       blend_equation_advanced_coherent(false),
       texture_rg(false),
+      render_buffer_format_bgra8888(false),
+      occlusion_query_boolean(false),
       major_version(2),
       minor_version(0) {
 }

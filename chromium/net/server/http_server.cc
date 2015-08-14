@@ -8,12 +8,13 @@
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
+#include "base/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
 #include "net/server/http_connection.h"
@@ -35,7 +36,7 @@ HttpServer::HttpServer(scoped_ptr<ServerSocket> server_socket,
   DCHECK(server_socket_);
   // Start accepting connections in next run loop in case when delegate is not
   // ready to get callbacks.
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&HttpServer::DoAcceptLoop, weak_ptr_factory_.GetWeakPtr()));
 }
@@ -115,7 +116,7 @@ void HttpServer::Close(int connection_id) {
   // connection. Instead of referencing connection with ID all the time,
   // destroys the connection in next run loop to make sure any pending
   // callbacks in the call stack return.
-  base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, connection);
+  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, connection);
 }
 
 int HttpServer::GetLocalAddress(IPEndPoint* address) {
@@ -417,8 +418,8 @@ bool HttpServer::ParseHeaders(const char* data,
         case ST_VALUE:
           base::TrimWhitespaceASCII(buffer, base::TRIM_LEADING, &header_value);
           it = info->headers.find(header_name);
-          // See last paragraph ("Multiple message-header fields...")
-          // of www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.2
+          // See the second paragraph ("A sender MUST NOT generate multiple
+          // header fields...") of tools.ietf.org/html/rfc7230#section-3.2.2.
           if (it == info->headers.end()) {
             info->headers[header_name] = header_value;
           } else {

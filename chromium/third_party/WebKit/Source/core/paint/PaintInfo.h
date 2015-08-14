@@ -30,7 +30,6 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
@@ -75,7 +74,6 @@ struct PaintInfo {
         return !paintingRoot || paintingRoot == layoutObject;
     }
 
-    bool forceBlackText() const { return paintBehavior & PaintBehaviorForceBlackText; }
     bool isRenderingClipPathAsMaskImage() const { return paintBehavior & PaintBehaviorRenderingClipPathAsMask; }
 
     bool skipRootBackground() const { return paintBehavior & PaintBehaviorSkipRootBackground; }
@@ -87,6 +85,17 @@ struct PaintInfo {
 
     ListHashSet<LayoutInline*>* outlineObjects() const { return m_outlineObjects; }
     void setOutlineObjects(ListHashSet<LayoutInline*>* objects) { m_outlineObjects = objects; }
+
+    bool intersectsCullRect(const AffineTransform& transform, const FloatRect& boundingBox) const
+    {
+        return transform.mapRect(boundingBox).intersects(rect);
+    }
+
+    void updateCullRectForSVGTransform(const AffineTransform& localToParentTransform)
+    {
+        if (rect != LayoutRect::infiniteIntRect())
+            rect = localToParentTransform.inverse().mapRect(rect);
+    }
 
     // FIXME: Introduce setters/getters at some point. Requires a lot of changes throughout layout/.
     GraphicsContext* context;

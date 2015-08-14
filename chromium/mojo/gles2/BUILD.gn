@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
-
 config("mojo_use_gles2") {
   defines = [ "MOJO_USE_GLES2_IMPL" ]
 }
@@ -36,8 +34,8 @@ source_set("gles2") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//components/gles2:lib",
-    "//components/gpu/public/interfaces",
+    "//components/view_manager/gles2:lib",
+    "//components/view_manager/public/interfaces",
     "//gpu/command_buffer/client",
     "//gpu/command_buffer/client:gles2_cmd_helper",
     "//gpu/command_buffer/client:gles2_implementation",

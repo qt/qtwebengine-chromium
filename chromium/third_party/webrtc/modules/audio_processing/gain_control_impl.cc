@@ -179,6 +179,7 @@ int GainControlImpl::ProcessCaptureAudio(AudioBuffer* audio) {
 
 // TODO(ajm): ensure this is called under kAdaptiveAnalog.
 int GainControlImpl::set_stream_analog_level(int level) {
+  CriticalSectionScoped crit_scoped(crit_);
   was_analog_level_set_ = true;
   if (level < minimum_capture_level_ || level > maximum_capture_level_) {
     return apm_->kBadParameterError;
@@ -300,14 +301,7 @@ int GainControlImpl::Initialize() {
 }
 
 void* GainControlImpl::CreateHandle() const {
-  Handle* handle = NULL;
-  if (WebRtcAgc_Create(&handle) != apm_->kNoError) {
-    handle = NULL;
-  } else {
-    assert(handle != NULL);
-  }
-
-  return handle;
+  return WebRtcAgc_Create();
 }
 
 void GainControlImpl::DestroyHandle(void* handle) const {

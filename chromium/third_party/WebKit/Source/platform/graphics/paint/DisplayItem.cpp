@@ -7,6 +7,16 @@
 
 namespace blink {
 
+struct SameSizeAsDisplayItem {
+    virtual ~SameSizeAsDisplayItem() { } // Allocate vtable pointer.
+    void* pointers[2];
+    int ints[2]; // Make sure other fields are packed into two ints.
+#ifndef NDEBUG
+    WTF::String m_debugString;
+#endif
+};
+static_assert(sizeof(DisplayItem) == sizeof(SameSizeAsDisplayItem), "DisplayItem should stay small");
+
 #ifndef NDEBUG
 
 static WTF::String paintPhaseAsDebugString(int paintPhase)
@@ -56,6 +66,9 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(PopupContainerBorder);
         DEBUG_STRING_CASE(PopupListBoxBackground);
         DEBUG_STRING_CASE(PopupListBoxRow);
+        DEBUG_STRING_CASE(PrintedContentBackground);
+        DEBUG_STRING_CASE(PrintedContentLineBoundary);
+        DEBUG_STRING_CASE(PrintedContentPDFURLRect);
         DEBUG_STRING_CASE(Resizer);
         DEBUG_STRING_CASE(SVGClip);
         DEBUG_STRING_CASE(SVGFilter);
@@ -78,6 +91,8 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(TableCellBackgroundFromSelfPaintingRow);
         DEBUG_STRING_CASE(VideoBitmap);
         DEBUG_STRING_CASE(WebPlugin);
+        DEBUG_STRING_CASE(WebFont);
+
         DEFAULT_CASE;
     }
 }
@@ -109,6 +124,7 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ClipSelectionImage);
         DEBUG_STRING_CASE(PageWidgetDelegateClip);
         DEBUG_STRING_CASE(TransparencyClip);
+        DEBUG_STRING_CASE(ClipPrintedPage);
         DEFAULT_CASE;
     }
 }
@@ -132,6 +148,9 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndClipType(type))
         return "End" + clipTypeAsDebugString(endClipTypeToClipType(type));
 
+    if (type == UninitializedType)
+        return "UninitializedType";
+
     PAINT_PHASE_BASED_DEBUG_STRINGS(FloatClip);
     if (isEndFloatClipType(type))
         return "End" + typeAsDebugString(endFloatClipTypeToFloatClipType(type));
@@ -148,6 +167,9 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     PAINT_PHASE_BASED_DEBUG_STRINGS(SubtreeCached);
     PAINT_PHASE_BASED_DEBUG_STRINGS(BeginSubtree);
     PAINT_PHASE_BASED_DEBUG_STRINGS(EndSubtree);
+
+    if (type == UninitializedType)
+        return "UninitializedType";
 
     switch (type) {
         DEBUG_STRING_CASE(BeginFilter);
@@ -185,8 +207,10 @@ void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder)
     stringBuilder.append("\", type: \"");
     stringBuilder.append(typeAsDebugString(type()));
     stringBuilder.append('"');
-    if (m_id.scopeContainer)
-        stringBuilder.append(String::format(", scope: \"%p,%d\"", m_id.scopeContainer, m_id.scopeId));
+    if (m_skippedCache)
+        stringBuilder.append(", skippedCache: true");
+    if (m_scopeContainer)
+        stringBuilder.append(String::format(", scope: \"%p,%d\"", m_scopeContainer, m_scopeId));
 }
 
 #endif

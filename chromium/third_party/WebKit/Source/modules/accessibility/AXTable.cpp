@@ -48,7 +48,7 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXTable::AXTable(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AXTable::AXTable(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AXLayoutObject(layoutObject, axObjectCache)
     , m_headerContainer(nullptr)
     , m_isAXTable(true)
@@ -65,9 +65,9 @@ void AXTable::init()
     m_isAXTable = isTableExposableThroughAccessibility();
 }
 
-PassRefPtr<AXTable> AXTable::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXTable> AXTable::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXTable(layoutObject, axObjectCache));
+    return adoptRefWillBeNoop(new AXTable(layoutObject, axObjectCache));
 }
 
 bool AXTable::hasARIARole() const
@@ -371,7 +371,7 @@ void AXTable::addChildren()
         return;
 
     LayoutTable* table = toLayoutTable(m_layoutObject);
-    AXObjectCacheImpl* axCache = axObjectCache();
+    AXObjectCacheImpl& axCache = axObjectCache();
 
     Node* tableNode = table->node();
     if (!isHTMLTableElement(tableNode))
@@ -379,7 +379,7 @@ void AXTable::addChildren()
 
     // Add caption
     if (HTMLTableCaptionElement* caption  = toHTMLTableElement(tableNode)->caption()) {
-        AXObject* captionObject = axCache->getOrCreate(caption);
+        AXObject* captionObject = axCache.getOrCreate(caption);
         if (captionObject && !captionObject->accessibilityIsIgnored())
             m_children.append(captionObject);
     }
@@ -401,7 +401,7 @@ void AXTable::addChildren()
             if (!layoutRow)
                 continue;
 
-            AXObject* rowObject = axCache->getOrCreate(layoutRow);
+            AXObject* rowObject = axCache.getOrCreate(layoutRow);
             if (!rowObject || !rowObject->isTableRow())
                 continue;
 
@@ -424,7 +424,7 @@ void AXTable::addChildren()
     // make the columns based on the number of columns in the first body
     unsigned length = initialTableSection->numColumns();
     for (unsigned i = 0; i < length; ++i) {
-        AXTableColumn* column = toAXTableColumn(axCache->getOrCreate(ColumnRole));
+        AXTableColumn* column = toAXTableColumn(axCache.getOrCreate(ColumnRole));
         column->setColumnIndex((int)i);
         column->setParent(this);
         m_columns.append(column);
@@ -442,7 +442,7 @@ AXObject* AXTable::headerContainer()
     if (m_headerContainer)
         return m_headerContainer.get();
 
-    AXMockObject* tableHeader = toAXMockObject(axObjectCache()->getOrCreate(TableHeaderContainerRole));
+    AXMockObject* tableHeader = toAXMockObject(axObjectCache().getOrCreate(TableHeaderContainerRole));
     tableHeader->setParent(this);
 
     m_headerContainer = tableHeader;
@@ -590,6 +590,14 @@ String AXTable::deprecatedTitle(TextUnderElementMode mode) const
         title = AXLayoutObject::deprecatedTitle(mode);
 
     return title;
+}
+
+DEFINE_TRACE(AXTable)
+{
+    visitor->trace(m_rows);
+    visitor->trace(m_columns);
+    visitor->trace(m_headerContainer);
+    AXLayoutObject::trace(visitor);
 }
 
 } // namespace blink

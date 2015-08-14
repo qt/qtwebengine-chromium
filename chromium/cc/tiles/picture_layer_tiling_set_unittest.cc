@@ -12,7 +12,9 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_picture_pile_impl.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/trees/layer_tree_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
@@ -86,26 +88,26 @@ TEST(PictureLayerTilingSetTest, TilingRange) {
 
   higher_than_high_res_range =
       set->GetTilingRange(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES);
-  EXPECT_EQ(0, higher_than_high_res_range.start);
-  EXPECT_EQ(1, higher_than_high_res_range.end);
+  EXPECT_EQ(0u, higher_than_high_res_range.start);
+  EXPECT_EQ(1u, higher_than_high_res_range.end);
 
   high_res_range = set->GetTilingRange(PictureLayerTilingSet::HIGH_RES);
-  EXPECT_EQ(1, high_res_range.start);
-  EXPECT_EQ(2, high_res_range.end);
+  EXPECT_EQ(1u, high_res_range.start);
+  EXPECT_EQ(2u, high_res_range.end);
 
   between_high_and_low_res_range =
       set->GetTilingRange(PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES);
-  EXPECT_EQ(2, between_high_and_low_res_range.start);
-  EXPECT_EQ(3, between_high_and_low_res_range.end);
+  EXPECT_EQ(2u, between_high_and_low_res_range.start);
+  EXPECT_EQ(3u, between_high_and_low_res_range.end);
 
   low_res_range = set->GetTilingRange(PictureLayerTilingSet::LOW_RES);
-  EXPECT_EQ(3, low_res_range.start);
-  EXPECT_EQ(4, low_res_range.end);
+  EXPECT_EQ(3u, low_res_range.start);
+  EXPECT_EQ(4u, low_res_range.end);
 
   lower_than_low_res_range =
       set->GetTilingRange(PictureLayerTilingSet::LOWER_THAN_LOW_RES);
-  EXPECT_EQ(4, lower_than_low_res_range.start);
-  EXPECT_EQ(5, lower_than_low_res_range.end);
+  EXPECT_EQ(4u, lower_than_low_res_range.start);
+  EXPECT_EQ(5u, lower_than_low_res_range.end);
 
   scoped_ptr<PictureLayerTilingSet> set_without_low_res =
       CreateTilingSet(&client);
@@ -117,26 +119,26 @@ TEST(PictureLayerTilingSetTest, TilingRange) {
 
   higher_than_high_res_range = set_without_low_res->GetTilingRange(
       PictureLayerTilingSet::HIGHER_THAN_HIGH_RES);
-  EXPECT_EQ(0, higher_than_high_res_range.start);
-  EXPECT_EQ(1, higher_than_high_res_range.end);
+  EXPECT_EQ(0u, higher_than_high_res_range.start);
+  EXPECT_EQ(1u, higher_than_high_res_range.end);
 
   high_res_range =
       set_without_low_res->GetTilingRange(PictureLayerTilingSet::HIGH_RES);
-  EXPECT_EQ(1, high_res_range.start);
-  EXPECT_EQ(2, high_res_range.end);
+  EXPECT_EQ(1u, high_res_range.start);
+  EXPECT_EQ(2u, high_res_range.end);
 
   between_high_and_low_res_range = set_without_low_res->GetTilingRange(
       PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES);
-  EXPECT_EQ(2, between_high_and_low_res_range.start);
-  EXPECT_EQ(4, between_high_and_low_res_range.end);
+  EXPECT_EQ(2u, between_high_and_low_res_range.start);
+  EXPECT_EQ(4u, between_high_and_low_res_range.end);
 
   low_res_range =
       set_without_low_res->GetTilingRange(PictureLayerTilingSet::LOW_RES);
-  EXPECT_EQ(0, low_res_range.end - low_res_range.start);
+  EXPECT_EQ(0u, low_res_range.end - low_res_range.start);
 
   lower_than_low_res_range = set_without_low_res->GetTilingRange(
       PictureLayerTilingSet::LOWER_THAN_LOW_RES);
-  EXPECT_EQ(0, lower_than_low_res_range.end - lower_than_low_res_range.start);
+  EXPECT_EQ(0u, lower_than_low_res_range.end - lower_than_low_res_range.start);
 
   scoped_ptr<PictureLayerTilingSet> set_with_only_high_and_low_res =
       CreateTilingSet(&client);
@@ -147,28 +149,28 @@ TEST(PictureLayerTilingSetTest, TilingRange) {
 
   higher_than_high_res_range = set_with_only_high_and_low_res->GetTilingRange(
       PictureLayerTilingSet::HIGHER_THAN_HIGH_RES);
-  EXPECT_EQ(0,
+  EXPECT_EQ(0u,
             higher_than_high_res_range.end - higher_than_high_res_range.start);
 
   high_res_range = set_with_only_high_and_low_res->GetTilingRange(
       PictureLayerTilingSet::HIGH_RES);
-  EXPECT_EQ(0, high_res_range.start);
-  EXPECT_EQ(1, high_res_range.end);
+  EXPECT_EQ(0u, high_res_range.start);
+  EXPECT_EQ(1u, high_res_range.end);
 
   between_high_and_low_res_range =
       set_with_only_high_and_low_res->GetTilingRange(
           PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES);
-  EXPECT_EQ(0, between_high_and_low_res_range.end -
-                   between_high_and_low_res_range.start);
+  EXPECT_EQ(0u, between_high_and_low_res_range.end -
+                    between_high_and_low_res_range.start);
 
   low_res_range = set_with_only_high_and_low_res->GetTilingRange(
       PictureLayerTilingSet::LOW_RES);
-  EXPECT_EQ(1, low_res_range.start);
-  EXPECT_EQ(2, low_res_range.end);
+  EXPECT_EQ(1u, low_res_range.start);
+  EXPECT_EQ(2u, low_res_range.end);
 
   lower_than_low_res_range = set_with_only_high_and_low_res->GetTilingRange(
       PictureLayerTilingSet::LOWER_THAN_LOW_RES);
-  EXPECT_EQ(0, lower_than_low_res_range.end - lower_than_low_res_range.start);
+  EXPECT_EQ(0u, lower_than_low_res_range.end - lower_than_low_res_range.start);
 
   scoped_ptr<PictureLayerTilingSet> set_with_only_high_res =
       CreateTilingSet(&client);
@@ -177,26 +179,26 @@ TEST(PictureLayerTilingSetTest, TilingRange) {
 
   higher_than_high_res_range = set_with_only_high_res->GetTilingRange(
       PictureLayerTilingSet::HIGHER_THAN_HIGH_RES);
-  EXPECT_EQ(0,
+  EXPECT_EQ(0u,
             higher_than_high_res_range.end - higher_than_high_res_range.start);
 
   high_res_range =
       set_with_only_high_res->GetTilingRange(PictureLayerTilingSet::HIGH_RES);
-  EXPECT_EQ(0, high_res_range.start);
-  EXPECT_EQ(1, high_res_range.end);
+  EXPECT_EQ(0u, high_res_range.start);
+  EXPECT_EQ(1u, high_res_range.end);
 
   between_high_and_low_res_range = set_with_only_high_res->GetTilingRange(
       PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES);
-  EXPECT_EQ(0, between_high_and_low_res_range.end -
-                   between_high_and_low_res_range.start);
+  EXPECT_EQ(0u, between_high_and_low_res_range.end -
+                    between_high_and_low_res_range.start);
 
   low_res_range =
       set_with_only_high_res->GetTilingRange(PictureLayerTilingSet::LOW_RES);
-  EXPECT_EQ(0, low_res_range.end - low_res_range.start);
+  EXPECT_EQ(0u, low_res_range.end - low_res_range.start);
 
   lower_than_low_res_range = set_with_only_high_res->GetTilingRange(
       PictureLayerTilingSet::LOWER_THAN_LOW_RES);
-  EXPECT_EQ(0, lower_than_low_res_range.end - lower_than_low_res_range.start);
+  EXPECT_EQ(0u, lower_than_low_res_range.end - lower_than_low_res_range.start);
 }
 
 class PictureLayerTilingSetTestWithResources : public testing::Test {
@@ -214,13 +216,8 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
     scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
         new TestSharedBitmapManager());
     scoped_ptr<ResourceProvider> resource_provider =
-        ResourceProvider::Create(output_surface.get(),
-                                 shared_bitmap_manager.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 1);
+        FakeResourceProvider::Create(output_surface.get(),
+                                     shared_bitmap_manager.get());
 
     FakePictureLayerTilingClient client(resource_provider.get());
     client.SetTileSize(gfx::Size(256, 256));
@@ -334,6 +331,12 @@ TEST(PictureLayerTilingSetTest, TileSizeChange) {
     EXPECT_EQ(tile_size1, tile->content_rect().size());
 
   // Update to a new source frame with a new tile size.
+  // Note that setting a new raster source can typically only happen after
+  // activation, since we can't set the raster source twice on the pending tree
+  // without activating. For test, just remove and add a new tiling instead.
+  pending_set->RemoveAllTilings();
+  pending_set->AddTiling(1.f, pile);
+  pending_set->tiling_at(0)->set_resolution(HIGH_RESOLUTION);
   pending_client.SetTileSize(tile_size2);
   pending_set->UpdateTilingsToCurrentRasterSourceForCommit(pile.get(), Region(),
                                                            1.f, 1.f);

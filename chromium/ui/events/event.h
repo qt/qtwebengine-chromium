@@ -94,10 +94,7 @@ class EVENTS_EXPORT Event {
   bool IsRepeat() const { return (flags_ & EF_IS_REPEAT) != 0; }
 
   bool IsKeyEvent() const {
-    return type_ == ET_KEY_PRESSED ||
-           type_ == ET_KEY_RELEASED ||
-           type_ == ET_TRANSLATED_KEY_PRESS ||
-           type_ == ET_TRANSLATED_KEY_RELEASE;
+    return type_ == ET_KEY_PRESSED || type_ == ET_KEY_RELEASED;
   }
 
   bool IsMouseEvent() const {
@@ -518,7 +515,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   // The id of the pointer this event modifies.
   int touch_id() const { return touch_id_; }
   // A unique identifier for this event.
-  uint64 unique_event_id() const { return unique_event_id_; }
+  uint32 unique_event_id() const { return unique_event_id_; }
   // If we aren't provided with a radius on one axis, use the
   // information from the other axis.
   float radius_x() const { return radius_x_ > 0 ? radius_x_ : radius_y_; }
@@ -558,7 +555,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   const int touch_id_;
 
   // A unique identifier for the touch event.
-  const uint64 unique_event_id_;
+  const uint32 unique_event_id_;
 
   // Radius of the X (major) axis of the touch ellipse. 0.0 if unknown.
   float radius_x_;
@@ -602,8 +599,7 @@ class EVENTS_EXPORT ExtendedKeyEventData {
 //
 // For a keystroke event,
 // -- is_char_ is false.
-// -- Event::type() can be any one of ET_KEY_PRESSED, ET_KEY_RELEASED,
-//    ET_TRANSLATED_KEY_PRESS, or ET_TRANSLATED_KEY_RELEASE.
+// -- Event::type() can be any one of ET_KEY_PRESSED, ET_KEY_RELEASED.
 // -- code_ and Event::flags() represent the physical key event.
 //    - code_ is a platform-independent representation of the physical key,
 //      based on DOM KeyboardEvent |code| values. It does not vary depending
@@ -743,12 +739,6 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // Normalizes flags_ so that it describes the state after the event.
   // (Native X11 event flags describe the state before the event.)
   void NormalizeFlags();
-
-  // Returns true if the key event has already been processed by an input method
-  // and there is no need to pass the key event to the input method again.
-  bool IsTranslated() const;
-  // Marks this key event as translated or not translated.
-  void SetTranslated(bool translated);
 
  protected:
   friend class KeyEventTestApi;

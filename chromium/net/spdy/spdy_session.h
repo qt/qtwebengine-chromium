@@ -54,9 +54,10 @@ const size_t kInitialMaxConcurrentStreams = 100;
 // Specifies the maxiumum concurrent streams server could send (via push).
 const int kMaxConcurrentPushedStreams = 1000;
 
-// Specifies the maximum number of bytes to read synchronously before
-// yielding.
-const int kMaxReadBytesWithoutYielding = 32 * 1024;
+// If more than this many bytes have been read or more than that many
+// milliseconds have passed, return ERR_IO_PENDING from ReadLoop.
+const int kYieldAfterBytesRead = 32 * 1024;
+const int kYieldAfterDurationMilliseconds = 50;
 
 // First and last valid stream IDs. As we always act as the client,
 // start at 1 for the first stream id.
@@ -397,8 +398,8 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void MaybeFinishGoingAway();
 
   // Retrieves information on the current state of the SPDY session as a
-  // Value.  Caller takes possession of the returned value.
-  base::Value* GetInfoAsValue() const;
+  // Value.
+  scoped_ptr<base::Value> GetInfoAsValue() const;
 
   // Indicates whether the session is being reused after having successfully
   // used to send/receive data in the past or if the underlying socket was idle
@@ -502,7 +503,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // Default value of SETTINGS_INITIAL_WINDOW_SIZE per protocol specification.
   // A session is always created with this initial window size.
   static int32 GetDefaultInitialWindowSize(NextProto protocol) {
-    return protocol < kProtoSPDY4MinimumVersion ? 65536 : 65535;
+    return protocol < kProtoHTTP2MinimumVersion ? 65536 : 65535;
   }
 
   // https://http2.github.io/http2-spec/#TLSUsage mandates minimum security
@@ -831,8 +832,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void OnStreamPadding(SpdyStreamId stream_id, size_t len) override;
   void OnSettings(bool clear_persisted) override;
   void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) override;
-  void OnWindowUpdate(SpdyStreamId stream_id,
-                      uint32 delta_window_size) override;
+  void OnWindowUpdate(SpdyStreamId stream_id, int delta_window_size) override;
   void OnPushPromise(SpdyStreamId stream_id,
                      SpdyStreamId promised_stream_id,
                      const SpdyHeaderBlock& headers) override;
@@ -848,6 +848,8 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void OnHeaders(SpdyStreamId stream_id,
                  bool has_priority,
                  SpdyPriority priority,
+                 SpdyStreamId parent_stream_id,
+                 bool exclusive,
                  bool fin,
                  const SpdyHeaderBlock& headers) override;
   bool OnUnknownFrame(SpdyStreamId stream_id, int frame_type) override;
@@ -878,7 +880,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // window size to overflow, does nothing.
   //
   // If session flow control is turned off, this must not be called.
-  void IncreaseSendWindowSize(int32 delta_window_size);
+  void IncreaseSendWindowSize(int delta_window_size);
 
   // If session flow control is turned on, called by CreateDataFrame()
   // (which is in turn called by a stream) to decrease this session's

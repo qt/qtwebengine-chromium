@@ -745,8 +745,7 @@ Runtime.Module.prototype = {
             return Promise.resolve();
 
         if (Runtime.isReleaseMode()) {
-            var useRemote = this._descriptor.remote && Runtime.experiments.isEnabled("remoteModules");
-            var base = useRemote && Runtime._remoteBase || undefined;
+            var base = this._descriptor.remote && Runtime._remoteBase || undefined;
             return loadScriptsPromise([this._name + "_module.js"], base);
         }
 
@@ -991,6 +990,13 @@ Runtime.ExperimentsSupport.prototype = {
         this._enabledTransiently[experimentName] = true;
     },
 
+    clearForTest: function()
+    {
+        this._experiments = [];
+        this._experimentNames = {};
+        this._enabledTransiently = {};
+    },
+
     cleanUpStaleExperiments: function()
     {
         var experimentsSetting = Runtime._experimentsSetting();
@@ -1061,7 +1067,6 @@ Runtime.Experiment.prototype = {
 
 // This must be constructed after the query parameters have been parsed.
 Runtime.experiments = new Runtime.ExperimentsSupport();
-Runtime.experiments.register("remoteModules", "Remote Modules", true);
 
 /**
  * @type {?string}

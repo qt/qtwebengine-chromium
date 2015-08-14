@@ -20,6 +20,10 @@
 #include "ipc/ipc_platform_file_attachment_posix.h"
 #endif
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "base/memory/shared_memory_handle.h"
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
 #if defined(OS_WIN)
 #include <tchar.h>
 #endif
@@ -54,7 +58,9 @@ void LogBytes(const std::vector<CharType>& data, std::string* out) {
 #endif
 }
 
-bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
+bool ReadValue(const Message* m,
+               base::PickleIterator* iter,
+               base::Value** value,
                int recursion);
 
 void WriteValue(Message* m, const base::Value* value, int recursion) {
@@ -130,8 +136,10 @@ void WriteValue(Message* m, const base::Value* value, int recursion) {
 
 // Helper for ReadValue that reads a DictionaryValue into a pre-allocated
 // object.
-bool ReadDictionaryValue(const Message* m, PickleIterator* iter,
-                         base::DictionaryValue* value, int recursion) {
+bool ReadDictionaryValue(const Message* m,
+                         base::PickleIterator* iter,
+                         base::DictionaryValue* value,
+                         int recursion) {
   int size;
   if (!ReadParam(m, iter, &size))
     return false;
@@ -150,8 +158,10 @@ bool ReadDictionaryValue(const Message* m, PickleIterator* iter,
 
 // Helper for ReadValue that reads a ReadListValue into a pre-allocated
 // object.
-bool ReadListValue(const Message* m, PickleIterator* iter,
-                   base::ListValue* value, int recursion) {
+bool ReadListValue(const Message* m,
+                   base::PickleIterator* iter,
+                   base::ListValue* value,
+                   int recursion) {
   int size;
   if (!ReadParam(m, iter, &size))
     return false;
@@ -166,7 +176,9 @@ bool ReadListValue(const Message* m, PickleIterator* iter,
   return true;
 }
 
-bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
+bool ReadValue(const Message* m,
+               base::PickleIterator* iter,
+               base::Value** value,
                int recursion) {
   if (recursion > kMaxRecursionDepth) {
     LOG(WARNING) << "Max recursion depth hit in ReadValue.";
@@ -261,8 +273,9 @@ void ParamTraits<unsigned char>::Write(Message* m, const param_type& p) {
   m->WriteBytes(&p, sizeof(param_type));
 }
 
-bool ParamTraits<unsigned char>::Read(const Message* m, PickleIterator* iter,
-                                       param_type* r) {
+bool ParamTraits<unsigned char>::Read(const Message* m,
+                                      base::PickleIterator* iter,
+                                      param_type* r) {
   const char* data;
   if (!iter->ReadBytes(&data, sizeof(param_type)))
     return false;
@@ -278,7 +291,8 @@ void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
   m->WriteBytes(&p, sizeof(param_type));
 }
 
-bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<unsigned short>::Read(const Message* m,
+                                       base::PickleIterator* iter,
                                        param_type* r) {
   const char* data;
   if (!iter->ReadBytes(&data, sizeof(param_type)))
@@ -323,7 +337,8 @@ void ParamTraits<double>::Write(Message* m, const param_type& p) {
   m->WriteBytes(reinterpret_cast<const char*>(&p), sizeof(param_type));
 }
 
-bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<double>::Read(const Message* m,
+                               base::PickleIterator* iter,
                                param_type* r) {
   const char *data;
   if (!iter->ReadBytes(&data, sizeof(*r))) {
@@ -355,9 +370,9 @@ void ParamTraits<std::vector<char> >::Write(Message* m, const param_type& p) {
   }
 }
 
-bool ParamTraits<std::vector<char> >::Read(const Message* m,
-                                           PickleIterator* iter,
-                                           param_type* r) {
+bool ParamTraits<std::vector<char>>::Read(const Message* m,
+                                          base::PickleIterator* iter,
+                                          param_type* r) {
   const char *data;
   int data_size = 0;
   if (!iter->ReadData(&data, &data_size) || data_size < 0)
@@ -382,9 +397,9 @@ void ParamTraits<std::vector<unsigned char> >::Write(Message* m,
   }
 }
 
-bool ParamTraits<std::vector<unsigned char> >::Read(const Message* m,
-                                                    PickleIterator* iter,
-                                                    param_type* r) {
+bool ParamTraits<std::vector<unsigned char>>::Read(const Message* m,
+                                                   base::PickleIterator* iter,
+                                                   param_type* r) {
   const char *data;
   int data_size = 0;
   if (!iter->ReadData(&data, &data_size) || data_size < 0)
@@ -409,9 +424,9 @@ void ParamTraits<std::vector<bool> >::Write(Message* m, const param_type& p) {
     WriteParam(m, static_cast<bool>(p[i]));
 }
 
-bool ParamTraits<std::vector<bool> >::Read(const Message* m,
-                                           PickleIterator* iter,
-                                           param_type* r) {
+bool ParamTraits<std::vector<bool>>::Read(const Message* m,
+                                          base::PickleIterator* iter,
+                                          param_type* r) {
   int size;
   // ReadLength() checks for < 0 itself.
   if (!iter->ReadLength(&size))
@@ -434,13 +449,36 @@ void ParamTraits<std::vector<bool> >::Log(const param_type& p, std::string* l) {
   }
 }
 
+void ParamTraits<BrokerableAttachment::AttachmentId>::Write(
+    Message* m,
+    const param_type& p) {
+  m->WriteBytes(p.nonce, BrokerableAttachment::kNonceSize);
+}
+
+bool ParamTraits<BrokerableAttachment::AttachmentId>::Read(
+    const Message* m,
+    base::PickleIterator* iter,
+    param_type* r) {
+  const char* data;
+  if (!iter->ReadBytes(&data, BrokerableAttachment::kNonceSize))
+    return false;
+  memcpy(r->nonce, data, BrokerableAttachment::kNonceSize);
+  return true;
+}
+
+void ParamTraits<BrokerableAttachment::AttachmentId>::Log(const param_type& p,
+                                                          std::string* l) {
+  l->append(base::HexEncode(p.nonce, BrokerableAttachment::kNonceSize));
+}
+
 void ParamTraits<base::DictionaryValue>::Write(Message* m,
                                                const param_type& p) {
   WriteValue(m, &p, 0);
 }
 
-bool ParamTraits<base::DictionaryValue>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<base::DictionaryValue>::Read(const Message* m,
+                                              base::PickleIterator* iter,
+                                              param_type* r) {
   int type;
   if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_DICTIONARY)
     return false;
@@ -451,7 +489,7 @@ bool ParamTraits<base::DictionaryValue>::Read(
 void ParamTraits<base::DictionaryValue>::Log(const param_type& p,
                                              std::string* l) {
   std::string json;
-  base::JSONWriter::Write(&p, &json);
+  base::JSONWriter::Write(p, &json);
   l->append(json);
 }
 
@@ -474,7 +512,7 @@ void ParamTraits<base::FileDescriptor>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<base::FileDescriptor>::Read(const Message* m,
-                                             PickleIterator* iter,
+                                             base::PickleIterator* iter,
                                              param_type* r) {
   *r = base::FileDescriptor();
 
@@ -504,12 +542,64 @@ void ParamTraits<base::FileDescriptor>::Log(const param_type& p,
 }
 #endif  // defined(OS_POSIX)
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void ParamTraits<base::SharedMemoryHandle>::Write(Message* m,
+                                                  const param_type& p) {
+  m->WriteInt(p.GetType());
+
+  if (p.GetType() == base::SharedMemoryHandle::POSIX)
+    ParamTraits<base::FileDescriptor>::Write(m, p.GetFileDescriptor());
+}
+
+bool ParamTraits<base::SharedMemoryHandle>::Read(const Message* m,
+                                                 base::PickleIterator* iter,
+                                                 param_type* r) {
+  base::SharedMemoryHandle::TypeWireFormat type;
+  if (!iter->ReadInt(&type))
+    return false;
+
+  base::SharedMemoryHandle::Type shm_type = base::SharedMemoryHandle::POSIX;
+  switch (type) {
+    case base::SharedMemoryHandle::POSIX:
+    case base::SharedMemoryHandle::MACH: {
+      shm_type = static_cast<base::SharedMemoryHandle::Type>(type);
+      break;
+    }
+    default:
+      return false;
+  }
+
+  if (shm_type == base::SharedMemoryHandle::POSIX) {
+    base::FileDescriptor file_descriptor;
+
+    bool success =
+        ParamTraits<base::FileDescriptor>::Read(m, iter, &file_descriptor);
+    if (!success)
+      return false;
+
+    *r = base::SharedMemoryHandle(file_descriptor.fd,
+                                  file_descriptor.auto_close);
+    return true;
+  }
+
+  return true;
+}
+
+void ParamTraits<base::SharedMemoryHandle>::Log(const param_type& p,
+                                                std::string* l) {
+  if (p.GetType() == base::SharedMemoryHandle::POSIX) {
+    l->append(base::StringPrintf("Mechanism POSIX Fd"));
+    ParamTraits<base::FileDescriptor>::Log(p.GetFileDescriptor(), l);
+  }
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
 void ParamTraits<base::FilePath>::Write(Message* m, const param_type& p) {
   p.WriteToPickle(m);
 }
 
 bool ParamTraits<base::FilePath>::Read(const Message* m,
-                                       PickleIterator* iter,
+                                       base::PickleIterator* iter,
                                        param_type* r) {
   return r->ReadFromPickle(iter);
 }
@@ -522,8 +612,9 @@ void ParamTraits<base::ListValue>::Write(Message* m, const param_type& p) {
   WriteValue(m, &p, 0);
 }
 
-bool ParamTraits<base::ListValue>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
+bool ParamTraits<base::ListValue>::Read(const Message* m,
+                                        base::PickleIterator* iter,
+                                        param_type* r) {
   int type;
   if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_LIST)
     return false;
@@ -533,7 +624,7 @@ bool ParamTraits<base::ListValue>::Read(
 
 void ParamTraits<base::ListValue>::Log(const param_type& p, std::string* l) {
   std::string json;
-  base::JSONWriter::Write(&p, &json);
+  base::JSONWriter::Write(p, &json);
   l->append(json);
 }
 
@@ -544,7 +635,7 @@ void ParamTraits<base::NullableString16>::Write(Message* m,
 }
 
 bool ParamTraits<base::NullableString16>::Read(const Message* m,
-                                               PickleIterator* iter,
+                                               base::PickleIterator* iter,
                                                param_type* r) {
   base::string16 string;
   if (!ReadParam(m, iter, &string))
@@ -575,7 +666,7 @@ void ParamTraits<base::File::Info>::Write(Message* m,
 }
 
 bool ParamTraits<base::File::Info>::Read(const Message* m,
-                                         PickleIterator* iter,
+                                         base::PickleIterator* iter,
                                          param_type* p) {
   double last_modified, last_accessed, creation_time;
   if (!ReadParam(m, iter, &p->size) ||
@@ -609,7 +700,8 @@ void ParamTraits<base::Time>::Write(Message* m, const param_type& p) {
   ParamTraits<int64>::Write(m, p.ToInternalValue());
 }
 
-bool ParamTraits<base::Time>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<base::Time>::Read(const Message* m,
+                                   base::PickleIterator* iter,
                                    param_type* r) {
   int64 value;
   if (!ParamTraits<int64>::Read(m, iter, &value))
@@ -627,7 +719,7 @@ void ParamTraits<base::TimeDelta>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<base::TimeDelta>::Read(const Message* m,
-                                        PickleIterator* iter,
+                                        base::PickleIterator* iter,
                                         param_type* r) {
   int64 value;
   bool ret = ParamTraits<int64>::Read(m, iter, &value);
@@ -646,7 +738,7 @@ void ParamTraits<base::TimeTicks>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<base::TimeTicks>::Read(const Message* m,
-                                        PickleIterator* iter,
+                                        base::PickleIterator* iter,
                                         param_type* r) {
   int64 value;
   bool ret = ParamTraits<int64>::Read(m, iter, &value);
@@ -657,6 +749,25 @@ bool ParamTraits<base::TimeTicks>::Read(const Message* m,
 }
 
 void ParamTraits<base::TimeTicks>::Log(const param_type& p, std::string* l) {
+  ParamTraits<int64>::Log(p.ToInternalValue(), l);
+}
+
+void ParamTraits<base::TraceTicks>::Write(Message* m, const param_type& p) {
+  ParamTraits<int64>::Write(m, p.ToInternalValue());
+}
+
+bool ParamTraits<base::TraceTicks>::Read(const Message* m,
+                                         base::PickleIterator* iter,
+                                         param_type* r) {
+  int64 value;
+  bool ret = ParamTraits<int64>::Read(m, iter, &value);
+  if (ret)
+    *r = base::TraceTicks::FromInternalValue(value);
+
+  return ret;
+}
+
+void ParamTraits<base::TraceTicks>::Log(const param_type& p, std::string* l) {
   ParamTraits<int64>::Log(p.ToInternalValue(), l);
 }
 
@@ -672,7 +783,7 @@ void ParamTraits<IPC::ChannelHandle>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<IPC::ChannelHandle>::Read(const Message* m,
-                                           PickleIterator* iter,
+                                           base::PickleIterator* iter,
                                            param_type* r) {
   return ReadParam(m, iter, &r->name)
 #if defined(OS_POSIX)
@@ -704,7 +815,7 @@ void ParamTraits<LogData>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<LogData>::Read(const Message* m,
-                                PickleIterator* iter,
+                                base::PickleIterator* iter,
                                 param_type* r) {
   return
       ReadParam(m, iter, &r->channel) &&
@@ -745,7 +856,8 @@ void ParamTraits<Message>::Write(Message* m, const Message& p) {
   m->WriteData(p.payload(), static_cast<uint32>(p.payload_size()));
 }
 
-bool ParamTraits<Message>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<Message>::Read(const Message* m,
+                                base::PickleIterator* iter,
                                 Message* r) {
   uint32 routing_id, type, flags;
   if (!iter->ReadUInt32(&routing_id) ||
@@ -773,7 +885,8 @@ void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
   m->WriteInt(HandleToLong(p));
 }
 
-bool ParamTraits<HANDLE>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<HANDLE>::Read(const Message* m,
+                               base::PickleIterator* iter,
                                param_type* r) {
   int32 temp;
   if (!iter->ReadInt(&temp))
@@ -790,7 +903,8 @@ void ParamTraits<LOGFONT>::Write(Message* m, const param_type& p) {
   m->WriteData(reinterpret_cast<const char*>(&p), sizeof(LOGFONT));
 }
 
-bool ParamTraits<LOGFONT>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<LOGFONT>::Read(const Message* m,
+                                base::PickleIterator* iter,
                                 param_type* r) {
   const char *data;
   int data_size = 0;
@@ -814,7 +928,8 @@ void ParamTraits<MSG>::Write(Message* m, const param_type& p) {
   m->WriteData(reinterpret_cast<const char*>(&p), sizeof(MSG));
 }
 
-bool ParamTraits<MSG>::Read(const Message* m, PickleIterator* iter,
+bool ParamTraits<MSG>::Read(const Message* m,
+                            base::PickleIterator* iter,
                             param_type* r) {
   const char *data;
   int data_size = 0;

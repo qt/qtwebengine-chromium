@@ -15,7 +15,6 @@
 #include "base/observer_list.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/cursor/cursor_loader_x11.h"
-#include "ui/events/event_source.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
@@ -43,7 +42,6 @@ class X11WindowEventFilter;
 class VIEWS_EXPORT DesktopWindowTreeHostX11
     : public DesktopWindowTreeHost,
       public aura::WindowTreeHost,
-      public ui::EventSource,
       public ui::PlatformEventDispatcher {
  public:
   DesktopWindowTreeHostX11(
@@ -102,6 +100,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void ShowMaximizedWithBounds(const gfx::Rect& restored_bounds) override;
   bool IsVisible() const override;
   void SetSize(const gfx::Size& requested_size) override;
+  void StackAbove(aura::Window* window) override;
   void StackAtTop() override;
   void CenterWindow(const gfx::Size& size) override;
   void GetWindowPlacement(gfx::Rect* bounds,
@@ -110,7 +109,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   gfx::Rect GetClientAreaBoundsInScreen() const override;
   gfx::Rect GetRestoredBounds() const override;
   gfx::Rect GetWorkAreaBoundsInScreen() const override;
-  void SetShape(gfx::NativeRegion native_region) override;
+  void SetShape(SkRegion* native_region) override;
   void Activate() override;
   void Deactivate() override;
   bool IsActive() const override;
@@ -152,8 +151,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   gfx::Transform GetRootTransform() const override;
   ui::EventSource* GetEventSource() override;
   gfx::AcceleratedWidget GetAcceleratedWidget() override;
-  void Show() override;
-  void Hide() override;
+  void ShowImpl() override;
+  void HideImpl() override;
   gfx::Rect GetBounds() const override;
   void SetBounds(const gfx::Rect& requested_bounds_in_pixels) override;
   gfx::Point GetLocationOnNativeScreen() const override;
@@ -162,9 +161,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToNative(const gfx::Point& location) override;
   void OnCursorVisibilityChangedNative(bool show) override;
-
-  // Overridden frm ui::EventSource
-  ui::EventProcessor* GetEventProcessor() override;
 
  private:
   friend class DesktopWindowTreeHostX11HighDPITest;
@@ -320,7 +316,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   DesktopWindowTreeHostX11* window_parent_;
   std::set<DesktopWindowTreeHostX11*> window_children_;
 
-  ObserverList<DesktopWindowTreeHostObserverX11> observer_list_;
+  base::ObserverList<DesktopWindowTreeHostObserverX11> observer_list_;
 
   // The window shape if the window is non-rectangular.
   gfx::XScopedPtr<_XRegion, gfx::XObjectDeleter<_XRegion, int, XDestroyRegion>>

@@ -13,20 +13,26 @@
 namespace blink {
 
 // static
-DOMException* PresentationError::take(WebPresentationError* errorRaw)
+DOMException* PresentationError::take(const WebPresentationError& error)
 {
-    ASSERT(errorRaw);
-    OwnPtr<WebPresentationError> error = adoptPtr(errorRaw);
+    ExceptionCode code = UnknownError;
+    switch (error.errorType) {
+    case WebPresentationError::ErrorTypeNoAvailableScreens:
+    case WebPresentationError::ErrorTypeNoPresentationFound:
+        code = NotFoundError;
+        break;
+    case WebPresentationError::ErrorTypeSessionRequestCancelled:
+        code = AbortError;
+        break;
+    case WebPresentationError::ErrorTypeAvailabilityNotSupported:
+        code = NotSupportedError;
+        break;
+    case WebPresentationError::ErrorTypeUnknown:
+        code = UnknownError;
+        break;
+    }
 
-    // TODO(avayvod): figure out the mapping between WebPresentationError and
-    // DOMException error codes.
-    return DOMException::create(InvalidAccessError, error->message);
-}
-
-// static
-void PresentationError::dispose(WebPresentationError* error)
-{
-    delete error;
+    return DOMException::create(code, error.message);
 }
 
 } // namespace blink

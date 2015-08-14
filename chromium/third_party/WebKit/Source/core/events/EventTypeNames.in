@@ -37,9 +37,6 @@ blur
 boundary
 cached
 cancel
-candidatewindowhide
-candidatewindowshow
-candidatewindowupdate
 canplay
 canplaythrough
 change
@@ -109,6 +106,7 @@ gestureshowpress
 gesturetap
 gesturetapdown
 gesturetapunconfirmed
+gotpointercapture
 hashchange
 icecandidate
 iceconnectionstatechange
@@ -130,6 +128,7 @@ loading
 loadingdone
 loadingerror
 loadstart
+lostpointercapture
 mark
 message
 midimessage
@@ -152,7 +151,6 @@ offline
 online
 open
 orientationchange
-overflowchanged
 pagehide
 pageshow
 paste
@@ -160,13 +158,22 @@ pause
 periodicsync
 play
 playing
+pointercancel
+pointerdown
+pointerenter
+pointerleave
 pointerlockchange
 pointerlockerror
+pointermove
+pointerout
+pointerover
+pointerup
 popstate
 progress
 push
 ratechange
 readystatechange
+rejectionhandled
 removesourcebuffer
 removestream
 removetrack
@@ -211,6 +218,7 @@ touchmove
 touchstart
 transitionend
 typechange
+unhandledrejection
 unload
 unmute
 update

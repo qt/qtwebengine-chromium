@@ -234,6 +234,10 @@
           {
             "title": "Add to Homescreen",
             "href": "/multidevice/android/installtohomescreen"
+          },
+          {
+            "title": "Chrome Custom Tabs",
+            "href": "/multidevice/android/customtabs"
           }
         ]
       },
@@ -409,14 +413,6 @@
               {
                 "title": "Managing Offline Storage",
                 "href": "/apps/offline_storage"
-              },
-              {
-                "title": "Keep Users Informed",
-                "href": "/apps/inform_users"
-              },
-              {
-                "title": "Cloud Messaging",
-                "href": "/apps/cloudMessaging"
               },
               {
                 "title": "Native Messaging",

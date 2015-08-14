@@ -16,10 +16,6 @@ const char kDisableNewVideoRenderer[] = "disable-new-video-renderer";
 const char kVideoThreads[] = "video-threads";
 
 #if defined(OS_ANDROID)
-// Disables the infobar popup for accessing protected media identifier.
-const char kDisableInfobarForProtectedMediaIdentifier[] =
-    "disable-infobar-for-protected-media-identifier";
-
 // Sets the MediaSource player that uses the separate media thread
 const char kEnableMediaThreadForMediaPlayback[] =
     "enable-media-thread-for-media-playback";
@@ -31,6 +27,11 @@ const char kAlsaInputDevice[] = "alsa-input-device";
 // The Alsa device to use when opening an audio stream.
 const char kAlsaOutputDevice[] = "alsa-output-device";
 #endif
+
+// Use GpuMemoryBuffers for Video Capture when this is an option for the device.
+// Experimental, see http://crbug.com/503835 and http://crbug.com/440843.
+const char kUseGpuMemoryBuffersForCapture[] =
+    "use-gpu-memory-buffers-for-capture";
 
 #if defined(OS_MACOSX)
 // AVFoundation is available in versions 10.7 and onwards, and is to be used

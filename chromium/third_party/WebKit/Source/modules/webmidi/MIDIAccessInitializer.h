@@ -20,7 +20,6 @@ class MIDIOptions;
 class ScriptState;
 
 class MODULES_EXPORT MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
-    WILL_BE_USING_PRE_FINALIZER(MIDIAccessInitializer, dispose);
 public:
     struct PortDescriptor {
         String id;
@@ -49,6 +48,10 @@ public:
 
     ~MIDIAccessInitializer() override;
 
+    // Eager finalization to allow dispose() operation access
+    // other (non eager) heap objects.
+    EAGERLY_FINALIZE();
+
     // MIDIAccessorClient
     void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, MIDIAccessor::MIDIPortState) override;
     void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, MIDIAccessor::MIDIPortState) override;
@@ -67,7 +70,7 @@ private:
     ScriptPromise start();
     void dispose();
 
-    virtual void contextDestroyed() override;
+    void contextDestroyed() override;
 
     OwnPtr<MIDIAccessor> m_accessor;
     Vector<PortDescriptor> m_portDescriptors;

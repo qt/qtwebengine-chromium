@@ -103,7 +103,6 @@ static const CodecPref kCodecPrefs[] = {
 
 #ifdef WIN32
 static const int kDefaultAudioDeviceId = -1;
-static const int kDefaultSoundclipDeviceId = -2;
 #else
 static const int kDefaultAudioDeviceId = 0;
 #endif
@@ -353,11 +352,12 @@ static AudioOptions GetDefaultEngineOptions() {
   options.highpass_filter.Set(true);
   options.stereo_swapping.Set(false);
   options.audio_jitter_buffer_max_packets.Set(50);
+  options.audio_jitter_buffer_fast_accelerate.Set(false);
   options.typing_detection.Set(true);
   options.conference_mode.Set(false);
   options.adjust_agc_delta.Set(0);
   options.experimental_agc.Set(false);
-  options.experimental_aec.Set(false);
+  options.extended_filter_aec.Set(false);
   options.delay_agnostic_aec.Set(false);
   options.experimental_ns.Set(false);
   options.aec_dump.Set(false);
@@ -368,103 +368,10 @@ static std::string GetEnableString(bool enable) {
   return enable ? "enable" : "disable";
 }
 
-class WebRtcSoundclipMedia : public SoundclipMedia {
- public:
-  explicit WebRtcSoundclipMedia(WebRtcVoiceEngine *engine)
-      : engine_(engine), webrtc_channel_(-1) {
-    engine_->RegisterSoundclip(this);
-  }
-
-  ~WebRtcSoundclipMedia() override {
-    engine_->UnregisterSoundclip(this);
-    if (webrtc_channel_ != -1) {
-      // We shouldn't have to call Disable() here. DeleteChannel() should call
-      // StopPlayout() while deleting the channel.  We should fix the bug
-      // inside WebRTC and remove the Disable() call bellow.  This work is
-      // tracked by bug http://b/issue?id=5382855.
-      PlaySound(NULL, 0, 0);
-      Disable();
-      if (engine_->voe_sc()->base()->DeleteChannel(webrtc_channel_)
-          == -1) {
-        LOG_RTCERR1(DeleteChannel, webrtc_channel_);
-      }
-    }
-  }
-
-  bool Init() {
-    if (!engine_->voe_sc()) {
-      return false;
-    }
-    webrtc_channel_ = engine_->CreateSoundclipVoiceChannel();
-    if (webrtc_channel_ == -1) {
-      LOG_RTCERR0(CreateChannel);
-      return false;
-    }
-    return true;
-  }
-
-  bool Enable() {
-    if (engine_->voe_sc()->base()->StartPlayout(webrtc_channel_) == -1) {
-      LOG_RTCERR1(StartPlayout, webrtc_channel_);
-      return false;
-    }
-    return true;
-  }
-
-  bool Disable() {
-    if (engine_->voe_sc()->base()->StopPlayout(webrtc_channel_) == -1) {
-      LOG_RTCERR1(StopPlayout, webrtc_channel_);
-      return false;
-    }
-    return true;
-  }
-
-  bool PlaySound(const char* buf, int len, int flags) override {
-    // The voe file api is not available in chrome.
-    if (!engine_->voe_sc()->file()) {
-      return false;
-    }
-    // Must stop playing the current sound (if any), because we are about to
-    // modify the stream.
-    if (engine_->voe_sc()->file()->StopPlayingFileLocally(webrtc_channel_)
-        == -1) {
-      LOG_RTCERR1(StopPlayingFileLocally, webrtc_channel_);
-      return false;
-    }
-
-    if (buf) {
-      stream_.reset(new WebRtcSoundclipStream(buf, len));
-      stream_->set_loop((flags & SF_LOOP) != 0);
-      stream_->Rewind();
-
-      // Play it.
-      if (engine_->voe_sc()->file()->StartPlayingFileLocally(
-          webrtc_channel_, stream_.get()) == -1) {
-        LOG_RTCERR2(StartPlayingFileLocally, webrtc_channel_, stream_.get());
-        LOG(LS_ERROR) << "Unable to start soundclip";
-        return false;
-      }
-    } else {
-      stream_.reset();
-    }
-    return true;
-  }
-
-  int GetLastEngineError() const { return engine_->voe_sc()->error(); }
-
- private:
-  WebRtcVoiceEngine *engine_;
-  int webrtc_channel_;
-  rtc::scoped_ptr<WebRtcSoundclipStream> stream_;
-};
-
 WebRtcVoiceEngine::WebRtcVoiceEngine()
     : voe_wrapper_(new VoEWrapper()),
-      voe_wrapper_sc_(new VoEWrapper()),
-      voe_wrapper_sc_initialized_(false),
       tracing_(new VoETraceWrapper()),
       adm_(NULL),
-      adm_sc_(NULL),
       log_filter_(SeverityToFilter(kDefaultLogSeverity)),
       is_dumping_aec_(false),
       desired_local_monitor_enable_(false),
@@ -474,14 +381,10 @@ WebRtcVoiceEngine::WebRtcVoiceEngine()
 }
 
 WebRtcVoiceEngine::WebRtcVoiceEngine(VoEWrapper* voe_wrapper,
-                                     VoEWrapper* voe_wrapper_sc,
                                      VoETraceWrapper* tracing)
     : voe_wrapper_(voe_wrapper),
-      voe_wrapper_sc_(voe_wrapper_sc),
-      voe_wrapper_sc_initialized_(false),
       tracing_(tracing),
       adm_(NULL),
-      adm_sc_(NULL),
       log_filter_(SeverityToFilter(kDefaultLogSeverity)),
       is_dumping_aec_(false),
       desired_local_monitor_enable_(false),
@@ -593,11 +496,6 @@ WebRtcVoiceEngine::~WebRtcVoiceEngine() {
     adm_->Release();
     adm_ = NULL;
   }
-  if (adm_sc_) {
-    voe_wrapper_sc_.reset();
-    adm_sc_->Release();
-    adm_sc_ = NULL;
-  }
 
   // Test to see if the media processor was deregistered properly
   DCHECK(SignalRxMediaFrame.is_empty());
@@ -673,61 +571,12 @@ bool WebRtcVoiceEngine::InitInternal() {
   return true;
 }
 
-bool WebRtcVoiceEngine::EnsureSoundclipEngineInit() {
-  if (voe_wrapper_sc_initialized_) {
-    return true;
-  }
-  // Note that, if initialization fails, voe_wrapper_sc_initialized_ will still
-  // be false, so subsequent calls to EnsureSoundclipEngineInit will
-  // probably just fail again. That's acceptable behavior.
-#if defined(LINUX) && !defined(HAVE_LIBPULSE)
-  voe_wrapper_sc_->hw()->SetAudioDeviceLayer(webrtc::kAudioLinuxAlsa);
-#endif
-
-  // Initialize the VoiceEngine instance that we'll use to play out sound clips.
-  if (voe_wrapper_sc_->base()->Init(adm_sc_) == -1) {
-    LOG_RTCERR0_EX(Init, voe_wrapper_sc_->error());
-    return false;
-  }
-
-  // On Windows, tell it to use the default sound (not communication) devices.
-  // First check whether there is a valid sound device for playback.
-  // TODO(juberti): Clean this up when we support setting the soundclip device.
-#ifdef WIN32
-  // The SetPlayoutDevice may not be implemented in the case of external ADM.
-  // TODO(ronghuawu): We should only check the adm_sc_ here, but current
-  // PeerConnection interface never set the adm_sc_, so need to check both
-  // in order to determine if the external adm is used.
-  if (!adm_ && !adm_sc_) {
-    int num_of_devices = 0;
-    if (voe_wrapper_sc_->hw()->GetNumOfPlayoutDevices(num_of_devices) != -1 &&
-        num_of_devices > 0) {
-      if (voe_wrapper_sc_->hw()->SetPlayoutDevice(kDefaultSoundclipDeviceId)
-          == -1) {
-        LOG_RTCERR1_EX(SetPlayoutDevice, kDefaultSoundclipDeviceId,
-                       voe_wrapper_sc_->error());
-        return false;
-      }
-    } else {
-      LOG(LS_WARNING) << "No valid sound playout device found.";
-    }
-  }
-#endif
-  voe_wrapper_sc_initialized_ = true;
-  LOG(LS_INFO) << "Initialized WebRtc soundclip engine.";
-  return true;
-}
-
 void WebRtcVoiceEngine::Terminate() {
   LOG(LS_INFO) << "WebRtcVoiceEngine::Terminate";
   initialized_ = false;
 
   StopAecDump();
 
-  if (voe_wrapper_sc_) {
-    voe_wrapper_sc_initialized_ = false;
-    voe_wrapper_sc_->base()->Terminate();
-  }
   voe_wrapper_->base()->Terminate();
   desired_local_monitor_enable_ = false;
 }
@@ -736,27 +585,17 @@ int WebRtcVoiceEngine::GetCapabilities() {
   return AUDIO_SEND | AUDIO_RECV;
 }
 
-VoiceMediaChannel *WebRtcVoiceEngine::CreateChannel() {
+VoiceMediaChannel* WebRtcVoiceEngine::CreateChannel(
+    const AudioOptions& options) {
   WebRtcVoiceMediaChannel* ch = new WebRtcVoiceMediaChannel(this);
   if (!ch->valid()) {
     delete ch;
-    ch = NULL;
+    return nullptr;
+  }
+  if (!ch->SetOptions(options)) {
+    LOG(LS_WARNING) << "Failed to set options while creating channel.";
   }
   return ch;
-}
-
-SoundclipMedia *WebRtcVoiceEngine::CreateSoundclip() {
-  if (!EnsureSoundclipEngineInit()) {
-    LOG(LS_ERROR) << "Unable to create soundclip: soundclip engine failed to "
-                  << "initialize.";
-    return NULL;
-  }
-  WebRtcSoundclipMedia *soundclip = new WebRtcSoundclipMedia(this);
-  if (!soundclip->Init() || !soundclip->Enable()) {
-    delete soundclip;
-    return NULL;
-  }
-  return soundclip;
 }
 
 bool WebRtcVoiceEngine::SetOptions(const AudioOptions& options) {
@@ -822,7 +661,7 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
   agc_mode = webrtc::kAgcFixedDigital;
   options.typing_detection.Set(false);
   options.experimental_agc.Set(false);
-  options.experimental_aec.Set(false);
+  options.extended_filter_aec.Set(false);
   options.experimental_ns.Set(false);
 #endif
 
@@ -833,7 +672,7 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
   if (options.delay_agnostic_aec.Get(&use_delay_agnostic_aec)) {
     if (use_delay_agnostic_aec) {
       options.echo_cancellation.Set(true);
-      options.experimental_aec.Set(true);
+      options.extended_filter_aec.Set(true);
       ec_mode = webrtc::kEcConference;
     }
   }
@@ -850,12 +689,14 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     // TODO(henrika): investigate possibility to support built-in EC also
     // in combination with Open SL ES audio.
     const bool built_in_aec = voe_wrapper_->hw()->BuiltInAECIsAvailable();
-    if (built_in_aec && !use_delay_agnostic_aec) {
+    if (built_in_aec) {
       // Built-in EC exists on this device and use_delay_agnostic_aec is not
       // overriding it. Enable/Disable it according to the echo_cancellation
       // audio option.
-      if (voe_wrapper_->hw()->EnableBuiltInAEC(echo_cancellation) == 0 &&
-          echo_cancellation) {
+      const bool enable_built_in_aec =
+          echo_cancellation && !use_delay_agnostic_aec;
+      if (voe_wrapper_->hw()->EnableBuiltInAEC(enable_built_in_aec) == 0 &&
+          enable_built_in_aec) {
         // Disable internal software EC if built-in EC is enabled,
         // i.e., replace the software EC with the built-in EC.
         options.echo_cancellation.Set(false);
@@ -963,6 +804,14 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
         new webrtc::NetEqCapacityConfig(audio_jitter_buffer_max_packets));
   }
 
+  bool audio_jitter_buffer_fast_accelerate;
+  if (options.audio_jitter_buffer_fast_accelerate.Get(
+          &audio_jitter_buffer_fast_accelerate)) {
+    LOG(LS_INFO) << "NetEq fast mode? " << audio_jitter_buffer_fast_accelerate;
+    voe_config_.Set<webrtc::NetEqFastAccelerate>(
+        new webrtc::NetEqFastAccelerate(audio_jitter_buffer_fast_accelerate));
+  }
+
   bool typing_detection;
   if (options.typing_detection.Get(&typing_detection)) {
     LOG(LS_INFO) << "Typing detection is enabled? " << typing_detection;
@@ -995,16 +844,16 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
   bool delay_agnostic_aec;
   if (delay_agnostic_aec_.Get(&delay_agnostic_aec)) {
     LOG(LS_INFO) << "Delay agnostic aec is enabled? " << delay_agnostic_aec;
-    config.Set<webrtc::ReportedDelay>(
-        new webrtc::ReportedDelay(!delay_agnostic_aec));
+    config.Set<webrtc::DelayAgnostic>(
+        new webrtc::DelayAgnostic(delay_agnostic_aec));
   }
 
-  experimental_aec_.SetFrom(options.experimental_aec);
-  bool experimental_aec;
-  if (experimental_aec_.Get(&experimental_aec)) {
-    LOG(LS_INFO) << "Experimental aec is enabled? " << experimental_aec;
-    config.Set<webrtc::DelayCorrection>(
-        new webrtc::DelayCorrection(experimental_aec));
+  extended_filter_aec_.SetFrom(options.extended_filter_aec);
+  bool extended_filter;
+  if (extended_filter_aec_.Get(&extended_filter)) {
+    LOG(LS_INFO) << "Extended filter aec is enabled? " << extended_filter;
+    config.Set<webrtc::ExtendedFilter>(
+        new webrtc::ExtendedFilter(extended_filter));
   }
 
   experimental_ns_.SetFrom(options.experimental_ns);
@@ -1532,19 +1381,6 @@ void WebRtcVoiceEngine::UnregisterChannel(WebRtcVoiceMediaChannel *channel) {
   }
 }
 
-void WebRtcVoiceEngine::RegisterSoundclip(WebRtcSoundclipMedia *soundclip) {
-  soundclips_.push_back(soundclip);
-}
-
-void WebRtcVoiceEngine::UnregisterSoundclip(WebRtcSoundclipMedia *soundclip) {
-  SoundclipList::iterator i = std::find(soundclips_.begin(),
-                                        soundclips_.end(),
-                                        soundclip);
-  if (i != soundclips_.end()) {
-    soundclips_.erase(i);
-  }
-}
-
 // Adjusts the default AGC target level by the specified delta.
 // NB: If we start messing with other config fields, we'll want
 // to save the current webrtc::AgcConfig as well.
@@ -1563,8 +1399,7 @@ bool WebRtcVoiceEngine::AdjustAgcLevel(int delta) {
   return true;
 }
 
-bool WebRtcVoiceEngine::SetAudioDeviceModule(webrtc::AudioDeviceModule* adm,
-    webrtc::AudioDeviceModule* adm_sc) {
+bool WebRtcVoiceEngine::SetAudioDeviceModule(webrtc::AudioDeviceModule* adm) {
   if (initialized_) {
     LOG(LS_WARNING) << "SetAudioDeviceModule can not be called after Init.";
     return false;
@@ -1576,15 +1411,6 @@ bool WebRtcVoiceEngine::SetAudioDeviceModule(webrtc::AudioDeviceModule* adm,
   if (adm) {
     adm_ = adm;
     adm_->AddRef();
-  }
-
-  if (adm_sc_) {
-    adm_sc_->Release();
-    adm_sc_ = NULL;
-  }
-  if (adm_sc) {
-    adm_sc_ = adm_sc;
-    adm_sc_->AddRef();
   }
   return true;
 }
@@ -1789,10 +1615,6 @@ int WebRtcVoiceEngine::CreateVoiceChannel(VoEWrapper* voice_engine_wrapper) {
 
 int WebRtcVoiceEngine::CreateMediaVoiceChannel() {
   return CreateVoiceChannel(voe_wrapper_.get());
-}
-
-int WebRtcVoiceEngine::CreateSoundclipVoiceChannel() {
-  return CreateVoiceChannel(voe_wrapper_sc_.get());
 }
 
 class WebRtcVoiceMediaChannel::WebRtcVoiceChannelRenderer
@@ -3525,6 +3347,10 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
             static_cast<float>(ns.currentSpeechExpandRate) / (1 << 14);
         rinfo.secondary_decoded_rate =
             static_cast<float>(ns.currentSecondaryDecodedRate) / (1 << 14);
+        rinfo.accelerate_rate =
+            static_cast<float>(ns.currentAccelerateRate) / (1 << 14);
+        rinfo.preemptive_expand_rate =
+            static_cast<float>(ns.currentPreemptiveRate) / (1 << 14);
       }
 
       webrtc::AudioDecodingCallStats ds;

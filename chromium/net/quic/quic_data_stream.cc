@@ -5,7 +5,7 @@
 #include "net/quic/quic_data_stream.h"
 
 #include "base/logging.h"
-#include "net/quic/quic_session.h"
+#include "net/quic/quic_spdy_session.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/quic_write_blocked_list.h"
 
@@ -28,8 +28,9 @@ QuicPriority kDefaultPriority = 3;
 
 }  // namespace
 
-QuicDataStream::QuicDataStream(QuicStreamId id, QuicSession* session)
-    : ReliableQuicStream(id, session),
+QuicDataStream::QuicDataStream(QuicStreamId id, QuicSpdySession* spdy_session)
+    : ReliableQuicStream(id, spdy_session),
+      spdy_session_(spdy_session),
       visitor_(nullptr),
       headers_decompressed_(false),
       priority_(kDefaultPriority) {
@@ -46,7 +47,7 @@ size_t QuicDataStream::WriteHeaders(
     const SpdyHeaderBlock& header_block,
     bool fin,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
-  size_t bytes_written = session()->WriteHeaders(
+  size_t bytes_written = spdy_session_->WriteHeaders(
       id(), header_block, fin, priority_, ack_notifier_delegate);
   if (fin) {
     // TODO(rch): Add test to ensure fin_sent_ is set whenever a fin is sent.
@@ -57,42 +58,13 @@ size_t QuicDataStream::WriteHeaders(
 }
 
 size_t QuicDataStream::Readv(const struct iovec* iov, size_t iov_len) {
-  if (FinishedReadingHeaders()) {
-    // If the headers have been read, simply delegate to the sequencer's
-    // Readv method.
-    return sequencer()->Readv(iov, iov_len);
-  }
-  // Otherwise, copy decompressed header data into |iov|.
-  size_t bytes_consumed = 0;
-  size_t iov_index = 0;
-  while (iov_index < iov_len &&
-         decompressed_headers_.length() > bytes_consumed) {
-    size_t bytes_to_read = min(iov[iov_index].iov_len,
-                               decompressed_headers_.length() - bytes_consumed);
-    char* iov_ptr = static_cast<char*>(iov[iov_index].iov_base);
-    memcpy(iov_ptr,
-           decompressed_headers_.data() + bytes_consumed, bytes_to_read);
-    bytes_consumed += bytes_to_read;
-    ++iov_index;
-  }
-  decompressed_headers_.erase(0, bytes_consumed);
-  if (FinishedReadingHeaders()) {
-    sequencer()->FlushBufferedFrames();
-  }
-  return bytes_consumed;
+  DCHECK(FinishedReadingHeaders());
+  return sequencer()->Readv(iov, iov_len);
 }
 
-int QuicDataStream::GetReadableRegions(iovec* iov, size_t iov_len) {
-  if (FinishedReadingHeaders()) {
-    return sequencer()->GetReadableRegions(iov, iov_len);
-  }
-  if (iov_len == 0) {
-    return 0;
-  }
-  iov[0].iov_base = static_cast<void*>(
-      const_cast<char*>(decompressed_headers_.data()));
-  iov[0].iov_len = decompressed_headers_.length();
-  return 1;
+int QuicDataStream::GetReadableRegions(iovec* iov, size_t iov_len) const {
+  DCHECK(FinishedReadingHeaders());
+  return sequencer()->GetReadableRegions(iov, iov_len);
 }
 
 bool QuicDataStream::IsDoneReading() const {
@@ -104,6 +76,13 @@ bool QuicDataStream::IsDoneReading() const {
 
 bool QuicDataStream::HasBytesToRead() const {
   return !decompressed_headers_.empty() || sequencer()->HasBytesToRead();
+}
+
+void QuicDataStream::MarkHeadersConsumed(size_t bytes_consumed) {
+  decompressed_headers_.erase(0, bytes_consumed);
+  if (FinishedReadingHeaders()) {
+    sequencer()->FlushBufferedFrames();
+  }
 }
 
 void QuicDataStream::set_priority(QuicPriority priority) {
@@ -123,24 +102,8 @@ uint32 QuicDataStream::ProcessRawData(const char* data, uint32 data_len) {
   return ProcessData(data, data_len);
 }
 
-uint32 QuicDataStream::ProcessHeaderData() {
-  if (decompressed_headers_.empty()) {
-    return 0;
-  }
-
-  size_t bytes_processed = ProcessData(decompressed_headers_.data(),
-                                       decompressed_headers_.length());
-  if (bytes_processed == decompressed_headers_.length()) {
-    decompressed_headers_.clear();
-  } else {
-    decompressed_headers_ = decompressed_headers_.erase(0, bytes_processed);
-  }
-  return bytes_processed;
-}
-
 void QuicDataStream::OnStreamHeaders(StringPiece headers_data) {
   headers_data.AppendToString(&decompressed_headers_);
-  ProcessHeaderData();
 }
 
 void QuicDataStream::OnStreamHeadersPriority(QuicPriority priority) {
@@ -151,9 +114,8 @@ void QuicDataStream::OnStreamHeadersPriority(QuicPriority priority) {
 void QuicDataStream::OnStreamHeadersComplete(bool fin, size_t frame_len) {
   headers_decompressed_ = true;
   if (fin) {
-    sequencer()->OnStreamFrame(QuicStreamFrame(id(), fin, 0, IOVector()));
+    sequencer()->OnStreamFrame(QuicStreamFrame(id(), fin, 0, StringPiece()));
   }
-  ProcessHeaderData();
   if (FinishedReadingHeaders()) {
     sequencer()->FlushBufferedFrames();
   }
@@ -171,7 +133,7 @@ void QuicDataStream::OnClose() {
   }
 }
 
-bool QuicDataStream::FinishedReadingHeaders() {
+bool QuicDataStream::FinishedReadingHeaders() const {
   return headers_decompressed_ && decompressed_headers_.empty();
 }
 

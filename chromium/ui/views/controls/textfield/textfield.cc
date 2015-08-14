@@ -12,9 +12,10 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/base/touch/selection_bound.h"
 #include "ui/base/ui_base_switches_util.h"
-#include "ui/compositor/paint_context.h"
+#include "ui/compositor/canvas_painter.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -31,7 +32,6 @@
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/drag_utils.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/metrics.h"
 #include "ui/views/native_cursor.h"
 #include "ui/views/painter.h"
@@ -284,9 +284,10 @@ Textfield::Textfield()
   SetBorder(scoped_ptr<Border>(new FocusableBorder()));
   SetFocusable(true);
 
-  if (ViewsDelegate::views_delegate) {
-    password_reveal_duration_ = ViewsDelegate::views_delegate->
-        GetDefaultTextfieldObscuredRevealDuration();
+  if (ViewsDelegate::GetInstance()) {
+    password_reveal_duration_ =
+        ViewsDelegate::GetInstance()
+            ->GetDefaultTextfieldObscuredRevealDuration();
   }
 
   // These allow BrowserView to pass edit commands from the Chrome menu to us
@@ -297,7 +298,12 @@ Textfield::Textfield()
   AddAccelerator(ui::Accelerator(ui::VKEY_V, ui::EF_CONTROL_DOWN));
 }
 
-Textfield::~Textfield() {}
+Textfield::~Textfield() {
+  if (GetInputMethod()) {
+    // The textfield should have been blurred before destroy.
+    DCHECK(this != GetInputMethod()->GetTextInputClient());
+  }
+}
 
 void Textfield::SetReadOnly(bool read_only) {
   // Update read-only without changing the focusable state (or active, etc.).
@@ -721,10 +727,6 @@ bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   return handled;
 }
 
-ui::TextInputClient* Textfield::GetTextInputClient() {
-  return this;
-}
-
 void Textfield::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
@@ -1004,7 +1006,8 @@ void Textfield::OnFocus() {
   GetRenderText()->set_focused(true);
   cursor_visible_ = true;
   SchedulePaint();
-  GetInputMethod()->OnFocus();
+  if (GetInputMethod())
+    GetInputMethod()->SetFocusedTextInputClient(this);
   OnCaretBoundsChanged();
 
   const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
@@ -1020,7 +1023,8 @@ void Textfield::OnFocus() {
 
 void Textfield::OnBlur() {
   GetRenderText()->set_focused(false);
-  GetInputMethod()->OnBlur();
+  if (GetInputMethod())
+    GetInputMethod()->DetachTextInputClient(this);
   cursor_repaint_timer_.Stop();
   if (cursor_visible_) {
     cursor_visible_ = false;
@@ -1093,7 +1097,7 @@ void Textfield::WriteDragDataForView(View* sender,
   // Desktop Linux Aura does not yet support transparency in drag images.
   canvas->DrawColor(GetBackgroundColor());
 #endif
-  label.Paint(ui::PaintContext(canvas.get()));
+  label.Paint(ui::CanvasPainter(canvas.get(), 1.f).context());
   const gfx::Vector2d kOffset(-15, 0);
   drag_utils::SetDragImageOnDataObject(*canvas, kOffset, data);
   if (controller_)
@@ -1469,21 +1473,6 @@ void Textfield::InsertChar(base::char16 ch, int flags) {
   }
 }
 
-gfx::NativeWindow Textfield::GetAttachedWindow() const {
-  // Imagine the following hierarchy.
-  //   [NativeWidget A] - FocusManager
-  //     [View]
-  //     [NativeWidget B]
-  //       [View]
-  //         [View X]
-  // An important thing is that [NativeWidget A] owns Win32 input focus even
-  // when [View X] is logically focused by FocusManager. As a result, an Win32
-  // IME may want to interact with the native view of [NativeWidget A] rather
-  // than that of [NativeWidget B]. This is why we need to call
-  // GetTopLevelWidget() here.
-  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-}
-
 ui::TextInputType Textfield::GetTextInputType() const {
   if (read_only() || !enabled())
     return ui::TEXT_INPUT_TYPE_NONE;
@@ -1625,12 +1614,6 @@ void Textfield::ExtendSelectionAndDelete(size_t before, size_t after) {
 }
 
 void Textfield::EnsureCaretInRect(const gfx::Rect& rect) {}
-
-void Textfield::OnCandidateWindowShown() {}
-
-void Textfield::OnCandidateWindowUpdated() {}
-
-void Textfield::OnCandidateWindowHidden() {}
 
 bool Textfield::IsEditCommandEnabled(int command_id) {
   return IsCommandIdEnabled(command_id);

@@ -84,10 +84,10 @@ class BASE_PREFS_EXPORT JsonPrefStore
   // PersistentPrefStore overrides:
   bool GetMutableValue(const std::string& key, base::Value** result) override;
   void SetValue(const std::string& key,
-                base::Value* value,
+                scoped_ptr<base::Value> value,
                 uint32 flags) override;
   void SetValueSilently(const std::string& key,
-                        base::Value* value,
+                        scoped_ptr<base::Value> value,
                         uint32 flags) override;
   void RemoveValue(const std::string& key, uint32 flags) override;
   bool ReadOnly() const override;
@@ -98,6 +98,7 @@ class BASE_PREFS_EXPORT JsonPrefStore
   PrefReadError ReadPrefs() override;
   void ReadPrefsAsync(ReadErrorDelegate* error_delegate) override;
   void CommitPendingWrite() override;
+  void SchedulePendingLossyWrites() override;
   void ReportValueChanged(const std::string& key, uint32 flags) override;
 
   // Just like RemoveValue(), but doesn't notify observers. Used when doing some
@@ -208,7 +209,7 @@ class BASE_PREFS_EXPORT JsonPrefStore
   base::ImportantFileWriter writer_;
 
   scoped_ptr<PrefFilter> pref_filter_;
-  ObserverList<PrefStore::Observer, true> observers_;
+  base::ObserverList<PrefStore::Observer, true> observers_;
 
   scoped_ptr<ReadErrorDelegate> error_delegate_;
 

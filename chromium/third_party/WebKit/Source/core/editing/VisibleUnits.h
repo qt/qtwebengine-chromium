@@ -28,13 +28,13 @@
 
 #include "core/CoreExport.h"
 #include "core/editing/EditingBoundary.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "platform/text/TextDirection.h"
 
 namespace blink {
 
 class LayoutRect;
 class LayoutUnit;
-class PositionWithAffinity;
 class LayoutObject;
 class Node;
 class VisiblePosition;
@@ -63,6 +63,8 @@ VisiblePosition endOfLine(const VisiblePosition &);
 CORE_EXPORT VisiblePosition previousLinePosition(const VisiblePosition&, LayoutUnit lineDirectionPoint, EditableType = ContentIsEditable);
 CORE_EXPORT VisiblePosition nextLinePosition(const VisiblePosition&, LayoutUnit lineDirectionPoint, EditableType = ContentIsEditable);
 CORE_EXPORT bool inSameLine(const VisiblePosition &, const VisiblePosition &);
+CORE_EXPORT bool inSameLine(const PositionWithAffinity&, const PositionWithAffinity &);
+CORE_EXPORT bool inSameLine(const PositionInComposedTreeWithAffinity&, const PositionInComposedTreeWithAffinity&);
 bool isStartOfLine(const VisiblePosition &);
 bool isEndOfLine(const VisiblePosition &);
 VisiblePosition logicalStartOfLine(const VisiblePosition &);

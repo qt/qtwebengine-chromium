@@ -94,7 +94,7 @@
         'GFX_IMPLEMENTATION',
       ],
       'include_dirs': [
-        '<(DEPTH)/third_party/icu/source/common'
+        '<(DEPTH)/third_party/icu/source/common',
       ],
       'sources': [
         'android/device_display_info.cc',
@@ -171,7 +171,6 @@
         'font_render_params_linux.cc',
         'font_render_params_mac.cc',
         'font_render_params_win.cc',
-        'frame_time.h',
         'gfx_export.h',
         'gfx_paths.cc',
         'gfx_paths.h',
@@ -226,7 +225,6 @@
         'paint_throbber.h',
         'path.cc',
         'path.h',
-        'path_aura.cc',
         'path_win.cc',
         'path_win.h',
         'path_x11.cc',
@@ -279,10 +277,9 @@
         'skbitmap_operations.h',
         'skia_util.cc',
         'skia_util.h',
+        'swap_result.h',
         'switches.cc',
         'switches.h',
-        'sys_color_change_listener.cc',
-        'sys_color_change_listener.h',
         'text_constants.h',
         'text_elider.cc',
         'text_elider.h',
@@ -348,6 +345,8 @@
             'gdi_util.h',
             'icon_util.cc',
             'icon_util.h',
+            'sys_color_change_listener.cc',
+            'sys_color_change_listener.h',
           ],
           # TODO(jschuh): C4267: http://crbug.com/167187 size_t -> int
           # C4324 is structure was padded due to __declspec(align()), which is
@@ -405,6 +404,42 @@
             'render_text_harfbuzz.cc',
             'render_text_harfbuzz.h',
             'text_utils_skia.cc',
+          ],
+        }, {  # desktop platforms
+          'variables': {
+            'vector_icons_cc_file': '<(INTERMEDIATE_DIR)/ui/gfx/vector_icons.cc',
+            'vector_icons_public_h_file': '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/vector_icons_public.h',
+          },
+          'include_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)',
+          ],
+          'sources': [
+            '<(vector_icons_cc_file)',
+            '<(vector_icons_public_h_file)',
+
+            'paint_vector_icon.cc',
+            'paint_vector_icon.h',
+            'vector_icons.h',
+          ],
+          'actions': [
+            {
+              # GN version: //ui/gfx:aggregate_vector_icons
+              'action_name': 'aggregate_vector_icons',
+              'inputs': [
+                'vector_icons/',
+              ],
+              'outputs': [
+                '<(vector_icons_cc_file)',
+                '<(vector_icons_public_h_file)',
+              ],
+              'action': [ 'python',
+                          'vector_icons/aggregate_vector_icons.py',
+                          '--working_directory=vector_icons/',
+                          '--output_cc=<(vector_icons_cc_file)',
+                          '--output_h=<(vector_icons_public_h_file)',
+              ],
+              'message': 'Aggregating vector resources.',
+            },
           ],
         }],
         ['use_x11==1', {

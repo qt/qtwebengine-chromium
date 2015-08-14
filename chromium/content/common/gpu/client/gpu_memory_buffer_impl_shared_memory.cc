@@ -107,6 +107,7 @@ bool GpuMemoryBufferImplSharedMemory::IsFormatSupported(Format format) {
     case DXT5:
     case ETC1:
     case R_8:
+    case RGBA_4444:
     case RGBA_8888:
     case BGRA_8888:
     case YUV_420:
@@ -115,6 +116,19 @@ bool GpuMemoryBufferImplSharedMemory::IsFormatSupported(Format format) {
       return false;
   }
 
+  NOTREACHED();
+  return false;
+}
+
+// static
+bool GpuMemoryBufferImplSharedMemory::IsUsageSupported(Usage usage) {
+  switch (usage) {
+    case MAP:
+    case PERSISTENT_MAP:
+      return true;
+    case SCANOUT:
+      return false;
+  }
   NOTREACHED();
   return false;
 }
@@ -133,6 +147,7 @@ bool GpuMemoryBufferImplSharedMemory::IsSizeValidForFormat(
       // by the block size.
       return size.width() % 4 == 0 && size.height() % 4 == 0;
     case R_8:
+    case RGBA_4444:
     case RGBA_8888:
     case BGRA_8888:
     case RGBX_8888:

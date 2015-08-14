@@ -35,7 +35,6 @@
 
 #include "talk/media/base/rtputils.h"
 #include "talk/media/webrtc/webrtccommon.h"
-#include "talk/media/webrtc/webrtcexport.h"
 #include "talk/media/webrtc/webrtcvoe.h"
 #include "talk/session/media/channel.h"
 #include "webrtc/base/buffer.h"
@@ -47,15 +46,6 @@
 #include "webrtc/call.h"
 #include "webrtc/common.h"
 #include "webrtc/config.h"
-
-#if !defined(LIBPEERCONNECTION_LIB) && \
-    !defined(LIBPEERCONNECTION_IMPLEMENTATION)
-// If you hit this, then you've tried to include this header from outside
-// the shared library.  An instance of this class must only be created from
-// within the library that actually implements it.  Otherwise use the
-// WebRtcMediaEngine to construct an instance.
-#error "Bogus include."
-#endif
 
 namespace webrtc {
 class VideoEngine;
@@ -91,7 +81,6 @@ class AudioRenderer;
 class VoETraceWrapper;
 class VoEWrapper;
 class VoiceProcessor;
-class WebRtcSoundclipMedia;
 class WebRtcVoiceMediaChannel;
 
 // WebRtcVoiceEngine is a class to be used with CompositeMediaEngine.
@@ -100,36 +89,21 @@ class WebRtcVoiceEngine
     : public webrtc::VoiceEngineObserver,
       public webrtc::TraceCallback,
       public webrtc::VoEMediaProcess  {
+  friend class WebRtcVoiceMediaChannel;
+
  public:
   WebRtcVoiceEngine();
   // Dependency injection for testing.
-  WebRtcVoiceEngine(VoEWrapper* voe_wrapper,
-                    VoEWrapper* voe_wrapper_sc,
-                    VoETraceWrapper* tracing);
+  WebRtcVoiceEngine(VoEWrapper* voe_wrapper, VoETraceWrapper* tracing);
   ~WebRtcVoiceEngine();
   bool Init(rtc::Thread* worker_thread);
   void Terminate();
 
   int GetCapabilities();
-  VoiceMediaChannel* CreateChannel();
-
-  SoundclipMedia* CreateSoundclip();
+  VoiceMediaChannel* CreateChannel(const AudioOptions& options);
 
   AudioOptions GetOptions() const { return options_; }
   bool SetOptions(const AudioOptions& options);
-  // Overrides, when set, take precedence over the options on a
-  // per-option basis.  For example, if AGC is set in options and AEC
-  // is set in overrides, AGC and AEC will be both be set.  Overrides
-  // can also turn off options.  For example, if AGC is set to "on" in
-  // options and AGC is set to "off" in overrides, the result is that
-  // AGC will be off until different overrides are applied or until
-  // the overrides are cleared.  Only one set of overrides is present
-  // at a time (they do not "stack").  And when the overrides are
-  // cleared, the media engine's state reverts back to the options set
-  // via SetOptions.  This allows us to have both "persistent options"
-  // (the normal options) and "temporary options" (overrides).
-  bool SetOptionOverrides(const AudioOptions& options);
-  bool ClearOptionOverrides();
   bool SetDelayOffset(int offset);
   bool SetDevices(const Device* in_device, const Device* out_device);
   bool GetOutputVolume(int* level);
@@ -166,21 +140,15 @@ class WebRtcVoiceEngine
   void RegisterChannel(WebRtcVoiceMediaChannel *channel);
   void UnregisterChannel(WebRtcVoiceMediaChannel *channel);
 
-  // May only be called by WebRtcSoundclipMedia.
-  void RegisterSoundclip(WebRtcSoundclipMedia *channel);
-  void UnregisterSoundclip(WebRtcSoundclipMedia *channel);
-
   // Called by WebRtcVoiceMediaChannel to set a gain offset from
   // the default AGC target level.
   bool AdjustAgcLevel(int delta);
 
   VoEWrapper* voe() { return voe_wrapper_.get(); }
-  VoEWrapper* voe_sc() { return voe_wrapper_sc_.get(); }
   int GetLastEngineError();
 
-  // Set the external ADMs. This can only be called before Init.
-  bool SetAudioDeviceModule(webrtc::AudioDeviceModule* adm,
-                            webrtc::AudioDeviceModule* adm_sc);
+  // Set the external ADM. This can only be called before Init.
+  bool SetAudioDeviceModule(webrtc::AudioDeviceModule* adm);
 
   // Starts AEC dump using existing file.
   bool StartAecDump(rtc::PlatformFile file);
@@ -190,10 +158,8 @@ class WebRtcVoiceEngine
 
   // Create a VoiceEngine Channel.
   int CreateMediaVoiceChannel();
-  int CreateSoundclipVoiceChannel();
 
  private:
-  typedef std::vector<WebRtcSoundclipMedia *> SoundclipList;
   typedef std::vector<WebRtcVoiceMediaChannel *> ChannelList;
   typedef sigslot::
       signal3<uint32, MediaProcessorDirection, AudioFrame*> FrameSignal;
@@ -202,7 +168,6 @@ class WebRtcVoiceEngine
   void ConstructCodecs();
   bool GetVoeCodec(int index, webrtc::CodecInst* codec);
   bool InitInternal();
-  bool EnsureSoundclipEngineInit();
   void SetTraceFilter(int filter);
   void SetTraceOptions(const std::string& options);
   // Applies either options or overrides.  Every option that is "set"
@@ -210,6 +175,19 @@ class WebRtcVoiceEngine
   // allows us to selectively turn on and off different options easily
   // at any time.
   bool ApplyOptions(const AudioOptions& options);
+  // Overrides, when set, take precedence over the options on a
+  // per-option basis.  For example, if AGC is set in options and AEC
+  // is set in overrides, AGC and AEC will be both be set.  Overrides
+  // can also turn off options.  For example, if AGC is set to "on" in
+  // options and AGC is set to "off" in overrides, the result is that
+  // AGC will be off until different overrides are applied or until
+  // the overrides are cleared.  Only one set of overrides is present
+  // at a time (they do not "stack").  And when the overrides are
+  // cleared, the media engine's state reverts back to the options set
+  // via SetOptions.  This allows us to have both "persistent options"
+  // (the normal options) and "temporary options" (overrides).
+  bool SetOptionOverrides(const AudioOptions& options);
+  bool ClearOptionOverrides();
 
   // webrtc::TraceCallback:
   void Print(webrtc::TraceLevel level, const char* trace, int length) override;
@@ -250,13 +228,9 @@ class WebRtcVoiceEngine
 
   // The primary instance of WebRtc VoiceEngine.
   rtc::scoped_ptr<VoEWrapper> voe_wrapper_;
-  // A secondary instance, for playing out soundclips (on the 'ring' device).
-  rtc::scoped_ptr<VoEWrapper> voe_wrapper_sc_;
-  bool voe_wrapper_sc_initialized_;
   rtc::scoped_ptr<VoETraceWrapper> tracing_;
   // The external audio device manager
   webrtc::AudioDeviceModule* adm_;
-  webrtc::AudioDeviceModule* adm_sc_;
   int log_filter_;
   std::string log_options_;
   bool is_dumping_aec_;
@@ -264,7 +238,6 @@ class WebRtcVoiceEngine
   std::vector<RtpHeaderExtension> rtp_header_extensions_;
   bool desired_local_monitor_enable_;
   rtc::scoped_ptr<WebRtcMonitorStream> monitor_;
-  SoundclipList soundclips_;
   ChannelList channels_;
   // channels_ can be read from WebRtc callback thread. We need a lock on that
   // callback as well as the RegisterChannel/UnregisterChannel.
@@ -293,11 +266,11 @@ class WebRtcVoiceEngine
 
   rtc::CriticalSection signal_media_critical_;
 
-  // Cache received experimental_aec, delay_agnostic_aec and experimental_ns
+  // Cache received extended_filter_aec, delay_agnostic_aec and experimental_ns
   // values, and apply them in case they are missing in the audio options. We
   // need to do this because SetExtraOptions() will revert to defaults for
   // options which are not provided.
-  Settable<bool> experimental_aec_;
+  Settable<bool> extended_filter_aec_;
   Settable<bool> delay_agnostic_aec_;
   Settable<bool> experimental_ns_;
 };

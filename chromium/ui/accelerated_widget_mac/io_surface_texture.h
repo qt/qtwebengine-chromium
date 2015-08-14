@@ -40,9 +40,14 @@ class RenderWidgetHostViewMac;
 class IOSurfaceTexture
     : public base::RefCounted<IOSurfaceTexture> {
  public:
-  // Returns NULL if IOSurfaceTexture or GL API calls fail.
   static scoped_refptr<IOSurfaceTexture> Create(
-      bool needs_gl_finish_workaround);
+      bool needs_gl_finish_workaround,
+      bool use_ns_apis);
+
+  // Returns true if there is no need to call SetIOSurface with the provided
+  // values.
+  bool IsUpToDate(
+      IOSurfaceID io_surface_id, const gfx::Size& pixel_size) const;
 
   // Set IOSurfaceTexture that will be drawn on the next NSView drawRect.
   bool SetIOSurface(
@@ -54,6 +59,7 @@ class IOSurfaceTexture
   // larger than the IOSurface, the remaining right and bottom edges will be
   // white. |window_scale_factor| is 1 in normal views, 2 in HiDPI views.
   bool DrawIOSurface() WARN_UNUSED_RESULT;
+  bool DrawIOSurfaceWithDamageRect(gfx::Rect damage_rect) WARN_UNUSED_RESULT;
 
   // Returns true if the offscreen context used by this surface has been
   // poisoned.
@@ -64,6 +70,7 @@ class IOSurfaceTexture
 
   IOSurfaceTexture(
       const scoped_refptr<IOSurfaceContext>& context,
+      bool use_ns_apis,
       bool needs_gl_finish_workaround);
   ~IOSurfaceTexture();
 
@@ -108,7 +115,11 @@ class IOSurfaceTexture
   void EvictionMarkEvicted();
   EvictionQueue::iterator eviction_queue_iterator_;
   bool eviction_has_been_drawn_since_updated_;
+
   const bool needs_gl_finish_workaround_;
+
+  // Set if this is for access through NS APIs.
+  const bool using_ns_apis_;
 
   static void EvictionScheduleDoEvict();
   static void EvictionDoEvict();

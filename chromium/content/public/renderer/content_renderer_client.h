@@ -5,15 +5,16 @@
 #ifndef CONTENT_PUBLIC_RENDERER_CONTENT_RENDERER_CLIENT_H_
 #define CONTENT_PUBLIC_RENDERER_CONTENT_RENDERER_CLIENT_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
-#include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
@@ -47,6 +48,7 @@ class WebRTCPeerConnectionHandlerClient;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebThemeEngine;
+class WebURLResponse;
 class WebURLRequest;
 class WebWorkerContentSettingsClientProxy;
 struct WebPluginParams;
@@ -54,6 +56,7 @@ struct WebURLError;
 }
 
 namespace media {
+class GpuVideoAcceleratorFactories;
 class MediaLog;
 class RendererFactory;
 struct KeySystemInfo;
@@ -62,6 +65,7 @@ struct KeySystemInfo;
 namespace content {
 class BrowserPluginDelegate;
 class DocumentState;
+class MediaStreamRendererFactory;
 class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
@@ -215,16 +219,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // If |send_referrer| is set to false (which is the default), no referrer
   // header will be send for the navigation. Otherwise, the referrer header is
   // set according to the frame's referrer policy.
-  virtual bool ShouldFork(blink::WebFrame* frame,
+  virtual bool ShouldFork(blink::WebLocalFrame* frame,
                           const GURL& url,
                           const std::string& http_method,
                           bool is_initial_navigation,
                           bool is_server_redirect,
                           bool* send_referrer);
-
-  // Returns true if this IPC message belongs to a guest container. Currently,
-  // BrowserPlugin is a guest container.
-  virtual bool ShouldForwardToGuestContainer(const IPC::Message& msg);
 
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
@@ -257,7 +257,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // Allows an embedder to provide a media::RendererFactory.
   virtual scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
       RenderFrame* render_frame,
+      const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
       const scoped_refptr<media::MediaLog>& media_log);
+
+  // Allows an embedder to provide a MediaStreamRendererFactory.
+  virtual scoped_ptr<MediaStreamRendererFactory>
+  CreateMediaStreamRendererFactory();
 
   // Gives the embedder a chance to register the key system(s) it supports by
   // populating |key_systems|.
@@ -270,10 +275,10 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool ShouldReportDetailedMessageForSource(
       const base::string16& source) const;
 
-  // Returns true if we should apply the cross-site document blocking policy to
-  // this renderer process. Currently, we apply the policy only to a renderer
-  // process running on a normal page from the web.
-  virtual bool ShouldEnableSiteIsolationPolicy() const;
+  // Returns true if we should gather stats during resource loads as if the
+  // cross-site document blocking policy were enabled. Does not actually block
+  // any pages.
+  virtual bool ShouldGatherSiteIsolationStats() const;
 
   // Creates a permission client proxy for in-renderer worker.
   virtual blink::WebWorkerContentSettingsClientProxy*
@@ -305,6 +310,12 @@ class CONTENT_EXPORT ContentRendererClient {
   // Allows an embedder to provide a blink::WebAppBannerClient.
   virtual scoped_ptr<blink::WebAppBannerClient> CreateAppBannerClient(
       RenderFrame* render_frame);
+
+  // Gives the embedder a chance to add properties to the context menu.
+  // Currently only called when the context menu is for an image.
+  virtual void AddImageContextMenuProperties(
+      const blink::WebURLResponse& response,
+      std::map<std::string, std::string>* properties) {}
 };
 
 }  // namespace content

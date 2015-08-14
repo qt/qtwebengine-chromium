@@ -106,7 +106,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
       storage::QuotaManagerProxy* quota_manager_proxy,
       storage::SpecialStoragePolicy* special_storage_policy,
-      ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
+      base::ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
       ServiceWorkerContextWrapper* wrapper);
   ServiceWorkerContextCore(
       ServiceWorkerContextCore* old_context,
@@ -128,6 +128,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                               const base::string16& message,
                               int line_number,
                               const GURL& source_url) override;
+  void OnControlleeAdded(ServiceWorkerVersion* version,
+                         ServiceWorkerProviderHost* provider_host) override;
+  void OnControlleeRemoved(ServiceWorkerVersion* version,
+                           ServiceWorkerProviderHost* provider_host) override;
 
   ServiceWorkerContextWrapper* wrapper() const { return wrapper_; }
   ServiceWorkerStorage* storage() { return storage_.get(); }
@@ -198,6 +202,11 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
+  // ProtectVersion holds a reference to |version| until UnprotectVersion is
+  // called.
+  void ProtectVersion(const scoped_refptr<ServiceWorkerVersion>& version);
+  void UnprotectVersion(int64 version_id);
+
   // Returns new context-local unique ID.
   int GetNewServiceWorkerHandleId();
   int GetNewRegistrationHandleId();
@@ -257,9 +266,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
+  std::map<int64, scoped_refptr<ServiceWorkerVersion>> protected_versions_;
   int next_handle_id_;
   int next_registration_handle_id_;
-  scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
+  scoped_refptr<base::ObserverListThreadSafe<ServiceWorkerContextObserver>>
       observer_list_;
   base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;
 

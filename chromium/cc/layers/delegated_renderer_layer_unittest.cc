@@ -11,6 +11,7 @@
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_proxy.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -23,13 +24,15 @@ class DelegatedRendererLayerTest : public testing::Test {
     LayerTreeSettings settings;
     settings.minimum_occlusion_tracking_size = gfx::Size();
 
-    host_impl_ = FakeLayerTreeHost::Create(&host_client_, settings);
+    host_impl_ =
+        FakeLayerTreeHost::Create(&host_client_, &task_graph_runner_, settings);
     host_impl_->SetViewportSize(gfx::Size(10, 10));
   }
 
  protected:
   FakeProxy proxy_;
   FakeLayerTreeHostClient host_client_;
+  TestTaskGraphRunner task_graph_runner_;
   TestSharedBitmapManager shared_bitmap_manager_;
   scoped_ptr<LayerTreeHost> host_impl_;
 };
@@ -44,10 +47,11 @@ class DelegatedRendererLayerTestSimple : public DelegatedRendererLayerTest {
     frame_data->render_pass_list.push_back(root_pass.Pass());
     resources_ = new DelegatedFrameResourceCollection;
     provider_ = new DelegatedFrameProvider(resources_, frame_data.Pass());
-    root_layer_ = SolidColorLayer::Create();
-    layer_before_ = SolidColorLayer::Create();
+    LayerSettings layer_settings;
+    root_layer_ = SolidColorLayer::Create(layer_settings);
+    layer_before_ = SolidColorLayer::Create(layer_settings);
     delegated_renderer_layer_ =
-        FakeDelegatedRendererLayer::Create(provider_.get());
+        FakeDelegatedRendererLayer::Create(layer_settings, provider_.get());
   }
 
  protected:

@@ -15,8 +15,11 @@
 #include "SkTypes.h"
 
 #if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrDrawContext.h"
 #include "GrFragmentProcessor.h"
 #include "GrInvariantOutput.h"
+#include "GrPaint.h"
 #include "effects/GrSingleTextureEffect.h"
 #include "gl/GrGLProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
@@ -303,14 +306,15 @@ protected:
     bool canFilterImageGPU() const override { return true; }
     bool filterImageGPU(Proxy*, const SkBitmap& src, const Context&,
                         SkBitmap* result, SkIPoint* offset) const override;
-    virtual GrFragmentProcessor* getFragmentProcessor(GrTexture*,
+    virtual GrFragmentProcessor* getFragmentProcessor(GrProcessorDataManager*,
+                                                      GrTexture*,
                                                       const SkMatrix&,
                                                       const SkIRect& bounds,
                                                       BoundaryMode boundaryMode) const = 0;
 #endif
 private:
 #if SK_SUPPORT_GPU
-    void drawRect(GrContext* context,
+    void drawRect(GrDrawContext* drawContext,
                   GrTexture* src,
                   GrTexture* dst,
                   const SkMatrix& matrix,
@@ -323,7 +327,7 @@ private:
 };
 
 #if SK_SUPPORT_GPU
-void SkLightingImageFilterInternal::drawRect(GrContext* context,
+void SkLightingImageFilterInternal::drawRect(GrDrawContext* drawContext,
                                              GrTexture* src,
                                              GrTexture* dst,
                                              const SkMatrix& matrix,
@@ -332,11 +336,12 @@ void SkLightingImageFilterInternal::drawRect(GrContext* context,
                                              BoundaryMode boundaryMode,
                                              const SkIRect& bounds) const {
     SkRect srcRect = dstRect.makeOffset(SkIntToScalar(bounds.x()), SkIntToScalar(bounds.y()));
-    GrFragmentProcessor* fp = this->getFragmentProcessor(src, matrix, bounds, boundaryMode);
     GrPaint paint;
+    GrFragmentProcessor* fp = this->getFragmentProcessor(paint.getProcessorDataManager(), src,
+                                                         matrix, bounds, boundaryMode);
     paint.addColorProcessor(fp)->unref();
-    context->drawNonAARectToRect(dst->asRenderTarget(), clip, paint, SkMatrix::I(),
-                                 dstRect, srcRect);
+    drawContext->drawNonAARectToRect(dst->asRenderTarget(), clip, paint, SkMatrix::I(),
+                                     dstRect, srcRect);
 }
 
 bool SkLightingImageFilterInternal::filterImageGPU(Proxy* proxy,
@@ -388,19 +393,26 @@ bool SkLightingImageFilterInternal::filterImageGPU(Proxy* proxy,
     SkRect bottomLeft = SkRect::MakeXYWH(0, dstRect.height() - 1, 1, 1);
     SkRect bottom = SkRect::MakeXYWH(1, dstRect.height() - 1, dstRect.width() - 2, 1);
     SkRect bottomRight = SkRect::MakeXYWH(dstRect.width() - 1, dstRect.height() - 1, 1, 1);
-    this->drawRect(context, srcTexture, dst, matrix, clip, topLeft, kTopLeft_BoundaryMode, bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, top, kTop_BoundaryMode, bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, topRight, kTopRight_BoundaryMode,
+
+    GrDrawContext* drawContext = context->drawContext();
+    if (!drawContext) {
+        return false;
+    }
+
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, topLeft, kTopLeft_BoundaryMode, 
                    bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, left, kLeft_BoundaryMode, bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, interior, kInterior_BoundaryMode,
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, top, kTop_BoundaryMode, bounds);
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, topRight, kTopRight_BoundaryMode,
                    bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, right, kRight_BoundaryMode, bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, bottomLeft, kBottomLeft_BoundaryMode,
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, left, kLeft_BoundaryMode, bounds);
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, interior, kInterior_BoundaryMode,
                    bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, bottom, kBottom_BoundaryMode, bounds);
-    this->drawRect(context, srcTexture, dst, matrix, clip, bottomRight, kBottomRight_BoundaryMode,
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, right, kRight_BoundaryMode, bounds);
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, bottomLeft, kBottomLeft_BoundaryMode,
                    bounds);
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, bottom, kBottom_BoundaryMode, bounds);
+    this->drawRect(drawContext, srcTexture, dst, matrix, clip, bottomRight,
+                   kBottomRight_BoundaryMode, bounds);
     WrapTexture(dst, bounds.width(), bounds.height(), result);
     return true;
 }
@@ -422,7 +434,7 @@ protected:
     bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
                        SkBitmap* result, SkIPoint* offset) const override;
 #if SK_SUPPORT_GPU
-    GrFragmentProcessor* getFragmentProcessor(GrTexture*, const SkMatrix&,
+    GrFragmentProcessor* getFragmentProcessor(GrProcessorDataManager*, GrTexture*, const SkMatrix&,
                                               const SkIRect& bounds, BoundaryMode) const override;
 #endif
 
@@ -450,7 +462,7 @@ protected:
     bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
                        SkBitmap* result, SkIPoint* offset) const override;
 #if SK_SUPPORT_GPU
-    GrFragmentProcessor* getFragmentProcessor(GrTexture*, const SkMatrix&,
+    GrFragmentProcessor* getFragmentProcessor(GrProcessorDataManager*, GrTexture*, const SkMatrix&,
                                               const SkIRect& bounds, BoundaryMode) const override;
 #endif
 
@@ -465,8 +477,8 @@ private:
 
 class GrLightingEffect : public GrSingleTextureEffect {
 public:
-    GrLightingEffect(GrTexture* texture, const SkLight* light, SkScalar surfaceScale,
-                     const SkMatrix& matrix, BoundaryMode boundaryMode);
+    GrLightingEffect(GrProcessorDataManager*, GrTexture* texture, const SkLight* light,
+                     SkScalar surfaceScale, const SkMatrix& matrix, BoundaryMode boundaryMode);
     virtual ~GrLightingEffect();
 
     const SkLight* light() const { return fLight; }
@@ -492,13 +504,15 @@ private:
 
 class GrDiffuseLightingEffect : public GrLightingEffect {
 public:
-    static GrFragmentProcessor* Create(GrTexture* texture,
+    static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager,
+                                       GrTexture* texture,
                                        const SkLight* light,
                                        SkScalar surfaceScale,
                                        const SkMatrix& matrix,
                                        SkScalar kd,
                                        BoundaryMode boundaryMode) {
-        return SkNEW_ARGS(GrDiffuseLightingEffect, (texture,
+        return SkNEW_ARGS(GrDiffuseLightingEffect, (procDataManager,
+                                                    texture,
                                                     light,
                                                     surfaceScale,
                                                     matrix,
@@ -517,7 +531,8 @@ public:
 private:
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GrDiffuseLightingEffect(GrTexture* texture,
+    GrDiffuseLightingEffect(GrProcessorDataManager*,
+                            GrTexture* texture,
                             const SkLight* light,
                             SkScalar surfaceScale,
                             const SkMatrix& matrix,
@@ -531,14 +546,16 @@ private:
 
 class GrSpecularLightingEffect : public GrLightingEffect {
 public:
-    static GrFragmentProcessor* Create(GrTexture* texture,
+    static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager,
+                                       GrTexture* texture,
                                        const SkLight* light,
                                        SkScalar surfaceScale,
                                        const SkMatrix& matrix,
                                        SkScalar ks,
                                        SkScalar shininess,
                                        BoundaryMode boundaryMode) {
-        return SkNEW_ARGS(GrSpecularLightingEffect, (texture,
+        return SkNEW_ARGS(GrSpecularLightingEffect, (procDataManager,
+                                                     texture,
                                                      light,
                                                      surfaceScale,
                                                      matrix,
@@ -559,7 +576,8 @@ public:
 private:
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GrSpecularLightingEffect(GrTexture* texture,
+    GrSpecularLightingEffect(GrProcessorDataManager*,
+                             GrTexture* texture,
                              const SkLight* light,
                              SkScalar surfaceScale,
                              const SkMatrix& matrix,
@@ -672,7 +690,7 @@ class GrGLLight;
 
 class SkLight : public SkRefCnt {
 public:
-    SK_DECLARE_INST_COUNT(SkLight)
+    
 
     enum LightType {
         kDistant_LightType,
@@ -1215,13 +1233,15 @@ void SkDiffuseLightingImageFilter::toString(SkString* str) const {
 
 #if SK_SUPPORT_GPU
 GrFragmentProcessor* SkDiffuseLightingImageFilter::getFragmentProcessor(
-                                                       GrTexture* texture,
-                                                       const SkMatrix& matrix,
-                                                       const SkIRect&,
-                                                       BoundaryMode boundaryMode
+                                                   GrProcessorDataManager* procDataManager,
+                                                   GrTexture* texture,
+                                                   const SkMatrix& matrix,
+                                                   const SkIRect&,
+                                                   BoundaryMode boundaryMode
 ) const {
-    SkScalar scale = SkScalarMul(surfaceScale(), SkIntToScalar(255));
-    return GrDiffuseLightingEffect::Create(texture, light(), scale, matrix, kd(), boundaryMode);
+    SkScalar scale = SkScalarMul(this->surfaceScale(), SkIntToScalar(255));
+    return GrDiffuseLightingEffect::Create(procDataManager, texture, this->light(), scale, matrix,
+                                           this->kd(), boundaryMode);
 }
 #endif
 
@@ -1349,13 +1369,14 @@ void SkSpecularLightingImageFilter::toString(SkString* str) const {
 
 #if SK_SUPPORT_GPU
 GrFragmentProcessor* SkSpecularLightingImageFilter::getFragmentProcessor(
-                                                         GrTexture* texture,
-                                                         const SkMatrix& matrix,
-                                                         const SkIRect&,
-                                                         BoundaryMode boundaryMode) const {
-    SkScalar scale = SkScalarMul(surfaceScale(), SkIntToScalar(255));
-    return GrSpecularLightingEffect::Create(texture, light(), scale, matrix, ks(), shininess(),
-                                            boundaryMode);
+                                                    GrProcessorDataManager* procDataManager,
+                                                    GrTexture* texture,
+                                                    const SkMatrix& matrix,
+                                                    const SkIRect&,
+                                                    BoundaryMode boundaryMode) const {
+    SkScalar scale = SkScalarMul(this->surfaceScale(), SkIntToScalar(255));
+    return GrSpecularLightingEffect::Create(procDataManager, texture, this->light(), scale, matrix,
+                                            this->ks(), this->shininess(), boundaryMode);
 }
 #endif
 
@@ -1531,12 +1552,13 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrLightingEffect::GrLightingEffect(GrTexture* texture,
+GrLightingEffect::GrLightingEffect(GrProcessorDataManager* procDataManager,
+                                   GrTexture* texture,
                                    const SkLight* light,
                                    SkScalar surfaceScale,
                                    const SkMatrix& matrix,
                                    BoundaryMode boundaryMode)
-    : INHERITED(texture, GrCoordTransform::MakeDivByTextureWHMatrix(texture))
+    : INHERITED(procDataManager, texture, GrCoordTransform::MakeDivByTextureWHMatrix(texture))
     , fLight(light)
     , fSurfaceScale(surfaceScale)
     , fFilterMatrix(matrix)
@@ -1560,13 +1582,14 @@ bool GrLightingEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrDiffuseLightingEffect::GrDiffuseLightingEffect(GrTexture* texture,
+GrDiffuseLightingEffect::GrDiffuseLightingEffect(GrProcessorDataManager* procDataManager,
+                                                 GrTexture* texture,
                                                  const SkLight* light,
                                                  SkScalar surfaceScale,
                                                  const SkMatrix& matrix,
                                                  SkScalar kd,
                                                  BoundaryMode boundaryMode)
-    : INHERITED(texture, light, surfaceScale, matrix, boundaryMode), fKD(kd) {
+    : INHERITED(procDataManager, texture, light, surfaceScale, matrix, boundaryMode), fKD(kd) {
     this->initClassID<GrDiffuseLightingEffect>();
 }
 
@@ -1587,19 +1610,17 @@ GrGLFragmentProcessor* GrDiffuseLightingEffect::createGLInstance() const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrDiffuseLightingEffect);
 
-GrFragmentProcessor* GrDiffuseLightingEffect::TestCreate(SkRandom* random,
-                                              GrContext* context,
-                                              const GrDrawTargetCaps&,
-                                              GrTexture* textures[]) {
-    SkScalar surfaceScale = random->nextSScalar1();
-    SkScalar kd = random->nextUScalar1();
-    SkAutoTUnref<SkLight> light(create_random_light(random));
+GrFragmentProcessor* GrDiffuseLightingEffect::TestCreate(GrProcessorTestData* d) {
+    SkScalar surfaceScale = d->fRandom->nextSScalar1();
+    SkScalar kd = d->fRandom->nextUScalar1();
+    SkAutoTUnref<SkLight> light(create_random_light(d->fRandom));
     SkMatrix matrix;
     for (int i = 0; i < 9; i++) {
-        matrix[i] = random->nextUScalar1();
+        matrix[i] = d->fRandom->nextUScalar1();
     }
-    BoundaryMode mode = static_cast<BoundaryMode>(random->nextU() % kBoundaryModeCount);
-    return GrDiffuseLightingEffect::Create(textures[GrProcessorUnitTest::kAlphaTextureIdx],
+    BoundaryMode mode = static_cast<BoundaryMode>(d->fRandom->nextU() % kBoundaryModeCount);
+    return GrDiffuseLightingEffect::Create(d->fProcDataManager,
+                                           d->fTextures[GrProcessorUnitTest::kAlphaTextureIdx],
                                            light, surfaceScale, matrix, kd, mode);
 }
 
@@ -1764,14 +1785,15 @@ void GrGLDiffuseLightingEffect::setData(const GrGLProgramDataManager& pdman,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrSpecularLightingEffect::GrSpecularLightingEffect(GrTexture* texture,
+GrSpecularLightingEffect::GrSpecularLightingEffect(GrProcessorDataManager* procDataManager,
+                                                   GrTexture* texture,
                                                    const SkLight* light,
                                                    SkScalar surfaceScale,
                                                    const SkMatrix& matrix,
                                                    SkScalar ks,
                                                    SkScalar shininess,
                                                    BoundaryMode boundaryMode)
-    : INHERITED(texture, light, surfaceScale, matrix, boundaryMode),
+    : INHERITED(procDataManager, texture, light, surfaceScale, matrix, boundaryMode),
       fKS(ks),
       fShininess(shininess) {
     this->initClassID<GrSpecularLightingEffect>();
@@ -1795,20 +1817,18 @@ GrGLFragmentProcessor* GrSpecularLightingEffect::createGLInstance() const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrSpecularLightingEffect);
 
-GrFragmentProcessor* GrSpecularLightingEffect::TestCreate(SkRandom* random,
-                                                          GrContext* context,
-                                                          const GrDrawTargetCaps&,
-                                                          GrTexture* textures[]) {
-    SkScalar surfaceScale = random->nextSScalar1();
-    SkScalar ks = random->nextUScalar1();
-    SkScalar shininess = random->nextUScalar1();
-    SkAutoTUnref<SkLight> light(create_random_light(random));
+GrFragmentProcessor* GrSpecularLightingEffect::TestCreate(GrProcessorTestData* d) {
+    SkScalar surfaceScale = d->fRandom->nextSScalar1();
+    SkScalar ks = d->fRandom->nextUScalar1();
+    SkScalar shininess = d->fRandom->nextUScalar1();
+    SkAutoTUnref<SkLight> light(create_random_light(d->fRandom));
     SkMatrix matrix;
     for (int i = 0; i < 9; i++) {
-        matrix[i] = random->nextUScalar1();
+        matrix[i] = d->fRandom->nextUScalar1();
     }
-    BoundaryMode mode = static_cast<BoundaryMode>(random->nextU() % kBoundaryModeCount);
-    return GrSpecularLightingEffect::Create(textures[GrProcessorUnitTest::kAlphaTextureIdx],
+    BoundaryMode mode = static_cast<BoundaryMode>(d->fRandom->nextU() % kBoundaryModeCount);
+    return GrSpecularLightingEffect::Create(d->fProcDataManager,
+                                            d->fTextures[GrProcessorUnitTest::kAlphaTextureIdx],
                                             light, surfaceScale, matrix, ks, shininess, mode);
 }
 

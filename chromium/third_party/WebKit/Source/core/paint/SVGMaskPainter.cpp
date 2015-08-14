@@ -32,7 +32,7 @@ bool SVGMaskPainter::prepareEffect(const LayoutObject& object, GraphicsContext* 
         ASSERT(context->displayItemList());
         if (context->displayItemList()->displayItemConstructionIsDisabled())
             return true;
-        context->displayItemList()->add(BeginCompositingDisplayItem::create(object, SkXfermode::kSrcOver_Mode, 1, &paintInvalidationRect));
+        context->displayItemList()->createAndAppend<BeginCompositingDisplayItem>(object, SkXfermode::kSrcOver_Mode, 1, &paintInvalidationRect);
     } else {
         BeginCompositingDisplayItem beginCompositingContent(object, SkXfermode::kSrcOver_Mode, 1, &paintInvalidationRect);
         beginCompositingContent.replay(*context);
@@ -52,32 +52,38 @@ void SVGMaskPainter::finishEffect(const LayoutObject& object, GraphicsContext* c
         ColorFilter maskLayerFilter = m_mask.style()->svgStyle().maskType() == MT_LUMINANCE
             ? ColorFilterLuminanceToAlpha : ColorFilterNone;
         CompositingRecorder maskCompositing(*context, object, SkXfermode::kDstIn_Mode, 1, &paintInvalidationRect, maskLayerFilter);
-        drawMaskForLayoutObject(context, object, object.objectBoundingBox());
+        drawMaskForLayoutObject(context, object, object.objectBoundingBox(), paintInvalidationRect);
     }
 
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(context->displayItemList());
-        if (context->displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        context->displayItemList()->add(EndCompositingDisplayItem::create(object));
+        if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
+            if (context->displayItemList()->lastDisplayItemIsNoopBegin())
+                context->displayItemList()->removeLastDisplayItem();
+            else
+                context->displayItemList()->createAndAppend<EndCompositingDisplayItem>(object);
+        }
     } else {
         EndCompositingDisplayItem endCompositingContent(object);
         endCompositingContent.replay(*context);
     }
 }
 
-void SVGMaskPainter::drawMaskForLayoutObject(GraphicsContext* context, const LayoutObject& layoutObject, const FloatRect& targetBoundingBox)
+void SVGMaskPainter::drawMaskForLayoutObject(GraphicsContext* context, const LayoutObject& layoutObject, const FloatRect& targetBoundingBox, const FloatRect& targetPaintInvalidationRect)
 {
     ASSERT(context);
 
     AffineTransform contentTransformation;
-    RefPtr<const SkPicture> maskContentPicture = m_mask.createContentPicture(contentTransformation, targetBoundingBox);
+    RefPtr<const SkPicture> maskContentPicture = m_mask.createContentPicture(contentTransformation, targetBoundingBox, context);
 
-    TransformRecorder recorder(*context, layoutObject, contentTransformation);
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, layoutObject, DisplayItem::SVGMask))
+        return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*context, layoutObject, DisplayItem::SVGMask, LayoutRect::infiniteIntRect());
-    if (!drawingRecorder.canUseCachedDrawing())
-        context->drawPicture(maskContentPicture.get());
+    LayoutObjectDrawingRecorder drawingRecorder(*context, layoutObject, DisplayItem::SVGMask, targetPaintInvalidationRect);
+    context->save();
+    context->concatCTM(contentTransformation);
+    context->drawPicture(maskContentPicture.get());
+    context->restore();
 }
 
 }

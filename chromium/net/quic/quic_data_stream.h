@@ -32,9 +32,9 @@ class QuicDataStreamPeer;
 class ReliableQuicStreamPeer;
 }  // namespace test
 
-class QuicSession;
+class QuicSpdySession;
 
-// All this does right now is send data to subclasses via the sequencer.
+// A QUIC data stream that can also send and receive headers.
 class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
  public:
   // Visitor receives callbacks from the stream.
@@ -52,13 +52,13 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
     DISALLOW_COPY_AND_ASSIGN(Visitor);
   };
 
-  QuicDataStream(QuicStreamId id, QuicSession* session);
-
+  QuicDataStream(QuicStreamId id, QuicSpdySession* spdy_session);
   ~QuicDataStream() override;
 
   // ReliableQuicStream implementation
   void OnClose() override;
   uint32 ProcessRawData(const char* data, uint32 data_len) override;
+
   // By default, this is the same as priority(), however it allows streams
   // to temporarily alter effective priority.   For example if a SPDY stream has
   // compressed but not written headers it can write the headers with a higher
@@ -91,18 +91,25 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
       bool fin,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
+  // Marks |bytes_consumed| of the headers data as consumed.
+  void MarkHeadersConsumed(size_t bytes_consumed);
+
   // This block of functions wraps the sequencer's functions of the same
   // name.  These methods return uncompressed data until that has
   // been fully processed.  Then they simply delegate to the sequencer.
   virtual size_t Readv(const struct iovec* iov, size_t iov_len);
-  virtual int GetReadableRegions(iovec* iov, size_t iov_len);
+  virtual int GetReadableRegions(iovec* iov, size_t iov_len) const;
   // Returns true when all data has been read from the peer, including the fin.
-  virtual bool IsDoneReading() const;
-  virtual bool HasBytesToRead() const;
+  bool IsDoneReading() const;
+  bool HasBytesToRead() const;
 
   void set_visitor(Visitor* visitor) { visitor_ = visitor; }
 
   bool headers_decompressed() const { return headers_decompressed_; }
+
+  const std::string& decompressed_headers() const {
+    return decompressed_headers_;
+  }
 
  protected:
   // Sets priority_ to priority.  This should only be called before bytes are
@@ -112,17 +119,17 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
   // instead.
   QuicPriority priority() const { return priority_; }
 
+  bool FinishedReadingHeaders() const;
+
  private:
   friend class test::QuicDataStreamPeer;
   friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
 
-  uint32 ProcessHeaderData();
-
-  bool FinishedReadingHeaders();
+  QuicSpdySession* spdy_session_;
 
   Visitor* visitor_;
-  // True if the headers have been completely decompresssed.
+  // True if the headers have been completely decompressed.
   bool headers_decompressed_;
   // The priority of the stream, once parsed.
   QuicPriority priority_;

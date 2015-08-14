@@ -21,6 +21,7 @@ dictionary InternalDictionary {
     ByteString byteStringMember;
     USVString usvStringMember;
     sequence<DOMString> stringSequenceMember;
+    sequence<DOMString> stringSequenceMemberWithDefault = [];
     sequence<DOMString>? stringSequenceOrNullMember;
     InternalEnum enumMember;
     InternalEnum enumMemberWithDefault = "foo";
@@ -31,5 +32,6 @@ dictionary InternalDictionary {
     object objectMember;
     object? objectOrNullMemberWithDefault = null;
     (double or DOMString) doubleOrStringMember;
+    sequence<(double or DOMString)> doubleOrStringSequenceMember;
     EventTarget? eventTargetOrNullMember = null;
 };

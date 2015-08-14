@@ -23,13 +23,15 @@ void ClipPathDisplayItem::SetNew(const SkPath& clip_path,
   clip_op_ = clip_op;
   antialias_ = antialias;
 
-  size_t memory_usage = sizeof(SkPath) + sizeof(SkRegion::Op) + sizeof(bool);
+  // The size of SkPath's external storage is not currently accounted for (and
+  // may well be shared anyway).
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 1 /* op_count */,
-                      memory_usage);
+                      0 /* external_memory_usage */);
 }
 
 void ClipPathDisplayItem::Raster(SkCanvas* canvas,
-                                 SkDrawPictureCallback* callback) const {
+                                 const gfx::Rect& canvas_target_playback_rect,
+                                 SkPicture::AbortCallback* callback) const {
   canvas->save();
   canvas->clipPath(clip_path_, clip_op_, antialias_);
 }
@@ -42,14 +44,16 @@ void ClipPathDisplayItem::AsValueInto(
 
 EndClipPathDisplayItem::EndClipPathDisplayItem() {
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 0 /* op_count */,
-                      0 /* memory_usage */);
+                      0 /* external_memory_usage */);
 }
 
 EndClipPathDisplayItem::~EndClipPathDisplayItem() {
 }
 
-void EndClipPathDisplayItem::Raster(SkCanvas* canvas,
-                                    SkDrawPictureCallback* callback) const {
+void EndClipPathDisplayItem::Raster(
+    SkCanvas* canvas,
+    const gfx::Rect& canvas_target_playback_rect,
+    SkPicture::AbortCallback* callback) const {
   canvas->restore();
 }
 

@@ -12,9 +12,12 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -68,8 +71,8 @@ class MockUploadElementReader : public UploadElementReader {
 
   // UploadElementReader overrides.
   MOCK_METHOD1(Init, int(const CompletionCallback& callback));
-  uint64 GetContentLength() const override { return content_length_; }
-  uint64 BytesRemaining() const override { return bytes_remaining_; }
+  uint64_t GetContentLength() const override { return content_length_; }
+  uint64_t BytesRemaining() const override { return bytes_remaining_; }
   bool IsInMemory() const override { return is_in_memory_; }
   MOCK_METHOD3(Read, int(IOBuffer* buf,
                          int buf_length,
@@ -92,8 +95,8 @@ class MockUploadElementReader : public UploadElementReader {
 
  private:
   void OnInit(const CompletionCallback& callback) {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(callback, init_result_));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(callback, init_result_));
   }
 
   int OnRead(IOBuffer* buf,
@@ -104,7 +107,7 @@ class MockUploadElementReader : public UploadElementReader {
     if (IsInMemory()) {
       return read_result_;
     } else {
-      base::MessageLoop::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(callback, read_result_));
       return ERR_IO_PENDING;
     }
@@ -180,11 +183,8 @@ TEST_F(ElementsUploadDataStreamTest, File) {
             base::WriteFile(temp_file_path, kTestData, kTestDataSize));
 
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
 
   TestCompletionCallback init_callback;
   scoped_ptr<UploadDataStream> stream(
@@ -213,17 +213,14 @@ TEST_F(ElementsUploadDataStreamTest, FileSmallerThanLength) {
                                              &temp_file_path));
   ASSERT_EQ(static_cast<int>(kTestDataSize),
             base::WriteFile(temp_file_path, kTestData, kTestDataSize));
-  const uint64 kFakeSize = kTestDataSize*2;
+  const uint64_t kFakeSize = kTestDataSize * 2;
 
   UploadFileElementReader::ScopedOverridingContentLengthForTests
       overriding_content_length(kFakeSize);
 
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
 
   TestCompletionCallback init_callback;
   scoped_ptr<UploadDataStream> stream(
@@ -234,7 +231,7 @@ TEST_F(ElementsUploadDataStreamTest, FileSmallerThanLength) {
   EXPECT_EQ(kFakeSize, stream->size());
   EXPECT_EQ(0U, stream->position());
   EXPECT_FALSE(stream->IsEOF());
-  uint64 read_counter = 0;
+  uint64_t read_counter = 0;
   scoped_refptr<IOBuffer> buf = new IOBuffer(kTestBufferSize);
   while (!stream->IsEOF()) {
     TestCompletionCallback read_callback;
@@ -335,19 +332,16 @@ TEST_F(ElementsUploadDataStreamTest, FileAndBytes) {
   ASSERT_EQ(static_cast<int>(kTestDataSize),
             base::WriteFile(temp_file_path, kTestData, kTestDataSize));
 
-  const uint64 kFileRangeOffset = 1;
-  const uint64 kFileRangeLength = 4;
-  element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  kFileRangeOffset,
-                                  kFileRangeLength,
-                                  base::Time()));
+  const uint64_t kFileRangeOffset = 1;
+  const uint64_t kFileRangeLength = 4;
+  element_readers_.push_back(new UploadFileElementReader(
+      base::ThreadTaskRunnerHandle::Get().get(), temp_file_path,
+      kFileRangeOffset, kFileRangeLength, base::Time()));
 
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
 
-  const uint64 kStreamSize = kTestDataSize + kFileRangeLength;
+  const uint64_t kStreamSize = kTestDataSize + kFileRangeLength;
   TestCompletionCallback init_callback;
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
@@ -528,7 +522,7 @@ void ElementsUploadDataStreamTest::FileChangedHelper(
   // reusing element_readers_ is wrong.
   ScopedVector<UploadElementReader> element_readers;
   element_readers.push_back(new UploadFileElementReader(
-      base::MessageLoopProxy::current().get(), file_path, 1, 2, time));
+      base::ThreadTaskRunnerHandle::Get().get(), file_path, 1, 2, time));
 
   TestCompletionCallback init_callback;
   scoped_ptr<UploadDataStream> stream(
@@ -571,11 +565,8 @@ TEST_F(ElementsUploadDataStreamTest, MultipleInit) {
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
@@ -617,11 +608,8 @@ TEST_F(ElementsUploadDataStreamTest, MultipleInitAsync) {
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
@@ -660,11 +648,8 @@ TEST_F(ElementsUploadDataStreamTest, InitToReset) {
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
@@ -719,11 +704,8 @@ TEST_F(ElementsUploadDataStreamTest, InitDuringAsyncInit) {
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
@@ -768,11 +750,8 @@ TEST_F(ElementsUploadDataStreamTest, InitDuringAsyncRead) {
   element_readers_.push_back(new UploadBytesElementReader(
       kTestData, kTestDataSize));
   element_readers_.push_back(
-      new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                  temp_file_path,
-                                  0,
-                                  kuint64max,
-                                  base::Time()));
+      new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                  temp_file_path, 0, kuint64max, base::Time()));
   scoped_ptr<UploadDataStream> stream(
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 

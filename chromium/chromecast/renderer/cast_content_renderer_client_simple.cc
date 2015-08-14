@@ -4,17 +4,15 @@
 
 #include "chromecast/renderer/cast_content_renderer_client.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "ipc/message_filter.h"
 
 namespace chromecast {
 namespace shell {
 
-void PlatformAddRendererNativeBindings(blink::WebLocalFrame* frame) {
-}
-
-std::vector<scoped_refptr<IPC::MessageFilter>>
-CastContentRendererClient::PlatformGetRendererMessageFilters() {
-  return std::vector<scoped_refptr<IPC::MessageFilter>>();
+// static
+scoped_ptr<CastContentRendererClient> CastContentRendererClient::Create() {
+  return make_scoped_ptr(new CastContentRendererClient());
 }
 
 }  // namespace shell

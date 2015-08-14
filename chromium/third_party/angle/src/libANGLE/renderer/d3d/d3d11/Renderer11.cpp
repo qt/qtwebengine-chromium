@@ -48,6 +48,7 @@
 #include "libANGLE/renderer/d3d/d3d11/Trim11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexArray11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexBuffer11.h"
+#include "libANGLE/renderer/d3d/d3d11/dxgi_support_table.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 #include "third_party/trace_event/trace_event.h"
@@ -75,7 +76,7 @@ enum
     MAX_TEXTURE_IMAGE_UNITS_VTF_SM4 = 16
 };
 
-static bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOURCE_VIEW_DESC desc)
+bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOURCE_VIEW_DESC desc)
 {
     unsigned mipLevel = index.mipIndex;
     unsigned layerIndex = index.layerIndex;
@@ -159,11 +160,71 @@ void CalculateConstantBufferParams(GLintptr offset, GLsizeiptr size, UINT *outFi
     // https://msdn.microsoft.com/en-us/library/windows/desktop/hh404649%28v=vs.85%29.aspx
 }
 
-egl::Error GenerateD3D11CreateDeviceErr(HRESULT errorCode)
+enum ANGLEFeatureLevel
 {
-    return egl::Error(EGL_NOT_INITIALIZED, errorCode, "Could not create D3D11 device.");
+    ANGLE_FEATURE_LEVEL_INVALID,
+    ANGLE_FEATURE_LEVEL_9_3,
+    ANGLE_FEATURE_LEVEL_10_0,
+    ANGLE_FEATURE_LEVEL_10_1,
+    ANGLE_FEATURE_LEVEL_11_0,
+    ANGLE_FEATURE_LEVEL_11_1,
+    NUM_ANGLE_FEATURE_LEVELS
+};
+
+ANGLEFeatureLevel GetANGLEFeatureLevel(D3D_FEATURE_LEVEL d3dFeatureLevel)
+{
+    switch (d3dFeatureLevel)
+    {
+      case D3D_FEATURE_LEVEL_9_3: return ANGLE_FEATURE_LEVEL_9_3;
+      case D3D_FEATURE_LEVEL_10_0: return ANGLE_FEATURE_LEVEL_10_0;
+      case D3D_FEATURE_LEVEL_10_1: return ANGLE_FEATURE_LEVEL_10_1;
+      case D3D_FEATURE_LEVEL_11_0: return ANGLE_FEATURE_LEVEL_11_0;
+      // Note: we don't ever request a 11_1 device, because this gives
+      // an E_INVALIDARG error on systems that don't have the platform update.
+      case D3D_FEATURE_LEVEL_11_1: return ANGLE_FEATURE_LEVEL_11_1;
+      default: return ANGLE_FEATURE_LEVEL_INVALID;
+    }
 }
 
+}
+
+void Renderer11::SRVCache::update(size_t resourceIndex, ID3D11ShaderResourceView *srv)
+{
+    ASSERT(resourceIndex < mCurrentSRVs.size());
+    SRVRecord *record = &mCurrentSRVs[resourceIndex];
+
+    record->srv = reinterpret_cast<uintptr_t>(srv);
+    if (srv)
+    {
+        record->resource = reinterpret_cast<uintptr_t>(GetViewResource(srv));
+        srv->GetDesc(&record->desc);
+        mHighestUsedSRV = std::max(resourceIndex + 1, mHighestUsedSRV);
+    }
+    else
+    {
+        record->resource = 0;
+
+        if (resourceIndex + 1 == mHighestUsedSRV)
+        {
+            do
+            {
+                --mHighestUsedSRV;
+            }
+            while (mHighestUsedSRV > 0 &&
+                   mCurrentSRVs[mHighestUsedSRV].srv == 0);
+        }
+    }
+}
+
+void Renderer11::SRVCache::clear()
+{
+    if (mCurrentSRVs.empty())
+    {
+        return;
+    }
+
+    memset(&mCurrentSRVs[0], 0, sizeof(SRVRecord) * mCurrentSRVs.size());
+    mHighestUsedSRV = 0;
 }
 
 Renderer11::Renderer11(egl::Display *display)
@@ -171,14 +232,12 @@ Renderer11::Renderer11(egl::Display *display)
       mStateCache(this),
       mDebug(nullptr)
 {
-    // Initialize global annotator
-    gl::InitializeDebugAnnotations(&mAnnotator);
-
     mVertexDataManager = NULL;
     mIndexDataManager = NULL;
 
     mLineLoopIB = NULL;
     mTriangleFanIB = NULL;
+    mAppliedIBChanged = false;
 
     mBlit = NULL;
     mPixelTransfer = NULL;
@@ -192,6 +251,9 @@ Renderer11::Renderer11(egl::Display *display)
     mRenderer11DeviceCaps.supportsClearView = false;
     mRenderer11DeviceCaps.supportsConstantBufferOffsets = false;
     mRenderer11DeviceCaps.supportsDXGI1_2 = false;
+    mRenderer11DeviceCaps.B5G6R5support = 0;
+    mRenderer11DeviceCaps.B4G4R4A4support = 0;
+    mRenderer11DeviceCaps.B5G5R5A1support = 0;
 
     mD3d11Module = NULL;
     mDxgiModule = NULL;
@@ -210,6 +272,8 @@ Renderer11::Renderer11(egl::Display *display)
     mAppliedPixelShader = NULL;
 
     mAppliedNumXFBBindings = static_cast<size_t>(-1);
+
+    ZeroMemory(&mAdapterDescription, sizeof(mAdapterDescription));
 
     const auto &attributes = mDisplay->getAttributeMap();
 
@@ -269,8 +333,6 @@ Renderer11::Renderer11(egl::Display *display)
 Renderer11::~Renderer11()
 {
     release();
-
-    gl::UninitializeDebugAnnotations();
 }
 
 #ifndef __d3d11_1_h__
@@ -279,6 +341,8 @@ Renderer11::~Renderer11()
 
 egl::Error Renderer11::initialize()
 {
+    double loadDLLsBegin = ANGLEPlatformCurrent()->currentTime();
+
     if (!mCompiler.initialize())
     {
         return egl::Error(EGL_NOT_INITIALIZED,
@@ -313,6 +377,10 @@ egl::Error Renderer11::initialize()
     }
 #endif
 
+    double loadDLLsSec = ANGLEPlatformCurrent()->currentTime() - loadDLLsBegin;
+    int loadDLLsMS = static_cast<int>(loadDLLsSec * 1000);
+    ANGLE_HISTOGRAM_TIMES("GPU.ANGLE.Renderer11InitializeDLLsMS", loadDLLsMS);
+
     HRESULT result = S_OK;
 #ifdef _DEBUG
     {
@@ -337,9 +405,9 @@ egl::Error Renderer11::initialize()
     if (!mDevice || FAILED(result))
 #endif
     {
-        double createDeviceBegin = ANGLEPlatformCurrent()->currentTime();
-
+        SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.D3D11CreateDeviceMS");
         TRACE_EVENT0("gpu.angle", "D3D11CreateDevice");
+
         result = D3D11CreateDevice(NULL,
                                    mDriverType,
                                    NULL,
@@ -352,44 +420,13 @@ egl::Error Renderer11::initialize()
                                    &mDeviceContext);
 
         // Cleanup done by destructor
-        if (FAILED(result))
+        if (!mDevice || FAILED(result))
         {
-            // Most likely error codes, see
-            // https://msdn.microsoft.com/en-us/library/windows/desktop/ff476082%28v=vs.85%29.aspx
-            // And https://msdn.microsoft.com/en-us/library/windows/desktop/ff476174(v=vs.85).aspx
-            switch (result)
-            {
-              case E_INVALIDARG:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_INVALIDARG);
-              case E_FAIL:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_FAIL);
-              case E_NOTIMPL:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_NOTIMPL);
-              case E_OUTOFMEMORY:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_OUTOFMEMORY);
-              case DXGI_ERROR_INVALID_CALL:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_INVALIDCALL);
-              case DXGI_ERROR_SDK_COMPONENT_MISSING:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_COMPONENTMISSING);
-              case DXGI_ERROR_WAS_STILL_DRAWING:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_WASSTILLDRAWING);
-              case DXGI_ERROR_NOT_CURRENTLY_AVAILABLE:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_NOTAVAILABLE);
-              case DXGI_ERROR_DEVICE_HUNG:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_DEVICEHUNG);
-              default:
-                return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_ERROR);
-            }
+            ANGLE_HISTOGRAM_SPARSE_SLOWLY("GPU.ANGLE.D3D11CreateDeviceError", static_cast<int>(result));
+            return egl::Error(EGL_NOT_INITIALIZED,
+                              D3D11_INIT_CREATEDEVICE_ERROR,
+                              "Could not create D3D11 device.");
         }
-
-        if (!mDevice)
-        {
-            return GenerateD3D11CreateDeviceErr(D3D11_INIT_CREATEDEVICE_NULL);
-        }
-
-        double createDeviceSec = ANGLEPlatformCurrent()->currentTime() - createDeviceBegin;
-        int createDeviceMS = static_cast<int>(createDeviceSec * 1000);
-        ANGLE_HISTOGRAM_TIMES("GPU.ANGLE.D3D11CreateDeviceMS", createDeviceMS);
     }
 
 #if !defined(ANGLE_ENABLE_WINDOWS_STORE)
@@ -457,32 +494,40 @@ egl::Error Renderer11::initialize()
         SafeRelease(dxgiDevice);
 
         IDXGIAdapter2 *dxgiAdapter2 = d3d11::DynamicCastComObject<IDXGIAdapter2>(mDxgiAdapter);
-        mRenderer11DeviceCaps.supportsDXGI1_2 = (dxgiAdapter2 != nullptr);
 
         // On D3D_FEATURE_LEVEL_9_*, IDXGIAdapter::GetDesc returns "Software Adapter" for the description string.
         // If DXGI1.2 is available then IDXGIAdapter2::GetDesc2 can be used to get the actual hardware values.
         if (mRenderer11DeviceCaps.featureLevel <= D3D_FEATURE_LEVEL_9_3 && dxgiAdapter2 != NULL)
         {
-            DXGI_ADAPTER_DESC2 adapterDesc2 = { 0 };
-            dxgiAdapter2->GetDesc2(&adapterDesc2);
-
-            // Copy the contents of the DXGI_ADAPTER_DESC2 into mAdapterDescription (a DXGI_ADAPTER_DESC).
-            memcpy(mAdapterDescription.Description, adapterDesc2.Description, sizeof(mAdapterDescription.Description));
-            mAdapterDescription.VendorId = adapterDesc2.VendorId;
-            mAdapterDescription.DeviceId = adapterDesc2.DeviceId;
-            mAdapterDescription.SubSysId = adapterDesc2.SubSysId;
-            mAdapterDescription.Revision = adapterDesc2.Revision;
-            mAdapterDescription.DedicatedVideoMemory = adapterDesc2.DedicatedVideoMemory;
-            mAdapterDescription.DedicatedSystemMemory = adapterDesc2.DedicatedSystemMemory;
-            mAdapterDescription.SharedSystemMemory = adapterDesc2.SharedSystemMemory;
-            mAdapterDescription.AdapterLuid = adapterDesc2.AdapterLuid;
+            DXGI_ADAPTER_DESC2 adapterDesc2 = {};
+            result = dxgiAdapter2->GetDesc2(&adapterDesc2);
+            if (SUCCEEDED(result))
+            {
+                // Copy the contents of the DXGI_ADAPTER_DESC2 into mAdapterDescription (a DXGI_ADAPTER_DESC).
+                memcpy(mAdapterDescription.Description, adapterDesc2.Description, sizeof(mAdapterDescription.Description));
+                mAdapterDescription.VendorId = adapterDesc2.VendorId;
+                mAdapterDescription.DeviceId = adapterDesc2.DeviceId;
+                mAdapterDescription.SubSysId = adapterDesc2.SubSysId;
+                mAdapterDescription.Revision = adapterDesc2.Revision;
+                mAdapterDescription.DedicatedVideoMemory = adapterDesc2.DedicatedVideoMemory;
+                mAdapterDescription.DedicatedSystemMemory = adapterDesc2.DedicatedSystemMemory;
+                mAdapterDescription.SharedSystemMemory = adapterDesc2.SharedSystemMemory;
+                mAdapterDescription.AdapterLuid = adapterDesc2.AdapterLuid;
+            }
         }
         else
         {
-            mDxgiAdapter->GetDesc(&mAdapterDescription);
+            result = mDxgiAdapter->GetDesc(&mAdapterDescription);
         }
 
         SafeRelease(dxgiAdapter2);
+
+        if (FAILED(result))
+        {
+            return egl::Error(EGL_NOT_INITIALIZED,
+                              D3D11_INIT_OTHER_ERROR,
+                              "Could not read DXGI adaptor description.");
+        }
 
         memset(mDescription, 0, sizeof(mDescription));
         wcstombs(mDescription, mAdapterDescription.Description, sizeof(mDescription) - 1);
@@ -511,7 +556,7 @@ egl::Error Renderer11::initialize()
                 D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET
             };
 
-            D3D11_INFO_QUEUE_FILTER filter = { 0 };
+            D3D11_INFO_QUEUE_FILTER filter = {};
             filter.DenyList.NumIDs = ArraySize(hideMessages);
             filter.DenyList.pIDList = hideMessages;
 
@@ -535,7 +580,10 @@ egl::Error Renderer11::initialize()
 // to reset the scene status and ensure the default states are reset.
 void Renderer11::initializeDevice()
 {
+    SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.Renderer11InitializeDeviceMS");
     TRACE_EVENT0("gpu.angle", "Renderer11::initializeDevice");
+
+    populateRenderer11DeviceCaps();
 
     mStateCache.initialize(mDevice);
     mInputLayoutCache.initialize(mDevice, mDeviceContext);
@@ -567,6 +615,46 @@ void Renderer11::initializeDevice()
 
     const gl::Caps &rendererCaps = getRendererCaps();
 
+    mForceSetVertexSamplerStates.resize(rendererCaps.maxVertexTextureImageUnits);
+    mCurVertexSamplerStates.resize(rendererCaps.maxVertexTextureImageUnits);
+
+    mForceSetPixelSamplerStates.resize(rendererCaps.maxTextureImageUnits);
+    mCurPixelSamplerStates.resize(rendererCaps.maxTextureImageUnits);
+
+    mCurVertexSRVs.initialize(rendererCaps.maxVertexTextureImageUnits);
+    mCurPixelSRVs.initialize(rendererCaps.maxTextureImageUnits);
+
+    markAllStateDirty();
+
+    // Gather stats on DXGI and D3D feature level
+    ANGLE_HISTOGRAM_BOOLEAN("GPU.ANGLE.SupportsDXGI1_2", mRenderer11DeviceCaps.supportsDXGI1_2);
+
+    ANGLEFeatureLevel angleFeatureLevel = GetANGLEFeatureLevel(mRenderer11DeviceCaps.featureLevel);
+
+    // We don't actually request a 11_1 device, because of complications with the platform
+    // update. Instead we check if the mDeviceContext1 pointer cast succeeded.
+    // Note: we should support D3D11_0 always, but we aren't guaranteed to be at FL11_0
+    // because the app can specify a lower version (such as 9_3) on Display creation.
+    if (mDeviceContext1 != nullptr)
+    {
+        angleFeatureLevel = ANGLE_FEATURE_LEVEL_11_1;
+    }
+
+    // Initialize cached NULL SRV block
+    mNullSRVs.resize(getRendererCaps().maxTextureImageUnits, nullptr);
+
+    ANGLE_HISTOGRAM_ENUMERATION("GPU.ANGLE.D3D11FeatureLevel",
+                                angleFeatureLevel,
+                                NUM_ANGLE_FEATURE_LEVELS);
+
+    // TODO(jmadill): use context caps, and place in common D3D location
+    mTranslatedAttribCache.resize(getRendererCaps().maxVertexAttributes);
+}
+
+void Renderer11::populateRenderer11DeviceCaps()
+{
+    HRESULT hr = S_OK;
+
     if (mDeviceContext1)
     {
         D3D11_FEATURE_DATA_D3D11_OPTIONS d3d11Options;
@@ -578,24 +666,40 @@ void Renderer11::initializeDevice()
         }
     }
 
-    mForceSetVertexSamplerStates.resize(rendererCaps.maxVertexTextureImageUnits);
-    mCurVertexSamplerStates.resize(rendererCaps.maxVertexTextureImageUnits);
+    hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B5G6R5_UNORM, &(mRenderer11DeviceCaps.B5G6R5support));
+    if (FAILED(hr))
+    {
+        mRenderer11DeviceCaps.B5G6R5support = 0;
+    }
 
-    mForceSetPixelSamplerStates.resize(rendererCaps.maxTextureImageUnits);
-    mCurPixelSamplerStates.resize(rendererCaps.maxTextureImageUnits);
+    hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B4G4R4A4_UNORM, &(mRenderer11DeviceCaps.B4G4R4A4support));
+    if (FAILED(hr))
+    {
+        mRenderer11DeviceCaps.B4G4R4A4support = 0;
+    }
 
-    mCurVertexSRVs.resize(rendererCaps.maxVertexTextureImageUnits);
-    mCurPixelSRVs.resize(rendererCaps.maxTextureImageUnits);
+    hr = mDevice->CheckFormatSupport(DXGI_FORMAT_B5G5R5A1_UNORM, &(mRenderer11DeviceCaps.B5G5R5A1support));
+    if (FAILED(hr))
+    {
+        mRenderer11DeviceCaps.B5G5R5A1support = 0;
+    }
 
-    markAllStateDirty();
+    IDXGIAdapter2 *dxgiAdapter2 = d3d11::DynamicCastComObject<IDXGIAdapter2>(mDxgiAdapter);
+    mRenderer11DeviceCaps.supportsDXGI1_2 = (dxgiAdapter2 != nullptr);
+    SafeRelease(dxgiAdapter2);
 }
 
 egl::ConfigSet Renderer11::generateConfigs() const
 {
     static const GLenum colorBufferFormats[] =
     {
+        // 32-bit supported formats
         GL_BGRA8_EXT,
         GL_RGBA8_OES,
+        // 16-bit supported formats
+        GL_RGBA4,
+        GL_RGB5_A1,
+        GL_RGB565,
     };
 
     static const GLenum depthStencilBufferFormats[] =
@@ -640,7 +744,7 @@ egl::ConfigSet Renderer11::generateConfigs() const
                     config.configCaveat = EGL_NONE;
                     config.configID = static_cast<EGLint>(configs.size() + 1);
                     // Can only support a conformant ES2 with feature level greater than 10.0.
-                    config.conformant = (mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0) ? (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR) : EGL_NONE;
+                    config.conformant = (mRenderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_10_0) ? (EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT_KHR) : 0;
                     config.depthSize = depthStencilBufferFormatInfo.depthBits;
                     config.level = 0;
                     config.matchNativePixmap = EGL_NONE;
@@ -874,10 +978,10 @@ gl::Error Renderer11::setTexture(gl::SamplerType type, int index, gl::Texture *t
 }
 
 gl::Error Renderer11::setUniformBuffers(const gl::Data &data,
-                                        const GLint vertexUniformBuffers[],
-                                        const GLint fragmentUniformBuffers[])
+                                        const std::vector<GLint> &vertexUniformBuffers,
+                                        const std::vector<GLint> &fragmentUniformBuffers)
 {
-    for (unsigned int uniformBufferIndex = 0; uniformBufferIndex < data.caps->maxVertexUniformBlocks; uniformBufferIndex++)
+    for (size_t uniformBufferIndex = 0; uniformBufferIndex < vertexUniformBuffers.size(); uniformBufferIndex++)
     {
         GLint binding = vertexUniformBuffers[uniformBufferIndex];
 
@@ -933,7 +1037,7 @@ gl::Error Renderer11::setUniformBuffers(const gl::Data &data,
         }
     }
 
-    for (unsigned int uniformBufferIndex = 0; uniformBufferIndex < data.caps->maxFragmentUniformBlocks; uniformBufferIndex++)
+    for (size_t uniformBufferIndex = 0; uniformBufferIndex < fragmentUniformBuffers.size(); uniformBufferIndex++)
     {
         GLint binding = fragmentUniformBuffers[uniformBufferIndex];
 
@@ -1408,21 +1512,26 @@ gl::Error Renderer11::applyRenderTarget(const gl::Framebuffer *framebuffer)
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error Renderer11::applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances)
+gl::Error Renderer11::applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances, SourceIndexData *sourceInfo)
 {
-    TranslatedAttribute attributes[gl::MAX_VERTEX_ATTRIBS];
-    gl::Error error = mVertexDataManager->prepareVertexData(state, first, count, attributes, instances);
+    gl::Error error = mVertexDataManager->prepareVertexData(state, first, count, &mTranslatedAttribCache, instances);
     if (error.isError())
     {
         return error;
     }
 
-    return mInputLayoutCache.applyVertexBuffers(attributes, mode, state.getProgram());
+    // If index information is passed, mark it with the current changed status.
+    if (sourceInfo)
+    {
+        sourceInfo->srcIndicesChanged = mAppliedIBChanged;
+    }
+
+    return mInputLayoutCache.applyVertexBuffers(mTranslatedAttribCache, mode, state.getProgram(), sourceInfo);
 }
 
-gl::Error Renderer11::applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo)
+gl::Error Renderer11::applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo, SourceIndexData *sourceIndexInfo)
 {
-    gl::Error error = mIndexDataManager->prepareIndexData(type, count, elementArrayBuffer, indices, indexInfo);
+    gl::Error error = mIndexDataManager->prepareIndexData(type, count, elementArrayBuffer, indices, indexInfo, sourceIndexInfo);
     if (error.isError())
     {
         return error;
@@ -1442,6 +1551,7 @@ gl::Error Renderer11::applyIndexBuffer(const GLvoid *indices, gl::Buffer *elemen
         buffer = indexBuffer->getBuffer();
     }
 
+    mAppliedIBChanged = false;
     if (buffer != mAppliedIB || bufferFormat != mAppliedIBFormat || indexInfo->startOffset != mAppliedIBOffset)
     {
         mDeviceContext->IASetIndexBuffer(buffer, bufferFormat, indexInfo->startOffset);
@@ -1449,6 +1559,7 @@ gl::Error Renderer11::applyIndexBuffer(const GLvoid *indices, gl::Buffer *elemen
         mAppliedIB = buffer;
         mAppliedIBFormat = bufferFormat;
         mAppliedIBOffset = indexInfo->startOffset;
+        mAppliedIBChanged = true;
     }
 
     return gl::Error(GL_NO_ERROR);
@@ -1520,7 +1631,7 @@ gl::Error Renderer11::drawArrays(const gl::Data &data, GLenum mode, GLsizei coun
     {
         // Since point sprites are generated with a geometry shader, too many vertices will
         // be written if transform feedback is active.  To work around this, draw only the points
-        // with the stream out shader and no pixel shader to feed the stream out buffers and then 
+        // with the stream out shader and no pixel shader to feed the stream out buffers and then
         // draw again with the point sprite geometry shader to rasterize the point sprites.
 
         mDeviceContext->PSSetShader(NULL, NULL, 0);
@@ -1584,9 +1695,9 @@ gl::Error Renderer11::drawArrays(const gl::Data &data, GLenum mode, GLsizei coun
     }
     else
     {
-        // If gl_PointSize is used and GL_POINTS is specified, then it is expected to render pointsprites.
-        // If instanced pointsprite emulation is being used the topology is expexted to be 
-        // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST and DrawIndexedInstanced must be used.
+        // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
+        // Emulating instanced point sprites for FL9_3 requires the topology to be
+        // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST and DrawIndexedInstanced is called instead.
         if (mode == GL_POINTS && useInstancedPointSpriteEmulation)
         {
             mDeviceContext->DrawIndexedInstanced(6, count, 0, 0, 0);
@@ -1600,8 +1711,10 @@ gl::Error Renderer11::drawArrays(const gl::Data &data, GLenum mode, GLsizei coun
 }
 
 gl::Error Renderer11::drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
-                                   gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances)
+                                   gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances,
+                                   bool usesPointSize)
 {
+    bool useInstancedPointSpriteEmulation = usesPointSize && getWorkarounds().useInstancedPointSpriteEmulation;
     int minIndex = static_cast<int>(indexInfo.indexRange.start);
 
     if (mode == GL_LINE_LOOP)
@@ -1619,8 +1732,27 @@ gl::Error Renderer11::drawElements(GLenum mode, GLsizei count, GLenum type, cons
     }
     else
     {
-        mDeviceContext->DrawIndexed(count, 0, -minIndex);
-        return gl::Error(GL_NO_ERROR);
+        // If the shader is writing to gl_PointSize, then pointsprites are being rendered.
+        // Emulating instanced point sprites for FL9_3 requires the topology to be
+        // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST and DrawIndexedInstanced is called instead.
+        if (mode == GL_POINTS && useInstancedPointSpriteEmulation)
+        {
+            // The count parameter passed to drawElements represents the total number of instances
+            // to be rendered. Each instance is referenced by the bound index buffer from the
+            // the caller.
+            //
+            // Indexed pointsprite emulation replicates data for duplicate entries found
+            // in the index buffer.
+            // This is not an efficent rendering mechanism and is only used on downlevel renderers
+            // that do not support geometry shaders.
+            mDeviceContext->DrawIndexedInstanced(6, count, 0, 0, 0);
+            return gl::Error(GL_NO_ERROR);
+        }
+        else
+        {
+            mDeviceContext->DrawIndexed(count, 0, -minIndex);
+            return gl::Error(GL_NO_ERROR);
+        }
     }
 }
 
@@ -1859,10 +1991,13 @@ gl::Error Renderer11::drawTriangleFan(GLsizei count, GLenum type, const GLvoid *
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error Renderer11::applyShaders(gl::Program *program, const gl::VertexFormat inputLayout[], const gl::Framebuffer *framebuffer,
-                                   bool rasterizerDiscard, bool transformFeedbackActive)
+gl::Error Renderer11::applyShaders(gl::Program *program,
+                                   const gl::Framebuffer *framebuffer,
+                                   bool rasterizerDiscard,
+                                   bool transformFeedbackActive)
 {
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
+    const auto &inputLayout = programD3D->getCachedInputLayout();
 
     ShaderExecutableD3D *vertexExe = NULL;
     gl::Error error = programD3D->getVertexExecutableForInputLayout(inputLayout, &vertexExe, nullptr);
@@ -2042,9 +2177,11 @@ gl::Error Renderer11::applyUniforms(const ProgramImpl &program, const std::vecto
         constantBufferDescription.StructureByteStride = 0;
 
         HRESULT result = mDevice->CreateBuffer(&constantBufferDescription, NULL, &mDriverConstantBufferVS);
-        UNUSED_ASSERTION_VARIABLE(result);
         ASSERT(SUCCEEDED(result));
-
+        if (FAILED(result))
+        {
+            return gl::Error(GL_OUT_OF_MEMORY, "Failed to create vertex shader constant buffer, result: 0x%X.", result);
+        }
         mDeviceContext->VSSetConstantBuffers(1, 1, &mDriverConstantBufferVS);
     }
 
@@ -2059,22 +2196,32 @@ gl::Error Renderer11::applyUniforms(const ProgramImpl &program, const std::vecto
         constantBufferDescription.StructureByteStride = 0;
 
         HRESULT result = mDevice->CreateBuffer(&constantBufferDescription, NULL, &mDriverConstantBufferPS);
-        UNUSED_ASSERTION_VARIABLE(result);
         ASSERT(SUCCEEDED(result));
-
+        if (FAILED(result))
+        {
+            return gl::Error(GL_OUT_OF_MEMORY, "Failed to create pixel shader constant buffer, result: 0x%X.", result);
+        }
         mDeviceContext->PSSetConstantBuffers(1, 1, &mDriverConstantBufferPS);
     }
 
     if (memcmp(&mVertexConstants, &mAppliedVertexConstants, sizeof(dx_VertexConstants)) != 0)
     {
-        mDeviceContext->UpdateSubresource(mDriverConstantBufferVS, 0, NULL, &mVertexConstants, 16, 0);
-        memcpy(&mAppliedVertexConstants, &mVertexConstants, sizeof(dx_VertexConstants));
+        ASSERT(mDriverConstantBufferVS != nullptr);
+        if (mDriverConstantBufferVS)
+        {
+            mDeviceContext->UpdateSubresource(mDriverConstantBufferVS, 0, NULL, &mVertexConstants, 16, 0);
+            memcpy(&mAppliedVertexConstants, &mVertexConstants, sizeof(dx_VertexConstants));
+        }
     }
 
     if (memcmp(&mPixelConstants, &mAppliedPixelConstants, sizeof(dx_PixelConstants)) != 0)
     {
-        mDeviceContext->UpdateSubresource(mDriverConstantBufferPS, 0, NULL, &mPixelConstants, 16, 0);
-        memcpy(&mAppliedPixelConstants, &mPixelConstants, sizeof(dx_PixelConstants));
+        ASSERT(mDriverConstantBufferPS != nullptr);
+        if (mDriverConstantBufferPS)
+        {
+            mDeviceContext->UpdateSubresource(mDriverConstantBufferPS, 0, NULL, &mPixelConstants, 16, 0);
+            memcpy(&mAppliedPixelConstants, &mPixelConstants, sizeof(dx_PixelConstants));
+        }
     }
 
     // GSSetConstantBuffers triggers device removal on 9_3, so we should only call it if necessary
@@ -2083,8 +2230,12 @@ gl::Error Renderer11::applyUniforms(const ProgramImpl &program, const std::vecto
         // needed for the point sprite geometry shader
         if (mCurrentGeometryConstantBuffer != mDriverConstantBufferPS)
         {
-            mDeviceContext->GSSetConstantBuffers(0, 1, &mDriverConstantBufferPS);
-            mCurrentGeometryConstantBuffer = mDriverConstantBufferPS;
+            ASSERT(mDriverConstantBufferPS != nullptr);
+            if (mDriverConstantBufferPS)
+            {
+                mDeviceContext->GSSetConstantBuffers(0, 1, &mDriverConstantBufferPS);
+                mCurrentGeometryConstantBuffer = mDriverConstantBufferPS;
+            }
         }
     }
 
@@ -2106,8 +2257,8 @@ void Renderer11::markAllStateDirty()
     // We reset the current SRV data because it might not be in sync with D3D's state
     // anymore. For example when a currently used SRV is used as an RTV, D3D silently
     // remove it from its state.
-    memset(mCurVertexSRVs.data(), 0, sizeof(SRVRecord) * mCurVertexSRVs.size());
-    memset(mCurPixelSRVs.data(), 0, sizeof(SRVRecord) * mCurPixelSRVs.size());
+    mCurVertexSRVs.clear();
+    mCurPixelSRVs.clear();
 
     ASSERT(mForceSetVertexSamplerStates.size() == mCurVertexSRVs.size());
     for (size_t vsamplerId = 0; vsamplerId < mForceSetVertexSamplerStates.size(); ++vsamplerId)
@@ -2323,14 +2474,17 @@ std::string Renderer11::getRendererDescription() const
     return rendererString.str();
 }
 
-GUID Renderer11::getAdapterIdentifier() const
+DeviceIdentifier Renderer11::getAdapterIdentifier() const
 {
-    // Use the adapter LUID as our adapter ID
-    // This number is local to a machine is only guaranteed to be unique between restarts
-    static_assert(sizeof(LUID) <= sizeof(GUID), "Size of GUID must be at least as large as LUID.");
-    GUID adapterId = {0};
-    memcpy(&adapterId, &mAdapterDescription.AdapterLuid, sizeof(LUID));
-    return adapterId;
+    // Don't use the AdapterLuid here, since that doesn't persist across reboot.
+    DeviceIdentifier deviceIdentifier = { 0 };
+    deviceIdentifier.VendorId = mAdapterDescription.VendorId;
+    deviceIdentifier.DeviceId = mAdapterDescription.DeviceId;
+    deviceIdentifier.SubSysId = mAdapterDescription.SubSysId;
+    deviceIdentifier.Revision = mAdapterDescription.Revision;
+    deviceIdentifier.FeatureLevel = static_cast<UINT>(mRenderer11DeviceCaps.featureLevel);
+
+    return deviceIdentifier;
 }
 
 unsigned int Renderer11::getReservedVertexUniformVectors() const
@@ -2387,8 +2541,8 @@ bool Renderer11::getShareHandleSupport() const
 
 bool Renderer11::getPostSubBufferSupport() const
 {
-    // D3D11 does not support present with dirty rectangles until D3D11.1 and DXGI 1.2.
-    return false;
+    // D3D11 does not support present with dirty rectangles until DXGI 1.2.
+    return mRenderer11DeviceCaps.supportsDXGI1_2;
 }
 
 int Renderer11::getMajorShaderModel() const
@@ -2467,7 +2621,7 @@ gl::Error Renderer11::copyImage2D(const gl::Framebuffer *framebuffer, const gl::
 
     // Use nearest filtering because source and destination are the same size for the direct
     // copy
-    mBlit->copyTexture(source, sourceArea, sourceSize, dest, destArea, destSize, NULL, destFormat, GL_NEAREST);
+    error = mBlit->copyTexture(source, sourceArea, sourceSize, dest, destArea, destSize, NULL, destFormat, GL_NEAREST);
     if (error.isError())
     {
         return error;
@@ -2999,9 +3153,9 @@ BufferImpl *Renderer11::createBuffer()
     return new Buffer11(this);
 }
 
-VertexArrayImpl *Renderer11::createVertexArray()
+VertexArrayImpl *Renderer11::createVertexArray(const gl::VertexArray::Data &data)
 {
-    return new VertexArray11(this);
+    return new VertexArray11(data);
 }
 
 QueryImpl *Renderer11::createQuery(GLenum type)
@@ -3572,14 +3726,14 @@ bool Renderer11::getLUID(LUID *adapterLuid) const
     return true;
 }
 
-VertexConversionType Renderer11::getVertexConversionType(const gl::VertexFormat &vertexFormat) const
+VertexConversionType Renderer11::getVertexConversionType(gl::VertexFormatType vertexFormatType) const
 {
-    return d3d11::GetVertexFormatInfo(vertexFormat, mRenderer11DeviceCaps.featureLevel).conversionType;
+    return d3d11::GetVertexFormatInfo(vertexFormatType, mRenderer11DeviceCaps.featureLevel).conversionType;
 }
 
-GLenum Renderer11::getVertexComponentType(const gl::VertexFormat &vertexFormat) const
+GLenum Renderer11::getVertexComponentType(gl::VertexFormatType vertexFormatType) const
 {
-    return d3d11::GetDXGIFormatInfo(d3d11::GetVertexFormatInfo(vertexFormat, mRenderer11DeviceCaps.featureLevel).nativeFormat).componentType;
+    return d3d11::GetDXGIFormatInfo(d3d11::GetVertexFormatInfo(vertexFormatType, mRenderer11DeviceCaps.featureLevel).nativeFormat).componentType;
 }
 
 void Renderer11::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps, gl::Extensions *outExtensions) const
@@ -3597,7 +3751,7 @@ void Renderer11::setShaderResource(gl::SamplerType shaderType, UINT resourceSlot
     auto &currentSRVs = (shaderType == gl::SAMPLER_VERTEX ? mCurVertexSRVs : mCurPixelSRVs);
 
     ASSERT(static_cast<size_t>(resourceSlot) < currentSRVs.size());
-    auto &record = currentSRVs[resourceSlot];
+    const SRVRecord &record = currentSRVs[resourceSlot];
 
     if (record.srv != reinterpret_cast<uintptr_t>(srv))
     {
@@ -3610,16 +3764,47 @@ void Renderer11::setShaderResource(gl::SamplerType shaderType, UINT resourceSlot
             mDeviceContext->PSSetShaderResources(resourceSlot, 1, &srv);
         }
 
-        record.srv = reinterpret_cast<uintptr_t>(srv);
-        if (srv)
-        {
-            record.resource = reinterpret_cast<uintptr_t>(GetViewResource(srv));
-            srv->GetDesc(&record.desc);
-        }
-        else
-        {
-            record.resource = 0;
-        }
+        currentSRVs.update(resourceSlot, srv);
     }
 }
+
+void Renderer11::createAnnotator()
+{
+    mAnnotator = new DebugAnnotator11();
+}
+
+gl::Error Renderer11::clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd)
+{
+    if (rangeStart == rangeEnd)
+    {
+        return gl::Error(GL_NO_ERROR);
+    }
+
+    auto &currentSRVs = (samplerType == gl::SAMPLER_VERTEX ? mCurVertexSRVs : mCurPixelSRVs);
+
+    gl::Range<size_t> clearRange(rangeStart, rangeStart);
+    clearRange.extend(std::min(rangeEnd, currentSRVs.highestUsed()));
+
+    if (clearRange.empty())
+    {
+        return gl::Error(GL_NO_ERROR);
+    }
+
+    if (samplerType == gl::SAMPLER_VERTEX)
+    {
+        mDeviceContext->VSSetShaderResources(rangeStart, rangeEnd - rangeStart, &mNullSRVs[0]);
+    }
+    else
+    {
+        mDeviceContext->PSSetShaderResources(rangeStart, rangeEnd - rangeStart, &mNullSRVs[0]);
+    }
+
+    for (size_t samplerIndex = rangeStart; samplerIndex < rangeEnd; ++samplerIndex)
+    {
+        currentSRVs.update(samplerIndex, nullptr);
+    }
+
+    return gl::Error(GL_NO_ERROR);
+}
+
 }

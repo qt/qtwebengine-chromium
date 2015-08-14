@@ -8,7 +8,7 @@
 #include <set>
 
 #include "base/memory/weak_ptr.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
@@ -59,6 +59,9 @@ class ServiceWorkerHandler : public DevToolsAgentHostClient,
   Response DeliverPushMessage(const std::string& origin,
                               const std::string& registration_id,
                               const std::string& data);
+  Response GetTargetInfo(const std::string& target_id,
+                         scoped_refptr<TargetInfo>* target_info);
+  Response ActivateTarget(const std::string& target_id);
 
   // WorkerDevToolsManager::Observer implementation.
   void WorkerCreated(ServiceWorkerDevToolsAgentHost* host) override;

@@ -5,6 +5,7 @@
 #ifndef InspectorAnimationAgent_h
 #define InspectorAnimationAgent_h
 
+#include "core/CoreExport.h"
 #include "core/InspectorFrontend.h"
 #include "core/css/CSSKeyframesRule.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -21,7 +22,7 @@ class InspectorDOMAgent;
 class InspectorPageAgent;
 class TimingFunction;
 
-class InspectorAnimationAgent final : public InspectorBaseAgent<InspectorAnimationAgent, InspectorFrontend::Animation>, public InspectorBackendDispatcher::AnimationCommandHandler {
+class CORE_EXPORT InspectorAnimationAgent final : public InspectorBaseAgent<InspectorAnimationAgent, InspectorFrontend::Animation>, public InspectorBackendDispatcher::AnimationCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorAnimationAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorAnimationAgent> create(InspectorPageAgent* pageAgent, InspectorDOMAgent* domAgent)
@@ -35,11 +36,10 @@ public:
     void didCommitLoadForLocalFrame(LocalFrame*) override;
 
     // Protocol method implementations
-    virtual void getAnimationPlayersForNode(ErrorString*, int nodeId, bool includeSubtreeAnimations, RefPtr<TypeBuilder::Array<TypeBuilder::Animation::AnimationPlayer> >& animationPlayersArray) override;
     virtual void getPlaybackRate(ErrorString*, double* playbackRate) override;
     virtual void setPlaybackRate(ErrorString*, double playbackRate) override;
     virtual void setCurrentTime(ErrorString*, double currentTime) override;
-    virtual void setTiming(ErrorString*, const String& playerId, double duration, double delay) override;
+    virtual void setTiming(ErrorString*, const String& animationId, double duration, double delay) override;
 
     // API for InspectorInstrumentation
     void didCreateAnimation(Animation*);
@@ -57,11 +57,10 @@ public:
 private:
     InspectorAnimationAgent(InspectorPageAgent*, InspectorDOMAgent*);
 
-    typedef TypeBuilder::Animation::AnimationPlayer::Type::Enum AnimationType;
+    typedef TypeBuilder::Animation::Animation::Type::Enum AnimationType;
 
-    PassRefPtr<TypeBuilder::Animation::AnimationPlayer> buildObjectForAnimationPlayer(Animation&);
-    PassRefPtr<TypeBuilder::Animation::AnimationPlayer> buildObjectForAnimationPlayer(Animation&, AnimationType, PassRefPtr<TypeBuilder::Animation::KeyframesRule> keyframeRule = nullptr);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::Animation::AnimationPlayer>> buildArrayForAnimations(Element&, const WillBeHeapVector<RefPtrWillBeMember<Animation>>);
+    PassRefPtr<TypeBuilder::Animation::Animation> buildObjectForAnimation(Animation&);
+    PassRefPtr<TypeBuilder::Animation::Animation> buildObjectForAnimation(Animation&, AnimationType, PassRefPtr<TypeBuilder::Animation::KeyframesRule> keyframeRule = nullptr);
     double normalizedStartTime(Animation&);
     AnimationTimeline& referenceTimeline();
 
@@ -69,6 +68,7 @@ private:
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     WillBeHeapHashMap<String, RefPtrWillBeMember<Animation>> m_idToAnimation;
     WillBeHeapHashMap<String, AnimationType> m_idToAnimationType;
+    double m_latestStartTime;
 };
 
 }

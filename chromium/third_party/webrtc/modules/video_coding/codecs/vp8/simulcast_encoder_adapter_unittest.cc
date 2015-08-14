@@ -115,9 +115,11 @@ class MockVideoEncoder : public VideoEncoder {
     return 0;
   }
 
-  int32_t Encode(const I420VideoFrame& inputImage,
+  int32_t Encode(const VideoFrame& inputImage,
                  const CodecSpecificInfo* codecSpecificInfo,
-                 const std::vector<VideoFrameType>* frame_types) { return 0; }
+                 const std::vector<VideoFrameType>* frame_types) {
+    return 0;
+  }
 
   int32_t RegisterEncodeCompleteCallback(EncodedImageCallback* callback) {
     callback_ = callback;
@@ -310,11 +312,16 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
     // stream 1
     InitRefCodec(1, &ref_codec);
     ref_codec.codecSpecific.VP8.denoisingOn = false;
-    ref_codec.startBitrate = 300;
+    // The start bitrate (300kbit) minus what we have for the lower layers
+    // (100kbit).
+    ref_codec.startBitrate = 200;
     VerifyCodec(ref_codec, 1);
 
     // stream 2, the biggest resolution stream.
     InitRefCodec(2, &ref_codec);
+    // We don't have enough bits to send this, so the adapter should have
+    // configured it to use the min bitrate for this layer (600kbit) but turn
+    // off sending.
     ref_codec.startBitrate = 600;
     VerifyCodec(ref_codec, 2);
   }

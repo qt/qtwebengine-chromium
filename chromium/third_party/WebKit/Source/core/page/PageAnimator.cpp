@@ -8,7 +8,6 @@
 #include "core/animation/DocumentAnimations.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -18,7 +17,6 @@ namespace blink {
 
 PageAnimator::PageAnimator(Page& page)
     : m_page(page)
-    , m_animationFramePending(false)
     , m_servicingAnimations(false)
     , m_updatingLayoutAndStyleForPainting(false)
 {
@@ -37,7 +35,6 @@ DEFINE_TRACE(PageAnimator)
 void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
 {
     RefPtrWillBeRawPtr<PageAnimator> protector(this);
-    m_animationFramePending = false;
     TemporaryChange<bool> servicing(m_servicingAnimations, true);
 
     WillBeHeapVector<RefPtrWillBeMember<Document>> documents;
@@ -47,7 +44,7 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
     }
 
     for (size_t i = 0; i < documents.size(); ++i) {
-        if (documents[i]->frame()) {
+        if (documents[i]->view()) {
             documents[i]->view()->scrollableArea()->serviceScrollAnimations(monotonicAnimationStartTime);
 
             if (const FrameView::ScrollableAreaSet* animatingScrollableAreas = documents[i]->view()->animatingScrollableAreas()) {
@@ -76,7 +73,6 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
 
 void PageAnimator::scheduleVisualUpdate(LocalFrame* frame)
 {
-    // FIXME: also include m_animationFramePending here. It is currently not there due to crbug.com/353756.
     if (m_servicingAnimations || m_updatingLayoutAndStyleForPainting)
         return;
     // FIXME: The frame-specific version of scheduleAnimation() is for
@@ -84,9 +80,9 @@ void PageAnimator::scheduleVisualUpdate(LocalFrame* frame)
     // causes scheduleAnimation() to be called for the page, which still uses
     // a page-level WebWidget (the WebViewImpl).
     if (frame && !frame->isMainFrame() && frame->isLocalRoot()) {
-        m_page->chrome().scheduleAnimationForFrame(frame);
+        m_page->chromeClient().scheduleAnimationForFrame(frame);
     } else {
-        m_page->chrome().scheduleAnimation();
+        m_page->chromeClient().scheduleAnimation();
     }
 }
 
@@ -96,17 +92,9 @@ void PageAnimator::updateLayoutAndStyleForPainting(LocalFrame* rootFrame)
 
     TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
 
-    // In order for our child HWNDs (NativeWindowWidgets) to update properly,
-    // they need to be told that we are updating the screen. The problem is that
-    // the native widgets need to recalculate their clip region and not overlap
-    // any of our non-native widgets. To force the resizing, call
-    // setFrameRect(). This will be a quick operation for most frames, but the
-    // NativeWindowWidgets will update a proper clipping region.
-    view->setFrameRect(view->frameRect());
-
     // setFrameRect may have the side-effect of causing existing page layout to
     // be invalidated, so layout needs to be called last.
-    view->updateLayoutAndStyleForPainting();
+    view->updateAllLifecyclePhases();
 }
 
 }

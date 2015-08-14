@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "media/base/cdm_key_information.h"
 #include "media/base/cdm_promise.h"
 #include "media/cdm/player_tracker_impl.h"
@@ -54,28 +54,16 @@ void BrowserCdmCast::UnregisterPlayer(int registration_id) {
   player_tracker_impl_->UnregisterPlayer(registration_id);
 }
 
-void BrowserCdmCast::LoadSession(
-    ::media::MediaKeys::SessionType session_type,
-    const std::string& session_id,
-    scoped_ptr<::media::NewSessionCdmPromise> promise) {
-  NOTREACHED() << "LoadSession not supported";
-  legacy_session_error_cb_.Run(
-      session_id, ::media::MediaKeys::Exception::NOT_SUPPORTED_ERROR, 0,
-      std::string());
-}
-
 ::media::CdmContext* BrowserCdmCast::GetCdmContext() {
   NOTREACHED();
   return nullptr;
 }
 
-void BrowserCdmCast::OnSessionMessage(const std::string& session_id,
-                                      const std::vector<uint8_t>& message,
-                                      const GURL& destination_url) {
-  // Note: Message type is not supported in Chromecast. Do our best guess here.
-  ::media::MediaKeys::MessageType message_type =
-      destination_url.is_empty() ? ::media::MediaKeys::LICENSE_REQUEST
-                                 : ::media::MediaKeys::LICENSE_RENEWAL;
+void BrowserCdmCast::OnSessionMessage(
+    const std::string& session_id,
+    const std::vector<uint8_t>& message,
+    const GURL& destination_url,
+    ::media::MediaKeys::MessageType message_type) {
   session_message_cb_.Run(session_id,
                           message_type,
                           message,
@@ -101,24 +89,22 @@ void BrowserCdmCast::OnSessionKeysChange(
   player_tracker_impl_->NotifyNewKey();
 }
 
-// A macro runs current member function on |cdm_loop_| thread.
+// A macro runs current member function on |task_runner_| thread.
 #define FORWARD_ON_CDM_THREAD(param_fn, ...) \
-  cdm_loop_->PostTask( \
-      FROM_HERE, \
-      base::Bind(&BrowserCdmCast::param_fn, \
+  task_runner_->PostTask(                    \
+      FROM_HERE,                             \
+      base::Bind(&BrowserCdmCast::param_fn,  \
                  base::Unretained(browser_cdm_cast_.get()), ##__VA_ARGS__))
-
 
 BrowserCdmCastUi::BrowserCdmCastUi(
     scoped_ptr<BrowserCdmCast> browser_cdm_cast,
-    const scoped_refptr<base::MessageLoopProxy>& cdm_loop)
-    : browser_cdm_cast_(browser_cdm_cast.Pass()),
-      cdm_loop_(cdm_loop) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner)
+    : browser_cdm_cast_(browser_cdm_cast.Pass()), task_runner_(task_runner) {
 }
 
 BrowserCdmCastUi::~BrowserCdmCastUi() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  cdm_loop_->DeleteSoon(FROM_HERE, browser_cdm_cast_.release());
+  task_runner_->DeleteSoon(FROM_HERE, browser_cdm_cast_.release());
 }
 
 int BrowserCdmCastUi::RegisterPlayer(const base::Closure& new_key_cb,

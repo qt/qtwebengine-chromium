@@ -125,12 +125,6 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range, bool& usesRemU
                 return;
             }
             if (!token.unitType()) {
-                if (String(token.value()) == "__qem") {
-                    value.setFromNumber(token.numericValue(), CSSParserValue::Q_EMS);
-                    value.isInt = (token.numericValueType() == IntegerValueType);
-                    break;
-                }
-
                 // Unknown dimensions are handled as a list of two values
                 value.unit = CSSParserValue::DimensionList;
                 CSSParserValueList* list = new CSSParserValueList;
@@ -161,18 +155,16 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range, bool& usesRemU
             value.setFromNumber(token.numericValue(), token.unitType());
             value.isInt = (token.numericValueType() == IntegerValueType);
             break;
+        case UnicodeRangeToken: {
+            value.id = CSSValueInvalid;
+            value.isInt = false;
+            value.m_unicodeRange.start = token.unicodeRangeStart();
+            value.m_unicodeRange.end = token.unicodeRangeEnd();
+            value.unit = CSSParserValue::UnicodeRange;
+            break;
+        }
         case HashToken:
-            // FIXME: Move this logic to the property parser
-            // This check prevents us from allowing #red and similar
-            for (size_t i = 0; i < token.value().length(); ++i) {
-                if (!isASCIIHexDigit(token.value()[i])) {
-                    destroyAndClear();
-                    return;
-                }
-            }
-            // fallthrough
         case StringToken:
-        case UnicodeRangeToken:
         case UrlToken: {
             value.id = CSSValueInvalid;
             value.isInt = false;
@@ -180,8 +172,6 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range, bool& usesRemU
                 value.unit = CSSParserValue::HexColor;
             else if (token.type() == StringToken)
                 value.unit = CSSPrimitiveValue::CSS_STRING;
-            else if (token.type() == UnicodeRangeToken)
-                value.unit = CSSPrimitiveValue::CSS_UNICODE_RANGE;
             else
                 value.unit = CSSPrimitiveValue::CSS_URI;
             value.string = token.value();
@@ -274,18 +264,6 @@ void CSSParserValueList::addValue(const CSSParserValue& v)
     m_values.append(v);
 }
 
-void CSSParserValueList::insertValueAt(unsigned i, const CSSParserValue& v)
-{
-    m_values.insert(i, v);
-}
-
-void CSSParserValueList::stealValues(CSSParserValueList& valueList)
-{
-    for (unsigned i = 0; i < valueList.size(); ++i)
-        m_values.append(*(valueList.valueAt(i)));
-    valueList.clearAndLeakValues();
-}
-
 CSSParserSelector::CSSParserSelector()
     : m_selector(adoptPtr(new CSSSelector()))
 {
@@ -325,7 +303,7 @@ void CSSParserSelector::setSelectorList(PassOwnPtr<CSSSelectorList> selectorList
 
 bool CSSParserSelector::isSimple() const
 {
-    if (m_selector->selectorList() || m_selector->matchesPseudoElement())
+    if (m_selector->selectorList() || m_selector->match() == CSSSelector::PseudoElement)
         return false;
 
     if (!m_tagHistory)

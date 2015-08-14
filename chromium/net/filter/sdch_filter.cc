@@ -10,7 +10,7 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/values.h"
 #include "net/base/sdch_manager.h"
 #include "net/base/sdch_net_log_params.h"
@@ -90,14 +90,14 @@ const char* ResponseCorruptionDetectionCauseToString(
   return cause_string;
 }
 
-base::Value* NetLogSdchResponseCorruptionDetectionCallback(
+scoped_ptr<base::Value> NetLogSdchResponseCorruptionDetectionCallback(
     ResponseCorruptionDetectionCause cause,
     bool cached,
     NetLogCaptureMode capture_mode) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("cause", ResponseCorruptionDetectionCauseToString(cause));
   dict->SetBoolean("cached", cached);
-  return dict;
+  return dict.Pass();
 }
 
 }  // namespace

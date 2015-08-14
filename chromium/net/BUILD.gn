@@ -69,7 +69,7 @@ component("net") {
 
   cflags = []
   defines = [
-    # TODO(GYP) Note that he GYP file supports linux_link_kerberos (defaults to
+    # TODO(GYP) Note that the GYP file supports linux_link_kerberos (defaults to
     # 0) which implies that we run pkg_config on kerberos and link to that
     # rather than setting this define which will dynamically open it. That
     # doesn't seem to be set in the regular builds, so we're skipping this
@@ -244,21 +244,25 @@ component("net") {
       "socket/ssl_client_socket_openssl.h",
       "socket/ssl_server_socket_openssl.cc",
       "socket/ssl_server_socket_openssl.h",
-      "ssl/openssl_platform_key.h",
-      "ssl/openssl_platform_key_nss.cc",
       "ssl/openssl_ssl_util.cc",
       "ssl/openssl_ssl_util.h",
       "ssl/ssl_client_session_cache_openssl.cc",
       "ssl/ssl_client_session_cache_openssl.h",
+      "ssl/ssl_platform_key.h",
+      "ssl/threaded_ssl_private_key.cc",
+      "ssl/threaded_ssl_private_key.h",
     ]
     if (is_mac) {
-      sources -= [ "ssl/openssl_platform_key_mac.cc" ]
+      sources -= [ "ssl/ssl_platform_key_mac.cc" ]
     }
     if (is_win) {
       sources -= [
         "cert/sha256_legacy_support_openssl_win.cc",
-        "ssl/openssl_platform_key_win.cc",
+        "ssl/ssl_platform_key_win.cc",
       ]
+    }
+    if (use_nss_certs) {
+      sources -= [ "ssl/ssl_platform_key_nss.cc" ]
     }
   }
 
@@ -279,13 +283,22 @@ component("net") {
     if (is_android) {
       sources -= [ "base/openssl_private_key_store_android.cc" ]
     }
-  } else if (is_android) {
-    # Android doesn't use these even when using OpenSSL.
+  } else {
+    if (is_android) {
+      # Android doesn't use these even when using OpenSSL.
+      sources -= [
+        "base/openssl_private_key_store_memory.cc",
+        "cert/cert_database_openssl.cc",
+        "cert/cert_verify_proc_openssl.cc",
+        "cert/test_root_certs_openssl.cc",
+      ]
+    }
+
+    # TODO(davidben): Remove these exclusions when use_openssl_certs builds also
+    # use the SSLPrivateKey machinery.
     sources -= [
-      "base/openssl_private_key_store_memory.cc",
-      "cert/cert_database_openssl.cc",
-      "cert/cert_verify_proc_openssl.cc",
-      "cert/test_root_certs_openssl.cc",
+      "ssl/threaded_ssl_private_key.cc",
+      "ssl/threaded_ssl_private_key.h",
     ]
   }
 
@@ -338,9 +351,7 @@ component("net") {
         "ssl/client_cert_store_chromeos.h",
       ]
     }
-    if (use_openssl) {
-      sources -= [ "ssl/openssl_platform_key_nss.cc" ]
-    }
+    sources -= [ "ssl/ssl_platform_key_nss.cc" ]
   } else if (use_openssl) {
     # client_cert_store_nss.c requires NSS_CmpCertChainWCANames from NSS's
     # libssl, but our bundled copy is not built in OpenSSL ports. Pull that file
@@ -442,10 +453,10 @@ component("net") {
     # files.
     set_sources_assignment_filter([])
     sources += [
-      "base/net_util_mac.cc",
-      "base/net_util_mac.h",
       "base/network_change_notifier_mac.cc",
       "base/network_config_watcher_mac.cc",
+      "base/network_interfaces_mac.cc",
+      "base/network_interfaces_mac.h",
       "base/platform_mime_util_mac.mm",
       "proxy/proxy_resolver_mac.cc",
       "proxy/proxy_server_mac.cc",
@@ -473,8 +484,8 @@ component("net") {
     sources += [
       "base/address_tracker_linux.cc",
       "base/address_tracker_linux.h",
-      "base/net_util_linux.cc",
-      "base/net_util_linux.h",
+      "base/network_interfaces_linux.cc",
+      "base/network_interfaces_linux.h",
       "base/platform_mime_util_linux.cc",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
@@ -633,6 +644,8 @@ source_set("test_support") {
     "test/cert_test_util.cc",
     "test/cert_test_util.h",
     "test/cert_test_util_nss.cc",
+    "test/channel_id_test_util.cc",
+    "test/channel_id_test_util.h",
     "test/ct_test_util.cc",
     "test/ct_test_util.h",
     "test/embedded_test_server/embedded_test_server.cc",
@@ -643,6 +656,10 @@ source_set("test_support") {
     "test/embedded_test_server/http_request.h",
     "test/embedded_test_server/http_response.cc",
     "test/embedded_test_server/http_response.h",
+    "test/embedded_test_server/stream_listen_socket.cc",
+    "test/embedded_test_server/stream_listen_socket.h",
+    "test/embedded_test_server/tcp_listen_socket.cc",
+    "test/embedded_test_server/tcp_listen_socket.h",
     "test/event_waiter.h",
     "test/net_test_suite.cc",
     "test/net_test_suite.h",
@@ -689,7 +706,7 @@ source_set("test_support") {
     public_deps += [ "//third_party/protobuf:py_proto" ]
   }
 
-  if (!use_openssl && (use_nss_certs || is_ios)) {
+  if (use_nss_certs || is_ios) {
     public_deps += [ "//crypto:platform" ]
   }
 
@@ -762,6 +779,8 @@ if (use_v8_in_net) {
       "proxy/proxy_resolver_v8.h",
       "proxy/proxy_resolver_v8_tracing.cc",
       "proxy/proxy_resolver_v8_tracing.h",
+      "proxy/proxy_resolver_v8_tracing_wrapper.cc",
+      "proxy/proxy_resolver_v8_tracing_wrapper.h",
       "proxy/proxy_service_v8.cc",
       "proxy/proxy_service_v8.h",
     ]
@@ -792,8 +811,8 @@ if (use_v8_in_net && !is_android) {
       "proxy/in_process_mojo_proxy_resolver_factory.cc",
       "proxy/in_process_mojo_proxy_resolver_factory.h",
       "proxy/mojo_proxy_resolver_factory.h",
-      "proxy/proxy_resolver_mojo.cc",
-      "proxy/proxy_resolver_mojo.h",
+      "proxy/proxy_resolver_factory_mojo.cc",
+      "proxy/proxy_resolver_factory_mojo.h",
       "proxy/proxy_service_mojo.cc",
       "proxy/proxy_service_mojo.h",
     ]
@@ -833,14 +852,11 @@ if (use_v8_in_net && !is_android) {
     sources = [
       "dns/host_resolver_mojo.cc",
       "dns/host_resolver_mojo.h",
-      "proxy/load_state_change_coalescer.cc",
-      "proxy/load_state_change_coalescer.h",
       "proxy/mojo_proxy_resolver_factory_impl.cc",
       "proxy/mojo_proxy_resolver_factory_impl.h",
       "proxy/mojo_proxy_resolver_impl.cc",
       "proxy/mojo_proxy_resolver_impl.h",
-      "proxy/proxy_resolver_error_observer_mojo.cc",
-      "proxy/proxy_resolver_error_observer_mojo.h",
+      "proxy/mojo_proxy_resolver_v8_tracing_bindings.h",
     ]
 
     deps = [
@@ -1199,6 +1215,7 @@ if (is_android) {
       "android/java/src/org/chromium/net/AndroidNetworkLibrary.java",
       "android/java/src/org/chromium/net/AndroidPrivateKey.java",
       "android/java/src/org/chromium/net/GURLUtils.java",
+      "android/java/src/org/chromium/net/HttpNegotiateAuthenticator.java",
       "android/java/src/org/chromium/net/NetworkChangeNotifier.java",
       "android/java/src/org/chromium/net/ProxyChangeListener.java",
       "android/java/src/org/chromium/net/X509Util.java",
@@ -1208,6 +1225,7 @@ if (is_android) {
   generate_jni("net_test_jni_headers") {
     sources = [
       "android/javatests/src/org/chromium/net/AndroidKeyStoreTestUtil.java",
+      "test/android/javatests/src/org/chromium/net/test/DummySpnegoAuthenticator.java",
     ]
     jni_package = "net"
   }
@@ -1353,6 +1371,7 @@ if (!is_android && !is_mac) {
         "dns/dns_config_service_posix_unittest.cc",
       ]
       deps += [ ":net_test_jni_headers" ]
+      isolate_file = "net_unittests.isolate"
     }
 
     if (v8_use_external_startup_data) {
@@ -1378,10 +1397,7 @@ if (!is_android && !is_mac) {
       # or functionality not supported by OpenSSL yet.
       # TODO(bulach): Add equivalent tests when the underlying
       #               functionality is ported to OpenSSL.
-      sources -= [
-        "cert/x509_util_nss_unittest.cc",
-        "quic/test_tools/crypto_test_utils_nss.cc",
-      ]
+      sources -= [ "quic/test_tools/crypto_test_utils_nss.cc" ]
     } else {
       sources -= [
         "cert/x509_util_openssl_unittest.cc",
@@ -1393,13 +1409,19 @@ if (!is_android && !is_mac) {
 
     if (use_kerberos) {
       defines += [ "USE_KERBEROS" ]
-    } else {
+    }
+
+    # These are excluded on Android, because the actual Kerberos support, which
+    # these test, is in a separate app on Android.
+    if (!use_kerberos || is_android) {
       sources -= [
         "http/http_auth_gssapi_posix_unittest.cc",
-        "http/http_auth_handler_negotiate_unittest.cc",
         "http/mock_gssapi_library_posix.cc",
         "http/mock_gssapi_library_posix.h",
       ]
+    }
+    if (!use_kerberos) {
+      sources -= [ "http/http_auth_handler_negotiate_unittest.cc" ]
     }
 
     if (use_openssl || (!is_desktop_linux && !is_chromeos && !is_ios)) {
@@ -1477,6 +1499,7 @@ if (!is_android && !is_mac) {
     } else {
       sources -= [
         "proxy/proxy_resolver_v8_tracing_unittest.cc",
+        "proxy/proxy_resolver_v8_tracing_wrapper_unittest.cc",
         "proxy/proxy_resolver_v8_unittest.cc",
       ]
     }
@@ -1492,11 +1515,10 @@ if (!is_android && !is_mac) {
       sources -= [
         "dns/host_resolver_mojo_unittest.cc",
         "dns/mojo_host_resolver_impl_unittest.cc",
-        "proxy/load_state_change_coalescer_unittest.cc",
         "proxy/mojo_proxy_resolver_factory_impl_unittest.cc",
         "proxy/mojo_proxy_resolver_impl_unittest.cc",
-        "proxy/proxy_resolver_error_observer_mojo_unittest.cc",
-        "proxy/proxy_resolver_mojo_unittest.cc",
+        "proxy/mojo_proxy_resolver_v8_tracing_bindings_unittest.cc",
+        "proxy/proxy_resolver_factory_mojo_unittest.cc",
         "proxy/proxy_service_mojo_unittest.cc",
       ]
     }
@@ -1589,8 +1611,10 @@ if (!is_android && !is_mac) {
 executable("net_perftests") {
   testonly = true
   sources = [
+    "base/mime_sniffer_perftest.cc",
     "cookies/cookie_monster_perftest.cc",
     "disk_cache/blockfile/disk_cache_perftest.cc",
+    "extras/sqlite/sqlite_persistent_cookie_store_perftest.cc",
     "proxy/proxy_resolver_perftest.cc",
     "udp/udp_socket_perftest.cc",
   ]
@@ -1603,6 +1627,7 @@ executable("net_perftests") {
     "//base/test:test_support_perf",
     "//testing/gtest",
     "//url",
+    ":extras",
     ":net",
     ":test_support",
   ]

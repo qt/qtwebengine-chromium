@@ -44,16 +44,6 @@ public:
         return setImpl(array, offset * sizeof(T));
     }
 
-    bool setRange(const T* data, size_t dataLength, unsigned offset)
-    {
-        return setRangeImpl(reinterpret_cast<const char*>(data), dataLength * sizeof(T), offset * sizeof(T));
-    }
-
-    bool zeroRange(unsigned offset, size_t length)
-    {
-        return zeroRangeImpl(offset * sizeof(T), length * sizeof(T));
-    }
-
     // Overridden from ArrayBufferView. This must be public because of
     // rules about inheritance of members in template classes, and
     // because it is accessed via pointers to subclasses.
@@ -62,7 +52,7 @@ public:
         return m_length;
     }
 
-    virtual unsigned byteLength() const override final
+    unsigned byteLength() const final
     {
         return m_length * sizeof(T);
     }
@@ -73,14 +63,6 @@ public:
     {
         ASSERT_WITH_SECURITY_IMPLICATION(index < TypedArrayBase<T>::m_length);
         return TypedArrayBase<T>::data()[index];
-    }
-
-    bool checkInboundData(unsigned offset, unsigned pos) const
-    {
-        return (offset <= m_length
-            && offset + pos <= m_length
-            // check overflow
-            && offset + pos >= offset);
     }
 
 protected:
@@ -126,23 +108,7 @@ protected:
         return create<Subclass>(buffer.release(), 0, length);
     }
 
-    template <class Subclass>
-    static PassRefPtr<Subclass> createUninitialized(unsigned length)
-    {
-        RefPtr<ArrayBuffer> buffer = ArrayBuffer::createUninitialized(length, sizeof(T));
-        return create<Subclass>(buffer.release(), 0, length);
-    }
-
-    template <class Subclass>
-    PassRefPtr<Subclass> subarrayImpl(int start, int end) const
-    {
-        unsigned offset, length;
-        calculateOffsetAndLength(start, end, m_length, &offset, &length);
-        clampOffsetAndNumElements<T>(buffer(), m_byteOffset, &offset, &length);
-        return create<Subclass>(buffer(), offset, length);
-    }
-
-    virtual void neuter() override final
+    void neuter() final
     {
         ArrayBufferView::neuter();
         m_length = 0;

@@ -20,42 +20,42 @@ class MojoServerBootstrap : public MojoBootstrap {
  public:
   MojoServerBootstrap();
 
-  void OnClientLaunched(base::ProcessHandle process) override;
-
  private:
-  void SendClientPipe();
-  void SendClientPipeIfReady();
+  void SendClientPipe(int32 peer_pid);
 
   // Listener implementations
   bool OnMessageReceived(const Message& message) override;
   void OnChannelConnected(int32 peer_pid) override;
 
   mojo::embedder::ScopedPlatformHandle server_pipe_;
-  base::ProcessHandle client_process_;
   bool connected_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoServerBootstrap);
 };
 
-MojoServerBootstrap::MojoServerBootstrap()
-    : client_process_(base::kNullProcessHandle), connected_(false) {
+MojoServerBootstrap::MojoServerBootstrap() : connected_(false) {
 }
 
-void MojoServerBootstrap::SendClientPipe() {
+void MojoServerBootstrap::SendClientPipe(int32 peer_pid) {
   DCHECK_EQ(state(), STATE_INITIALIZED);
-  DCHECK_NE(client_process_, base::kNullProcessHandle);
   DCHECK(connected_);
 
   mojo::embedder::PlatformChannelPair channel_pair;
   server_pipe_ = channel_pair.PassServerHandle();
+
+  base::Process peer_process =
+#if defined(OS_WIN)
+      base::Process::OpenWithAccess(peer_pid, PROCESS_DUP_HANDLE);
+#else
+      base::Process::Open(peer_pid);
+#endif
   PlatformFileForTransit client_pipe = GetFileHandleForProcess(
 #if defined(OS_POSIX)
       channel_pair.PassClientHandle().release().fd,
 #else
       channel_pair.PassClientHandle().release().handle,
 #endif
-      client_process_,
-      true);
+      peer_process.Handle(), true);
   if (client_pipe == IPC::InvalidPlatformFileForTransit()) {
 #if !defined(OS_WIN)
     // GetFileHandleForProcess() only fails on Windows.
@@ -73,30 +73,10 @@ void MojoServerBootstrap::SendClientPipe() {
   set_state(STATE_WAITING_ACK);
 }
 
-void MojoServerBootstrap::SendClientPipeIfReady() {
-  // Is the client launched?
-  if (client_process_ == base::kNullProcessHandle)
-    return;
-  // Has the bootstrap channel been made?
-  if (!connected_)
-    return;
-  SendClientPipe();
-}
-
-void MojoServerBootstrap::OnClientLaunched(base::ProcessHandle process) {
-  if (HasFailed())
-    return;
-
-  DCHECK_EQ(state(), STATE_INITIALIZED);
-  DCHECK_NE(process, base::kNullProcessHandle);
-  client_process_ = process;
-  SendClientPipeIfReady();
-}
-
 void MojoServerBootstrap::OnChannelConnected(int32 peer_pid) {
   DCHECK_EQ(state(), STATE_INITIALIZED);
   connected_ = true;
-  SendClientPipeIfReady();
+  SendClientPipe(peer_pid);
 }
 
 bool MojoServerBootstrap::OnMessageReceived(const Message&) {
@@ -120,8 +100,6 @@ class MojoClientBootstrap : public MojoBootstrap {
  public:
   MojoClientBootstrap();
 
-  void OnClientLaunched(base::ProcessHandle process) override;
-
  private:
   // Listener implementations
   bool OnMessageReceived(const Message& message) override;
@@ -141,7 +119,7 @@ bool MojoClientBootstrap::OnMessageReceived(const Message& message) {
   }
 
   PlatformFileForTransit pipe;
-  PickleIterator iter(message);
+  base::PickleIterator iter(message);
   if (!ParamTraits<PlatformFileForTransit>::Read(&message, &iter, &pipe)) {
     LOG(WARNING) << "Failed to read a file handle from bootstrap channel.";
     message.set_dispatch_error();
@@ -158,11 +136,6 @@ bool MojoClientBootstrap::OnMessageReceived(const Message& message) {
   return true;
 }
 
-void MojoClientBootstrap::OnClientLaunched(base::ProcessHandle process) {
-  // This notification should happen only on server processes.
-  NOTREACHED();
-}
-
 void MojoClientBootstrap::OnChannelConnected(int32 peer_pid) {
 }
 
@@ -173,14 +146,16 @@ void MojoClientBootstrap::OnChannelConnected(int32 peer_pid) {
 // static
 scoped_ptr<MojoBootstrap> MojoBootstrap::Create(ChannelHandle handle,
                                                 Channel::Mode mode,
-                                                Delegate* delegate) {
+                                                Delegate* delegate,
+                                                AttachmentBroker* broker) {
   CHECK(mode == Channel::MODE_CLIENT || mode == Channel::MODE_SERVER);
   scoped_ptr<MojoBootstrap> self =
       mode == Channel::MODE_CLIENT
           ? scoped_ptr<MojoBootstrap>(new MojoClientBootstrap())
           : scoped_ptr<MojoBootstrap>(new MojoServerBootstrap());
+
   scoped_ptr<Channel> bootstrap_channel =
-      Channel::Create(handle, mode, self.get());
+      Channel::Create(handle, mode, self.get(), broker);
   self->Init(bootstrap_channel.Pass(), delegate);
   return self.Pass();
 }

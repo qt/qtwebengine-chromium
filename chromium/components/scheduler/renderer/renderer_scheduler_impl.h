@@ -7,6 +7,8 @@
 
 #include "base/atomicops.h"
 #include "base/synchronization/lock.h"
+#include "components/scheduler/child/idle_helper.h"
+#include "components/scheduler/child/pollable_thread_safe_flag.h"
 #include "components/scheduler/child/scheduler_helper.h"
 #include "components/scheduler/renderer/deadline_task_runner.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
@@ -20,20 +22,19 @@ class ConvertableToTraceFormat;
 
 namespace scheduler {
 
-class SCHEDULER_EXPORT RendererSchedulerImpl
-    : public RendererScheduler,
-      public SchedulerHelper::SchedulerHelperDelegate {
+class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
+                                               public IdleHelper::Delegate {
  public:
   RendererSchedulerImpl(
       scoped_refptr<NestableSingleThreadTaskRunner> main_task_runner);
   ~RendererSchedulerImpl() override;
 
   // RendererScheduler implementation:
-  scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
+  scoped_refptr<TaskQueue> DefaultTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> TimerTaskRunner() override;
+  scoped_refptr<TaskQueue> TimerTaskRunner() override;
   void WillBeginFrame(const cc::BeginFrameArgs& args) override;
   void BeginFrameNotExpectedSoon() override;
   void DidCommitFrameToCompositor() override;
@@ -45,6 +46,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   void DidAnimateForInputOnCompositorThread() override;
   void OnRendererHidden() override;
   void OnRendererVisible() override;
+  void OnPageLoadStarted() override;
   bool IsHighPriorityWorkAnticipated() override;
   bool ShouldYieldForHighPriorityWork() override;
   bool CanExceedIdleDeadlineIfRequired() const override;
@@ -64,18 +66,25 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
 
   // Keep RendererSchedulerImpl::TaskQueueIdToString in sync with this enum.
   enum QueueId {
-    COMPOSITOR_TASK_QUEUE = SchedulerHelper::TASK_QUEUE_COUNT,
+    IDLE_TASK_QUEUE = SchedulerHelper::TASK_QUEUE_COUNT,
+    COMPOSITOR_TASK_QUEUE,
     LOADING_TASK_QUEUE,
     TIMER_TASK_QUEUE,
     // Must be the last entry.
     TASK_QUEUE_COUNT,
+    FIRST_QUEUE_ID = SchedulerHelper::FIRST_QUEUE_ID,
   };
 
   // Keep RendererSchedulerImpl::PolicyToString in sync with this enum.
   enum class Policy {
     NORMAL,
     COMPOSITOR_PRIORITY,
+    COMPOSITOR_CRITICAL_PATH_PRIORITY,
     TOUCHSTART_PRIORITY,
+    LOADING_PRIORITY,
+    // Must be the last entry.
+    POLICY_COUNT,
+    FIRST_POLICY = NORMAL,
   };
 
   class PollableNeedsUpdateFlag {
@@ -96,11 +105,13 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
     DISALLOW_COPY_AND_ASSIGN(PollableNeedsUpdateFlag);
   };
 
-  // SchedulerHelperDelegate implementation:
+  // IdleHelper::Delegate implementation:
   bool CanEnterLongIdlePeriod(
       base::TimeTicks now,
       base::TimeDelta* next_long_idle_period_delay_out) override;
   void IsNotQuiescent() override {}
+  void OnIdlePeriodStarted() override;
+  void OnIdlePeriodEnded() override;
 
   void EndIdlePeriod();
 
@@ -122,11 +133,19 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   // renderer has been hidden, before going to sleep for good.
   static const int kEndIdleWhenHiddenDelayMillis = 10000;
 
-  // Returns the current scheduler policy. Must be called from the main thread.
-  Policy SchedulerPolicy() const;
+  // The amount of time for which loading tasks will be prioritized over
+  // other tasks during the initial page load.
+  static const int kRailsInitialLoadingPrioritizationMillis = 1000;
+
+  // For the purposes of deciding whether or not it's safe to turn timers and
+  // loading tasks on only in idle periods, we regard the system as being as
+  // being "idle period" starved if there hasn't been an idle period in the last
+  // 10 seconds. This was chosen to be long enough to cover most anticipated
+  // user gestures.
+  static const int kIdlePeriodStarvationThresholdMillis = 10000;
 
   // Schedules an immediate PolicyUpdate, if there isn't one already pending and
-  // sets |policy_may_need_update_|. Note |incoming_signals_lock_| must be
+  // sets |policy_may_need_update_|. Note |any_thread_lock_| must be
   // locked.
   void EnsureUrgentPolicyUpdatePostedOnMainThread(
       const tracked_objects::Location& from_here);
@@ -135,7 +154,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   // thread.
   void MaybeUpdatePolicy();
 
-  // Locks |incoming_signals_lock_| and updates the scheduler policy.  May early
+  // Locks |any_thread_lock_| and updates the scheduler policy.  May early
   // out if the policy is unchanged. Must be called from the main thread.
   void UpdatePolicy();
 
@@ -158,7 +177,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   // Helper for computing the new policy. |new_policy_duration| will be filled
   // with the amount of time after which the policy should be updated again. If
   // the duration is zero, a new policy update will not be scheduled. Must be
-  // called with |incoming_signals_lock_| held. Can be called from any thread.
+  // called with |any_thread_lock_| held. Can be called from any thread.
   Policy ComputeNewPolicy(base::TimeTicks now,
                           base::TimeDelta* new_policy_duration) const;
 
@@ -170,38 +189,97 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   void UpdateForInputEventOnCompositorThread(blink::WebInputEvent::Type type,
                                              InputEventState input_event_state);
 
-  SchedulerHelper helper_;
+  // Returns true if there has been at least one idle period in the last
+  // |kIdlePeriodStarvationThresholdMillis|.
+  bool HadAnIdlePeriodRecently(base::TimeTicks now) const;
 
-  scoped_refptr<base::SingleThreadTaskRunner> control_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
-  scoped_refptr<base::SingleThreadTaskRunner> timer_task_runner_;
+  SchedulerHelper helper_;
+  IdleHelper idle_helper_;
+
+  const scoped_refptr<base::SingleThreadTaskRunner> control_task_runner_;
+  const scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
+  const scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
+  const scoped_refptr<TaskQueue> timer_task_runner_;
 
   base::Closure update_policy_closure_;
   DeadlineTaskRunner delayed_update_policy_runner_;
   CancelableClosureHolder end_renderer_hidden_idle_period_closure_;
 
-  // Don't access current_policy_ directly, instead use SchedulerPolicy().
-  Policy current_policy_;
-  base::TimeTicks current_policy_expiration_time_;
-  bool renderer_hidden_;
+  // We have decided to improve thread safety at the cost of some boilerplate
+  // (the accessors) for the following data members.
 
-  base::TimeTicks estimated_next_frame_begin_;
+  struct MainThreadOnly {
+    MainThreadOnly();
 
-  // The incoming_signals_lock_ mutex protects access to all variables in the
-  // (contiguous) block below.
-  mutable base::Lock incoming_signals_lock_;
-  base::TimeTicks last_input_signal_time_;
-  int pending_main_thread_input_event_count_;
-  bool awaiting_touch_start_response_;
+    Policy current_policy_;
+    base::TimeTicks current_policy_expiration_time_;
+    base::TimeTicks estimated_next_frame_begin_;
+    int timer_queue_suspend_count_;  // TIMER_TASK_QUEUE suspended if non-zero.
+    bool renderer_hidden_;
+    bool was_shutdown_;
+  };
 
-  // Variables in this (contiguous) block are only accessed from the compositor
-  // thread.
-  blink::WebInputEvent::Type last_input_type_;
+  struct AnyThread {
+    AnyThread();
 
-  PollableNeedsUpdateFlag policy_may_need_update_;
-  int timer_queue_suspend_count_;  // TIMER_TASK_QUEUE suspended if non-zero.
+    base::TimeTicks last_input_signal_time_;
+    base::TimeTicks last_idle_period_end_time_;
+    base::TimeTicks rails_loading_priority_deadline_;
+    int pending_main_thread_input_event_count_;
+    bool awaiting_touch_start_response_;
+    bool in_idle_period_;
+    bool begin_main_frame_on_critical_path_;
+  };
 
+  struct CompositorThreadOnly {
+    CompositorThreadOnly();
+    ~CompositorThreadOnly();
+
+    blink::WebInputEvent::Type last_input_type_;
+    scoped_ptr<base::ThreadChecker> compositor_thread_checker_;
+
+    void CheckOnValidThread() {
+#if DCHECK_IS_ON()
+      // We don't actually care which thread this called from, just so long as
+      // its consistent.
+      if (!compositor_thread_checker_)
+        compositor_thread_checker_.reset(new base::ThreadChecker());
+      DCHECK(compositor_thread_checker_->CalledOnValidThread());
+#endif
+    }
+  };
+
+  // Don't access main_thread_only_, instead use MainThreadOnly().
+  MainThreadOnly main_thread_only_;
+  MainThreadOnly& MainThreadOnly() {
+    helper_.CheckOnValidThread();
+    return main_thread_only_;
+  }
+  const struct MainThreadOnly& MainThreadOnly() const {
+    helper_.CheckOnValidThread();
+    return main_thread_only_;
+  }
+
+  mutable base::Lock any_thread_lock_;
+  // Don't access any_thread_, instead use AnyThread().
+  AnyThread any_thread_;
+  AnyThread& AnyThread() {
+    any_thread_lock_.AssertAcquired();
+    return any_thread_;
+  }
+  const struct AnyThread& AnyThread() const {
+    any_thread_lock_.AssertAcquired();
+    return any_thread_;
+  }
+
+  // Don't access compositor_thread_only_, instead use CompositorThreadOnly().
+  CompositorThreadOnly compositor_thread_only_;
+  CompositorThreadOnly& CompositorThreadOnly() {
+    compositor_thread_only_.CheckOnValidThread();
+    return compositor_thread_only_;
+  }
+
+  PollableThreadSafeFlag policy_may_need_update_;
   base::WeakPtrFactory<RendererSchedulerImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererSchedulerImpl);

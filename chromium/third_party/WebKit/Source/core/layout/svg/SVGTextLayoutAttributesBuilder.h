@@ -22,7 +22,7 @@
 
 #include "core/layout/svg/SVGTextLayoutAttributes.h"
 #include "wtf/Vector.h"
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
 
 namespace blink {
 
@@ -54,7 +54,7 @@ public:
 
 private:
     struct TextPosition {
-        TextPosition(SVGTextPositioningElement* newElement = 0, unsigned newStart = 0, unsigned newLength = 0)
+        TextPosition(SVGTextPositioningElement* newElement = nullptr, unsigned newStart = 0, unsigned newLength = 0)
             : element(newElement)
             , start(newStart)
             , length(newLength)

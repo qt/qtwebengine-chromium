@@ -14,6 +14,7 @@
 #include "./vp9_rtcd.h"
 
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/mem.h"
 
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_entropy.h"
@@ -24,6 +25,7 @@
 #include "vp9/common/vp9_quant_common.h"
 #include "vp9/common/vp9_reconinter.h"
 #include "vp9/common/vp9_reconintra.h"
+#include "vp9/common/vp9_scan.h"
 #include "vp9/common/vp9_seg_common.h"
 #include "vp9/common/vp9_systemdependent.h"
 
@@ -1802,7 +1804,8 @@ static int64_t rd_pick_best_sub8x8_mode(VP9_COMP *cpi, MACROBLOCK *x,
         frame_mv[ZEROMV][frame].as_int = 0;
         vp9_append_sub8x8_mvs_for_idx(cm, xd, tile, i, ref, mi_row, mi_col,
                                       &frame_mv[NEARESTMV][frame],
-                                      &frame_mv[NEARMV][frame]);
+                                      &frame_mv[NEARMV][frame],
+                                      xd->mi[0]->mbmi.mode_context);
       }
 
       // search for the best motion vector on this segment
@@ -2117,8 +2120,8 @@ static void estimate_ref_frame_costs(const VP9_COMMON *cm,
                                      unsigned int *ref_costs_single,
                                      unsigned int *ref_costs_comp,
                                      vp9_prob *comp_mode_p) {
-  int seg_ref_active = vp9_segfeature_active(&cm->seg, segment_id,
-                                             SEG_LVL_REF_FRAME);
+  int seg_ref_active = segfeature_active(&cm->seg, segment_id,
+                                         SEG_LVL_REF_FRAME);
   if (seg_ref_active) {
     memset(ref_costs_single, 0, MAX_REF_FRAMES * sizeof(*ref_costs_single));
     memset(ref_costs_comp,   0, MAX_REF_FRAMES * sizeof(*ref_costs_comp));
@@ -2218,7 +2221,7 @@ static void setup_buffer_inter(VP9_COMP *cpi, MACROBLOCK *x,
 
   // Gets an initial list of candidate vectors from neighbours and orders them
   vp9_find_mv_refs(cm, xd, tile, mi, ref_frame, candidates, mi_row, mi_col,
-                   NULL, NULL);
+                   NULL, NULL, xd->mi[0]->mbmi.mode_context);
 
   // Candidate refinement carried out at encoder and decoder
   vp9_find_best_ref_mvs(xd, cm->allow_high_precision_mv, candidates,
@@ -3004,8 +3007,8 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
     }
     // If the segment reference frame feature is enabled....
     // then do nothing if the current ref frame is not allowed..
-    if (vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
-        vp9_get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame) {
+    if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
+        get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame) {
       ref_frame_skip_mask[0] |= (1 << ref_frame);
       ref_frame_skip_mask[1] |= SECOND_REF_FRAME_MASK;
     }
@@ -3014,7 +3017,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
   // Disable this drop out case if the ref frame
   // segment level feature is enabled for this segment. This is to
   // prevent the possibility that we end up unable to pick any mode.
-  if (!vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME)) {
+  if (!segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME)) {
     // Only consider ZEROMV/ALTREF_FRAME for alt ref frame,
     // unless ARNR filtering is enabled in which case we want
     // an unfiltered alternative. We allow near/nearest as well
@@ -3193,7 +3196,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
 
       // Do not allow compound prediction if the segment level reference frame
       // feature is in use as in this case there can only be one reference.
-      if (vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
+      if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
         continue;
 
       if ((mode_search_skip_flags & FLAG_SKIP_COMP_BESTINTRA) &&
@@ -3635,7 +3638,7 @@ void vp9_rd_pick_inter_mode_sb_seg_skip(VP9_COMP *cpi,
 
   rd_cost->rate = INT_MAX;
 
-  assert(vp9_segfeature_active(&cm->seg, segment_id, SEG_LVL_SKIP));
+  assert(segfeature_active(&cm->seg, segment_id, SEG_LVL_SKIP));
 
   mbmi->mode = ZEROMV;
   mbmi->uv_mode = DC_PRED;
@@ -3847,7 +3850,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi,
         continue;
       // Do not allow compound prediction if the segment level reference frame
       // feature is in use as in this case there can only be one reference.
-      if (vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
+      if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
         continue;
 
       if ((sf->mode_search_skip_flags & FLAG_SKIP_COMP_BESTINTRA) &&
@@ -3872,13 +3875,13 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi,
 
     // If the segment reference frame feature is enabled....
     // then do nothing if the current ref frame is not allowed..
-    if (vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
-        vp9_get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame) {
+    if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
+        get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame) {
       continue;
     // Disable this drop out case if the ref frame
     // segment level feature is enabled for this segment. This is to
     // prevent the possibility that we end up unable to pick any mode.
-    } else if (!vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME)) {
+    } else if (!segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME)) {
       // Only consider ZEROMV/ALTREF_FRAME for alt ref frame,
       // unless ARNR filtering is enabled in which case we want
       // an unfiltered alternative. We allow near/nearest as well

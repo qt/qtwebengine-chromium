@@ -32,7 +32,6 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Node.h"
 #include "core/style/ComputedStyle.h"
-#include "platform/Decimal.h"
 #include "platform/LayoutUnit.h"
 #include "platform/fonts/FontMetrics.h"
 #include "wtf/StdLibExtras.h"
@@ -83,6 +82,7 @@ StringToUnitTable createStringToUnitTable()
     table.set(String("fr"), CSSPrimitiveValue::CSS_FR);
     table.set(String("turn"), CSSPrimitiveValue::CSS_TURN);
     table.set(String("ch"), CSSPrimitiveValue::CSS_CHS);
+    table.set(String("__qem"), CSSPrimitiveValue::CSS_QEM);
     return table;
 }
 
@@ -394,7 +394,6 @@ void CSSPrimitiveValue::cleanup()
     case CSS_STRING:
     case CSS_URI:
     case CSS_ATTR:
-    case CSS_COUNTER_NAME:
         if (m_value.string)
             m_value.string->deref();
         break;
@@ -439,8 +438,10 @@ void CSSPrimitiveValue::cleanup()
 #endif
         break;
     case CSS_NUMBER:
+    case CSS_INTEGER:
     case CSS_PERCENTAGE:
     case CSS_EMS:
+    case CSS_QEM:
     case CSS_EXS:
     case CSS_REMS:
     case CSS_CHS:
@@ -469,7 +470,6 @@ void CSSPrimitiveValue::cleanup()
     case CSS_IDENT:
     case CSS_RGBCOLOR:
     case CSS_UNKNOWN:
-    case CSS_UNICODE_RANGE:
     case CSS_PROPERTY_ID:
     case CSS_VALUE_ID:
         break;
@@ -829,8 +829,13 @@ String CSSPrimitiveValue::getStringValue() const
 
 static String formatNumber(double number, const char* suffix, unsigned suffixLength)
 {
-    Decimal decimal = Decimal::fromDouble(number);
-    String result = decimal.toString();
+#if OS(WIN) && _MSC_VER < 1900
+    unsigned oldFormat = _set_output_format(_TWO_DIGIT_EXPONENT);
+#endif
+    String result = String::format("%.6g", number);
+#if OS(WIN) && _MSC_VER < 1900
+    _set_output_format(oldFormat);
+#endif
     result.append(suffix, suffixLength);
     return result;
 }
@@ -850,6 +855,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
 {
     switch (type) {
     case CSS_NUMBER:
+    case CSS_INTEGER:
         return "";
     case CSS_PERCENTAGE:
         return "%";
@@ -912,7 +918,6 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case CSS_VALUE_ID:
     case CSS_PROPERTY_ID:
     case CSS_ATTR:
-    case CSS_COUNTER_NAME:
     case CSS_COUNTER:
     case CSS_RECT:
     case CSS_QUAD:
@@ -921,9 +926,9 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case CSS_CALC:
     case CSS_SHAPE:
     case CSS_IDENT:
-    case CSS_UNICODE_RANGE:
     case CSS_CALC_PERCENTAGE_WITH_NUMBER:
     case CSS_CALC_PERCENTAGE_WITH_LENGTH:
+    case CSS_QEM:
         break;
     };
     ASSERT_NOT_REACHED();
@@ -941,6 +946,9 @@ String CSSPrimitiveValue::customCSSText() const
     switch (m_primitiveUnitType) {
         case CSS_UNKNOWN:
             // FIXME
+            break;
+        case CSS_INTEGER:
+            text = String::format("%d", getIntValue());
             break;
         case CSS_NUMBER:
         case CSS_PERCENTAGE:
@@ -998,9 +1006,6 @@ String CSSPrimitiveValue::customCSSText() const
             text = result.toString();
             break;
         }
-        case CSS_COUNTER_NAME:
-            text = "counter(" + String(m_value.string) + ')';
-            break;
         case CSS_COUNTER: {
             StringBuilder result;
             String separator = m_value.counter->separator();
@@ -1015,7 +1020,8 @@ String CSSPrimitiveValue::customCSSText() const
                 result.append(serializeString(separator));
             }
             String listStyle = m_value.counter->listStyle();
-            if (!listStyle.isEmpty()) {
+            bool isDefaultListStyle = m_value.counter->listStyleIdent() == CSSValueDecimal;
+            if (!listStyle.isEmpty() && !isDefaultListStyle) {
                 result.appendLiteral(", ");
                 result.append(listStyle);
             }
@@ -1095,7 +1101,6 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case CSS_STRING:
     case CSS_URI:
     case CSS_ATTR:
-    case CSS_COUNTER_NAME:
         return equal(m_value.string, other.m_value.string);
     case CSS_COUNTER:
         return m_value.counter && other.m_value.counter && m_value.counter->equals(*other.m_value.counter);

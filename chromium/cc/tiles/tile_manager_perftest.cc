@@ -16,7 +16,6 @@
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/fake_tile_manager.h"
 #include "cc/test/fake_tile_manager_client.h"
-#include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/test/test_tile_priorities.h"
@@ -26,8 +25,6 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
-
-#include "ui/gfx/frame_time.h"
 
 namespace cc {
 namespace {
@@ -67,13 +64,16 @@ class FakeTileTaskRunnerImpl : public TileTaskRunner, public TileTaskClient {
     }
     completed_tasks_.clear();
   }
-  ResourceFormat GetResourceFormat() override {
-    return RGBA_8888;
+  ResourceFormat GetResourceFormat() const override { return RGBA_8888; }
+  bool GetResourceRequiresSwizzle() const override {
+    return !PlatformColor::SameComponentOrder(GetResourceFormat());
   }
 
   // Overridden from TileTaskClient:
   scoped_ptr<RasterBuffer> AcquireBufferForRaster(
-      const Resource* resource) override {
+      const Resource* resource,
+      uint64_t new_content_id,
+      uint64_t previous_content_id) override {
     return nullptr;
   }
   void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) override {}
@@ -91,7 +91,7 @@ class TileManagerPerfTest : public testing::Test {
         max_tiles_(10000),
         id_(7),
         proxy_(base::ThreadTaskRunnerHandle::Get()),
-        host_impl_(ImplSidePaintingSettings(10000),
+        host_impl_(LayerTreeSettings(),
                    &proxy_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_),
@@ -385,20 +385,18 @@ class TileManagerPerfTest : public testing::Test {
                            int approximate_tile_count_per_layer) {
     std::vector<FakePictureLayerImpl*> layers =
         CreateLayers(layer_count, approximate_tile_count_per_layer);
+
     timer_.Reset();
     bool resourceless_software_draw = false;
     do {
-      BeginFrameArgs args =
-          CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE);
-      host_impl_.WillBeginImplFrame(args);
+      host_impl_.AdvanceToNextFrame(base::TimeDelta::FromMilliseconds(1));
       for (const auto& layer : layers)
         layer->UpdateTiles(resourceless_software_draw);
 
       GlobalStateThatImpactsTilePriority global_state(GlobalStateForTest());
       tile_manager()->PrepareTiles(global_state);
-      tile_manager()->UpdateVisibleTiles(global_state);
+      tile_manager()->Flush();
       timer_.NextLap();
-      host_impl_.DidFinishImplFrame();
     } while (!timer_.HasTimeLimitExpired());
 
     perf_test::PrintResult("prepare_tiles", "", test_name,

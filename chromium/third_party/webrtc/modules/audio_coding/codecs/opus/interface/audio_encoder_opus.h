@@ -52,12 +52,14 @@ class AudioEncoderOpus final : public AudioEncoder {
   size_t MaxEncodedBytes() const override;
   int Num10MsFramesInNextPacket() const override;
   int Max10MsFramesInAPacket() const override;
+  int GetTargetBitrate() const override;
   void SetTargetBitrate(int bits_per_second) override;
   void SetProjectedPacketLossRate(double fraction) override;
 
   double packet_loss_rate() const { return packet_loss_rate_; }
   ApplicationMode application() const { return application_; }
   bool dtx_enabled() const { return dtx_enabled_; }
+
   EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
                              const int16_t* audio,
                              size_t max_encoded_bytes,
@@ -93,10 +95,17 @@ class AudioEncoderMutableOpus
   bool SetApplication(Application application) override;
   bool SetMaxPlaybackRate(int frequency_hz) override;
   AudioEncoderOpus::ApplicationMode application() const {
+    CriticalSectionScoped cs(encoder_lock_.get());
     return encoder()->application();
   }
-  double packet_loss_rate() const { return encoder()->packet_loss_rate(); }
-  bool dtx_enabled() const { return encoder()->dtx_enabled(); }
+  double packet_loss_rate() const {
+    CriticalSectionScoped cs(encoder_lock_.get());
+    return encoder()->packet_loss_rate();
+  }
+  bool dtx_enabled() const {
+    CriticalSectionScoped cs(encoder_lock_.get());
+    return encoder()->dtx_enabled();
+  }
 };
 
 }  // namespace webrtc

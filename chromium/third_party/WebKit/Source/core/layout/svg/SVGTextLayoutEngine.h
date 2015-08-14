@@ -20,7 +20,7 @@
 #ifndef SVGTextLayoutEngine_h
 #define SVGTextLayoutEngine_h
 
-#include "core/layout/svg/SVGTextChunkBuilder.h"
+#include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/layout/svg/SVGTextFragment.h"
 #include "core/layout/svg/SVGTextLayoutAttributes.h"
 #include "core/layout/svg/SVGTextMetrics.h"
@@ -29,9 +29,10 @@
 
 namespace blink {
 
-class LayoutObject;
 class ComputedStyle;
-class LayoutSVGInlineText;
+class InlineFlowBox;
+class LayoutObject;
+class SVGInlineFlowBox;
 class SVGInlineTextBox;
 
 // SVGTextLayoutEngine performs the second layout phase for SVG text.
@@ -49,10 +50,7 @@ public:
 
     Vector<SVGTextLayoutAttributes*>& layoutAttributes() { return m_layoutAttributes; }
 
-    void beginTextPathLayout(LayoutObject*, SVGTextLayoutEngine& lineLayout);
-    void endTextPathLayout();
-
-    void layoutInlineTextBox(SVGInlineTextBox*);
+    void layoutCharactersInTextBoxes(InlineFlowBox* start);
     void finishLayout();
 
 private:
@@ -60,38 +58,35 @@ private:
     void updateCurrentTextPosition(float x, float y, float glyphAdvance);
     void updateRelativePositionAdjustmentsIfNeeded(float dx, float dy);
 
-    void recordTextFragment(SVGInlineTextBox*, const Vector<SVGTextMetrics>&);
-    bool parentDefinesTextLength(LayoutObject*) const;
+    void recordTextFragment(SVGInlineTextBox*);
 
+    void beginTextPathLayout(SVGInlineFlowBox*);
+    void endTextPathLayout();
+
+    void layoutInlineTextBox(SVGInlineTextBox*);
     void layoutTextOnLineOrPath(SVGInlineTextBox*, const LayoutSVGInlineText&, const ComputedStyle&);
-    void finalizeTransformMatrices(Vector<SVGInlineTextBox*>&);
 
     bool currentLogicalCharacterAttributes(SVGTextLayoutAttributes*&);
     bool currentLogicalCharacterMetrics(SVGTextLayoutAttributes*&, SVGTextMetrics&);
-    bool currentVisualCharacterMetrics(SVGInlineTextBox*, const Vector<SVGTextMetrics>&, SVGTextMetrics&);
-
     void advanceToNextLogicalCharacter(const SVGTextMetrics&);
-    void advanceToNextVisualCharacter(const SVGTextMetrics&);
 
 private:
     Vector<SVGTextLayoutAttributes*>& m_layoutAttributes;
 
     Vector<SVGInlineTextBox*> m_lineLayoutBoxes;
-    Vector<SVGInlineTextBox*> m_pathLayoutBoxes;
-    SVGTextChunkBuilder m_chunkLayoutBuilder;
 
     SVGTextFragment m_currentTextFragment;
     unsigned m_layoutAttributesPosition;
     unsigned m_logicalCharacterOffset;
     unsigned m_logicalMetricsListOffset;
-    unsigned m_visualCharacterOffset;
-    unsigned m_visualMetricsListOffset;
+    SVGInlineTextMetricsIterator m_visualMetricsIterator;
     float m_x;
     float m_y;
     float m_dx;
     float m_dy;
     bool m_isVerticalText;
     bool m_inPathLayout;
+    bool m_textLengthSpacingInEffect;
 
     // Text on path layout
     Path::PositionCalculator* m_textPathCalculator;

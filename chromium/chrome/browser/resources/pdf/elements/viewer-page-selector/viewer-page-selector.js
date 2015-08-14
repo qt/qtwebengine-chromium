@@ -4,45 +4,33 @@
 
 var DIGIT_LENGTH = 0.6;
 
-Polymer('viewer-page-selector', {
-  /**
-   * @type {string}
-   * The current entry in the input field (1-based).
-   */
-  pageNo: '1',
+Polymer({
+  is: 'viewer-page-selector',
 
-  /**
-   * @type {number}
-   * The index of the current page being viewed (0-based).
-   */
-  index: 0,
+  properties: {
+    /**
+     * The number of pages the document contains.
+     */
+    docLength: {
+      type: Number,
+      value: 1,
+      observer: 'docLengthChanged'
+    },
 
-  /**
-   * @type {number}
-   * The number of pages the document contains.
-   */
-  docLength: 1,
-
-  /**
-   * @type {string}
-   * The submitted input from the user (1-based).
-   */
-  chosenPageNo: '1',
-
-  chosenPageNoChanged: function() {
-    var page = parseInt(this.chosenPageNo);
-    if (!isNaN(page)) {
-      this.fire('change-page', {page: page - 1});
-    } else {
-      // Repopulate the input.
-      this.indexChanged();
-      // Change the chosenPageNo so if it is '' again we can repopulate it.
-      this.chosenPageNo = this.pageNo;
+    /**
+     * The current page being viewed (1-based).
+     */
+    pageNo: {
+      type: String,
+      value: '1'
     }
   },
 
-  indexChanged: function() {
-    this.pageNo = String(this.index + 1);
+  pageNoCommitted: function() {
+    var page = parseInt(this.pageNo);
+    if (!isNaN(page)) {
+      this.fire('change-page', {page: page - 1});
+    }
   },
 
   docLengthChanged: function() {

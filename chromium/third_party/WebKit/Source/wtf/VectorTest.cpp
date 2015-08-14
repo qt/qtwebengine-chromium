@@ -24,13 +24,15 @@
  */
 
 #include "config.h"
+#include "wtf/Vector.h"
 
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
-#include "wtf/Vector.h"
 #include <gtest/gtest.h>
+
+namespace WTF {
 
 namespace {
 
@@ -380,6 +382,10 @@ template<typename T> void compare()
     EXPECT_FALSE(Vector<T>(1) == Vector<T>(0));
     EXPECT_FALSE(Vector<T>() == Vector<T>(1));
     EXPECT_TRUE(Vector<T>(1) == Vector<T>(1));
+
+    Vector<T, 1> vectorWithInlineCapacity;
+    EXPECT_TRUE(vectorWithInlineCapacity == Vector<T>());
+    EXPECT_FALSE(vectorWithInlineCapacity == Vector<T>(1));
 }
 
 TEST(VectorTest, Compare)
@@ -388,4 +394,7 @@ TEST(VectorTest, Compare)
     compare<Comparable>();
     compare<WTF::String>();
 }
-} // namespace
+
+} // anonymous namespace
+
+} // namespace WTF

@@ -19,7 +19,7 @@
 #include "webrtc/modules/audio_processing/ns/nsx_core.h"
 #include "webrtc/system_wrappers/interface/cpu_features_wrapper.h"
 
-#if (defined WEBRTC_DETECT_ARM_NEON || defined WEBRTC_ARCH_ARM_NEON)
+#if (defined WEBRTC_DETECT_NEON || defined WEBRTC_HAS_NEON)
 /* Tables are defined in ARM assembly files. */
 extern const int16_t WebRtcNsx_kLogTable[9];
 extern const int16_t WebRtcNsx_kCounterDiv[201];
@@ -65,7 +65,7 @@ static const int16_t WebRtcNsx_kLogTableFrac[256] = {
   237, 238, 238, 239, 240, 241, 241, 242, 243, 244, 244, 245, 246, 247, 247,
   248, 249, 249, 250, 251, 252, 252, 253, 254, 255, 255
 };
-#endif  // WEBRTC_DETECT_ARM_NEON || WEBRTC_ARCH_ARM_NEON
+#endif  // WEBRTC_DETECT_NEON || WEBRTC_HAS_NEON
 
 // Skip first frequency bins during estimation. (0 <= value < 64)
 static const int kStartBand = 5;
@@ -557,8 +557,7 @@ AnalysisUpdate WebRtcNsx_AnalysisUpdate;
 Denormalize WebRtcNsx_Denormalize;
 NormalizeRealBuffer WebRtcNsx_NormalizeRealBuffer;
 
-#if (defined WEBRTC_DETECT_ARM_NEON || defined WEBRTC_ARCH_ARM_NEON || \
-     defined WEBRTC_ARCH_ARM64_NEON)
+#if (defined WEBRTC_DETECT_NEON || defined WEBRTC_HAS_NEON)
 // Initialize function pointers for ARM Neon platform.
 static void WebRtcNsx_InitNeon(void) {
   WebRtcNsx_NoiseEstimation = WebRtcNsx_NoiseEstimationNeon;
@@ -763,12 +762,12 @@ int32_t WebRtcNsx_InitCore(NoiseSuppressionFixedC* inst, uint32_t fs) {
   WebRtcNsx_Denormalize = DenormalizeC;
   WebRtcNsx_NormalizeRealBuffer = NormalizeRealBufferC;
 
-#ifdef WEBRTC_DETECT_ARM_NEON
+#ifdef WEBRTC_DETECT_NEON
   uint64_t features = WebRtc_GetCPUFeaturesARM();
   if ((features & kCPUFeatureNEON) != 0) {
       WebRtcNsx_InitNeon();
   }
-#elif defined(WEBRTC_ARCH_ARM_NEON) || defined(WEBRTC_ARCH_ARM64_NEON)
+#elif defined(WEBRTC_HAS_NEON)
   WebRtcNsx_InitNeon();
 #endif
 
@@ -1216,7 +1215,8 @@ void WebRtcNsx_DataAnalysis(NoiseSuppressionFixedC* inst,
   WebRtcNsx_AnalysisUpdate(inst, winData, speechFrame);
 
   // Get input energy
-  inst->energyIn = WebRtcSpl_Energy(winData, (int)inst->anaLen, &(inst->scaleEnergyIn));
+  inst->energyIn =
+      WebRtcSpl_Energy(winData, inst->anaLen, &inst->scaleEnergyIn);
 
   // Reset zero input flag
   inst->zeroInputSignal = 0;
@@ -1461,7 +1461,8 @@ void WebRtcNsx_DataSynthesis(NoiseSuppressionFixedC* inst, short* outFrame) {
   if (inst->gainMap == 1 &&
       inst->blockIndex > END_STARTUP_LONG &&
       inst->energyIn > 0) {
-    energyOut = WebRtcSpl_Energy(inst->real, (int)inst->anaLen, &scaleEnergyOut); // Q(-scaleEnergyOut)
+    // Q(-scaleEnergyOut)
+    energyOut = WebRtcSpl_Energy(inst->real, inst->anaLen, &scaleEnergyOut);
     if (scaleEnergyOut == 0 && !(energyOut & 0x7f800000)) {
       energyOut = WEBRTC_SPL_SHIFT_W32(energyOut, 8 + scaleEnergyOut
                                        - inst->scaleEnergyIn);

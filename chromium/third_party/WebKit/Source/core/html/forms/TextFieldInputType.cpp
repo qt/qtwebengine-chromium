@@ -50,7 +50,6 @@
 #include "core/layout/LayoutDetailsMarker.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/EventDispatchForbiddenScope.h"
@@ -65,12 +64,12 @@ private:
     inline DataListIndicatorElement(Document& document) : HTMLDivElement(document) { }
     inline HTMLInputElement* hostInput() const { return toHTMLInputElement(shadowHost()); }
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override
+    LayoutObject* createLayoutObject(const ComputedStyle&) override
     {
         return new LayoutDetailsMarker(this);
     }
 
-    virtual void* preDispatchEventHandler(Event* event) override
+    void* preDispatchEventHandler(Event* event) override
     {
         // Chromium opens autofill popup in a mousedown event listener
         // associated to the document. We don't want to open it in this case
@@ -81,19 +80,19 @@ private:
         return nullptr;
     }
 
-    virtual void defaultEventHandler(Event* event) override
+    void defaultEventHandler(Event* event) override
     {
         ASSERT(document().isActive());
         if (event->type() != EventTypeNames::click)
             return;
         HTMLInputElement* host = hostInput();
         if (host && !host->isDisabledOrReadOnly()) {
-            document().frameHost()->chrome().openTextDataListChooser(*host);
+            document().frameHost()->chromeClient().openTextDataListChooser(*host);
             event->setDefaultHandled();
         }
     }
 
-    virtual bool willRespondToMouseClickEvents() override
+    bool willRespondToMouseClickEvents() override
     {
         return hostInput() && !hostInput()->isDisabledOrReadOnly() && document().isActive();
     }
@@ -197,8 +196,8 @@ void TextFieldInputType::handleKeydownEvent(KeyboardEvent* event)
 {
     if (!element().focused())
         return;
-    if (Chrome* chrome = this->chrome()) {
-        chrome->client().handleKeyboardEventOnTextField(element(), *event);
+    if (ChromeClient* chromeClient = this->chromeClient()) {
+        chromeClient->handleKeyboardEventOnTextField(element(), *event);
         return;
     }
     event->setDefaultHandled();
@@ -328,8 +327,8 @@ void TextFieldInputType::destroyShadowSubtree()
 
 void TextFieldInputType::listAttributeTargetChanged()
 {
-    if (Chrome* chrome = this->chrome())
-        chrome->client().textFieldDataListChanged(element());
+    if (ChromeClient* chromeClient = this->chromeClient())
+        chromeClient->textFieldDataListChanged(element());
     Element* picker = element().userAgentShadowRoot()->getElementById(ShadowElementNames::pickerIndicator());
     bool didHavePickerIndicator = picker;
     bool willHavePickerIndicator = element().hasValidDataListOptions();
@@ -418,7 +417,14 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
     // If the text field has no focus, we don't need to take account of the
     // selection length. The selection is the source of text drag-and-drop in
     // that case, and nothing in the text field will be removed.
-    unsigned selectionLength = element().focused() ? plainText(element().document().frame()->selection().selection().toNormalizedRange().get()).length() : 0;
+    unsigned selectionLength = 0;
+    if (element().focused()) {
+        Position startPosition;
+        Position endPosition;
+        const VisibleSelection& selection = element().document().frame()->selection().selection();
+        if (selection.toNormalizedPositions(startPosition, endPosition))
+            selectionLength = plainText(startPosition, endPosition).length();
+    }
     ASSERT(oldLength >= selectionLength);
 
     // Selected characters will be removed by the next text event.
@@ -505,8 +511,8 @@ void TextFieldInputType::didSetValueByUserEdit(ValueChangeState state)
 {
     if (!element().focused())
         return;
-    if (Chrome* chrome = this->chrome())
-        chrome->client().didChangeValueInTextField(element());
+    if (ChromeClient* chromeClient = this->chromeClient())
+        chromeClient->didChangeValueInTextField(element());
 }
 
 void TextFieldInputType::spinButtonStepDown()

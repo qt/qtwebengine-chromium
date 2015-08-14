@@ -26,7 +26,6 @@
 #include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/layout/svg/LayoutSVGPath.h"
-#include "core/layout/svg/SVGPathData.h"
 #include "core/svg/SVGElementRareData.h"
 #include "platform/transforms/AffineTransform.h"
 
@@ -150,7 +149,7 @@ AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
         // SVGTextElements need special handling for the text positioning code.
         if (isSVGTextElement(this)) {
             // Do not take into account SVG's zoom rules, transform-origin, or percentage values.
-            style->applyTransform(transform, LayoutSize(0, 0), ComputedStyle::ExcludeTransformOrigin);
+            style->applyTransform(transform, LayoutSize(0, 0), ComputedStyle::ExcludeTransformOrigin, ComputedStyle::IncludeMotionPath, ComputedStyle::IncludeIndependentTransformProperties);
         } else {
             // CSS transforms operate with pre-scaled lengths. To make this work with SVG
             // (which applies the zoom factor globally, at the root level) we
@@ -164,10 +163,10 @@ AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
                 FloatRect scaledBBox = layoutObject()->objectBoundingBox();
                 scaledBBox.scale(zoom);
                 transform.scale(1 / zoom);
-                style->applyTransform(transform, scaledBBox);
+                style->applyTransform(transform, scaledBBox, ComputedStyle::IncludeTransformOrigin, ComputedStyle::IncludeMotionPath, ComputedStyle::IncludeIndependentTransformProperties);
                 transform.scale(zoom);
             } else {
-                style->applyTransform(transform, layoutObject()->objectBoundingBox());
+                style->applyTransform(transform, layoutObject()->objectBoundingBox(), ComputedStyle::IncludeTransformOrigin, ComputedStyle::IncludeMotionPath, ComputedStyle::IncludeIndependentTransformProperties);
             }
         }
 
@@ -244,18 +243,6 @@ FloatRect SVGGraphicsElement::getBBox()
 PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript()
 {
     return SVGRectTearOff::create(SVGRect::create(getBBox()), 0, PropertyIsNotAnimVal);
-}
-
-LayoutObject* SVGGraphicsElement::createLayoutObject(const ComputedStyle&)
-{
-    // By default, any subclass is expected to do path-based drawing
-    return new LayoutSVGPath(this);
-}
-
-void SVGGraphicsElement::toClipPath(Path& path)
-{
-    updatePathFromGraphicsElement(this, path);
-    path.transform(calculateAnimatedLocalTransform());
 }
 
 }

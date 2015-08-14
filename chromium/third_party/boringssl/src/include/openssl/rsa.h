@@ -100,6 +100,12 @@ OPENSSL_EXPORT int RSA_up_ref(RSA *rsa);
 OPENSSL_EXPORT int RSA_generate_key_ex(RSA *rsa, int bits, BIGNUM *e,
                                        BN_GENCB *cb);
 
+/* RSA_generate_multi_prime_key acts like |RSA_generate_key_ex| but can
+ * generate an RSA private key with more than two primes. */
+OPENSSL_EXPORT int RSA_generate_multi_prime_key(RSA *rsa, int bits,
+                                                int num_primes, BIGNUM *e,
+                                                BN_GENCB *cb);
+
 
 /* Encryption / Decryption */
 
@@ -240,7 +246,7 @@ OPENSSL_EXPORT int RSA_verify_raw(RSA *rsa, size_t *out_len, uint8_t *out,
 OPENSSL_EXPORT int RSA_private_encrypt(int flen, const uint8_t *from,
                                        uint8_t *to, RSA *rsa, int padding);
 
-/* RSA_private_encrypt verifies |flen| bytes of signature from |from| using the
+/* RSA_public_decrypt verifies |flen| bytes of signature from |from| using the
  * public key in |rsa| and writes the plaintext to |to|. The |to| buffer must
  * have at least |RSA_size| bytes of space. It returns the number of bytes
  * written, or -1 on error. The |padding| argument must be one of the
@@ -314,6 +320,14 @@ OPENSSL_EXPORT int RSA_padding_add_PKCS1_PSS_mgf1(RSA *rsa, uint8_t *EM,
                                                   const EVP_MD *Hash,
                                                   const EVP_MD *mgf1Hash,
                                                   int sLen);
+
+/* RSA_add_pkcs1_prefix builds a version of |msg| prefixed with the DigestInfo
+ * header for the given hash function and sets |out_msg| to point to it. On
+ * successful return, |*out_msg| may be allocated memory and, if so,
+ * |*is_alloced| will be 1. */
+OPENSSL_EXPORT int RSA_add_pkcs1_prefix(uint8_t **out_msg, size_t *out_msg_len,
+                                        int *is_alloced, int hash_nid,
+                                        const uint8_t *msg, size_t msg_len);
 
 
 /* ASN.1 functions. */
@@ -395,6 +409,13 @@ OPENSSL_EXPORT void *RSA_get_ex_data(const RSA *r, int idx);
 /* RSA_blinding_on returns one. */
 OPENSSL_EXPORT int RSA_blinding_on(RSA *rsa, BN_CTX *ctx);
 
+/* RSA_generate_key behaves like |RSA_generate_key_ex|, which is what you
+ * should use instead. It returns NULL on error, or a newly-allocated |RSA| on
+ * success. This function is provided for compatibility only. The |callback|
+ * and |cb_arg| parameters must be NULL. */
+OPENSSL_EXPORT RSA *RSA_generate_key(int bits, unsigned long e, void *callback,
+                                     void *cb_arg);
+
 
 struct rsa_meth_st {
   struct openssl_method_common_st common;
@@ -450,6 +471,9 @@ struct rsa_meth_st {
 
   int (*keygen)(RSA *rsa, int bits, BIGNUM *e, BN_GENCB *cb);
 
+  int (*multi_prime_keygen)(RSA *rsa, int bits, int num_primes, BIGNUM *e,
+                            BN_GENCB *cb);
+
   /* supports_digest returns one if |rsa| supports digests of type
    * |md|. If null, it is assumed that all digests are supported. */
   int (*supports_digest)(const RSA *rsa, const EVP_MD *md);
@@ -473,9 +497,12 @@ struct rsa_st {
   BIGNUM *dmp1;
   BIGNUM *dmq1;
   BIGNUM *iqmp;
+
+  STACK_OF(RSA_additional_prime) *additional_primes;
+
   /* be careful using this if the RSA structure is shared */
   CRYPTO_EX_DATA ex_data;
-  int references;
+  CRYPTO_refcount_t references;
   int flags;
 
   CRYPTO_MUTEX lock;
@@ -525,11 +552,12 @@ struct rsa_st {
 #define RSA_F_decrypt 120
 #define RSA_F_encrypt 121
 #define RSA_F_keygen 122
-#define RSA_F_pkcs1_prefixed_msg 123
+#define RSA_F_RSA_add_pkcs1_prefix 123
 #define RSA_F_private_transform 124
 #define RSA_F_rsa_setup_blinding 125
 #define RSA_F_sign_raw 126
 #define RSA_F_verify_raw 127
+#define RSA_F_keygen_multiprime 128
 #define RSA_R_BAD_E_VALUE 100
 #define RSA_R_BAD_FIXED_HEADER_DECRYPT 101
 #define RSA_R_BAD_PAD_BYTE_COUNT 102
@@ -571,5 +599,7 @@ struct rsa_st {
 #define RSA_R_UNKNOWN_PADDING_TYPE 138
 #define RSA_R_VALUE_MISSING 139
 #define RSA_R_WRONG_SIGNATURE_LENGTH 140
+#define RSA_R_MUST_HAVE_AT_LEAST_TWO_PRIMES 141
+#define RSA_R_CANNOT_RECOVER_MULTI_PRIME_KEY 142
 
 #endif  /* OPENSSL_HEADER_RSA_H */

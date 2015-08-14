@@ -6,6 +6,7 @@
 
 #include "media/base/audio_decoder_config.h"
 #include "media/base/buffering_state.h"
+#include "media/base/cdm_config.h"
 #include "media/base/cdm_key_information.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
@@ -130,20 +131,15 @@ ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
                    VideoFrame::UNKNOWN,
                    VIDEO_FORMAT_UNKNOWN);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12, VIDEO_FORMAT_YV12);
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV16, VIDEO_FORMAT_YV16);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::I420, VIDEO_FORMAT_I420);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV16, VIDEO_FORMAT_YV16);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12A, VIDEO_FORMAT_YV12A);
-#if defined(VIDEO_HOLE)
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::HOLE, VIDEO_FORMAT_HOLE);
-#endif
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
-                   VideoFrame::NATIVE_TEXTURE,
-                   VIDEO_FORMAT_NATIVE_TEXTURE);
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12J, VIDEO_FORMAT_YV12J);
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::NV12, VIDEO_FORMAT_NV12);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV24, VIDEO_FORMAT_YV24);
+#if defined(OS_MACOSX)
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::NV12, VIDEO_FORMAT_NV12);
+#endif
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::ARGB, VIDEO_FORMAT_ARGB);
-ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12HD, VIDEO_FORMAT_YV12HD);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::XRGB, VIDEO_FORMAT_XRGB);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
                    VideoFrame::FORMAT_MAX,
                    VIDEO_FORMAT_FORMAT_MAX);
@@ -452,6 +448,7 @@ TypeConverter<media::VideoDecoderConfig, VideoDecoderConfigPtr>::Convert(
       static_cast<media::VideoCodec>(input->codec),
       static_cast<media::VideoCodecProfile>(input->profile),
       static_cast<media::VideoFrame::Format>(input->format),
+      media::VideoFrame::COLOR_SPACE_UNSPECIFIED,
       input->coded_size.To<gfx::Size>(),
       input->visible_rect.To<gfx::Rect>(),
       input->natural_size.To<gfx::Size>(),
@@ -478,12 +475,32 @@ TypeConverter<CdmKeyInformationPtr, media::CdmKeyInformation>::Convert(
 scoped_ptr<media::CdmKeyInformation> TypeConverter<
     scoped_ptr<media::CdmKeyInformation>,
     CdmKeyInformationPtr>::Convert(const CdmKeyInformationPtr& input) {
-  scoped_ptr<media::CdmKeyInformation> info(new media::CdmKeyInformation);
+  scoped_ptr<media::CdmKeyInformation> info(new media::CdmKeyInformation());
   info->key_id = input->key_id.storage();
   info->status =
       static_cast<media::CdmKeyInformation::KeyStatus>(input->status);
   info->system_code = input->system_code;
   return info.Pass();
+}
+
+// static
+CdmConfigPtr TypeConverter<CdmConfigPtr, media::CdmConfig>::Convert(
+    const media::CdmConfig& input) {
+  CdmConfigPtr config(CdmConfig::New());
+  config->allow_distinctive_identifier = input.allow_distinctive_identifier;
+  config->allow_persistent_state = input.allow_persistent_state;
+  config->use_hw_secure_codecs = input.use_hw_secure_codecs;
+  return config.Pass();
+}
+
+// static
+media::CdmConfig TypeConverter<media::CdmConfig, CdmConfigPtr>::Convert(
+    const CdmConfigPtr& input) {
+  media::CdmConfig config;
+  config.allow_distinctive_identifier = input->allow_distinctive_identifier;
+  config.allow_persistent_state = input->allow_persistent_state;
+  config.use_hw_secure_codecs = input->use_hw_secure_codecs;
+  return config;
 }
 
 }  // namespace mojo

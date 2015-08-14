@@ -11,8 +11,16 @@
   background-color: white;
   display: flex;
   flex-direction: column;
-  padding-bottom: 40px;
-  padding-top: 40px;
+  padding: 40px;
+}
+
+.soft-border {
+  border: 1px solid #c4c4c4;
+  border-radius: 2px;
+}
+
+.page-content {
+  width: 760px;
 }
 
 cr-settings-page-header {

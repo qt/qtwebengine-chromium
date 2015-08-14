@@ -14,7 +14,7 @@
 
 namespace mojo {
 
-class NetworkService;
+class URLLoaderFactory;
 
 namespace shell {
 
@@ -22,8 +22,8 @@ namespace shell {
 class NetworkFetcher : public Fetcher {
  public:
   NetworkFetcher(bool disable_cache,
-                 const GURL& url,
-                 NetworkService* network_service,
+                 mojo::URLRequestPtr request,
+                 URLLoaderFactory* url_loader_factory,
                  const FetchCallback& loader_callback);
 
   ~NetworkFetcher() override;
@@ -34,6 +34,7 @@ class NetworkFetcher : public Fetcher {
 
   const GURL& GetURL() const override;
   GURL GetRedirectURL() const override;
+  GURL GetRedirectReferer() const override;
 
   URLResponsePtr AsURLResponse(base::TaskRunner* task_runner,
                                uint32_t skip) override;
@@ -63,7 +64,8 @@ class NetworkFetcher : public Fetcher {
 
   bool PeekFirstLine(std::string* line) override;
 
-  void StartNetworkRequest(const GURL& url, NetworkService* network_service);
+  void StartNetworkRequest(mojo::URLRequestPtr request,
+                           URLLoaderFactory* url_loader_factory);
 
   void OnLoadComplete(URLResponsePtr response);
 

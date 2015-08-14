@@ -30,12 +30,12 @@
 #define GlyphPageTreeNode_h
 
 #include "platform/fonts/GlyphPage.h"
-#include <string.h>
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
+#include <string.h>
 
 #include <unicode/uscript.h>
 
@@ -108,7 +108,7 @@ public:
     void pruneCustomFontData(const FontData*);
     void pruneFontData(const SimpleFontData*, unsigned level = 0);
 
-    virtual GlyphPage* page(UScriptCode = USCRIPT_COMMON) override final { return m_page.get(); }
+    GlyphPage* page(UScriptCode = USCRIPT_COMMON) final { return m_page.get(); }
 
     GlyphPageTreeNodeBase* getChild(const FontData*, unsigned pageNumber);
     GlyphPageTreeNode* getNormalChild(const FontData*, unsigned pageNumber);
@@ -141,7 +141,7 @@ private:
 
 class PLATFORM_EXPORT SystemFallbackGlyphPageTreeNode : public GlyphPageTreeNodeBase {
 public:
-    virtual GlyphPage* page(UScriptCode = USCRIPT_COMMON) override final;
+    GlyphPage* page(UScriptCode = USCRIPT_COMMON) final;
 
 private:
     friend class GlyphPageTreeNode;

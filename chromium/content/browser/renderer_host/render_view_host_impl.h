@@ -18,6 +18,7 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/public/browser/notification_observer.h"
+#include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/load_states.h"
@@ -56,6 +57,7 @@ class SessionStorageNamespaceImpl;
 class TestRenderViewHost;
 struct FileChooserFileInfo;
 struct FileChooserParams;
+struct FrameReplicationState;
 
 #if defined(COMPILER_MSVC)
 // RenderViewHostImpl is the bottom of a diamond-shaped hierarchy,
@@ -92,7 +94,8 @@ struct FileChooserParams;
 // http://www.chromium.org/developers/design-documents/site-isolation.
 class CONTENT_EXPORT RenderViewHostImpl
     : public RenderViewHost,
-      public RenderWidgetHostImpl {
+      public RenderWidgetHostImpl,
+      public RenderProcessHostObserver {
  public:
   // Convenience function, just like RenderViewHost::FromID.
   static RenderViewHostImpl* FromID(int render_process_id, int render_view_id);
@@ -180,26 +183,32 @@ class CONTENT_EXPORT RenderViewHostImpl
   void RequestFindMatchRects(int current_version) override;
 #endif
 
+  // RenderProcessHostObserver implementation
+  void RenderProcessExited(RenderProcessHost* host,
+                           base::TerminationStatus status,
+                           int exit_code) override;
+
   void set_delegate(RenderViewHostDelegate* d) {
     CHECK(d);  // http://crbug.com/82827
     delegate_ = d;
   }
 
   // Set up the RenderView child process. Virtual because it is overridden by
-  // TestRenderViewHost. If the |frame_name| parameter is non-empty, it is used
-  // as the name of the new top-level frame.
+  // TestRenderViewHost.
   // The |opener_route_id| parameter indicates which RenderView created this
   // (MSG_ROUTING_NONE if none). If |max_page_id| is larger than -1, the
   // RenderView is told to start issuing page IDs at |max_page_id| + 1.
   // |window_was_created_with_opener| is true if this top-level frame was
   // created with an opener. (The opener may have been closed since.)
   // The |proxy_route_id| is only used when creating a RenderView in swapped out
-  // state.
-  virtual bool CreateRenderView(const base::string16& frame_name,
-                                int opener_route_id,
-                                int proxy_route_id,
-                                int32 max_page_id,
-                                bool window_was_created_with_opener);
+  // state.  |replicated_frame_state| contains replicated data for the
+  // top-level frame, such as its name and sandbox flags.
+  virtual bool CreateRenderView(
+      int opener_frame_route_id,
+      int proxy_route_id,
+      int32 max_page_id,
+      const FrameReplicationState& replicated_frame_state,
+      bool window_was_created_with_opener);
 
   base::TerminationStatus render_view_termination_status() const {
     return render_view_termination_status_;
@@ -293,6 +302,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   int main_frame_routing_id() const {
     return main_frame_routing_id_;
   }
+  void set_main_frame_routing_id(int routing_id) {
+    main_frame_routing_id_ = routing_id;
+  }
 
   void OnTextSurroundingSelectionResponse(const base::string16& content,
                                           size_t start_offset,
@@ -369,6 +381,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   friend class TestRenderViewHost;
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, RoutingIdSane);
+  FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest,
+                           CleanUpSwappedOutRVHOnProcessCrash);
 
   // TODO(creis): Move to a private namespace on RenderFrameHostImpl.
   // Delay to wait on closing the WebContents for a beforeunload/unload handler

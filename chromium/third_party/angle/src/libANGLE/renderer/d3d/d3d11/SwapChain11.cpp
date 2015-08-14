@@ -24,30 +24,36 @@ namespace rx
 
 SwapChain11::SwapChain11(Renderer11 *renderer, NativeWindow nativeWindow, HANDLE shareHandle,
                          GLenum backBufferFormat, GLenum depthBufferFormat)
-    : mRenderer(renderer),
-      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+    : SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+      mRenderer(renderer),
+      mPassThroughResourcesInit(false),
       mColorRenderTarget(this, renderer, false),
       mDepthStencilRenderTarget(this, renderer, true)
 {
+    mHeight = -1;
+    mWidth = -1;
+    mAppCreatedShareHandle = mShareHandle != NULL;
+    mSwapInterval = 0;
+
     mSwapChain = NULL;
+    mSwapChain1 = nullptr;
+
     mBackBufferTexture = NULL;
     mBackBufferRTView = NULL;
+
     mOffscreenTexture = NULL;
     mOffscreenRTView = NULL;
     mOffscreenSRView = NULL;
+
     mDepthStencilTexture = NULL;
     mDepthStencilDSView = NULL;
     mDepthStencilSRView = NULL;
+
     mQuadVB = NULL;
     mPassThroughSampler = NULL;
     mPassThroughIL = NULL;
     mPassThroughVS = NULL;
     mPassThroughPS = NULL;
-    mWidth = -1;
-    mHeight = -1;
-    mSwapInterval = 0;
-    mAppCreatedShareHandle = mShareHandle != NULL;
-    mPassThroughResourcesInit = false;
 }
 
 SwapChain11::~SwapChain11()
@@ -57,6 +63,7 @@ SwapChain11::~SwapChain11()
 
 void SwapChain11::release()
 {
+    SafeRelease(mSwapChain1);
     SafeRelease(mSwapChain);
     SafeRelease(mBackBufferTexture);
     SafeRelease(mBackBufferRTView);
@@ -110,7 +117,7 @@ EGLint SwapChain11::resetOffscreenTexture(int backbufferWidth, int backbufferHei
 
     releaseOffscreenTexture();
 
-    const d3d11::TextureFormat &backbufferFormatInfo = d3d11::GetTextureFormatInfo(mBackBufferFormat, mRenderer->getRenderer11DeviceCaps());
+    const d3d11::TextureFormat &backbufferFormatInfo = d3d11::GetTextureFormatInfo(mOffscreenRenderTargetFormat, mRenderer->getRenderer11DeviceCaps());
 
     // If the app passed in a share handle, open the resource
     // See EGL_ANGLE_d3d_share_handle_client_buffer
@@ -348,9 +355,15 @@ EGLint SwapChain11::resize(EGLint backbufferWidth, EGLint backbufferHeight)
 
     // Resize swap chain
     DXGI_SWAP_CHAIN_DESC desc;
-    mSwapChain->GetDesc(&desc);
-    const d3d11::TextureFormat &backbufferFormatInfo = d3d11::GetTextureFormatInfo(mBackBufferFormat, mRenderer->getRenderer11DeviceCaps());
-    HRESULT result = mSwapChain->ResizeBuffers(desc.BufferCount, backbufferWidth, backbufferHeight, backbufferFormatInfo.texFormat, 0);
+    HRESULT result = mSwapChain->GetDesc(&desc);
+    if (FAILED(result))
+    {
+        ERR("Error reading swap chain description: 0x%08X", result);
+        release();
+        return EGL_BAD_ALLOC;
+    }
+
+    result = mSwapChain->ResizeBuffers(desc.BufferCount, backbufferWidth, backbufferHeight, getSwapChainNativeFormat(), 0);
 
     if (FAILED(result))
     {
@@ -372,16 +385,23 @@ EGLint SwapChain11::resize(EGLint backbufferWidth, EGLint backbufferHeight)
     if (SUCCEEDED(result))
     {
         d3d11::SetDebugName(mBackBufferTexture, "Back buffer texture");
+        result = device->CreateRenderTargetView(mBackBufferTexture, NULL, &mBackBufferRTView);
+        ASSERT(SUCCEEDED(result));
     }
 
-    result = device->CreateRenderTargetView(mBackBufferTexture, NULL, &mBackBufferRTView);
-    ASSERT(SUCCEEDED(result));
     if (SUCCEEDED(result))
     {
         d3d11::SetDebugName(mBackBufferRTView, "Back buffer render target");
     }
 
     return resetOffscreenTexture(backbufferWidth, backbufferHeight);
+}
+
+DXGI_FORMAT SwapChain11::getSwapChainNativeFormat() const
+{
+    // Return a render target format for offscreen rendering is supported by IDXGISwapChain.
+    // MSDN https://msdn.microsoft.com/en-us/library/windows/desktop/bb173064(v=vs.85).aspx
+    return (mOffscreenRenderTargetFormat == GL_BGRA8_EXT) ? DXGI_FORMAT_B8G8R8A8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
 }
 
 EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swapInterval)
@@ -396,6 +416,7 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
 
     // Release specific resources to free up memory for the new render target, while the
     // old render target still exists for the purpose of preserving its contents.
+    SafeRelease(mSwapChain1);
     SafeRelease(mSwapChain);
     SafeRelease(mBackBufferTexture);
     SafeRelease(mBackBufferRTView);
@@ -416,10 +437,8 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
 
     if (mNativeWindow.getNativeWindow())
     {
-        const d3d11::TextureFormat &backbufferFormatInfo = d3d11::GetTextureFormatInfo(mBackBufferFormat, mRenderer->getRenderer11DeviceCaps());
-
         HRESULT result = mNativeWindow.createSwapChain(device, mRenderer->getDxgiFactory(),
-                                               backbufferFormatInfo.texFormat,
+                                               getSwapChainNativeFormat(),
                                                backbufferWidth, backbufferHeight, &mSwapChain);
 
         if (FAILED(result))
@@ -437,6 +456,11 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
             }
         }
 
+        if (mRenderer->getRenderer11DeviceCaps().supportsDXGI1_2)
+        {
+            mSwapChain1 = d3d11::DynamicCastComObject<IDXGISwapChain1>(mSwapChain);
+        }
+
         result = mSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&mBackBufferTexture);
         ASSERT(SUCCEEDED(result));
         d3d11::SetDebugName(mBackBufferTexture, "Back buffer texture");
@@ -446,18 +470,16 @@ EGLint SwapChain11::reset(int backbufferWidth, int backbufferHeight, EGLint swap
         d3d11::SetDebugName(mBackBufferRTView, "Back buffer render target");
     }
 
-    // If we are resizing the swap chain, we don't wish to recreate all the static resources
-    if (!mPassThroughResourcesInit)
-    {
-        mPassThroughResourcesInit = true;
-        initPassThroughResources();
-    }
-
     return resetOffscreenTexture(backbufferWidth, backbufferHeight);
 }
 
 void SwapChain11::initPassThroughResources()
 {
+    if (mPassThroughResourcesInit)
+    {
+        return;
+    }
+
     TRACE_EVENT0("gpu.angle", "SwapChain11::initPassThroughResources");
     ID3D11Device *device = mRenderer->getDevice();
 
@@ -515,6 +537,8 @@ void SwapChain11::initPassThroughResources()
     result = device->CreatePixelShader(g_PS_PassthroughRGBA2D, sizeof(g_PS_PassthroughRGBA2D), NULL, &mPassThroughPS);
     ASSERT(SUCCEEDED(result));
     d3d11::SetDebugName(mPassThroughPS, "Swap chain pass through pixel shader");
+
+    mPassThroughResourcesInit = true;
 }
 
 // parameters should be validated/clamped by caller
@@ -524,6 +548,8 @@ EGLint SwapChain11::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
     {
         return EGL_SUCCESS;
     }
+
+    initPassThroughResources();
 
     ID3D11Device *device = mRenderer->getDevice();
     ID3D11DeviceContext *deviceContext = mRenderer->getDeviceContext();
@@ -595,10 +621,32 @@ EGLint SwapChain11::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
     // Draw
     deviceContext->Draw(4, 0);
 
+    // Rendering to the swapchain is now complete. Now we can call Present().
+    // Before that, we perform any cleanup on the D3D device. We do this before Present() to make sure the
+    // cleanup is caught under the current eglSwapBuffers() PIX/Graphics Diagnostics call rather than the next one.
+    mRenderer->setShaderResource(gl::SAMPLER_PIXEL, 0, NULL);
+
+    mRenderer->unapplyRenderTargets();
+    mRenderer->markAllStateDirty();
+
 #if ANGLE_VSYNC == ANGLE_DISABLED
     result = mSwapChain->Present(0, 0);
 #else
-    result = mSwapChain->Present(mSwapInterval, 0);
+    // Use IDXGISwapChain1::Present1 with a dirty rect if DXGI 1.2 is available.
+    if (mSwapChain1 != nullptr)
+    {
+        RECT rect =
+        {
+            static_cast<LONG>(x), static_cast<LONG>(mHeight - y - height),
+            static_cast<LONG>(x + width), static_cast<LONG>(mHeight - y)
+        };
+        DXGI_PRESENT_PARAMETERS params = { 1, &rect, nullptr, nullptr };
+        result = mSwapChain1->Present1(mSwapInterval, 0, &params);
+    }
+    else
+    {
+        result = mSwapChain->Present(mSwapInterval, 0);
+    }
 #endif
 
     if (result == DXGI_ERROR_DEVICE_REMOVED)
@@ -617,12 +665,6 @@ EGLint SwapChain11::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
     {
         ERR("Present failed with error code 0x%08X", result);
     }
-
-    // Unbind
-    mRenderer->setShaderResource(gl::SAMPLER_PIXEL, 0, NULL);
-
-    mRenderer->unapplyRenderTargets();
-    mRenderer->markAllStateDirty();
 
     return EGL_SUCCESS;
 }

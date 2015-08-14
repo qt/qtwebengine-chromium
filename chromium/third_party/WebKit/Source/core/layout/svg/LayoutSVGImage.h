@@ -37,9 +37,7 @@ class LayoutSVGImage final : public LayoutSVGModelObject {
 public:
     explicit LayoutSVGImage(SVGImageElement*);
     virtual ~LayoutSVGImage();
-    virtual void destroy() override;
 
-    bool updateImageViewport();
     virtual void setNeedsBoundariesUpdate() override { m_needsBoundariesUpdate = true; }
     virtual void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
 
@@ -53,16 +51,21 @@ public:
 
     virtual const char* name() const override { return "LayoutSVGImage"; }
 
+protected:
+    virtual void willBeDestroyed() override;
+
 private:
     virtual FloatRect strokeBoundingBox() const override { return m_objectBoundingBox; }
 
     virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     virtual void layout() override;
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 
+    void updateBoundingBox();
+    void updateImageContainerSize();
     FloatSize computeImageViewportSize(ImageResource&) const;
 
     virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;

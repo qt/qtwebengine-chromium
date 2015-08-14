@@ -13,14 +13,15 @@
 
 namespace IPC {
 
+class AttachmentBroker;
+
 // MojoBootstrap establishes a bootstrap pipe between two processes in
 // Chrome. It creates a native IPC::Channel first, then sends one
 // side of a newly created pipe to peer process. The pipe is intended
 // to be wrapped by Mojo MessagePipe.
 //
 // Clients should implement MojoBootstrapDelegate to get the pipe
-// from MojoBootstrap object. It should also tell the client process handle
-// using OnClientLaunched().
+// from MojoBootstrap object.
 //
 // This lives on IO thread other than Create(), which can be called from
 // UI thread as Channel::Create() can be.
@@ -38,7 +39,8 @@ class IPC_MOJO_EXPORT MojoBootstrap : public Listener {
   // mode as |mode|. The result is notified to passed |delegate|.
   static scoped_ptr<MojoBootstrap> Create(ChannelHandle handle,
                                           Channel::Mode mode,
-                                          Delegate* delegate);
+                                          Delegate* delegate,
+                                          AttachmentBroker* broker);
 
   MojoBootstrap();
   ~MojoBootstrap() override;
@@ -48,9 +50,6 @@ class IPC_MOJO_EXPORT MojoBootstrap : public Listener {
 
   // GetSelfPID returns the PID associated with |channel_|.
   base::ProcessId GetSelfPID() const;
-
-  // Each client should call this once the process handle becomes known.
-  virtual void OnClientLaunched(base::ProcessHandle process) = 0;
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
   int GetClientFileDescriptor() const;

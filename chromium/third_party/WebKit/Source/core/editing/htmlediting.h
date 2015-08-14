@@ -29,9 +29,10 @@
 #include "core/CoreExport.h"
 #include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "platform/text/TextDirection.h"
 #include "wtf/Forward.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
@@ -43,7 +44,6 @@ class HTMLLIElement;
 class HTMLSpanElement;
 class HTMLUListElement;
 class Node;
-class PositionWithAffinity;
 class Range;
 class VisiblePosition;
 class VisibleSelection;
@@ -58,6 +58,7 @@ class VisibleSelection;
 // Functions returning Node
 
 CORE_EXPORT ContainerNode* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
+ContainerNode* highestEditableRoot(const PositionInComposedTree&, EditableType = ContentIsEditable);
 
 Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*),
     EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = nullptr);
@@ -76,6 +77,27 @@ Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), Ed
 HTMLSpanElement* tabSpanElement(const Node*);
 Element* isLastPositionBeforeTable(const VisiblePosition&);
 Element* isFirstPositionAfterTable(const VisiblePosition&);
+
+// Returns the next leaf node or nullptr if there are no more.
+// Delivers leaf nodes as if the whole DOM tree were a linear chain of its leaf nodes.
+Node* nextAtomicLeafNode(const Node& start);
+
+// Returns the previous leaf node or nullptr if there are no more.
+// Delivers leaf nodes as if the whole DOM tree were a linear chain of its leaf nodes.
+Node* previousAtomicLeafNode(const Node& start);
+
+template <typename Strategy>
+ContainerNode* parentCrossingShadowBoundaries(const Node&);
+template <>
+inline ContainerNode* parentCrossingShadowBoundaries<EditingStrategy>(const Node& node)
+{
+    return NodeTraversal::parentOrShadowHostNode(node);
+}
+template <>
+inline ContainerNode* parentCrossingShadowBoundaries<EditingInComposedTreeStrategy>(const Node& node)
+{
+    return ComposedTreeTraversal::parent(node);
+}
 
 // offset functions on Node
 
@@ -128,10 +150,13 @@ TextDirection directionOfEnclosingBlock(const Position&);
 // Functions returning Position
 
 Position nextCandidate(const Position&);
+PositionInComposedTree nextCandidate(const PositionInComposedTree&);
 Position previousCandidate(const Position&);
+PositionInComposedTree previousCandidate(const PositionInComposedTree&);
 
 Position nextVisuallyDistinctCandidate(const Position&);
 Position previousVisuallyDistinctCandidate(const Position&);
+PositionInComposedTree previousVisuallyDistinctCandidate(const PositionInComposedTree&);
 
 Position positionBeforeContainingSpecialElement(const Position&, HTMLElement** containingSpecialElement = nullptr);
 Position positionAfterContainingSpecialElement(const Position&, HTMLElement** containingSpecialElement = nullptr);
@@ -147,9 +172,14 @@ inline Position lastPositionInOrAfterNode(Node* node)
 }
 
 Position lastEditablePositionBeforePositionInRoot(const Position&, Node*);
+PositionInComposedTree lastEditablePositionBeforePositionInRoot(const PositionInComposedTree&, Node*);
 
 // comparision functions on Position
 
+// |disconnected| is optional output parameter having true if specified
+// positions don't have common ancestor.
+int comparePositionsInDOMTree(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected = nullptr);
+int comparePositionsInComposedTree(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected = nullptr);
 int comparePositions(const Position&, const Position&);
 int comparePositions(const PositionWithAffinity&, const PositionWithAffinity&);
 
@@ -161,6 +191,7 @@ enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
 // should make it clear that that is the contract.
 // FIXME: isRichlyEditablePosition should also take EUpdateStyle.
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
+bool isEditablePosition(const PositionInComposedTree&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool lineBreakExistsAtPosition(const Position&);
 bool isAtUnsplittableElement(const Position&);
@@ -218,6 +249,7 @@ PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, const St
 PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document&);
 
 Element* editableRootForPosition(const Position&, EditableType = ContentIsEditable);
+Element* editableRootForPosition(const PositionInComposedTree&, EditableType = ContentIsEditable);
 Element* unsplittableElementForPosition(const Position&);
 
 // Boolean functions on Element

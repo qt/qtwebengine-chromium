@@ -17,30 +17,24 @@
 namespace blink {
 
 class PLATFORM_EXPORT BeginCompositingDisplayItem : public PairedBeginDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(BeginCompositingDisplayItem);
 public:
-    static PassOwnPtr<BeginCompositingDisplayItem> create(const DisplayItemClientWrapper& client, const SkXfermode::Mode xferMode, const float opacity, const FloatRect* bounds = nullptr, ColorFilter colorFilter = ColorFilterNone)
-    {
-        return adoptPtr(new BeginCompositingDisplayItem(client, xferMode, opacity, bounds, colorFilter));
-    }
-
     BeginCompositingDisplayItem(const DisplayItemClientWrapper& client, const SkXfermode::Mode xferMode, const float opacity, const FloatRect* bounds, ColorFilter colorFilter = ColorFilterNone)
         : PairedBeginDisplayItem(client, BeginCompositing)
         , m_xferMode(xferMode)
         , m_opacity(opacity)
         , m_hasBounds(bounds)
         , m_colorFilter(colorFilter)
-        {
-            if (bounds)
-                m_bounds = FloatRect(*bounds);
-        }
+    {
+        if (bounds)
+            m_bounds = FloatRect(*bounds);
+    }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:
 #ifndef NDEBUG
-    virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
+    void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
     const SkXfermode::Mode m_xferMode;
     const float m_opacity;
@@ -50,22 +44,16 @@ private:
 };
 
 class PLATFORM_EXPORT EndCompositingDisplayItem : public PairedEndDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(EndCompositingDisplayItem);
 public:
-    static PassOwnPtr<EndCompositingDisplayItem> create(const DisplayItemClientWrapper& client)
-    {
-        return adoptPtr(new EndCompositingDisplayItem(client));
-    }
-
     EndCompositingDisplayItem(const DisplayItemClientWrapper& client)
         : PairedEndDisplayItem(client, EndCompositing) { }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const override final { return other.type() == BeginCompositing; }
+    bool isEndAndPairedWith(DisplayItem::Type otherType) const final { return otherType == BeginCompositing; }
 #endif
 };
 

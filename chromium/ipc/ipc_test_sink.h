@@ -45,7 +45,7 @@ class Message;
 //
 //   IPC::Message* msg = test_sink.GetUniqueMessageMatching(IPC_REPLY_ID);
 //   ASSERT_TRUE(msg);
-//   TupleTypes<ViewHostMsg_Foo::ReplyParam>::ValueTuple reply_data;
+//   base::TupleTypes<ViewHostMsg_Foo::ReplyParam>::ValueTuple reply_data;
 //   EXPECT_TRUE(ViewHostMsg_Foo::ReadReplyParam(msg, &reply_data));
 //
 // You can also register to be notified when messages are posted to the sink.
@@ -128,7 +128,7 @@ class TestSink : public Channel {
  private:
   // The actual list of received messages.
   std::vector<Message> messages_;
-  ObserverList<Listener> filter_list_;
+  base::ObserverList<Listener> filter_list_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSink);
 };

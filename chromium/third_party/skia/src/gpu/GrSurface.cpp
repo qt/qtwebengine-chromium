@@ -41,13 +41,13 @@ bool GrSurface::readPixels(int left, int top, int width, int height,
     return false;
 }
 
-SkImageInfo GrSurface::info() const {
+SkImageInfo GrSurface::info(SkAlphaType alphaType) const {
     SkColorType colorType;
     SkColorProfileType profileType;
     if (!GrPixelConfig2ColorAndProfileType(this->config(), &colorType, &profileType)) {
         sk_throw();
     }
-    return SkImageInfo::Make(this->width(), this->height(), colorType, kPremul_SkAlphaType,
+    return SkImageInfo::Make(this->width(), this->height(), colorType, alphaType,
                              profileType);
 }
 
@@ -84,9 +84,9 @@ void GrSurface::flushWrites() {
     }
 }
 
-void GrSurface::prepareForExternalRead() {
+void GrSurface::prepareForExternalIO() {
     if (!this->wasDestroyed()) {
-        this->getContext()->prepareSurfaceForExternalRead(this);
+        this->getContext()->prepareSurfaceForExternalIO(this);
     }
 }
 
@@ -124,4 +124,14 @@ bool GrSurface::hasPendingIO() const {
         return true;
     }
     return false;
+}
+
+void GrSurface::onRelease() {
+    this->invokeReleaseProc();
+    this->INHERITED::onRelease();
+}
+
+void GrSurface::onAbandon() {
+    this->invokeReleaseProc();
+    this->INHERITED::onAbandon();
 }

@@ -48,11 +48,21 @@
         'signaling/mock_signal_strategy.h',
         'test/access_token_fetcher.cc',
         'test/access_token_fetcher.h',
+        'test/app_remoting_report_issue_request.cc',
+        'test/app_remoting_report_issue_request.h',
+        'test/app_remoting_service_urls.cc',
+        'test/app_remoting_service_urls.h',
         'test/app_remoting_test_driver_environment.cc',
         'test/app_remoting_test_driver_environment_app_details.cc',
         'test/app_remoting_test_driver_environment.h',
+        'test/host_info.cc',
+        'test/host_info.h',
+        'test/host_list_fetcher.cc',
+        'test/host_list_fetcher.h',
         'test/fake_access_token_fetcher.cc',
         'test/fake_access_token_fetcher.h',
+        'test/fake_app_remoting_report_issue_request.cc',
+        'test/fake_app_remoting_report_issue_request.h',
         'test/fake_network_dispatcher.cc',
         'test/fake_network_dispatcher.h',
         'test/fake_network_manager.cc',
@@ -91,6 +101,107 @@
         }],
       ],
     },
+    {
+      'target_name': 'remoting_test_driver_common',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../google_apis/google_apis.gyp:google_apis',
+        '../net/net.gyp:net',
+        '../remoting/remoting.gyp:remoting_base',
+        '../remoting/remoting.gyp:remoting_client',
+        '../remoting/remoting.gyp:remoting_protocol',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'defines': [
+        'VERSION=<(version_full)',
+      ],
+      'sources': [
+        'test/access_token_fetcher.cc',
+        'test/access_token_fetcher.h',
+        'test/refresh_token_store.cc',
+        'test/refresh_token_store.h',
+        'test/remote_connection_observer.h',
+        'test/test_chromoting_client.cc',
+        'test/test_chromoting_client.h',
+        'test/test_video_renderer.cc',
+        'test/test_video_renderer.h',
+      ],
+    }, # end of target 'remoting_test_driver_common'
+    {
+      # A chromoting version of remoting_test_driver_common
+      'target_name': 'chromoting_test_driver',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        'remoting_test_driver_common',
+      ],
+      'defines': [
+        'VERSION=<(version_full)',
+      ],
+      'sources': [
+        'test/host_info.cc',
+        'test/host_info.h',
+        'test/host_list_fetcher.cc',
+        'test/host_list_fetcher.h',
+        'test/chromoting_test_driver.cc',
+      ],
+      'include_dirs': [
+        '../testing/gtest/include',
+      ],
+    }, # end of target 'chromoting_test_driver'
+    {
+      'target_name': 'ar_test_driver_common',
+      'type': 'static_library',
+      'dependencies': [
+        '../remoting/proto/chromotocol.gyp:chromotocol_proto_lib',
+        '<(DEPTH)/third_party/webrtc/modules/modules.gyp:desktop_capture',
+        'remoting_test_driver_common',
+      ],
+      'defines': [
+        'VERSION=<(version_full)',
+      ],
+      'sources': [
+        'test/app_remoting_connected_client_fixture.cc',
+        'test/app_remoting_connected_client_fixture.h',
+        'test/app_remoting_connection_helper.cc',
+        'test/app_remoting_connection_helper.h',
+        'test/app_remoting_latency_test_fixture.cc',
+        'test/app_remoting_latency_test_fixture.h',
+        'test/app_remoting_report_issue_request.cc',
+        'test/app_remoting_report_issue_request.h',
+        'test/app_remoting_service_urls.cc',
+        'test/app_remoting_service_urls.h',
+        'test/app_remoting_test_driver_environment.cc',
+        'test/app_remoting_test_driver_environment.h',
+        'test/remote_application_details.h',
+        'test/remote_host_info.cc',
+        'test/remote_host_info.h',
+        'test/remote_host_info_fetcher.cc',
+        'test/remote_host_info_fetcher.h',
+      ],
+      'include_dirs': [
+        '../testing/gtest/include',
+      ],
+    },  # end of target 'ar_test_driver_common'
+    {
+      # An external version of the test driver tool which includes minimal tests
+      'target_name': 'ar_sample_test_driver',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        'ar_test_driver_common',
+      ],
+      'defines': [
+        'VERSION=<(version_full)',
+      ],
+      'sources': [
+        'test/app_remoting_test_driver.cc',
+        'test/app_remoting_test_driver_environment_app_details.cc',
+      ],
+      'include_dirs': [
+        '../testing/gtest/include',
+      ],
+    },  # end of target 'ar_sample_test_driver'
 
     # Remoting unit tests
     {
@@ -165,6 +276,7 @@
         'codec/video_encoder_vpx_unittest.cc',
         'host/audio_pump_unittest.cc',
         'host/audio_silence_detector_unittest.cc',
+        'host/backoff_timer_unittest.cc',
         'host/branding.cc',
         'host/branding.h',
         'host/capture_scheduler_unittest.cc',
@@ -182,6 +294,10 @@
         'host/fake_host_extension.cc',
         'host/fake_host_extension.h',
         'host/fake_host_status_monitor.h',
+        'host/fake_oauth_token_getter.cc',
+        'host/fake_oauth_token_getter.h',
+        'host/gcd_rest_client_unittest.cc',
+        'host/gcd_state_updater_unittest.cc',
         'host/gnubby_auth_handler_posix_unittest.cc',
         'host/heartbeat_sender_unittest.cc',
         'host/host_change_notification_listener_unittest.cc',
@@ -213,6 +329,8 @@
         'host/setup/me2me_native_messaging_host.cc',
         'host/setup/me2me_native_messaging_host.h',
         'host/setup/me2me_native_messaging_host_unittest.cc',
+        'host/setup/mock_oauth_client.cc',
+        'host/setup/mock_oauth_client.h',
         'host/setup/oauth_helper_unittest.cc',
         'host/setup/pin_validator_unittest.cc',
         'host/shaped_desktop_capturer_unittest.cc',
@@ -228,6 +346,7 @@
         'protocol/authenticator_test_base.cc',
         'protocol/authenticator_test_base.h',
         'protocol/channel_multiplexer_unittest.cc',
+        'protocol/channel_socket_adapter_unittest.cc',
         'protocol/chromium_socket_factory_unittest.cc',
         'protocol/client_video_dispatcher_unittest.cc',
         'protocol/clipboard_echo_filter_unittest.cc',
@@ -248,21 +367,26 @@
         'protocol/pairing_registry_unittest.cc',
         'protocol/port_range_unittest.cc',
         'protocol/ppapi_module_stub.cc',
+        'protocol/pseudotcp_adapter_unittest.cc',
         'protocol/ssl_hmac_channel_authenticator_unittest.cc',
         'protocol/third_party_authenticator_unittest.cc',
         'protocol/v2_authenticator_unittest.cc',
         'signaling/iq_sender_unittest.cc',
         'signaling/jid_util_unittest.cc',
         'signaling/log_to_server_unittest.cc',
+        'signaling/push_notification_subscriber_unittest.cc',
         'signaling/server_log_entry_unittest.cc',
         'signaling/server_log_entry_unittest.h',
         'signaling/xmpp_login_handler_unittest.cc',
         'signaling/xmpp_stream_parser_unittest.cc',
         'signaling/xmpp_signal_strategy_unittest.cc',
         'test/access_token_fetcher_unittest.cc',
+        'test/app_remoting_report_issue_request_unittest.cc',
         'test/app_remoting_test_driver_environment_unittest.cc',
+        'test/host_list_fetcher_unittest.cc',
         'test/remote_host_info_fetcher_unittest.cc',
         'test/test_chromoting_client_unittest.cc',
+        'test/test_video_renderer_unittest.cc',
       ],
       'conditions': [
         [ 'OS=="win"', {
@@ -515,6 +639,23 @@
           'includes': [ 'remoting_webapp.gypi', ],
         },  # end of target 'remoting_webapp_browser_test'
       ]
-    }]
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'remoting_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'remoting_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'remoting_unittests.isolate',
+          ],
+        },
+      ],
+    }],
   ] # end of 'conditions'
 }

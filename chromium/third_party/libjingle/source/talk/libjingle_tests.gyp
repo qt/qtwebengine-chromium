@@ -84,7 +84,6 @@
       'sources': [
         'media/base/capturemanager_unittest.cc',
         'media/base/codec_unittest.cc',
-        'media/base/filemediaengine_unittest.cc',
         'media/base/rtpdataengine_unittest.cc',
         'media/base/rtpdump_unittest.cc',
         'media/base/rtputils_unittest.cc',
@@ -103,6 +102,7 @@
         'media/webrtc/webrtcvideocapturer_unittest.cc',
         'media/base/videoframe_unittest.h',
         'media/webrtc/webrtcvideoframe_unittest.cc',
+        'media/webrtc/webrtcvideoframefactory_unittest.cc',
 
         # Disabled because some tests fail.
         # TODO(ronghuawu): Reenable these tests.
@@ -156,7 +156,6 @@
         'session/media/channel_unittest.cc',
         'session/media/channelmanager_unittest.cc',
         'session/media/currentspeakermonitor_unittest.cc',
-        'session/media/mediarecorder_unittest.cc',
         'session/media/mediasession_unittest.cc',
         'session/media/rtcpmuxfilter_unittest.cc',
         'session/media/srtpfilter_unittest.cc',
@@ -199,6 +198,8 @@
         'app/webrtc/datachannel_unittest.cc',
         'app/webrtc/dtlsidentitystore_unittest.cc',
         'app/webrtc/dtmfsender_unittest.cc',
+        'app/webrtc/fakemetricsobserver.cc',
+        'app/webrtc/fakemetricsobserver.h',
         'app/webrtc/jsepsessiondescription_unittest.cc',
         'app/webrtc/localaudiosource_unittest.cc',
         'app/webrtc/mediastream_unittest.cc',

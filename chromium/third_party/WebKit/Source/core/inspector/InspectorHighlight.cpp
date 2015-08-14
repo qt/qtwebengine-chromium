@@ -277,6 +277,14 @@ InspectorHighlight::InspectorHighlight()
 {
 }
 
+InspectorHighlightConfig::InspectorHighlightConfig()
+    : showInfo(false)
+    , showRulers(false)
+    , showExtensionLines(false)
+    , showLayoutEditor(false)
+{
+}
+
 InspectorHighlight::InspectorHighlight(Node* node, const InspectorHighlightConfig& highlightConfig, bool appendElementInfo)
     : m_highlightPaths(JSONArray::create())
     , m_showRulers(highlightConfig.showRulers)
@@ -428,6 +436,7 @@ InspectorHighlightConfig InspectorHighlight::defaultConfig()
     config.showInfo = true;
     config.showRulers = true;
     config.showExtensionLines = true;
+    config.showLayoutEditor = false;
     return config;
 }
 

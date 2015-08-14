@@ -15,6 +15,7 @@
 #include <list>
 #include <string>
 
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -202,8 +203,10 @@ class MEDIA_EXPORT VideoCaptureDevice {
       virtual int id() const = 0;
       virtual size_t size() const = 0;
       virtual void* data() = 0;
-      virtual gfx::GpuMemoryBufferType GetType() = 0;
       virtual ClientBuffer AsClientBuffer() = 0;
+#if defined(OS_POSIX)
+      virtual base::FileDescriptor AsPlatformFile() = 0;
+#endif
     };
 
     virtual ~Client() {}
@@ -244,8 +247,9 @@ class MEDIA_EXPORT VideoCaptureDevice {
     // The output buffer stays reserved and mapped for use until the Buffer
     // object is destroyed or returned.
     virtual scoped_ptr<Buffer> ReserveOutputBuffer(
-        media::VideoPixelFormat format,
-        const gfx::Size& dimensions) = 0;
+        const gfx::Size& dimensions,
+        VideoPixelFormat format,
+        VideoPixelStorage storage) = 0;
 
     // Captured new video data, held in |frame| or |buffer|, respectively for
     // OnIncomingCapturedVideoFrame() and  OnIncomingCapturedBuffer().
@@ -268,6 +272,10 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
     // VideoCaptureDevice requests the |message| to be logged.
     virtual void OnLog(const std::string& message) {}
+
+    // Returns the current buffer pool utilization, in the range 0.0 (no buffers
+    // are in use by producers or consumers) to 1.0 (all buffers are in use).
+    virtual double GetBufferPoolUtilization() const = 0;
   };
 
   virtual ~VideoCaptureDevice();

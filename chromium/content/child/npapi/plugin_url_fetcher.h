@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "content/public/child/request_peer.h"
 #include "content/public/common/referrer.h"
 #include "url/gurl.h"
@@ -57,15 +58,21 @@ class PluginURLFetcher : public RequestPeer {
                           const ResourceResponseInfo& info) override;
   void OnReceivedResponse(const ResourceResponseInfo& info) override;
   void OnDownloadedData(int len, int encoded_data_length) override;
-  void OnReceivedData(const char* data,
-                      int data_length,
-                      int encoded_data_length) override;
+  void OnReceivedData(scoped_ptr<ReceivedData> data) override;
   void OnCompletedRequest(int error_code,
                           bool was_ignored_by_handler,
                           bool stale_copy_in_cache,
                           const std::string& security_info,
                           const base::TimeTicks& completion_time,
                           int64 total_transfer_size) override;
+  void OnReceivedCompletedResponse(const ResourceResponseInfo& info,
+                                   scoped_ptr<ReceivedData> data,
+                                   int error_code,
+                                   bool was_ignored_by_handler,
+                                   bool stale_copy_in_cache,
+                                   const std::string& security_info,
+                                   const base::TimeTicks& completion_time,
+                                   int64 total_transfer_size) override;
 
   // |plugin_stream_| becomes NULL after Cancel() to ensure no further calls
   // |reach it.
@@ -85,6 +92,7 @@ class PluginURLFetcher : public RequestPeer {
   int request_id_;
 
   scoped_ptr<MultipartResponseDelegate> multipart_delegate_;
+  base::WeakPtrFactory<PluginURLFetcher> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginURLFetcher);
 };

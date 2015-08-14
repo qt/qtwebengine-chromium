@@ -54,8 +54,9 @@ class JSONValue;
 class Node;
 class Page;
 class WebViewImpl;
+class LayoutEditor;
 
-class InspectorOverlayImpl final : public NoBaseWillBeGarbageCollectedFinalized<InspectorOverlayImpl>, public InspectorOverlay, public WebPageOverlay, public InspectorOverlayHost::Listener {
+class InspectorOverlayImpl final : public NoBaseWillBeGarbageCollectedFinalized<InspectorOverlayImpl>, public InspectorOverlay, public WebPageOverlay, public InspectorOverlayHost::DebuggerListener {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorOverlayImpl);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorOverlayImpl);
 public:
@@ -82,13 +83,14 @@ public:
     void suspendUpdates() override;
     void resumeUpdates() override;
     void clear() override;
+    void setLayoutEditor(PassOwnPtrWillBeRawPtr<LayoutEditor>) override;
 
     bool handleInputEvent(const WebInputEvent&);
     void invalidate();
 private:
     explicit InspectorOverlayImpl(WebViewImpl*);
 
-    // InspectorOverlayHost::Listener implementation.
+    // InspectorOverlayHost::DebuggerListener implementation.
     void overlayResumed() override;
     void overlaySteppedOver() override;
 
@@ -126,6 +128,7 @@ private:
     int m_suspendCount;
     bool m_updating;
     RawPtrWillBeMember<InspectorOverlay::Listener> m_listener;
+    OwnPtrWillBeMember<LayoutEditor> m_layoutEditor;
 };
 
 } // namespace blink

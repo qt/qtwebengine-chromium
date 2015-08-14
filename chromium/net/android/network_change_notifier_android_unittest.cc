@@ -4,7 +4,6 @@
 
 // See network_change_notifier_android.h for design explanations.
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
@@ -123,7 +122,8 @@ class BaseNetworkChangeNotifierAndroidTest : public testing::Test {
 
   void SetOnline() {
     delegate_.SetOnline();
-    // Note that this is needed because ObserverListThreadSafe uses PostTask().
+    // Note that this is needed because base::ObserverListThreadSafe uses
+    // PostTask().
     base::MessageLoop::current()->RunUntilIdle();
   }
 

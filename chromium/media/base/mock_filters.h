@@ -32,6 +32,7 @@ class MockDemuxer : public Demuxer {
   virtual ~MockDemuxer();
 
   // Demuxer implementation.
+  virtual std::string GetDisplayName() const;
   MOCK_METHOD3(Initialize,
                void(DemuxerHost* host, const PipelineStatusCB& cb, bool));
   MOCK_METHOD1(SetPlaybackRate, void(double playback_rate));
@@ -82,10 +83,11 @@ class MockVideoDecoder : public VideoDecoder {
 
   // VideoDecoder implementation.
   virtual std::string GetDisplayName() const;
-  MOCK_METHOD4(Initialize, void(const VideoDecoderConfig& config,
-                                bool low_delay,
-                                const PipelineStatusCB& status_cb,
-                                const OutputCB& output_cb));
+  MOCK_METHOD4(Initialize,
+               void(const VideoDecoderConfig& config,
+                    bool low_delay,
+                    const InitCB& init_cb,
+                    const OutputCB& output_cb));
   MOCK_METHOD2(Decode, void(const scoped_refptr<DecoderBuffer>& buffer,
                             const DecodeCB&));
   MOCK_METHOD1(Reset, void(const base::Closure&));
@@ -104,7 +106,7 @@ class MockAudioDecoder : public AudioDecoder {
   virtual std::string GetDisplayName() const;
   MOCK_METHOD3(Initialize,
                void(const AudioDecoderConfig& config,
-                    const PipelineStatusCB& status_cb,
+                    const InitCB& init_cb,
                     const OutputCB& output_cb));
   MOCK_METHOD2(Decode,
                void(const scoped_refptr<DecoderBuffer>& buffer,

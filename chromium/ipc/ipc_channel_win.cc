@@ -19,6 +19,7 @@
 #include "base/win/scoped_handle.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
+#include "ipc/ipc_message_attachment_set.h"
 #include "ipc/ipc_message_utils.h"
 
 namespace IPC {
@@ -34,8 +35,10 @@ ChannelWin::State::~State() {
                 "member.");
 }
 
-ChannelWin::ChannelWin(const IPC::ChannelHandle &channel_handle,
-                       Mode mode, Listener* listener)
+ChannelWin::ChannelWin(const IPC::ChannelHandle& channel_handle,
+                       Mode mode,
+                       Listener* listener,
+                       AttachmentBroker* broker)
     : ChannelReader(listener),
       input_state_(this),
       output_state_(this),
@@ -44,6 +47,7 @@ ChannelWin::ChannelWin(const IPC::ChannelHandle &channel_handle,
       processing_incoming_(false),
       validate_client_(false),
       client_secret_(0),
+      broker_(broker),
       weak_factory_(this) {
   CreatePipe(channel_handle, mode);
 }
@@ -65,7 +69,6 @@ void ChannelWin::Close() {
     pipe_.Close();
 
   // Make sure all IO has completed.
-  base::Time start = base::Time::Now();
   while (input_state_.is_pending || output_state_.is_pending) {
     base::MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
@@ -78,11 +81,25 @@ void ChannelWin::Close() {
 }
 
 bool ChannelWin::Send(Message* message) {
+  // TODO(erikchen): Remove this DCHECK once ChannelWin fully supports
+  // brokerable attachments. http://crbug.com/493414.
   DCHECK(!message->HasAttachments());
   DCHECK(thread_check_->CalledOnValidThread());
   DVLOG(2) << "sending message @" << message << " on channel @" << this
            << " with type " << message->type()
            << " (" << output_queue_.size() << " in queue)";
+
+  // Sending a brokerable attachment requires a call to Channel::Send(), so
+  // Send() may be re-entrant. Brokered attachments must be sent before the
+  // Message itself.
+  if (message->HasBrokerableAttachments()) {
+    DCHECK(broker_);
+    for (const BrokerableAttachment* attachment :
+         message->attachment_set()->PeekBrokerableAttachments()) {
+      if (!broker_->SendAttachmentToProcess(attachment, peer_pid_))
+        return false;
+    }
+  }
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   Logging::GetInstance()->OnSendMessage(message, "");
@@ -99,6 +116,10 @@ bool ChannelWin::Send(Message* message) {
   }
 
   return true;
+}
+
+AttachmentBroker* ChannelWin::GetAttachmentBroker() {
+  return broker_;
 }
 
 base::ProcessId ChannelWin::GetPeerPID() const {
@@ -161,7 +182,7 @@ bool ChannelWin::WillDispatchInputMessage(Message* msg) {
 void ChannelWin::HandleInternalMessage(const Message& msg) {
   DCHECK_EQ(msg.type(), static_cast<unsigned>(Channel::HELLO_MESSAGE_TYPE));
   // The hello message contains one parameter containing the PID.
-  PickleIterator it(msg);
+  base::PickleIterator it(msg);
   int32 claimed_pid;
   bool failed = !it.ReadInt(&claimed_pid);
 
@@ -476,10 +497,12 @@ void ChannelWin::OnIOCompleted(
 // Channel's methods
 
 // static
-scoped_ptr<Channel> Channel::Create(
-    const IPC::ChannelHandle &channel_handle, Mode mode, Listener* listener) {
+scoped_ptr<Channel> Channel::Create(const IPC::ChannelHandle& channel_handle,
+                                    Mode mode,
+                                    Listener* listener,
+                                    AttachmentBroker* broker) {
   return scoped_ptr<Channel>(
-      new ChannelWin(channel_handle, mode, listener));
+      new ChannelWin(channel_handle, mode, listener, broker));
 }
 
 // static

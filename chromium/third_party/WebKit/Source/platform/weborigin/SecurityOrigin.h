@@ -40,12 +40,6 @@ class SecurityOriginCache;
 
 class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
 public:
-    enum Policy {
-        AlwaysDeny = 0,
-        AlwaysAllow,
-        Ask
-    };
-
     static PassRefPtr<SecurityOrigin> create(const KURL&);
     static PassRefPtr<SecurityOrigin> createUnique();
 
@@ -93,20 +87,30 @@ public:
     // another SecurityOrigin.
     bool canAccess(const SecurityOrigin*) const;
 
+    // Same as canAccess, except that it adds an additional check to make sure
+    // that the SecurityOrigins have the same suborigin name. If you're not
+    // familiar with Suborigins, you probably want canAccess() for now.
+    // Suborigins is a spec in progress, and where it should be enforced is
+    // still in flux. See https://crbug.com/336894 for more details.
+    bool canAccessCheckSuborigins(const SecurityOrigin*) const;
+
     // Returns true if this SecurityOrigin can read content retrieved from
     // the given URL. For example, call this function before issuing
     // XMLHttpRequests.
     bool canRequest(const KURL&) const;
 
+    // Same as canRequest, except that it adds an additional check to make sure
+    // that the SecurityOrigin does not have a suborigin name. Like with
+    // canAccessCheckSuborigins() above, if you're not familiar with
+    // Suborigins, you probably want canRequest() for now. Suborigins is a spec
+    // in progress, and where it should be enforced is still in flux. See
+    // https://crbug.com/336894 for more details.
+    bool canRequestNoSuborigin(const KURL&) const;
+
     // Returns true if drawing an image from this URL taints a canvas from
     // this security origin. For example, call this function before
     // drawing an image onto an HTML canvas element with the drawImage API.
     bool taintsCanvas(const KURL&) const;
-
-    // Returns true if this SecurityOrigin can receive drag content from the
-    // initiator. For example, call this function before allowing content to be
-    // dropped onto a target.
-    bool canReceiveDragData(const SecurityOrigin* dragInitiator) const;
 
     // Returns true if |document| can display content from the given URL (e.g.,
     // in an iframe or as an image). For example, web sites generally cannot
@@ -142,14 +146,14 @@ public:
     // WARNING: This is an extremely powerful ability. Use with caution!
     void grantUniversalAccess();
 
-    bool canAccessDatabase() const { return !isUnique(); };
-    bool canAccessLocalStorage() const { return !isUnique(); };
+    bool canAccessDatabase() const { return !isUnique(); }
+    bool canAccessLocalStorage() const { return !isUnique(); }
     bool canAccessSharedWorkers() const { return !isUnique(); }
+    bool canAccessServiceWorkers() const { return !isUnique(); }
     bool canAccessCookies() const { return !isUnique(); }
     bool canAccessPasswordManager() const { return !isUnique(); }
     bool canAccessFileSystem() const { return !isUnique(); }
-    bool canAccessCacheStorage() const { return !isUnique(); };
-    Policy canShowNotifications() const;
+    bool canAccessCacheStorage() const { return !isUnique(); }
 
     // Technically, we should always allow access to sessionStorage, but we
     // currently don't handle creating a sessionStorage area for unique
@@ -171,6 +175,14 @@ public:
     // has the SandboxOrigin flag set. The latter implies the former, and, in
     // addition, the SandboxOrigin flag is inherited by iframes.
     bool isUnique() const { return m_isUnique; }
+
+    // Assigns a suborigin namespace to the SecurityOrigin. addSuborigin() must
+    // only ever be called once per SecurityOrigin(). If it is called on a
+    // SecurityOrigin that has already had a suborigin assigned, it will hit a
+    // RELEASE_ASSERT().
+    void addSuborigin(const String&);
+    bool hasSuborigin() const { return !m_suboriginName.isNull(); }
+    const String& suboriginName() const { return m_suboriginName; }
 
     // Marks a file:// origin as being in a domain defined by its path.
     // FIXME 81578: The naming of this is confusing. Files with restricted access to other local files
@@ -198,6 +210,7 @@ public:
     // This method checks for equality, ignoring the value of document.domain
     // (and whether it was set) but considering the host. It is used for postMessage.
     bool isSameSchemeHostPort(const SecurityOrigin*) const;
+    bool isSameSchemeHostPortAndSuborigin(const SecurityOrigin*) const;
 
     bool needsDatabaseIdentifierQuirkForFiles() const { return m_needsDatabaseIdentifierQuirkForFiles; }
 
@@ -215,6 +228,13 @@ public:
     void transferPrivilegesFrom(const SecurityOrigin&);
 
 private:
+    // FIXME: After the merge with the Chromium repo, this should be refactored
+    // to use FRIEND_TEST in base/gtest_prod_util.h.
+    friend class SecurityOriginTest;
+    friend class SecurityOriginTest_Suborigins_Test;
+    friend class SecurityOriginTest_SuboriginsParsing_Test;
+    friend class SecurityOriginTest_SuboriginsIsSameSchemeHostPortAndSuborigin_Test;
+
     SecurityOrigin();
     explicit SecurityOrigin(const KURL&);
     explicit SecurityOrigin(const SecurityOrigin*);
@@ -223,10 +243,12 @@ private:
     bool passesFileCheck(const SecurityOrigin*) const;
     void buildRawString(StringBuilder&) const;
 
+    static bool deserializeSuboriginAndHost(const String&, String&, String&);
+
     String m_protocol;
     String m_host;
     String m_domain;
-    String m_filePath;
+    String m_suboriginName;
     unsigned short m_port;
     bool m_isUnique;
     bool m_universalAccess;

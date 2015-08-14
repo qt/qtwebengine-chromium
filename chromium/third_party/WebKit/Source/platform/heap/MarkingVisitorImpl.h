@@ -24,13 +24,6 @@ protected:
     {
         ASSERT(header);
         ASSERT(objectPointer);
-        // Check that we are not marking objects that are outside
-        // the heap by calling Heap::contains.  However we cannot
-        // call Heap::contains when outside a GC and we call mark
-        // when doing weakness for ephemerons.  Hence we only check
-        // when called within.
-        ASSERT(!ThreadState::current()->isInGC() || Heap::containedInHeapOrOrphanedPage(header));
-
         if (!toDerived()->shouldMarkObject(objectPointer))
             return;
 
@@ -44,11 +37,13 @@ protected:
 
         if (header->isMarked())
             return;
-        header->mark();
 
-#if ENABLE(GC_PROFILING)
-        toDerived()->recordObjectGraphEdge(objectPointer);
+#if ENABLE(ASSERT)
+        ASSERT(ThreadState::current()->isInGC());
+        ASSERT(Heap::findPageFromAddress(header));
+        ASSERT(toDerived()->markingMode() != Visitor::WeakProcessing);
 #endif
+        header->mark();
 
         if (callback)
             Heap::pushTraceCallback(const_cast<void*>(objectPointer), callback);
@@ -64,16 +59,22 @@ protected:
 
     inline void registerDelayedMarkNoTracing(const void* objectPointer)
     {
+        ASSERT(toDerived()->markingMode() != Visitor::WeakProcessing);
         Heap::pushPostMarkingCallback(const_cast<void*>(objectPointer), &markNoTracingCallback);
     }
 
-    inline void registerWeakMembers(const void* closure, const void* objectPointer, WeakPointerCallback callback)
+    inline void registerWeakMembers(const void* closure, const void* objectPointer, WeakCallback callback)
     {
-        Heap::pushWeakPointerCallback(const_cast<void*>(closure), const_cast<void*>(objectPointer), callback);
+        ASSERT(toDerived()->markingMode() != Visitor::WeakProcessing);
+        // We don't want to run weak processings when taking a snapshot.
+        if (toDerived()->markingMode() == Visitor::SnapshotMarking)
+            return;
+        Heap::pushThreadLocalWeakCallback(const_cast<void*>(closure), const_cast<void*>(objectPointer), callback);
     }
 
     inline void registerWeakTable(const void* closure, EphemeronCallback iterationCallback, EphemeronCallback iterationDoneCallback)
     {
+        ASSERT(toDerived()->markingMode() != Visitor::WeakProcessing);
         Heap::registerWeakTable(const_cast<void*>(closure), iterationCallback, iterationDoneCallback);
     }
 
@@ -84,11 +85,6 @@ protected:
     }
 #endif
 
-    inline bool isMarked(const void* objectPointer)
-    {
-        return HeapObjectHeader::fromPayload(objectPointer)->isMarked();
-    }
-
     inline bool ensureMarked(const void* objectPointer)
     {
         if (!objectPointer)
@@ -96,7 +92,7 @@ protected:
         if (!toDerived()->shouldMarkObject(objectPointer))
             return false;
 #if ENABLE(ASSERT)
-        if (isMarked(objectPointer))
+        if (HeapObjectHeader::fromPayload(objectPointer)->isMarked())
             return false;
 
         toDerived()->markNoTracing(objectPointer);
@@ -117,9 +113,13 @@ protected:
     }
 
 protected:
-    inline void registerWeakCellWithCallback(void** cell, WeakPointerCallback callback)
+    inline void registerWeakCellWithCallback(void** cell, WeakCallback callback)
     {
-        Heap::pushWeakCellPointerCallback(cell, callback);
+        ASSERT(toDerived()->markingMode() != Visitor::WeakProcessing);
+        // We don't want to run weak processings when taking a snapshot.
+        if (toDerived()->markingMode() == Visitor::SnapshotMarking)
+            return;
+        Heap::pushGlobalWeakCallback(cell, callback);
     }
 
 private:

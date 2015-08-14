@@ -7,12 +7,9 @@
 
 #include <gtest/gtest.h>
 
-using blink::CancellableTaskFactory;
-using blink::WebThread;
+namespace blink {
 
-namespace {
-
-typedef testing::Test CancellableTaskFactoryTest;
+using CancellableTaskFactoryTest = testing::Test;
 
 TEST_F(CancellableTaskFactoryTest, IsPending_TaskNotCreated)
 {
@@ -24,7 +21,7 @@ TEST_F(CancellableTaskFactoryTest, IsPending_TaskNotCreated)
 TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreated)
 {
     CancellableTaskFactory factory(nullptr);
-    OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
 
     EXPECT_TRUE(factory.isPending());
 }
@@ -37,7 +34,7 @@ TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreatedAndRun)
 {
     CancellableTaskFactory factory(WTF::bind(&EmptyFn));
     {
-        OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+        OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
         task->run();
     }
 
@@ -47,7 +44,7 @@ TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreatedAndRun)
 TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreatedAndDestroyed)
 {
     CancellableTaskFactory factory(nullptr);
-    delete factory.task();
+    delete factory.cancelAndCreate();
 
     EXPECT_FALSE(factory.isPending());
 }
@@ -55,7 +52,7 @@ TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreatedAndDestroyed)
 TEST_F(CancellableTaskFactoryTest, IsPending_TaskCreatedAndCancelled)
 {
     CancellableTaskFactory factory(nullptr);
-    OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
     factory.cancel();
 
     EXPECT_FALSE(factory.isPending());
@@ -79,7 +76,7 @@ public:
 TEST_F(CancellableTaskFactoryTest, IsPending_InCallback)
 {
     TestClass testClass;
-    OwnPtr<WebThread::Task> task = adoptPtr(testClass.m_factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(testClass.m_factory.cancelAndCreate());
     task->run();
 }
 
@@ -92,7 +89,7 @@ TEST_F(CancellableTaskFactoryTest, Run_ClosureIsExecuted)
 {
     int executionCount = 0;
     CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
-    OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
     task->run();
 
     EXPECT_EQ(1, executionCount);
@@ -102,7 +99,7 @@ TEST_F(CancellableTaskFactoryTest, Run_ClosureIsExecutedOnlyOnce)
 {
     int executionCount = 0;
     CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
-    OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
     task->run();
     task->run();
     task->run();
@@ -117,7 +114,7 @@ TEST_F(CancellableTaskFactoryTest, Run_FactoryDestructionPreventsExecution)
     OwnPtr<WebThread::Task> task;
     {
         CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
-        task = adoptPtr(factory.task());
+        task = adoptPtr(factory.cancelAndCreate());
     }
     task->run();
 
@@ -129,15 +126,15 @@ TEST_F(CancellableTaskFactoryTest, Run_TasksInSequence)
     int executionCount = 0;
     CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
 
-    OwnPtr<WebThread::Task> taskA = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> taskA = adoptPtr(factory.cancelAndCreate());
     taskA->run();
     EXPECT_EQ(1, executionCount);
 
-    OwnPtr<WebThread::Task> taskB = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> taskB = adoptPtr(factory.cancelAndCreate());
     taskB->run();
     EXPECT_EQ(2, executionCount);
 
-    OwnPtr<WebThread::Task> taskC = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> taskC = adoptPtr(factory.cancelAndCreate());
     taskC->run();
     EXPECT_EQ(3, executionCount);
 }
@@ -146,7 +143,7 @@ TEST_F(CancellableTaskFactoryTest, Cancel)
 {
     int executionCount = 0;
     CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
-    OwnPtr<WebThread::Task> task = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> task = adoptPtr(factory.cancelAndCreate());
     factory.cancel();
     task->run();
 
@@ -158,8 +155,8 @@ TEST_F(CancellableTaskFactoryTest, CreatingANewTaskCancelsPreviousOnes)
     int executionCount = 0;
     CancellableTaskFactory factory(WTF::bind(&AddOne, &executionCount));
 
-    OwnPtr<WebThread::Task> taskA = adoptPtr(factory.task());
-    OwnPtr<WebThread::Task> taskB = adoptPtr(factory.task());
+    OwnPtr<WebThread::Task> taskA = adoptPtr(factory.cancelAndCreate());
+    OwnPtr<WebThread::Task> taskB = adoptPtr(factory.cancelAndCreate());
 
     taskA->run();
     EXPECT_EQ(0, executionCount);
@@ -168,4 +165,4 @@ TEST_F(CancellableTaskFactoryTest, CreatingANewTaskCancelsPreviousOnes)
     EXPECT_EQ(1, executionCount);
 }
 
-} // namespace
+} // namespace blink

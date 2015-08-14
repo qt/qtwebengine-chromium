@@ -351,8 +351,8 @@ bool MediaStreamVideoSource::IsConstraintSupported(const std::string& name) {
 
 MediaStreamVideoSource::MediaStreamVideoSource()
     : state_(NEW),
-      track_adapter_(new VideoTrackAdapter(
-          ChildProcess::current()->io_message_loop_proxy())),
+      track_adapter_(
+          new VideoTrackAdapter(ChildProcess::current()->io_task_runner())),
       weak_factory_(this) {
 }
 
@@ -441,10 +441,9 @@ void MediaStreamVideoSource::RemoveTrack(MediaStreamVideoTrack* video_track) {
     StopSource();
 }
 
-const scoped_refptr<base::MessageLoopProxy>&
-MediaStreamVideoSource::io_message_loop() const {
+base::SingleThreadTaskRunner* MediaStreamVideoSource::io_task_runner() const {
   DCHECK(CalledOnValidThread());
-  return track_adapter_->io_message_loop();
+  return track_adapter_->io_task_runner();
 }
 
 void MediaStreamVideoSource::DoStopSource() {
@@ -476,7 +475,8 @@ void MediaStreamVideoSource::OnSupportedFormats(
   }
 
   state_ = STARTING;
-  DVLOG(3) << "Starting the capturer with " << current_format_.ToString();
+  DVLOG(3) << "Starting the capturer with "
+           << media::VideoCaptureFormat::ToString(current_format_);
 
   StartSourceImpl(
       current_format_,

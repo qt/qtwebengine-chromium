@@ -5,7 +5,7 @@
 #include "net/dns/dns_config_service.h"
 
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/values.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/ip_pattern.h"
@@ -139,7 +139,7 @@ void DnsConfig::CopyIgnoreHosts(const DnsConfig& d) {
 }
 
 base::Value* DnsConfig::ToValue() const {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
 
   base::ListValue* list = new base::ListValue();
   for (size_t i = 0; i < nameservers.size(); ++i)
@@ -161,9 +161,8 @@ base::Value* DnsConfig::ToValue() const {
   dict->SetBoolean("use_local_ipv6", use_local_ipv6);
   dict->SetInteger("num_hosts", hosts.size());
 
-  return dict;
+  return dict.release();
 }
-
 
 DnsConfigService::DnsConfigService()
     : watch_failed_(false),

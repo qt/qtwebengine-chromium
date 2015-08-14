@@ -33,18 +33,20 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 
 // Sent to all child processes to enable trace event recording.
 IPC_MESSAGE_CONTROL3(TracingMsg_BeginTracing,
-                     std::string /*  category_filter_str */,
-                     base::TimeTicks /* browser_time */,
-                     std::string /* base::trace_event::TraceOptions */)
+                     std::string /*  trace_config_str */,
+                     base::TraceTicks /* browser_time */,
+                     uint64 /* Tracing process id (hash of child id) */)
 
 // Sent to all child processes to disable trace event recording.
 IPC_MESSAGE_CONTROL0(TracingMsg_EndTracing)
 
+// Sent to all child processes to cancel trace event recording.
+IPC_MESSAGE_CONTROL0(TracingMsg_CancelTracing)
+
 // Sent to all child processes to start monitoring.
-IPC_MESSAGE_CONTROL3(TracingMsg_EnableMonitoring,
-                     std::string /*  category_filter_str */,
-                     base::TimeTicks /* browser_time */,
-                     std::string /* base::trace_event::TraceOptions */)
+IPC_MESSAGE_CONTROL2(TracingMsg_EnableMonitoring,
+                     std::string /*  trace_config_str */,
+                     base::TraceTicks /* browser_time */)
 
 // Sent to all child processes to stop monitoring.
 IPC_MESSAGE_CONTROL0(TracingMsg_DisableMonitoring)

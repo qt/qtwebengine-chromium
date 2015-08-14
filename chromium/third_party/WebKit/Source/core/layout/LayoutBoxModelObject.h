@@ -53,7 +53,6 @@ enum BackgroundBleedAvoidance {
     BackgroundBleedShrinkBackground,
     BackgroundBleedClipOnly,
     BackgroundBleedClipLayer,
-    BackgroundBleedBackgroundOverBorder,
 };
 
 enum ContentChangeType {
@@ -102,6 +101,10 @@ public:
 
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
+
+    // Checks if this box, or any of it's descendants, or any of it's continuations,
+    // will take up space in the layout of the page.
+    bool hasNonEmptyLayoutSize() const;
 
     // These return the CSS computed padding values.
     LayoutUnit computedCSSPaddingTop() const { return computedCSSPadding(style()->paddingTop()); }
@@ -161,10 +164,10 @@ public:
     virtual LayoutUnit marginBottom() const = 0;
     virtual LayoutUnit marginLeft() const = 0;
     virtual LayoutUnit marginRight() const = 0;
-    virtual LayoutUnit marginBefore(const ComputedStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginAfter(const ComputedStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginStart(const ComputedStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginEnd(const ComputedStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginBefore(const ComputedStyle* otherStyle = nullptr) const = 0;
+    virtual LayoutUnit marginAfter(const ComputedStyle* otherStyle = nullptr) const = 0;
+    virtual LayoutUnit marginStart(const ComputedStyle* otherStyle = nullptr) const = 0;
+    virtual LayoutUnit marginEnd(const ComputedStyle* otherStyle = nullptr) const = 0;
     LayoutUnit marginHeight() const { return marginTop() + marginBottom(); }
     LayoutUnit marginWidth() const { return marginLeft() + marginRight(); }
     LayoutUnit marginLogicalHeight() const { return marginBefore() + marginAfter(); }
@@ -177,7 +180,7 @@ public:
 
     virtual void childBecameNonInline(LayoutObject* /*child*/) { }
 
-    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox* = 0) const;
+    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox* = nullptr) const;
 
     // Overridden by subclasses to determine line height and baseline position.
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const = 0;
@@ -204,6 +207,11 @@ public:
 
     void invalidateDisplayItemClientOnBacking(const DisplayItemClientWrapper&) const;
 
+    // http://www.w3.org/TR/css3-background/#body-background
+    // <html> root element with no background steals background from its first <body> child.
+    // The used background for such body element should be the initial value. (i.e. transparent)
+    bool backgroundStolenForBeingBody(const ComputedStyle* rootElementStyle = nullptr) const;
+
 protected:
     virtual void willBeDestroyed() override;
 
@@ -219,7 +227,8 @@ protected:
     bool hasAutoHeightOrContainingBlockWithAutoHeight() const;
     LayoutBlock* containingBlockForAutoHeightDetection(Length logicalHeight) const;
 
-    void addChildFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
+    void addFocusRingRectsForNormalChildren(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
+    void addFocusRingRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
 
     virtual void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer*, const LayoutPoint&, const LayoutRect&) const override;
 
@@ -259,8 +268,6 @@ private:
 
     LayoutUnit computedCSSPadding(const Length&) const;
     virtual bool isBoxModelObject() const override final { return true; }
-
-    virtual bool isLayoutBoxModelObject() const override final { return true; }
 
     OwnPtr<DeprecatedPaintLayer> m_layer;
 };

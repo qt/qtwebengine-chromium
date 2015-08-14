@@ -13,7 +13,7 @@
 #include "base/format_macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
@@ -93,30 +93,30 @@ void ProcessAlternateProtocol(
       *session);
 }
 
-base::Value* NetLogSSLVersionFallbackCallback(
+scoped_ptr<base::Value> NetLogSSLVersionFallbackCallback(
     const GURL* url,
     int net_error,
     SSLFailureState ssl_failure_state,
     uint16 version_before,
     uint16 version_after,
     NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("host_and_port", GetHostAndPort(*url));
   dict->SetInteger("net_error", net_error);
   dict->SetInteger("ssl_failure_state", ssl_failure_state);
   dict->SetInteger("version_before", version_before);
   dict->SetInteger("version_after", version_after);
-  return dict;
+  return dict.Pass();
 }
 
-base::Value* NetLogSSLCipherFallbackCallback(
+scoped_ptr<base::Value> NetLogSSLCipherFallbackCallback(
     const GURL* url,
     int net_error,
     NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("host_and_port", GetHostAndPort(*url));
   dict->SetInteger("net_error", net_error);
-  return dict;
+  return dict.Pass();
 }
 
 }  // namespace
@@ -1444,7 +1444,7 @@ void HttpNetworkTransaction::RecordSSLFallbackMetrics(int result) {
     return;
 
   const std::string& host = request_->url.host();
-  bool is_google = EndsWith(host, "google.com", true) &&
+  bool is_google = base::EndsWith(host, "google.com", true) &&
                    (host.size() == 10 || host[host.size() - 11] == '.');
   if (is_google) {
     // Some fraction of successful connections use the fallback, but only due to

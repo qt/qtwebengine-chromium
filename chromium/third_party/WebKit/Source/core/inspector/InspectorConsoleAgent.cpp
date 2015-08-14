@@ -31,10 +31,12 @@
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptAsyncCallStack.h"
+#include "core/inspector/V8Debugger.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -46,6 +48,7 @@ static const char consoleMessagesEnabled[] = "consoleMessagesEnabled";
 InspectorConsoleAgent::InspectorConsoleAgent(InjectedScriptManager* injectedScriptManager)
     : InspectorBaseAgent<InspectorConsoleAgent, InspectorFrontend::Console>("Console")
     , m_injectedScriptManager(injectedScriptManager)
+    , m_debuggerAgent(nullptr)
     , m_enabled(false)
 {
 }
@@ -60,6 +63,7 @@ InspectorConsoleAgent::~InspectorConsoleAgent()
 DEFINE_TRACE(InspectorConsoleAgent)
 {
     visitor->trace(m_injectedScriptManager);
+    visitor->trace(m_debuggerAgent);
     InspectorBaseAgent::trace(visitor);
 }
 
@@ -108,6 +112,12 @@ void InspectorConsoleAgent::restore()
 void InspectorConsoleAgent::addMessageToConsole(ConsoleMessage* consoleMessage)
 {
     sendConsoleMessageToFrontend(consoleMessage, true);
+    if (consoleMessage->type() != AssertMessageType)
+        return;
+    if (!m_debuggerAgent || !m_debuggerAgent->enabled())
+        return;
+    if (m_debuggerAgent->debugger().pauseOnExceptionsState() != V8Debugger::DontPauseOnExceptions)
+        m_debuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::Assert, nullptr);
 }
 
 void InspectorConsoleAgent::consoleMessagesCleared()

@@ -57,7 +57,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void GetScaledContentBitmap(
       float scale,
       SkColorType preferred_color_type,
-      gfx::Rect src_subrect,
+      const gfx::Rect& src_subrect,
       ReadbackRequestCallback& result_callback) override;
   float GetDpiScale() const override;
   void PauseOrResumeGeolocation(bool should_pause) override;
@@ -124,13 +124,25 @@ class ContentViewCoreImpl : public ContentViewCore,
                                jfloat y,
                                jfloat vertical_axis,
                                jfloat horizontal_axis);
-  void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms,
-                   jfloat x, jfloat y, jfloat hintx, jfloat hinty);
+  void ScrollBegin(JNIEnv* env,
+                   jobject obj,
+                   jlong time_ms,
+                   jfloat x,
+                   jfloat y,
+                   jfloat hintx,
+                   jfloat hinty,
+                   jboolean target_viewport);
   void ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms);
   void ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
                 jfloat x, jfloat y, jfloat dx, jfloat dy);
-  void FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
-                  jfloat x, jfloat y, jfloat vx, jfloat vy);
+  void FlingStart(JNIEnv* env,
+                  jobject obj,
+                  jlong time_ms,
+                  jfloat x,
+                  jfloat y,
+                  jfloat vx,
+                  jfloat vy,
+                  jboolean target_viewport);
   void FlingCancel(JNIEnv* env, jobject obj, jlong time_ms);
   void SingleTap(JNIEnv* env, jobject obj, jlong time_ms,
                  jfloat x, jfloat y);
@@ -177,6 +189,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void SetTextTrackSettings(JNIEnv* env,
                             jobject obj,
+                            jboolean textTracksEnabled,
                             jstring textTrackBackgroundColor,
                             jstring textTrackFontFamily,
                             jstring textTrackFontStyle,
@@ -227,6 +240,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const gfx::Vector2dF& content_offset,
                        bool is_mobile_optimized_hint);
 
+  void ForceUpdateImeAdapter(long native_ime_adapter);
   void UpdateImeAdapter(long native_ime_adapter,
                         int text_input_type,
                         int text_input_flags,
@@ -259,9 +273,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ShowDisambiguationPopup(
       const gfx::Rect& rect_pixels, const SkBitmap& zoomed_bitmap);
 
-  // Creates a java-side touch event, used for injecting touch event for
-  // testing/benchmarking purposes
-  base::android::ScopedJavaLocalRef<jobject> CreateTouchEventSynthesizer();
+  // Creates a java-side touch event, used for injecting motion events for
+  // testing/benchmarking purposes.
+  base::android::ScopedJavaLocalRef<jobject> CreateMotionEventSynthesizer();
 
   // Returns True if the given media should be blocked to load.
   bool ShouldBlockMediaRequest(const GURL& url);

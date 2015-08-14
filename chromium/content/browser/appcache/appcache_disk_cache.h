@@ -52,6 +52,14 @@ class CONTENT_EXPORT AppCacheDiskCache
                 const net::CompletionCallback& callback) override;
   int DoomEntry(int64 key, const net::CompletionCallback& callback) override;
 
+  void set_is_waiting_to_initialize(bool is_waiting_to_initialize) {
+    is_waiting_to_initialize_ = is_waiting_to_initialize;
+  }
+
+ protected:
+  explicit AppCacheDiskCache(bool use_simple_cache);
+  disk_cache::Backend* disk_cache() { return disk_cache_.get(); }
+
  private:
   class CreateBackendCallbackShim;
   class EntryImpl;
@@ -85,10 +93,10 @@ class CONTENT_EXPORT AppCacheDiskCache
   typedef std::set<ActiveCall*> ActiveCalls;
   typedef std::set<EntryImpl*> OpenEntries;
 
-  bool is_initializing() const {
-    return create_backend_callback_.get() != NULL;
+  bool is_initializing_or_waiting_to_initialize() const {
+    return create_backend_callback_.get() != NULL || is_waiting_to_initialize_;
   }
-  disk_cache::Backend* disk_cache() { return disk_cache_.get(); }
+
   int Init(net::CacheType cache_type,
            const base::FilePath& directory,
            int cache_size,
@@ -99,7 +107,9 @@ class CONTENT_EXPORT AppCacheDiskCache
   void AddOpenEntry(EntryImpl* entry) { open_entries_.insert(entry); }
   void RemoveOpenEntry(EntryImpl* entry) { open_entries_.erase(entry); }
 
+  bool use_simple_cache_;
   bool is_disabled_;
+  bool is_waiting_to_initialize_;
   net::CompletionCallback init_callback_;
   scoped_refptr<CreateBackendCallbackShim> create_backend_callback_;
   PendingCalls pending_calls_;

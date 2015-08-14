@@ -11,6 +11,14 @@
       # This part is shared between the targets defined below.
       ['ipc_target==1', {
         'sources': [
+          'attachment_broker.h',
+          'attachment_broker_messages.h',
+          'attachment_broker_win.cc',
+          'attachment_broker_win.h',
+          'brokerable_attachment.cc',
+          'brokerable_attachment.h',
+          'handle_attachment_win.cc',
+          'handle_attachment_win.h',
           'ipc_channel.cc',
           'ipc_channel.h',
           'ipc_channel_factory.cc',
@@ -31,6 +39,8 @@
           'ipc_export.h',
           'ipc_forwarding_message_filter.cc',
           'ipc_forwarding_message_filter.h',
+          'ipc_handle_win.cc',
+          'ipc_handle_win.h',
           'ipc_listener.h',
           'ipc_logging.cc',
           'ipc_logging.h',
@@ -40,6 +50,8 @@
           'ipc_message_attachment.h',
           'ipc_message_attachment_set.cc',
           'ipc_message_attachment_set.h',
+          'ipc_message_generator.cc',
+          'ipc_message_generator.h',
           'ipc_message_macros.h',
           'ipc_message_start.h',
           'ipc_message_utils.cc',

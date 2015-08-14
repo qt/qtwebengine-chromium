@@ -4,7 +4,6 @@
 
 #include "gin/v8_isolate_memory_dump_provider.h"
 
-#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
@@ -13,13 +12,6 @@
 #include "v8/include/v8.h"
 
 namespace gin {
-
-namespace {
-const char kRootDumpName[] = "v8";
-const char kIsolateDumpName[] = "isolate";
-const char kHeapSpacesDumpName[] = "heap_spaces";
-const char kAvailableSizeAttribute[] = "available_size_in_bytes";
-}  // namespace
 
 V8IsolateMemoryDumpProvider::V8IsolateMemoryDumpProvider(
     IsolateHolder* isolate_holder)
@@ -36,18 +28,23 @@ V8IsolateMemoryDumpProvider::~V8IsolateMemoryDumpProvider() {
 // Called at trace dump point time. Creates a snapshot with the memory counters
 // for the current isolate.
 bool V8IsolateMemoryDumpProvider::OnMemoryDump(
-    base::trace_event::ProcessMemoryDump* pmd) {
+    base::trace_event::ProcessMemoryDump* process_memory_dump) {
   if (isolate_holder_->access_mode() == IsolateHolder::kUseLocker) {
     v8::Locker locked(isolate_holder_->isolate());
-    DumpMemoryStatistics(pmd);
+    DumpHeapStatistics(process_memory_dump);
   } else {
-    DumpMemoryStatistics(pmd);
+    DumpHeapStatistics(process_memory_dump);
   }
   return true;
 }
 
-void V8IsolateMemoryDumpProvider::DumpMemoryStatistics(
-    base::trace_event::ProcessMemoryDump* pmd) {
+void V8IsolateMemoryDumpProvider::DumpHeapStatistics(
+    base::trace_event::ProcessMemoryDump* process_memory_dump) {
+  std::string dump_base_name =
+      base::StringPrintf("v8/isolate_%p", isolate_holder_->isolate());
+
+  // Dump statistics of the heap's spaces.
+  std::string space_name_prefix = dump_base_name + "/heap_spaces";
   v8::HeapStatistics heap_statistics;
   isolate_holder_->isolate()->GetHeapStatistics(&heap_statistics);
 
@@ -64,45 +61,76 @@ void V8IsolateMemoryDumpProvider::DumpMemoryStatistics(
     known_spaces_size += space_size;
     known_spaces_used_size += space_used_size;
 
-    std::string allocator_name =
-        base::StringPrintf("%s/%s_%p/%s/%s", kRootDumpName, kIsolateDumpName,
-                           isolate_holder_->isolate(), kHeapSpacesDumpName,
-                           space_statistics.space_name());
-    base::trace_event::MemoryAllocatorDump* space_dump =
-        pmd->CreateAllocatorDump(allocator_name);
-    space_dump->AddScalar(
-        base::trace_event::MemoryAllocatorDump::kNameOuterSize,
-        base::trace_event::MemoryAllocatorDump::kUnitsBytes, space_size);
-
-    // TODO(ssid): Fix crbug.com/481504 to get the objects count of live objects
-    // after the last GC.
-    space_dump->AddScalar(
-        base::trace_event::MemoryAllocatorDump::kNameInnerSize,
-        base::trace_event::MemoryAllocatorDump::kUnitsBytes, space_used_size);
-    space_dump->AddScalar(kAvailableSizeAttribute,
+    std::string space_dump_name =
+        space_name_prefix + "/" + space_statistics.space_name();
+    auto space_dump = process_memory_dump->CreateAllocatorDump(space_dump_name);
+    space_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                           base::trace_event::MemoryAllocatorDump::kUnitsBytes,
-                          space_statistics.space_available_size());
+                          space_size);
+
+    auto space_allocated_dump = process_memory_dump->CreateAllocatorDump(
+        space_dump_name + "/allocated_objects");
+    space_allocated_dump->AddScalar(
+        base::trace_event::MemoryAllocatorDump::kNameSize,
+        base::trace_event::MemoryAllocatorDump::kUnitsBytes, space_used_size);
   }
+
   // Compute the rest of the memory, not accounted by the spaces above.
-  std::string allocator_name = base::StringPrintf(
-      "%s/%s_%p/%s/%s", kRootDumpName, kIsolateDumpName,
-      isolate_holder_->isolate(), kHeapSpacesDumpName, "other_spaces");
-  base::trace_event::MemoryAllocatorDump* other_spaces_dump =
-      pmd->CreateAllocatorDump(allocator_name);
-  other_spaces_dump->AddScalar(
-      base::trace_event::MemoryAllocatorDump::kNameOuterSize,
-      base::trace_event::MemoryAllocatorDump::kUnitsBytes,
-      heap_statistics.total_heap_size() - known_spaces_size);
-  other_spaces_dump->AddScalar(
-      base::trace_event::MemoryAllocatorDump::kNameInnerSize,
+  std::string other_spaces_name = space_name_prefix + "/other_spaces";
+  auto other_dump = process_memory_dump->CreateAllocatorDump(other_spaces_name);
+  other_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                        base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                        heap_statistics.total_heap_size() - known_spaces_size);
+
+  auto other_allocated_dump = process_memory_dump->CreateAllocatorDump(
+      other_spaces_name + "/allocated_objects");
+  other_allocated_dump->AddScalar(
+      base::trace_event::MemoryAllocatorDump::kNameSize,
       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
       heap_statistics.used_heap_size() - known_spaces_used_size);
 
-  // TODO(ssid): Fix crbug.com/481504 to get the total available size of the
-  // heap.
-  other_spaces_dump->AddScalar(
-      kAvailableSizeAttribute,
-      base::trace_event::MemoryAllocatorDump::kUnitsBytes, 0);
+  // Dump statistics of the heap's live objects from last GC.
+  std::string object_name_prefix = dump_base_name + "/heap_objects";
+  bool did_dump_object_stats = false;
+  const size_t object_types =
+      isolate_holder_->isolate()->NumberOfTrackedHeapObjectTypes();
+  for (size_t type_index = 0; type_index < object_types; type_index++) {
+    v8::HeapObjectStatistics object_statistics;
+    if (!isolate_holder_->isolate()->GetHeapObjectStatisticsAtLastGC(
+            &object_statistics, type_index))
+      continue;
+
+    std::string dump_name =
+        object_name_prefix + "/" + object_statistics.object_type();
+    if (object_statistics.object_sub_type()[0] != '\0')
+      dump_name += std::string("/") + object_statistics.object_sub_type();
+    auto object_dump = process_memory_dump->CreateAllocatorDump(dump_name);
+
+    object_dump->AddScalar(
+        base::trace_event::MemoryAllocatorDump::kNameObjectsCount,
+        base::trace_event::MemoryAllocatorDump::kUnitsObjects,
+        object_statistics.object_count());
+    object_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                           base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                           object_statistics.object_size());
+    did_dump_object_stats = true;
+  }
+
+  if (process_memory_dump->GetAllocatorDump(object_name_prefix +
+                                            "/CODE_TYPE")) {
+    auto code_kind_dump = process_memory_dump->CreateAllocatorDump(
+        object_name_prefix + "/CODE_TYPE/CODE_KIND");
+    auto code_age_dump = process_memory_dump->CreateAllocatorDump(
+        object_name_prefix + "/CODE_TYPE/CODE_AGE");
+    process_memory_dump->AddOwnershipEdge(code_kind_dump->guid(),
+                                          code_age_dump->guid());
+  }
+
+  if (did_dump_object_stats) {
+    process_memory_dump->AddOwnershipEdge(
+        process_memory_dump->CreateAllocatorDump(object_name_prefix)->guid(),
+        process_memory_dump->CreateAllocatorDump(space_name_prefix)->guid());
+  }
 }
 
 }  // namespace gin

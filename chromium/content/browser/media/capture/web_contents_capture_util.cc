@@ -22,7 +22,7 @@ bool WebContentsCaptureUtil::ExtractTabCaptureTarget(
     int* render_process_id,
     int* main_render_frame_id) {
   static const char kDeviceScheme[] = "web-contents-media-stream://";
-  if (!StartsWithASCII(device_id_param, kDeviceScheme, true))
+  if (!base::StartsWithASCII(device_id_param, kDeviceScheme, true))
     return false;
 
   const std::string device_id = device_id_param.substr(
@@ -33,11 +33,31 @@ bool WebContentsCaptureUtil::ExtractTabCaptureTarget(
     return false;
 
   const base::StringPiece component1(device_id.data(), sep_pos);
+  size_t end_pos = device_id.find('?');
+  if (end_pos == std::string::npos)
+    end_pos = device_id.length();
   const base::StringPiece component2(device_id.data() + sep_pos + 1,
-                                     device_id.length() - sep_pos - 1);
+                                     end_pos - sep_pos - 1);
 
   return (base::StringToInt(component1, render_process_id) &&
           base::StringToInt(component2, main_render_frame_id));
+}
+
+bool WebContentsCaptureUtil::IsAutoThrottlingOptionSet(
+    const std::string& device_id) {
+  if (!IsWebContentsDeviceId(device_id))
+    return false;
+
+  // Find the option part of the string and just do a naive string compare since
+  // there are no other options in the |device_id| to account for (at the time
+  // of this writing).
+  const size_t option_pos = device_id.find('?');
+  if (option_pos == std::string::npos)
+    return false;
+  const base::StringPiece component(device_id.data() + option_pos,
+                                    device_id.length() - option_pos);
+  static const char kEnableFlag[] = "?throttling=auto";
+  return component.compare(kEnableFlag) == 0;
 }
 
 }  // namespace content

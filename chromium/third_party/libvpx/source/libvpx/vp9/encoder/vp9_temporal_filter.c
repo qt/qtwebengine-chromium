@@ -23,7 +23,9 @@
 #include "vp9/encoder/vp9_quantize.h"
 #include "vp9/encoder/vp9_ratectrl.h"
 #include "vp9/encoder/vp9_segmentation.h"
+#include "vp9/encoder/vp9_temporal_filter.h"
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/mem.h"
 #include "vpx_ports/vpx_timer.h"
 #include "vpx_scale/vpx_scale.h"
 
@@ -109,7 +111,7 @@ static void temporal_filter_predictors_mb_c(MACROBLOCKD *xd,
                             kernel, mv_precision_uv, x, y);
 }
 
-void vp9_temporal_filter_init() {
+void vp9_temporal_filter_init(void) {
   int i;
 
   fixed_divide[0] = 0;
@@ -680,7 +682,7 @@ void vp9_temporal_filter(VP9_COMP *cpi, int distance) {
   if (frames_to_blur > 0) {
     // Setup scaling factors. Scaling on each of the arnr frames is not
     // supported.
-    if (is_two_pass_svc(cpi)) {
+    if (cpi->use_svc) {
       // In spatial svc the scaling factors might be less then 1/2.
       // So we will use non-normative scaling.
       int frame_used = 0;

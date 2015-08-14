@@ -9,13 +9,17 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/location.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "net/base/load_timing_info.h"
@@ -326,24 +330,20 @@ class TestConnectJob : public ConnectJob {
         // abstract time for the purpose of unittests. Unfortunately, we have
         // a lot of third-party components that directly call the various
         // time functions, so this change would be rather invasive.
-        base::MessageLoop::current()->PostDelayedTask(
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
             base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(),
-                       true /* successful */,
-                       true /* async */,
-                       false /* recoverable */),
+                       weak_factory_.GetWeakPtr(), true /* successful */,
+                       true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(kPendingConnectDelay));
         return ERR_IO_PENDING;
       case kMockPendingFailingJob:
         set_load_state(LOAD_STATE_CONNECTING);
-        base::MessageLoop::current()->PostDelayedTask(
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
             base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(),
-                       false /* error */,
-                       true  /* async */,
-                       false /* recoverable */),
+                       weak_factory_.GetWeakPtr(), false /* error */,
+                       true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockWaitingJob:
@@ -356,13 +356,11 @@ class TestConnectJob : public ConnectJob {
                          true /* recoverable */);
       case kMockPendingRecoverableJob:
         set_load_state(LOAD_STATE_CONNECTING);
-        base::MessageLoop::current()->PostDelayedTask(
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
             base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(),
-                       false /* error */,
-                       true  /* async */,
-                       true  /* recoverable */),
+                       weak_factory_.GetWeakPtr(), false /* error */,
+                       true /* async */, true /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockAdditionalErrorStateJob:
@@ -372,13 +370,11 @@ class TestConnectJob : public ConnectJob {
       case kMockPendingAdditionalErrorStateJob:
         set_load_state(LOAD_STATE_CONNECTING);
         store_additional_error_state_ = true;
-        base::MessageLoop::current()->PostDelayedTask(
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
             base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(),
-                       false /* error */,
-                       true  /* async */,
-                       false /* recoverable */),
+                       weak_factory_.GetWeakPtr(), false /* error */,
+                       true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockUnreadDataJob: {
@@ -557,7 +553,7 @@ class TestClientSocketPool : public ClientSocketPool {
     base_.RemoveHigherLayeredPool(higher_pool);
   }
 
-  base::DictionaryValue* GetInfoAsValue(
+  scoped_ptr<base::DictionaryValue> GetInfoAsValue(
       const std::string& name,
       const std::string& type,
       bool include_nested_pools) const override {
@@ -1432,125 +1428,77 @@ TEST_F(ClientSocketPoolBaseTest, CancelRequest) {
   EXPECT_EQ(ClientSocketPoolTest::kIndexOutOfBounds, GetOrderOfRequest(8));
 }
 
-class RequestSocketCallback : public TestCompletionCallbackBase {
- public:
-  RequestSocketCallback(ClientSocketHandle* handle,
-                        TestClientSocketPool* pool,
-                        TestConnectJobFactory* test_connect_job_factory,
-                        TestConnectJob::JobType next_job_type)
-      : handle_(handle),
-        pool_(pool),
-        within_callback_(false),
-        test_connect_job_factory_(test_connect_job_factory),
-        next_job_type_(next_job_type),
-        callback_(base::Bind(&RequestSocketCallback::OnComplete,
-                             base::Unretained(this))) {
+// Function to be used as a callback on socket request completion.  It first
+// disconnects the successfully connected socket from the first request, and
+// then reuses the ClientSocketHandle to request another socket.
+//
+// |nested_callback| is called with the result of the second socket request.
+void RequestSocketOnComplete(ClientSocketHandle* handle,
+                             TestClientSocketPool* pool,
+                             TestConnectJobFactory* test_connect_job_factory,
+                             TestConnectJob::JobType next_job_type,
+                             const CompletionCallback& nested_callback,
+                             int first_request_result) {
+  EXPECT_EQ(OK, first_request_result);
+
+  test_connect_job_factory->set_job_type(next_job_type);
+
+  // Don't allow reuse of the socket.  Disconnect it and then release it.
+  if (handle->socket())
+    handle->socket()->Disconnect();
+  handle->Reset();
+
+  scoped_refptr<TestSocketParams> params(
+      new TestSocketParams(false /* ignore_limits */));
+  TestCompletionCallback callback;
+  int rv =
+      handle->Init("a", params, LOWEST, nested_callback, pool, BoundNetLog());
+  if (rv != ERR_IO_PENDING) {
+    DCHECK_EQ(TestConnectJob::kMockJob, next_job_type);
+    nested_callback.Run(rv);
+  } else {
+    DCHECK_EQ(TestConnectJob::kMockPendingJob, next_job_type);
   }
+}
 
-  ~RequestSocketCallback() override {}
-
-  const CompletionCallback& callback() const { return callback_; }
-
- private:
-  void OnComplete(int result) {
-    SetResult(result);
-    ASSERT_EQ(OK, result);
-
-    if (!within_callback_) {
-      test_connect_job_factory_->set_job_type(next_job_type_);
-
-      // Don't allow reuse of the socket.  Disconnect it and then release it and
-      // run through the MessageLoop once to get it completely released.
-      handle_->socket()->Disconnect();
-      handle_->Reset();
-      {
-        // TODO: Resolve conflicting intentions of stopping recursion with the
-        // |!within_callback_| test (above) and the call to |RunUntilIdle()|
-        // below.  http://crbug.com/114130.
-        base::MessageLoop::ScopedNestableTaskAllower allow(
-            base::MessageLoop::current());
-        base::MessageLoop::current()->RunUntilIdle();
-      }
-      within_callback_ = true;
-      TestCompletionCallback next_job_callback;
-      scoped_refptr<TestSocketParams> params(
-          new TestSocketParams(false /* ignore_limits */));
-      int rv = handle_->Init("a",
-                             params,
-                             DEFAULT_PRIORITY,
-                             next_job_callback.callback(),
-                             pool_,
-                             BoundNetLog());
-      switch (next_job_type_) {
-        case TestConnectJob::kMockJob:
-          EXPECT_EQ(OK, rv);
-          break;
-        case TestConnectJob::kMockPendingJob:
-          EXPECT_EQ(ERR_IO_PENDING, rv);
-
-          // For pending jobs, wait for new socket to be created. This makes
-          // sure there are no more pending operations nor any unclosed sockets
-          // when the test finishes.
-          // We need to give it a little bit of time to run, so that all the
-          // operations that happen on timers (e.g. cleanup of idle
-          // connections) can execute.
-          {
-            base::MessageLoop::ScopedNestableTaskAllower allow(
-                base::MessageLoop::current());
-            base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(10));
-            EXPECT_EQ(OK, next_job_callback.WaitForResult());
-          }
-          break;
-        default:
-          FAIL() << "Unexpected job type: " << next_job_type_;
-          break;
-      }
-    }
-  }
-
-  ClientSocketHandle* const handle_;
-  TestClientSocketPool* const pool_;
-  bool within_callback_;
-  TestConnectJobFactory* const test_connect_job_factory_;
-  TestConnectJob::JobType next_job_type_;
-  CompletionCallback callback_;
-};
-
+// Tests the case where a second socket is requested in a completion callback,
+// and the second socket connects asynchronously.  Reuses the same
+// ClientSocketHandle for the second socket, after disconnecting the first.
 TEST_F(ClientSocketPoolBaseTest, RequestPendingJobTwice) {
   CreatePool(kDefaultMaxSockets, kDefaultMaxSocketsPerGroup);
 
   connect_job_factory_->set_job_type(TestConnectJob::kMockPendingJob);
   ClientSocketHandle handle;
-  RequestSocketCallback callback(
-      &handle, pool_.get(), connect_job_factory_,
-      TestConnectJob::kMockPendingJob);
-  int rv = handle.Init("a",
-                       params_,
-                       DEFAULT_PRIORITY,
-                       callback.callback(),
-                       pool_.get(),
-                       BoundNetLog());
+  TestCompletionCallback second_result_callback;
+  int rv = handle.Init(
+      "a", params_, DEFAULT_PRIORITY,
+      base::Bind(&RequestSocketOnComplete, &handle, pool_.get(),
+                 connect_job_factory_, TestConnectJob::kMockPendingJob,
+                 second_result_callback.callback()),
+      pool_.get(), BoundNetLog());
   ASSERT_EQ(ERR_IO_PENDING, rv);
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_EQ(OK, second_result_callback.WaitForResult());
 }
 
+// Tests the case where a second socket is requested in a completion callback,
+// and the second socket connects synchronously.  Reuses the same
+// ClientSocketHandle for the second socket, after disconnecting the first.
 TEST_F(ClientSocketPoolBaseTest, RequestPendingJobThenSynchronous) {
   CreatePool(kDefaultMaxSockets, kDefaultMaxSocketsPerGroup);
 
   connect_job_factory_->set_job_type(TestConnectJob::kMockPendingJob);
   ClientSocketHandle handle;
-  RequestSocketCallback callback(
-      &handle, pool_.get(), connect_job_factory_, TestConnectJob::kMockJob);
-  int rv = handle.Init("a",
-                       params_,
-                       DEFAULT_PRIORITY,
-                       callback.callback(),
-                       pool_.get(),
-                       BoundNetLog());
+  TestCompletionCallback second_result_callback;
+  int rv = handle.Init(
+      "a", params_, DEFAULT_PRIORITY,
+      base::Bind(&RequestSocketOnComplete, &handle, pool_.get(),
+                 connect_job_factory_, TestConnectJob::kMockPendingJob,
+                 second_result_callback.callback()),
+      pool_.get(), BoundNetLog());
   ASSERT_EQ(ERR_IO_PENDING, rv);
 
-  EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_EQ(OK, second_result_callback.WaitForResult());
 }
 
 // Make sure that pending requests get serviced after active requests get
@@ -3702,9 +3650,8 @@ TEST_F(ClientSocketPoolBaseTest, PreconnectWithoutBackupJob) {
   // the backup job a pending job instead of a waiting job, so it
   // *would* complete if it were created.
   connect_job_factory_->set_job_type(TestConnectJob::kMockPendingJob);
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromSeconds(1));
   base::MessageLoop::current()->Run();
   EXPECT_FALSE(pool_->HasGroup("a"));

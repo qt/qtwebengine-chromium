@@ -298,12 +298,13 @@ TEST(LayerAnimationControllerTest, DoNotSyncFinishedAnimation) {
   scoped_refptr<LayerAnimationController> controller(
       LayerAnimationController::Create(0));
   controller->AddValueObserver(&dummy);
+  scoped_ptr<AnimationEventsVector> events(
+      make_scoped_ptr(new AnimationEventsVector));
 
   EXPECT_FALSE(controller_impl->GetAnimation(Animation::OPACITY));
 
   int animation_id =
       AddOpacityTransitionToController(controller.get(), 1, 0, 1, false);
-  int group_id = controller->GetAnimationById(animation_id)->group();
 
   controller->PushAnimationUpdatesTo(controller_impl.get());
   controller_impl->ActivateAnimations();
@@ -312,21 +313,30 @@ TEST(LayerAnimationControllerTest, DoNotSyncFinishedAnimation) {
   EXPECT_EQ(Animation::WAITING_FOR_TARGET_AVAILABILITY,
             controller_impl->GetAnimationById(animation_id)->run_state());
 
+  events.reset(new AnimationEventsVector);
+  controller_impl->Animate(kInitialTickTime);
+  controller_impl->UpdateState(true, events.get());
+  EXPECT_EQ(1u, events->size());
+  EXPECT_EQ(AnimationEvent::STARTED, (*events)[0].type);
+
   // Notify main thread controller that the animation has started.
-  AnimationEvent animation_started_event(AnimationEvent::STARTED, 0, group_id,
-                                         Animation::OPACITY, kInitialTickTime);
-  controller->NotifyAnimationStarted(animation_started_event);
+  controller->NotifyAnimationStarted((*events)[0]);
 
-  // Force animation to complete on impl thread.
-  controller_impl->RemoveAnimation(animation_id);
+  // Complete animation on impl thread.
+  events.reset(new AnimationEventsVector);
+  controller_impl->Animate(kInitialTickTime + TimeDelta::FromSeconds(1));
+  controller_impl->UpdateState(true, events.get());
+  EXPECT_EQ(1u, events->size());
+  EXPECT_EQ(AnimationEvent::FINISHED, (*events)[0].type);
 
-  EXPECT_FALSE(controller_impl->GetAnimationById(animation_id));
+  controller->NotifyAnimationFinished((*events)[0]);
+
+  controller->Animate(kInitialTickTime + TimeDelta::FromSeconds(2));
+  controller->UpdateState(true, nullptr);
 
   controller->PushAnimationUpdatesTo(controller_impl.get());
   controller_impl->ActivateAnimations();
-
-  // Even though the main thread has a 'new' animation, it should not be pushed
-  // because the animation has already completed on the impl thread.
+  EXPECT_FALSE(controller->GetAnimationById(animation_id));
   EXPECT_FALSE(controller_impl->GetAnimationById(animation_id));
 }
 
@@ -936,13 +946,13 @@ TEST(LayerAnimationControllerTest, ScrollOffsetRemovalClearsScrollDelta) {
 class FakeAnimationDelegate : public AnimationDelegate {
  public:
   FakeAnimationDelegate()
-      : started_(false),
-        finished_(false) {}
+      : started_(false), finished_(false), start_time_(base::TimeTicks()) {}
 
   void NotifyAnimationStarted(TimeTicks monotonic_time,
                               Animation::TargetProperty target_property,
                               int group) override {
     started_ = true;
+    start_time_ = monotonic_time;
   }
 
   void NotifyAnimationFinished(TimeTicks monotonic_time,
@@ -955,9 +965,12 @@ class FakeAnimationDelegate : public AnimationDelegate {
 
   bool finished() { return finished_; }
 
+  TimeTicks start_time() { return start_time_; }
+
  private:
   bool started_;
   bool finished_;
+  TimeTicks start_time_;
 };
 
 // Tests that impl-only animations lead to start and finished notifications
@@ -995,6 +1008,97 @@ TEST(LayerAnimationControllerTest,
 
   EXPECT_TRUE(delegate.started());
   EXPECT_TRUE(delegate.finished());
+}
+
+// Tests that specified start times are sent to the main thread delegate
+TEST(LayerAnimationControllerTest,
+     SpecifiedStartTimesAreSentToMainThreadDelegate) {
+  FakeLayerAnimationValueObserver dummy_impl;
+  scoped_refptr<LayerAnimationController> controller_impl(
+      LayerAnimationController::Create(0));
+  controller_impl->AddValueObserver(&dummy_impl);
+  FakeLayerAnimationValueObserver dummy;
+  scoped_refptr<LayerAnimationController> controller(
+      LayerAnimationController::Create(0));
+  controller->AddValueObserver(&dummy);
+  FakeAnimationDelegate delegate;
+  controller->set_layer_animation_delegate(&delegate);
+
+  int animation_id =
+      AddOpacityTransitionToController(controller.get(), 1, 0, 1, false);
+
+  const TimeTicks start_time = TicksFromSecondsF(123);
+  controller->GetAnimation(Animation::OPACITY)->set_start_time(start_time);
+
+  controller->PushAnimationUpdatesTo(controller_impl.get());
+  controller_impl->ActivateAnimations();
+
+  EXPECT_TRUE(controller_impl->GetAnimationById(animation_id));
+  EXPECT_EQ(Animation::WAITING_FOR_TARGET_AVAILABILITY,
+            controller_impl->GetAnimationById(animation_id)->run_state());
+
+  AnimationEventsVector events;
+  controller_impl->Animate(kInitialTickTime);
+  controller_impl->UpdateState(true, &events);
+
+  // Synchronize the start times.
+  EXPECT_EQ(1u, events.size());
+  controller->NotifyAnimationStarted(events[0]);
+
+  // Validate start time on the main thread delegate.
+  EXPECT_EQ(start_time, delegate.start_time());
+}
+
+class FakeLayerAnimationEventObserver : public LayerAnimationEventObserver {
+ public:
+  FakeLayerAnimationEventObserver() : start_time_(base::TimeTicks()) {}
+
+  void OnAnimationStarted(const AnimationEvent& event) override {
+    start_time_ = event.monotonic_time;
+  }
+
+  TimeTicks start_time() { return start_time_; }
+
+ private:
+  TimeTicks start_time_;
+};
+
+// Tests that specified start times are sent to the event observers
+TEST(LayerAnimationControllerTest, SpecifiedStartTimesAreSentToEventObservers) {
+  FakeLayerAnimationValueObserver dummy_impl;
+  scoped_refptr<LayerAnimationController> controller_impl(
+      LayerAnimationController::Create(0));
+  controller_impl->AddValueObserver(&dummy_impl);
+  FakeLayerAnimationValueObserver dummy;
+  scoped_refptr<LayerAnimationController> controller(
+      LayerAnimationController::Create(0));
+  controller->AddValueObserver(&dummy);
+  FakeLayerAnimationEventObserver observer;
+  controller->AddEventObserver(&observer);
+
+  int animation_id =
+      AddOpacityTransitionToController(controller.get(), 1, 0, 1, false);
+
+  const TimeTicks start_time = TicksFromSecondsF(123);
+  controller->GetAnimation(Animation::OPACITY)->set_start_time(start_time);
+
+  controller->PushAnimationUpdatesTo(controller_impl.get());
+  controller_impl->ActivateAnimations();
+
+  EXPECT_TRUE(controller_impl->GetAnimationById(animation_id));
+  EXPECT_EQ(Animation::WAITING_FOR_TARGET_AVAILABILITY,
+            controller_impl->GetAnimationById(animation_id)->run_state());
+
+  AnimationEventsVector events;
+  controller_impl->Animate(kInitialTickTime);
+  controller_impl->UpdateState(true, &events);
+
+  // Synchronize the start times.
+  EXPECT_EQ(1u, events.size());
+  controller->NotifyAnimationStarted(events[0]);
+
+  // Validate start time on the event observer.
+  EXPECT_EQ(start_time, observer.start_time());
 }
 
 // Tests animations that are waiting for a synchronized start time do not
@@ -1423,16 +1527,20 @@ TEST(LayerAnimationControllerTest, SkipUpdateState) {
       LayerAnimationController::Create(0));
   controller->AddValueObserver(&dummy);
 
-  controller->AddAnimation(CreateAnimation(
+  scoped_ptr<Animation> first_animation(CreateAnimation(
       scoped_ptr<AnimationCurve>(new FakeTransformTransition(1)).Pass(), 1,
       Animation::TRANSFORM));
+  first_animation->set_is_controlling_instance_for_test(true);
+  controller->AddAnimation(first_animation.Pass());
 
   controller->Animate(kInitialTickTime);
   controller->UpdateState(true, events.get());
 
-  controller->AddAnimation(CreateAnimation(
+  scoped_ptr<Animation> second_animation(CreateAnimation(
       scoped_ptr<AnimationCurve>(new FakeFloatTransition(1.0, 0.f, 1.f)).Pass(),
       2, Animation::OPACITY));
+  second_animation->set_is_controlling_instance_for_test(true);
+  controller->AddAnimation(second_animation.Pass());
 
   // Animate but don't UpdateState.
   controller->Animate(kInitialTickTime + TimeDelta::FromMilliseconds(1000));
@@ -1734,12 +1842,17 @@ TEST(LayerAnimationControllerTest, FinishedEventsForGroup) {
   const int group_id = 1;
 
   // Add two animations with the same group id but different durations.
-  controller_impl->AddAnimation(Animation::Create(
+  scoped_ptr<Animation> first_animation(Animation::Create(
       scoped_ptr<AnimationCurve>(new FakeTransformTransition(2.0)).Pass(), 1,
       group_id, Animation::TRANSFORM));
-  controller_impl->AddAnimation(Animation::Create(
+  first_animation->set_is_controlling_instance_for_test(true);
+  controller_impl->AddAnimation(first_animation.Pass());
+
+  scoped_ptr<Animation> second_animation(Animation::Create(
       scoped_ptr<AnimationCurve>(new FakeFloatTransition(1.0, 0.f, 1.f)).Pass(),
       2, group_id, Animation::OPACITY));
+  second_animation->set_is_controlling_instance_for_test(true);
+  controller_impl->AddAnimation(second_animation.Pass());
 
   controller_impl->Animate(kInitialTickTime);
   controller_impl->UpdateState(true, events.get());
@@ -1784,12 +1897,17 @@ TEST(LayerAnimationControllerTest, FinishedAndAbortedEventsForGroup) {
   controller_impl->AddValueObserver(&dummy_impl);
 
   // Add two animations with the same group id.
-  controller_impl->AddAnimation(CreateAnimation(
+  scoped_ptr<Animation> first_animation(CreateAnimation(
       scoped_ptr<AnimationCurve>(new FakeTransformTransition(1.0)).Pass(), 1,
       Animation::TRANSFORM));
-  controller_impl->AddAnimation(CreateAnimation(
+  first_animation->set_is_controlling_instance_for_test(true);
+  controller_impl->AddAnimation(first_animation.Pass());
+
+  scoped_ptr<Animation> second_animation(CreateAnimation(
       scoped_ptr<AnimationCurve>(new FakeFloatTransition(1.0, 0.f, 1.f)).Pass(),
       1, Animation::OPACITY));
+  second_animation->set_is_controlling_instance_for_test(true);
+  controller_impl->AddAnimation(second_animation.Pass());
 
   controller_impl->Animate(kInitialTickTime);
   controller_impl->UpdateState(true, events.get());

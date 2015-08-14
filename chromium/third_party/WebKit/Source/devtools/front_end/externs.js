@@ -182,6 +182,11 @@ function DOMFileSystem() {}
  */
 DOMFileSystem.prototype.root = null;
 
+/**
+ * @type {*}
+ */
+window.domAutomationController;
+
 var DevToolsHost = {};
 
 /** @typedef {{type:string, id:(number|undefined),
@@ -308,6 +313,28 @@ difflib.stringAsLines = function(text) { return []; }
 /** @constructor */
 difflib.SequenceMatcher = function(baseText, newText) { }
 difflib.SequenceMatcher.prototype.get_opcodes = function() { return []; }
+
+/** @constructor */
+function Path2D() {}
+Path2D.prototype = {
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {number} w
+     * @param {number} h
+     */
+    rect: function(x, y, w, h) { },
+    /**
+     * @param {number} x
+     * @param {number} y
+     */
+    moveTo: function(x, y) { },
+    /**
+     * @param {number} x
+     * @param {number} y
+     */
+    lineTo: function(x, y) { }
+}
 
 /** @constructor */
 var Doc = function() { }
@@ -538,6 +565,12 @@ window.dispatchStandaloneTestRunnerMessages;
  * @return {string}
  */
 String.prototype.repeat = function(count) {}
+
+/**
+ * @param {string} other
+ * @return {boolean}
+ */
+String.prototype.includes = function(other) {}
 
 /**
  * @param {*} obj

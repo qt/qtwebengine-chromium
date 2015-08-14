@@ -137,8 +137,14 @@ void PictureLayerTilingSet::UpdateTilingsToCurrentRasterSourceForCommit(
 
   // Invalidate tiles and update them to the new raster source.
   for (PictureLayerTiling* tiling : tilings_) {
+    DCHECK_IMPLIES(tree_ == PENDING_TREE, !tiling->has_tiles());
     tiling->SetRasterSourceAndResize(raster_source);
-    tiling->Invalidate(layer_invalidation);
+
+    // We can commit on either active or pending trees, but only active one can
+    // have tiles at this point.
+    if (tree_ == ACTIVE_TREE)
+      tiling->Invalidate(layer_invalidation);
+
     // This is needed for cases where the live tiles rect didn't change but
     // recordings exist in the raster source that did not exist on the last
     // raster source.
@@ -192,8 +198,7 @@ void PictureLayerTilingSet::CleanUpTilings(
     float max_acceptable_high_res_scale,
     const std::vector<PictureLayerTiling*>& needed_tilings,
     bool should_have_low_res,
-    PictureLayerTilingSet* twin_set,
-    PictureLayerTilingSet* recycled_twin_set) {
+    PictureLayerTilingSet* twin_set) {
   float twin_low_res_scale = 0.f;
   if (twin_set) {
     PictureLayerTiling* tiling =
@@ -227,15 +232,6 @@ void PictureLayerTilingSet::CleanUpTilings(
   }
 
   for (auto* tiling : to_remove) {
-    PictureLayerTiling* recycled_twin_tiling =
-        recycled_twin_set
-            ? recycled_twin_set->FindTilingWithScale(tiling->contents_scale())
-            : nullptr;
-    // Remove the tiling from the recycle tree. Note that we ignore resolution,
-    // since we don't need to maintain high/low res on the recycle set.
-    if (recycled_twin_tiling)
-      recycled_twin_set->Remove(recycled_twin_tiling);
-
     DCHECK_NE(HIGH_RESOLUTION, tiling->resolution());
     Remove(tiling);
   }
@@ -386,12 +382,11 @@ PictureLayerTilingSet::CoverageIterator::CoverageIterator(
     : set_(set),
       contents_scale_(contents_scale),
       ideal_contents_scale_(ideal_contents_scale),
-      current_tiling_(-1) {
+      current_tiling_(std::numeric_limits<size_t>::max()) {
   missing_region_.Union(content_rect);
 
-  for (ideal_tiling_ = 0;
-       static_cast<size_t>(ideal_tiling_) < set_->tilings_.size();
-       ++ideal_tiling_) {
+  size_t tilings_size = set_->tilings_.size();
+  for (ideal_tiling_ = 0; ideal_tiling_ < tilings_size; ++ideal_tiling_) {
     PictureLayerTiling* tiling = set_->tilings_[ideal_tiling_];
     if (tiling->contents_scale() < ideal_contents_scale_) {
       if (ideal_tiling_ > 0)
@@ -400,11 +395,7 @@ PictureLayerTilingSet::CoverageIterator::CoverageIterator(
     }
   }
 
-  DCHECK_LE(set_->tilings_.size(),
-            static_cast<size_t>(std::numeric_limits<int>::max()));
-
-  int num_tilings = set_->tilings_.size();
-  if (ideal_tiling_ == num_tilings && ideal_tiling_ > 0)
+  if (ideal_tiling_ == tilings_size && ideal_tiling_ > 0)
     ideal_tiling_--;
 
   ++(*this);
@@ -448,20 +439,20 @@ TileResolution PictureLayerTilingSet::CoverageIterator::resolution() const {
 
 PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling()
     const {
-  if (current_tiling_ < 0)
+  if (current_tiling_ == std::numeric_limits<size_t>::max())
     return NULL;
-  if (static_cast<size_t>(current_tiling_) >= set_->tilings_.size())
+  if (current_tiling_ >= set_->tilings_.size())
     return NULL;
   return set_->tilings_[current_tiling_];
 }
 
-int PictureLayerTilingSet::CoverageIterator::NextTiling() const {
+size_t PictureLayerTilingSet::CoverageIterator::NextTiling() const {
   // Order returned by this method is:
   // 1. Ideal tiling index
   // 2. Tiling index < Ideal in decreasing order (higher res than ideal)
   // 3. Tiling index > Ideal in increasing order (lower res than ideal)
   // 4. Tiling index > tilings.size() (invalid index)
-  if (current_tiling_ < 0)
+  if (current_tiling_ == std::numeric_limits<size_t>::max())
     return ideal_tiling_;
   else if (current_tiling_ > ideal_tiling_)
     return current_tiling_ + 1;
@@ -473,7 +464,7 @@ int PictureLayerTilingSet::CoverageIterator::NextTiling() const {
 
 PictureLayerTilingSet::CoverageIterator&
 PictureLayerTilingSet::CoverageIterator::operator++() {
-  bool first_time = current_tiling_ < 0;
+  bool first_time = current_tiling_ == std::numeric_limits<size_t>::max();
 
   if (!*this && !first_time)
     return *this;
@@ -507,7 +498,7 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
       }
 
       // No more valid tiles, return this checkerboard rect.
-      if (current_tiling_ >= static_cast<int>(set_->tilings_.size()))
+      if (current_tiling_ >= set_->tilings_.size())
         return *this;
     }
 
@@ -517,7 +508,7 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
     region_iter_.next();
 
     // Done, found next checkerboard rect to return.
-    if (current_tiling_ >= static_cast<int>(set_->tilings_.size()))
+    if (current_tiling_ >= set_->tilings_.size())
       return *this;
 
     // Construct a new iterator for the next tiling, but we need to loop
@@ -532,8 +523,7 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
 }
 
 PictureLayerTilingSet::CoverageIterator::operator bool() const {
-  return current_tiling_ < static_cast<int>(set_->tilings_.size()) ||
-      region_iter_.has_rect();
+  return current_tiling_ < set_->tilings_.size() || region_iter_.has_rect();
 }
 
 void PictureLayerTilingSet::AsValueInto(
@@ -557,9 +547,10 @@ PictureLayerTilingSet::TilingRange PictureLayerTilingSet::GetTilingRange(
   // Doesn't seem to be the case right now but if it ever becomes a performance
   // problem to compute these ranges each time this function is called, we can
   // compute them only when the tiling set has changed instead.
+  size_t tilings_size = tilings_.size();
   TilingRange high_res_range(0, 0);
   TilingRange low_res_range(tilings_.size(), tilings_.size());
-  for (size_t i = 0; i < tilings_.size(); ++i) {
+  for (size_t i = 0; i < tilings_size; ++i) {
     const PictureLayerTiling* tiling = tilings_[i];
     if (tiling->resolution() == HIGH_RESOLUTION)
       high_res_range = TilingRange(i, i + 1);
@@ -591,7 +582,7 @@ PictureLayerTilingSet::TilingRange PictureLayerTilingSet::GetTilingRange(
       range = low_res_range;
       break;
     case LOWER_THAN_LOW_RES:
-      range = TilingRange(low_res_range.end, tilings_.size());
+      range = TilingRange(low_res_range.end, tilings_size);
       break;
   }
 

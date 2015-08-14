@@ -9,7 +9,8 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chromecast/media/cdm/browser_cdm_cast.h"
 #include "chromecast/media/cma/backend/media_clock_device.h"
@@ -143,7 +144,7 @@ void MediaPipelineImpl::InitializeAudio(
 }
 
 void MediaPipelineImpl::InitializeVideo(
-    const ::media::VideoDecoderConfig& config,
+    const std::vector<::media::VideoDecoderConfig>& configs,
     scoped_ptr<CodedFrameProvider> frame_provider,
     const ::media::PipelineStatusCB& status_cb) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -154,14 +155,14 @@ void MediaPipelineImpl::InitializeVideo(
     return;
   }
   has_video_ = true;
-  video_pipeline_->Initialize(config, frame_provider.Pass(), status_cb);
+  video_pipeline_->Initialize(configs, frame_provider.Pass(), status_cb);
 }
 
 void MediaPipelineImpl::StartPlayingFrom(base::TimeDelta time) {
   CMALOG(kLogControl) << __FUNCTION__ << " t0=" << time.InMilliseconds();
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(has_audio_ || has_video_);
-  DCHECK(!pending_callbacks_);
+  DCHECK(!pending_flush_callbacks_);
 
   // Reset the start of the timeline.
   DCHECK_EQ(clock_device_->GetState(), MediaClockDevice::kStateIdle);
@@ -179,9 +180,8 @@ void MediaPipelineImpl::StartPlayingFrom(base::TimeDelta time) {
   statistics_rolling_counter_ = 0;
   if (!pending_time_update_task_) {
     pending_time_update_task_ = true;
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_));
   }
 
   // Setup the audio and video pipeline for the new timeline.
@@ -209,7 +209,7 @@ void MediaPipelineImpl::Flush(const ::media::PipelineStatusCB& status_cb) {
   CMALOG(kLogControl) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(has_audio_ || has_video_);
-  DCHECK(!pending_callbacks_);
+  DCHECK(!pending_flush_callbacks_);
 
   // No need to update media time anymore.
   enable_time_update_ = false;
@@ -236,7 +236,7 @@ void MediaPipelineImpl::Flush(const ::media::PipelineStatusCB& status_cb) {
   }
   ::media::PipelineStatusCB transition_cb =
       base::Bind(&MediaPipelineImpl::StateTransition, weak_this_, status_cb);
-  pending_callbacks_ =
+  pending_flush_callbacks_ =
       ::media::SerialRunner::Run(bound_fns, transition_cb);
 }
 
@@ -244,7 +244,11 @@ void MediaPipelineImpl::Stop() {
   CMALOG(kLogControl) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(has_audio_ || has_video_);
-  DCHECK(!pending_callbacks_);
+
+  // Cancel pending flush callbacks since we are about to stop/shutdown
+  // audio/video pipelines. This will ensure A/V Flush won't happen in
+  // stopped state.
+  pending_flush_callbacks_.reset();
 
   // No need to update media time anymore.
   enable_time_update_ = false;
@@ -282,7 +286,7 @@ VideoPipelineImpl* MediaPipelineImpl::GetVideoPipelineImpl() const {
 void MediaPipelineImpl::StateTransition(
     const ::media::PipelineStatusCB& status_cb,
     ::media::PipelineStatus status) {
-  pending_callbacks_.reset();
+  pending_flush_callbacks_.reset();
   status_cb.Run(status);
 }
 
@@ -326,9 +330,8 @@ void MediaPipelineImpl::UpdateMediaTime() {
   base::TimeDelta media_time(clock_device_->GetTime());
   if (media_time == ::media::kNoTimestamp()) {
     pending_time_update_task_ = true;
-    base::MessageLoopProxy::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_),
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_),
         kTimeUpdateInterval);
     return;
   }
@@ -356,9 +359,8 @@ void MediaPipelineImpl::UpdateMediaTime() {
     client_.time_update_cb.Run(media_time, max_rendering_time, stc);
 
   pending_time_update_task_ = true;
-  base::MessageLoopProxy::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::Bind(&MediaPipelineImpl::UpdateMediaTime, weak_this_),
       kTimeUpdateInterval);
 }
 

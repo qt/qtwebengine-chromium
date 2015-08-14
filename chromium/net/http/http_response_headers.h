@@ -16,10 +16,9 @@
 #include "net/http/http_version.h"
 #include "net/log/net_log.h"
 
+namespace base {
 class Pickle;
 class PickleIterator;
-
-namespace base {
 class Time;
 class TimeDelta;
 }
@@ -72,11 +71,11 @@ class NET_EXPORT HttpResponseHeaders
   // Initializes from the representation stored in the given pickle.  The data
   // for this object is found relative to the given pickle_iter, which should
   // be passed to the pickle's various Read* methods.
-  explicit HttpResponseHeaders(PickleIterator* pickle_iter);
+  explicit HttpResponseHeaders(base::PickleIterator* pickle_iter);
 
   // Appends a representation of this object to the given pickle.
   // The options argument can be a combination of PersistOptions.
-  void Persist(Pickle* pickle, PersistOptions options);
+  void Persist(base::Pickle* pickle, PersistOptions options);
 
   // Performs header merging as described in 13.5.3 of RFC 2616.
   void Update(const HttpResponseHeaders& new_headers);
@@ -286,7 +285,7 @@ class NET_EXPORT HttpResponseHeaders
   bool IsChunkEncoded() const;
 
   // Creates a Value for use with the NetLog containing the response headers.
-  base::Value* NetLogCallback(NetLogCaptureMode capture_mode) const;
+  scoped_ptr<base::Value> NetLogCallback(NetLogCaptureMode capture_mode) const;
 
   // Takes in a Value created by the above function, and attempts to create a
   // copy of the original headers.  Returns true on success.  On failure,

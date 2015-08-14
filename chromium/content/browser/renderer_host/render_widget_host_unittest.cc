@@ -5,8 +5,11 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -99,7 +102,7 @@ class MockInputRouter : public InputRouter {
     NOTREACHED();
     return NULL;
   }
-  void OnViewUpdated(int view_flags) override {}
+  void NotifySiteIsMobileOptimized(bool is_mobile_optimized) override {}
   void RequestNotificationWhenFlushed() override {}
   bool HasPendingEvents() const override { return false; }
 
@@ -366,6 +369,11 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
     return handle_wheel_event_;
   }
 
+  void Cut() override {}
+  void Copy() override {}
+  void Paste() override {}
+  void SelectAll() override {}
+
  private:
   bool prehandle_keyboard_event_;
   bool prehandle_keyboard_event_called_;
@@ -466,9 +474,8 @@ class RenderWidgetHostTest : public testing::Test {
 
   void SendInputEventACK(WebInputEvent::Type type,
                          InputEventAckState ack_result) {
-    InputHostMsg_HandleInputEvent_ACK_Params ack;
-    ack.type = type;
-    ack.state = ack_result;
+    DCHECK(!WebInputEvent::isTouchEventType(type));
+    InputEventAck ack(type, ack_result);
     host_->OnMessageReceived(InputHostMsg_HandleInputEvent_ACK(0, ack));
   }
 
@@ -551,10 +558,12 @@ class RenderWidgetHostTest : public testing::Test {
 
   // Sends a touch event (irrespective of whether the page has a touch-event
   // handler or not).
-  void SendTouchEvent() {
+  uint32 SendTouchEvent() {
+    uint32 touch_event_id = touch_event_.uniqueTouchEventId;
     host_->ForwardTouchEventWithLatencyInfo(touch_event_, ui::LatencyInfo());
 
     touch_event_.ResetPoints();
+    return touch_event_id;
   }
 
   int PressTouchPoint(int x, int y) {
@@ -570,7 +579,7 @@ class RenderWidgetHostTest : public testing::Test {
   }
 
   const WebInputEvent* GetInputEventFromMessage(const IPC::Message& message) {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     const char* data;
     int data_length;
     if (!iter.ReadData(&data, &data_length))
@@ -814,9 +823,9 @@ TEST_F(RenderWidgetHostTest, Background) {
       process_->sink().GetUniqueMessageMatching(
           ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
-  Tuple<bool> sent_background;
+  base::Tuple<bool> sent_background;
   ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
-  EXPECT_FALSE(get<0>(sent_background));
+  EXPECT_FALSE(base::get<0>(sent_background));
 
 #if defined(USE_AURA)
   // See the comment above |InitAsChild(NULL)|.
@@ -851,9 +860,9 @@ TEST_F(RenderWidgetHostTest, HiddenPaint) {
   const IPC::Message* restored = process_->sink().GetUniqueMessageMatching(
       ViewMsg_WasShown::ID);
   ASSERT_TRUE(restored);
-  Tuple<bool, ui::LatencyInfo> needs_repaint;
+  base::Tuple<bool, ui::LatencyInfo> needs_repaint;
   ViewMsg_WasShown::Read(restored, &needs_repaint);
-  EXPECT_TRUE(get<0>(needs_repaint));
+  EXPECT_TRUE(base::get<0>(needs_repaint));
 }
 
 TEST_F(RenderWidgetHostTest, IgnoreKeyEventsHandledByRenderer) {
@@ -978,9 +987,8 @@ TEST_F(RenderWidgetHostTest, DontPostponeHangMonitorTimeout) {
   host_->StartHangMonitorTimeout(TimeDelta::FromSeconds(30));
 
   // Wait long enough for first timeout and see if it fired.
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMilliseconds(10));
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
@@ -998,9 +1006,8 @@ TEST_F(RenderWidgetHostTest, StopAndStartHangMonitorTimeout) {
   host_->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(10));
 
   // Wait long enough for first timeout and see if it fired.
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMilliseconds(40));
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
@@ -1017,9 +1024,8 @@ TEST_F(RenderWidgetHostTest, ShorterDelayHangMonitorTimeout) {
   host_->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(20));
 
   // Wait long enough for the second timeout and see if it fired.
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMilliseconds(25));
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
@@ -1036,18 +1042,16 @@ TEST_F(RenderWidgetHostTest, HangMonitorTimeoutDisabledForInputWhenHidden) {
 
   // The timeout should not fire.
   EXPECT_FALSE(host_->unresponsive_timer_fired());
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMicroseconds(2));
   base::MessageLoop::current()->Run();
   EXPECT_FALSE(host_->unresponsive_timer_fired());
 
   // The timeout should never reactivate while hidden.
   SimulateMouseEvent(WebInputEvent::MouseMove, 10, 10, 0, false);
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMicroseconds(2));
   base::MessageLoop::current()->Run();
   EXPECT_FALSE(host_->unresponsive_timer_fired());
@@ -1055,9 +1059,8 @@ TEST_F(RenderWidgetHostTest, HangMonitorTimeoutDisabledForInputWhenHidden) {
   // Showing the widget should restore the timeout, as the events have
   // not yet been ack'ed.
   host_->WasShown(ui::LatencyInfo());
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMicroseconds(2));
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
@@ -1078,9 +1081,8 @@ TEST_F(RenderWidgetHostTest, MultipleInputEvents) {
                     INPUT_EVENT_ACK_STATE_CONSUMED);
 
   // Wait long enough for first timeout and see if it fired.
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::MessageLoop::QuitClosure(),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::MessageLoop::QuitClosure(),
       TimeDelta::FromMicroseconds(20));
   base::MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
@@ -1093,7 +1095,7 @@ std::string GetInputMessageTypes(RenderWidgetHostProcess* process) {
     EXPECT_EQ(InputMsg_HandleInputEvent::ID, message->type());
     InputMsg_HandleInputEvent::Param params;
     EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
-    const WebInputEvent* event = get<0>(params);
+    const WebInputEvent* event = base::get<0>(params);
     if (i != 0)
       result += " ";
     result += WebInputEventTraits::GetName(event->type);
@@ -1419,7 +1421,7 @@ ui::LatencyInfo GetLatencyInfoFromInputEvent(RenderWidgetHostProcess* process) {
   InputMsg_HandleInputEvent::Param params;
   EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
   process->sink().ClearMessages();
-  return get<1>(params);
+  return base::get<1>(params);
 }
 
 void CheckLatencyInfoComponentInMessage(RenderWidgetHostProcess* process,
@@ -1482,10 +1484,12 @@ TEST_F(RenderWidgetHostTest, InputEventRWHLatencyComponent) {
 
   // Tests RWHI::ForwardTouchEventWithLatencyInfo().
   PressTouchPoint(0, 1);
-  SendTouchEvent();
+  uint32 touch_event_id = SendTouchEvent();
+  InputEventAck ack(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED,
+                    touch_event_id);
+  host_->OnMessageReceived(InputHostMsg_HandleInputEvent_ACK(0, ack));
   CheckLatencyInfoComponentInMessage(
       process_, GetLatencyComponentId(), WebInputEvent::TouchStart);
-  SendInputEventACK(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED);
 }
 
 TEST_F(RenderWidgetHostTest, RendererExitedResetsInputRouter) {

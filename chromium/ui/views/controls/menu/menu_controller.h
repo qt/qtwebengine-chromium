@@ -325,12 +325,12 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
 
   bool ShowSiblingMenu(SubmenuView* source, const gfx::Point& mouse_location);
 
-  // Shows a context menu for |menu_item| as a result of a located event if
-  // appropriate. This is invoked on long press and releasing the right mouse
-  // button. Returns whether a context menu was shown.
+  // Shows a context menu for |menu_item| as a result of an event if
+  // appropriate, using the given |screen_location|. This is invoked on long
+  // press, releasing the right mouse button, and pressing the "app" key.
+  // Returns whether a context menu was shown.
   bool ShowContextMenu(MenuItemView* menu_item,
-                       SubmenuView* source,
-                       const ui::LocatedEvent& event,
+                       const gfx::Point& screen_location,
                        ui::MenuSourceType source_type);
 
   // Closes all menus, including any menus of nested invocations of Run.
@@ -435,9 +435,13 @@ class VIEWS_EXPORT MenuController : public WidgetObserver {
   // Selects the next/previous menu item.
   void IncrementSelection(int delta);
 
+  // Returns the first selectable child menu item of |parent|. If there are no
+  // selectable menu items NULL is returned.
+  MenuItemView* FindFirstSelectableMenuItem(MenuItemView* parent);
+
   // Returns the next selectable child menu item of |parent| starting at |index|
-  // and incrementing index by |delta|. If there are no more selected menu items
-  // NULL is returned.
+  // and incrementing index by |delta|. If there are no more selectable menu
+  // items NULL is returned.
   MenuItemView* FindNextSelectableMenuItem(MenuItemView* parent,
                                            int index,
                                            int delta);

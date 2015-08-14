@@ -26,12 +26,11 @@ using ResourcesMap = base::hash_map<std::string, int>;
 
 // TODO(rkc): Once we have a separate source for apps, remove '*/apps/' aliases.
 const char* kPathAliases[][2] = {
-    {"../../../third_party/polymer/components-chromium/", "polymer/"},
-    {"../../../third_party/polymer/v0_8/components-chromium/", "polymer/v0_8/"},
+    {"../../../third_party/polymer/v1_0/components-chromium/", "polymer/v1_0/"},
     {"../../../third_party/web-animations-js/sources/",
-     "polymer/web-animations-js/"},
-    {"../../resources/default_100_percent/common/", "images/apps/"},
-    {"../../resources/default_200_percent/common/", "images/2x/apps/"},
+     "polymer/v1_0/web-animations-js/"},
+    {"../../views/resources/default_100_percent/common/", "images/apps/"},
+    {"../../views/resources/default_200_percent/common/", "images/2x/apps/"},
     {"../../webui/resources/cr_elements/", "cr_elements/"}};
 
 void AddResource(const std::string& path,
@@ -48,7 +47,7 @@ const ResourcesMap* CreateResourcesMap() {
     const int resource_id = kWebuiResources[i].value;
     AddResource(resource_name, resource_id, result);
     for (const char* (&alias)[2]: kPathAliases) {
-      if (StartsWithASCII(resource_name, alias[0], true)) {
+      if (base::StartsWithASCII(resource_name, alias[0], true)) {
         AddResource(alias[1] + resource_name.substr(strlen(alias[0])),
                     resource_id, result);
       }

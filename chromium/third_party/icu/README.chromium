@@ -50,7 +50,6 @@ This directory contains the source code of ICU 54.1 for C/C++.
           See http://unicode.org/cldr/trac/ticket/4200 and
               http://crbug.com/39779
 
-
    - Add a new file brklocal.mk (copied from brkfiles.mk) with line_ja.txt
      and word_POSIX.txt dropped from the build list.
 
@@ -83,6 +82,13 @@ This directory contains the source code of ICU 54.1 for C/C++.
     Shift_JIS, Big5 (Big5+Big5HKSCS), EUC-KR and all the single byte encodings.
     They're generated with scripts :
       scripts/{eucjp,sjis,big5,single_byte}_gen.sh
+
+  - gb_table.patch
+    1. Map \xA3\xA0 to U+3000 instead of U+E5E5 in gb18030 and windows-936 per
+    the encoding spec (one-way mapping in toUnicode direction).
+    2. Map \xA8\xBF to U+01F9 instead of U+E7C8. Add one-way map
+    from U+1E3F to \xA8\xBC (windows-936/GBK).
+       See https://www.w3.org/Bugs/Public/show_bug.cgi?id=28740#c3
 
   - uconv.patch
     a. ISO-2022-JP-[1-4] is dropped.
@@ -287,6 +293,16 @@ This directory contains the source code of ICU 54.1 for C/C++.
    - patches/ucnv_name.patch
    - upstream bug
      http://bugs.icu-project.org/trac/ticket/11696
- 
 
+17. Cherry-pick an upstream patch to add a separate field for ref-counting in
+    the converter data.
+   - patches/ucnv_refcount.patch
+   - upstream change:
+     http://bugs.icu-project.org/trac/ticket/11601
 
+18. Apply patches/infinite-recursion.patch , corresponds to upstream r36672
+
+19. Cherry-pick an upstream patch for a data loading bug.
+   - patches/dataload.patch
+   - upstream change (fixed in ToT and will be included in 56)
+     http://bugs.icu-project.org/trac/changeset/37670

@@ -7,17 +7,18 @@
  */
 
 #include "GrTest.h"
-
+#include "GrContextOptions.h"
 #include "GrGpuResourceCacheAccess.h"
 #include "GrInOrderDrawBuffer.h"
 #include "GrResourceCache.h"
 #include "SkString.h"
 
-void GrTestTarget::init(GrContext* ctx, GrDrawTarget* target) {
+void GrTestTarget::init(GrContext* ctx, GrDrawTarget* target, const GrGLContext* gl) {
     SkASSERT(!fContext);
 
     fContext.reset(SkRef(ctx));
     fDrawTarget.reset(SkRef(target));
+    fGLContext.reset(SkRef(gl));
 }
 
 void GrContext::getTestTarget(GrTestTarget* tar) {
@@ -26,14 +27,10 @@ void GrContext::getTestTarget(GrTestTarget* tar) {
     // then disconnects. This would help prevent test writers from mixing using the returned
     // GrDrawTarget and regular drawing. We could also assert or fail in GrContext drawing methods
     // until ~GrTestTarget().
-    tar->init(this, fDrawBuffer);
+    tar->init(this, fDrawingMgr.fDrawTarget, fGpu->glContextForTesting());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-void GrContext::setMaxTextureSizeOverride(int maxTextureSizeOverride) {
-    fMaxTextureSizeOverride = maxTextureSizeOverride;
-}
 
 void GrContext::purgeAllUnlockedResources() {
     fResourceCache->purgeAllUnlocked();
@@ -81,17 +78,25 @@ void GrResourceCache::dumpStats(SkString* out) const {
 
     struct Stats {
         int fScratch;
-        int fWrapped;
+        int fExternal;
+        int fBorrowed;
+        int fAdopted;
         size_t fUnbudgetedSize;
 
-        Stats() : fScratch(0), fWrapped(0), fUnbudgetedSize(0) {}
+        Stats() : fScratch(0), fExternal(0), fBorrowed(0), fAdopted(0), fUnbudgetedSize(0) {}
 
         void update(GrGpuResource* resource) {
             if (resource->cacheAccess().isScratch()) {
                 ++fScratch;
             }
-            if (resource->cacheAccess().isWrapped()) {
-                ++fWrapped;
+            if (resource->cacheAccess().isExternal()) {
+                ++fExternal;
+            }
+            if (resource->cacheAccess().isBorrowed()) {
+                ++fBorrowed;
+            }
+            if (resource->cacheAccess().isAdopted()) {
+                ++fAdopted;
             }
             if (!resource->resourcePriv().isBudgeted()) {
                 fUnbudgetedSize += resource->gpuMemorySize();
@@ -113,9 +118,9 @@ void GrResourceCache::dumpStats(SkString* out) const {
 
     out->appendf("Budget: %d items %d bytes\n", fMaxCount, (int)fMaxBytes);
     out->appendf("\t\tEntry Count: current %d"
-                 " (%d budgeted, %d wrapped, %d locked, %d scratch %.2g%% full), high %d\n",
-                 this->getResourceCount(), fBudgetedCount, stats.fWrapped, locked, stats.fScratch,
-                 countUtilization, fHighWaterCount);
+                 " (%d budgeted, %d external(%d borrowed, %d adopted), %d locked, %d scratch %.2g%% full), high %d\n",
+                 this->getResourceCount(), fBudgetedCount, stats.fExternal, stats.fBorrowed,
+                 stats.fAdopted, locked, stats.fScratch, countUtilization, fHighWaterCount);
     out->appendf("\t\tEntry Bytes: current %d (budgeted %d, %.2g%% full, %d unbudgeted) high %d\n",
                  SkToInt(fBytes), SkToInt(fBudgetedBytes), byteUtilization,
                  SkToInt(stats.fUnbudgetedSize), SkToInt(fHighWaterBytes));
@@ -138,7 +143,9 @@ class GrPipeline;
 
 class MockGpu : public GrGpu {
 public:
-    MockGpu(GrContext* context) : INHERITED(context) { fCaps.reset(SkNEW(GrDrawTargetCaps)); }
+    MockGpu(GrContext* context, const GrContextOptions& options) : INHERITED(context) {
+        fCaps.reset(SkNEW_ARGS(GrCaps, (options)));
+    }
     ~MockGpu() override {}
     bool canWriteTexturePixels(const GrTexture*, GrPixelConfig srcConfig) const override {
         return true;
@@ -154,11 +161,6 @@ public:
                           const GrBatchTracker&) const override {}
 
     void discard(GrRenderTarget*) override {}
-
-    bool canCopySurface(const GrSurface* dst,
-                        const GrSurface* src,
-                        const SkIRect& srcRect,
-                        const SkIPoint& dstPoint) override { return false; };
 
     bool copySurface(GrSurface* dst,
                      GrSurface* src,
@@ -184,9 +186,11 @@ private:
         return NULL;
     }
 
-    GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&) override { return NULL; }
+    GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&,
+                                    GrWrapOwnership) override { return NULL; }
 
-    GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&) override {
+    GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
+                                              GrWrapOwnership) override {
         return NULL;
     }
 
@@ -200,19 +204,6 @@ private:
     void onClearStencilClip(GrRenderTarget*, const SkIRect& rect, bool insideClip) override {}
 
     void onDraw(const DrawArgs&, const GrNonInstancedVertices&) override {}
-
-    void onStencilPath(const GrPath* path, const StencilPathState& state) override {}
-
-    void onDrawPath(const DrawArgs&, const GrPath*, const GrStencilSettings&) override {}
-
-    void onDrawPaths(const DrawArgs&,
-                     const GrPathRange*,
-                     const void* indices,
-                     GrDrawTarget::PathIndexType,
-                     const float transformValues[],
-                     GrDrawTarget::PathTransformType,
-                     int count,
-                     const GrStencilSettings&) override {}
 
     bool onReadPixels(GrRenderTarget* target,
                       int left, int top, int width, int height,
@@ -249,22 +240,22 @@ private:
 };
 
 GrContext* GrContext::CreateMockContext() {
-    GrContext* context = SkNEW_ARGS(GrContext, (Options()));
+    GrContext* context = SkNEW(GrContext);
 
     context->initMockContext();
     return context;
 }
 
 void GrContext::initMockContext() {
+    GrContextOptions options;
+    options.fGeometryBufferMapThreshold = 0;
     SkASSERT(NULL == fGpu);
-    fGpu = SkNEW_ARGS(MockGpu, (this));
+    fGpu = SkNEW_ARGS(MockGpu, (this, options));
     SkASSERT(fGpu);
     this->initCommon();
 
     // We delete these because we want to test the cache starting with zero resources. Also, none of
     // these objects are required for any of tests that use this context. TODO: make stop allocating
     // resources in the buffer pools.
-    SkDELETE(fDrawBuffer);
-    fDrawBuffer = NULL;
-
+    fDrawingMgr.abandon();
 }

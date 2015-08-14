@@ -30,6 +30,7 @@ using blink::WGC3Dint;
 using blink::WGC3Dintptr;
 using blink::WGC3Dsizei;
 using blink::WGC3Dsizeiptr;
+using blink::WGC3Dint64;
 using blink::WGC3Duint64;
 using blink::WGC3Duint;
 using blink::WebGLId;
@@ -180,11 +181,18 @@ void WebGraphicsContext3DImpl::name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5,  \
   gl_->glname(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);            \
 }
 
+#define DELEGATE_TO_GL_12(name, glname, t1, t2, t3, t4, t5, t6, t7, t8, \
+                          t9, t10, t11, t12)                            \
+void WebGraphicsContext3DImpl::name(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5,  \
+                                    t6 a6, t7 a7, t8 a8, t9 a9, t10 a10,\
+                                    t11 a11, t12 a12) {                 \
+  gl_->glname(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);       \
+}
+
 WebGraphicsContext3DImpl::WebGraphicsContext3DImpl()
     : initialized_(false),
       initialize_failed_(false),
       context_lost_callback_(0),
-      context_lost_reason_(GL_NO_ERROR),
       error_message_callback_(0),
       gl_(NULL),
       flush_id_(0) {
@@ -453,6 +461,8 @@ DELEGATE_TO_GL_4(getFramebufferAttachmentParameteriv,
                  WGC3Denum, WGC3Denum, WGC3Denum, WGC3Dint*)
 
 DELEGATE_TO_GL_2(getIntegerv, GetIntegerv, WGC3Denum, WGC3Dint*)
+
+DELEGATE_TO_GL_2(getInteger64v, GetInteger64v, WGC3Denum, WGC3Dint64*)
 
 DELEGATE_TO_GL_3(getProgramiv, GetProgramiv, WebGLId, WGC3Denum, WGC3Dint*)
 
@@ -816,21 +826,31 @@ DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivEXT, WGC3Denum, WGC3Denum, WGC3Dint*)
 DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
-DELEGATE_TO_GL_5(copyTextureCHROMIUM,
+DELEGATE_TO_GL_8(copyTextureCHROMIUM,
                  CopyTextureCHROMIUM,
                  WGC3Denum,
                  WebGLId,
                  WebGLId,
                  WGC3Denum,
-                 WGC3Denum);
-
-DELEGATE_TO_GL_5(copySubTextureCHROMIUM,
-                 CopySubTextureCHROMIUM,
                  WGC3Denum,
-                 WebGLId,
-                 WebGLId,
-                 WGC3Dint,
-                 WGC3Dint);
+                 WGC3Dboolean,
+                 WGC3Dboolean,
+                 WGC3Dboolean);
+
+DELEGATE_TO_GL_12(copySubTextureCHROMIUM,
+                  CopySubTextureCHROMIUM,
+                  WGC3Denum,
+                  WebGLId,
+                  WebGLId,
+                  WGC3Dint,
+                  WGC3Dint,
+                  WGC3Dint,
+                  WGC3Dint,
+                  WGC3Dsizei,
+                  WGC3Dsizei,
+                  WGC3Dboolean,
+                  WGC3Dboolean,
+                  WGC3Dboolean);
 
 DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
                  WebGLId, WGC3Dint, const WGC3Dchar*)
@@ -1078,12 +1098,12 @@ DELEGATE_TO_GL_2R(getUniformBlockIndex, GetUniformBlockIndex, WGC3Duint,
                   const WGC3Dchar *, WGC3Duint)
 DELEGATE_TO_GL_4(getUniformIndices, GetUniformIndices, WGC3Duint, WGC3Dsizei,
                  const WGC3Dchar *const*, WGC3Duint *)
-//DELEGATE_TO_GL_3(getUniformuiv, GetUniformuiv, WGC3Duint, WGC3Dint,
-//                 WGC3Duint *)
-//DELEGATE_TO_GL_3(getVertexAttribIiv, GetVertexAttribIiv, WGC3Duint,
-//                 WGC3Denum, WGC3Dint *)
-//DELEGATE_TO_GL_3(getVertexAttribIuiv, GetVertexAttribIuiv, WGC3Duint,
-//                 WGC3Denum, WGC3Duint *)
+DELEGATE_TO_GL_3(getUniformuiv, GetUniformuiv, WGC3Duint, WGC3Dint,
+                 WGC3Duint *)
+DELEGATE_TO_GL_3(getVertexAttribIiv, GetVertexAttribIiv, WGC3Duint,
+                 WGC3Denum, WGC3Dint *)
+DELEGATE_TO_GL_3(getVertexAttribIuiv, GetVertexAttribIuiv, WGC3Duint,
+                 WGC3Denum, WGC3Duint *)
 DELEGATE_TO_GL_3(invalidateFramebuffer, InvalidateFramebuffer, WGC3Denum,
                  WGC3Dsizei, const WGC3Denum *)
 DELEGATE_TO_GL_7(invalidateSubFramebuffer, InvalidateSubFramebuffer, WGC3Denum,
@@ -1095,6 +1115,8 @@ WGC3Dboolean WebGraphicsContext3DImpl::isSync(WGC3Dsync sync) {
 }
 DELEGATE_TO_GL_1R(isTransformFeedback, IsTransformFeedback, WGC3Duint,
                   WGC3Dboolean)
+DELEGATE_TO_GL_4R(mapBufferRange, MapBufferRange, WGC3Denum, WGC3Dintptr,
+                  WGC3Dsizeiptr, WGC3Dbitfield, void*);
 DELEGATE_TO_GL(pauseTransformFeedback, PauseTransformFeedback)
 //DELEGATE_TO_GL_3(programParameteri, ProgramParameteri, WGC3Duint, WGC3Denum,
 //                 WGC3Dint)
@@ -1146,6 +1168,7 @@ DELEGATE_TO_GL_4(uniformMatrix4x2fv, UniformMatrix4x2fv, WGC3Dint, WGC3Dsizei,
                  WGC3Dboolean, const WGC3Dfloat*)
 DELEGATE_TO_GL_4(uniformMatrix4x3fv, UniformMatrix4x3fv, WGC3Dint, WGC3Dsizei,
                  WGC3Dboolean, const WGC3Dfloat*)
+DELEGATE_TO_GL_1R(unmapBuffer, UnmapBuffer, WGC3Denum, WGC3Dboolean);
 DELEGATE_TO_GL_5(vertexAttribI4i, VertexAttribI4i, WGC3Duint, WGC3Dint,
                  WGC3Dint, WGC3Dint, WGC3Dint)
 DELEGATE_TO_GL_2(vertexAttribI4iv, VertexAttribI4iv, WGC3Duint,
@@ -1165,6 +1188,14 @@ void WebGraphicsContext3DImpl::waitSync(WGC3Dsync sync,
                                         WGC3Dbitfield flags,
                                         WGC3Duint64 timeout) {
   gl_->WaitSync(reinterpret_cast<GLsync>(sync), flags, timeout);
+}
+
+bool WebGraphicsContext3DImpl::isContextLost() {
+  return getGraphicsResetStatusARB() != GL_NO_ERROR;
+}
+
+blink::WGC3Denum WebGraphicsContext3DImpl::getGraphicsResetStatusARB() {
+  return gl_->GetGraphicsResetStatusKHR();
 }
 
 GrGLInterface* WebGraphicsContext3DImpl::createGrGLInterface() {
@@ -1223,8 +1254,7 @@ void WebGraphicsContext3DImpl::ConvertAttributes(
   output_attribs->fail_if_major_perf_caveat =
       attributes.failIfMajorPerformanceCaveat;
   output_attribs->bind_generates_resource = false;
-  output_attribs->es3_context_required =
-      (attributes.webGL && attributes.webGLVersion == 2);
+  output_attribs->webgl_version = attributes.webGLVersion;
 }
 
 }  // namespace gpu_blink

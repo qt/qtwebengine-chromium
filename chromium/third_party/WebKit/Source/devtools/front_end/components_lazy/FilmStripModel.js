@@ -24,13 +24,24 @@ WebInspector.FilmStripModel = function(tracingModel)
 
     var events = mainThread.events();
     for (var i = 0; i < events.length; ++i) {
-        if (events[i].category === "disabled-by-default-devtools.screenshot" && events[i].name === "CaptureFrame") {
-            var data = events[i].args.data;
-            if (!data)
-                continue;
-            this._frames.push(new WebInspector.FilmStripModel.Frame(this, data, events[i].startTime, this._frames.length));
+        if (!events[i].hasCategory(WebInspector.FilmStripModel._category))
+            continue;
+
+        if (events[i].name === WebInspector.FilmStripModel.TraceEvents.CaptureFrame) {
+            var data = events[i].args["data"];
+            if (data)
+                this._frames.push(WebInspector.FilmStripModel.Frame._fromEvent(this, events[i], this._frames.length));
+        } else if (events[i].name === WebInspector.FilmStripModel.TraceEvents.Screenshot) {
+            this._frames.push(WebInspector.FilmStripModel.Frame._fromSnapshot(this, /** @type {!WebInspector.TracingModel.ObjectSnapshot} */ (events[i]), this._frames.length));
         }
     }
+}
+
+WebInspector.FilmStripModel._category = "disabled-by-default-devtools.screenshot";
+
+WebInspector.FilmStripModel.TraceEvents = {
+    CaptureFrame: "CaptureFrame",
+    Screenshot: "Screenshot"
 }
 
 WebInspector.FilmStripModel.prototype = {
@@ -54,36 +65,63 @@ WebInspector.FilmStripModel.prototype = {
      * @param {number} timestamp
      * @return {?WebInspector.FilmStripModel.Frame}
      */
-    firstFrameAfterCommit: function(timestamp)
+    frameByTimestamp: function(timestamp)
     {
-        var bestIndex = 0;
-        var bestDelta = Number.MAX_VALUE;
-        for (var i = 0; i < this._frames.length; ++i) {
-            var delta = this._frames[i].timestamp - timestamp;
-            if (delta < 0)
-                continue;
-            if (delta < bestDelta) {
-                bestIndex = i;
-                bestDelta = delta;
-            }
+        /**
+         * @param {number} timestamp
+         * @param {!WebInspector.FilmStripModel.Frame} frame
+         * @return {number}
+         */
+        function comparator(timestamp, frame)
+        {
+            return timestamp - frame.timestamp;
         }
-        return bestDelta < 10 ? this._frames[bestIndex] : null;
+        var index = this._frames.lowerBound(timestamp, comparator);
+        return index < this._frames.length ? this._frames[index] : null;
     }
 }
 
 /**
  * @constructor
  * @param {!WebInspector.FilmStripModel} model
- * @param {string} imageData
  * @param {number} timestamp
  * @param {number} index
  */
-WebInspector.FilmStripModel.Frame = function(model, imageData, timestamp, index)
+WebInspector.FilmStripModel.Frame = function(model, timestamp, index)
 {
     this._model = model;
-    this.imageData = imageData;
     this.timestamp = timestamp;
     this.index = index;
+    /** @type {?string} */
+    this._imageData = null;
+    /** @type {?WebInspector.TracingModel.ObjectSnapshot} */
+    this._snapshot = null;
+}
+
+/**
+ * @param {!WebInspector.FilmStripModel} model
+ * @param {!WebInspector.TracingModel.Event} event
+ * @param {number} index
+ * @return {!WebInspector.FilmStripModel.Frame}
+ */
+WebInspector.FilmStripModel.Frame._fromEvent = function(model, event, index)
+{
+    var frame = new WebInspector.FilmStripModel.Frame(model, event.startTime, index);
+    frame._imageData = event.args["data"];
+    return frame;
+}
+
+/**
+ * @param {!WebInspector.FilmStripModel} model
+ * @param {!WebInspector.TracingModel.ObjectSnapshot} snapshot
+ * @param {number} index
+ * @return {!WebInspector.FilmStripModel.Frame}
+ */
+WebInspector.FilmStripModel.Frame._fromSnapshot = function(model, snapshot, index)
+{
+    var frame = new WebInspector.FilmStripModel.Frame(model, snapshot.startTime, index);
+    frame._snapshot = snapshot;
+    return frame;
 }
 
 WebInspector.FilmStripModel.Frame.prototype = {
@@ -93,5 +131,16 @@ WebInspector.FilmStripModel.Frame.prototype = {
     model: function()
     {
         return this._model;
+    },
+
+    /**
+     * @return {!Promise<?string>}
+     */
+    imageDataPromise: function()
+    {
+        if (this._imageData || !this._snapshot)
+            return Promise.resolve(this._imageData);
+
+        return /** @type {!Promise<?string>} */ (this._snapshot.objectPromise());
     }
 }

@@ -121,10 +121,12 @@ OPENSSL_EXPORT int CBS_get_u24_length_prefixed(CBS *cbs, CBS *out);
 #define CBS_ASN1_INTEGER 0x2
 #define CBS_ASN1_BITSTRING 0x3
 #define CBS_ASN1_OCTETSTRING 0x4
+#define CBS_ASN1_NULL 0x5
 #define CBS_ASN1_OBJECT 0x6
 #define CBS_ASN1_ENUMERATED 0xa
 #define CBS_ASN1_SEQUENCE (0x10 | CBS_ASN1_CONSTRUCTED)
 #define CBS_ASN1_SET (0x11 | CBS_ASN1_CONSTRUCTED)
+#define CBS_ASN1_GENERALIZEDTIME 0x18
 
 #define CBS_ASN1_CONSTRUCTED 0x20
 #define CBS_ASN1_CONTEXT_SPECIFIC 0x80
@@ -150,15 +152,21 @@ OPENSSL_EXPORT int CBS_peek_asn1_tag(const CBS *cbs, unsigned tag_value);
 
 /* CBS_get_any_asn1_element sets |*out| to contain the next ASN.1 element from
  * |*cbs| (including header bytes) and advances |*cbs|. It sets |*out_tag| to
- * the tag number and |*out_header_len| to the length of the ASN.1 header. If
- * the element has indefinite length then |*out| will only contain the
- * header. Each of |out|, |out_tag|, and |out_header_len| may be NULL to ignore
- * the value.
+ * the tag number and |*out_header_len| to the length of the ASN.1 header. Each
+ * of |out|, |out_tag|, and |out_header_len| may be NULL to ignore the value.
  *
  * Tag numbers greater than 30 are not supported (i.e. short form only). */
 OPENSSL_EXPORT int CBS_get_any_asn1_element(CBS *cbs, CBS *out,
                                             unsigned *out_tag,
                                             size_t *out_header_len);
+
+/* CBS_get_any_ber_asn1_element acts the same as |CBS_get_any_asn1_element| but
+ * also allows indefinite-length elements to be returned. In that case,
+ * |*out_header_len| and |CBS_len(out)| will both be two as only the header is
+ * returned, otherwise it behaves the same as the previous function. */
+OPENSSL_EXPORT int CBS_get_any_ber_asn1_element(CBS *cbs, CBS *out,
+                                                unsigned *out_tag,
+                                                size_t *out_header_len);
 
 /* CBS_get_asn1_uint64 gets an ASN.1 INTEGER from |cbs| using |CBS_get_asn1|
  * and sets |*out| to its value. It returns one on success and zero on error,
@@ -285,7 +293,7 @@ OPENSSL_EXPORT int CBB_add_u16_length_prefixed(CBB *cbb, CBB *out_contents);
  * big-endian length. It returns one on success or zero on error. */
 OPENSSL_EXPORT int CBB_add_u24_length_prefixed(CBB *cbb, CBB *out_contents);
 
-/* CBB_add_asn sets |*out_contents| to a |CBB| into which the contents of an
+/* CBB_add_asn1 sets |*out_contents| to a |CBB| into which the contents of an
  * ASN.1 object can be written. The |tag| argument will be used as the tag for
  * the object. Passing in |tag| number 31 will return in an error since only
  * single octet identifiers are supported. It returns one on success or zero
@@ -306,7 +314,7 @@ OPENSSL_EXPORT int CBB_add_space(CBB *cbb, uint8_t **out_data, size_t len);
  * success and zero otherwise. */
 OPENSSL_EXPORT int CBB_add_u8(CBB *cbb, uint8_t value);
 
-/* CBB_add_u8 appends a 16-bit, big-endian number from |value| to |cbb|. It
+/* CBB_add_u16 appends a 16-bit, big-endian number from |value| to |cbb|. It
  * returns one on success and zero otherwise. */
 OPENSSL_EXPORT int CBB_add_u16(CBB *cbb, uint16_t value);
 

@@ -12,6 +12,7 @@
 #include "base/memory/singleton.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/congestion_control/tcp_cubic_sender.h"
@@ -27,6 +28,7 @@
 #include "net/quic/test_tools/quic_flow_controller_peer.h"
 #include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/test/gtest_util.h"
@@ -50,12 +52,14 @@
 using base::StringPiece;
 using base::WaitableEvent;
 using net::EpollServer;
+using net::test::ConstructEncryptedPacket;
 using net::test::GenerateBody;
 using net::test::MockQuicConnectionDebugVisitor;
 using net::test::QuicConnectionPeer;
 using net::test::QuicFlowControllerPeer;
 using net::test::QuicSentPacketManagerPeer;
 using net::test::QuicSessionPeer;
+using net::test::QuicSpdySessionPeer;
 using net::test::ReliableQuicStreamPeer;
 using net::test::ValueRestore;
 using net::test::kClientDataStreamId1;
@@ -655,8 +659,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   string body;
   GenerateBody(&body, 20480);
 
-  HTTPMessage request(HttpConstants::HTTP_1_1,
-                      HttpConstants::POST, "/foo");
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/foo");
   request.AddBody(body, true);
 
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
@@ -698,22 +701,19 @@ TEST_P(EndToEndTest, CorrectlyConfiguredFec) {
   QuicDispatcher* dispatcher =
       QuicServerPeer::GetDispatcher(server_thread_->server());
   ASSERT_EQ(1u, dispatcher->session_map().size());
-  QuicSession* session = dispatcher->session_map().begin()->second;
+  QuicSpdySession* session = dispatcher->session_map().begin()->second;
   EXPECT_EQ(expected_policy,
-            QuicSessionPeer::GetHeadersStream(session)->fec_policy());
+            QuicSpdySessionPeer::GetHeadersStream(session)->fec_policy());
   server_thread_->Resume();
 
   // Verify that client's FEC configuration is correct.
-  EXPECT_EQ(expected_policy,
-            QuicSessionPeer::GetHeadersStream(
-                client_->client()->session())->fec_policy());
+  EXPECT_EQ(expected_policy, QuicSpdySessionPeer::GetHeadersStream(
+                                 client_->client()->session())->fec_policy());
   EXPECT_EQ(expected_policy,
             client_->GetOrCreateStream()->fec_policy());
 }
 
-// TODO(shess): This is flaky on ChromiumOS bots.
-// http://crbug.com/374871
-TEST_P(EndToEndTest, DISABLED_LargePostSmallBandwidthLargeBuffer) {
+TEST_P(EndToEndTest, LargePostSmallBandwidthLargeBuffer) {
   ASSERT_TRUE(Initialize());
   SetPacketSendDelay(QuicTime::Delta::FromMicroseconds(1));
   // 256KB per second with a 256KB buffer from server to client.  Wireless
@@ -727,8 +727,7 @@ TEST_P(EndToEndTest, DISABLED_LargePostSmallBandwidthLargeBuffer) {
   string body;
   GenerateBody(&body, 1024 * 1024);
 
-  HTTPMessage request(HttpConstants::HTTP_1_1,
-                      HttpConstants::POST, "/foo");
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/foo");
   request.AddBody(body, true);
 
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
@@ -784,8 +783,7 @@ TEST_P(EndToEndTest, InvalidStream) {
   string body;
   GenerateBody(&body, kMaxPacketSize);
 
-  HTTPMessage request(HttpConstants::HTTP_1_1,
-                      HttpConstants::POST, "/foo");
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/foo");
   request.AddBody(body, true);
   // Force the client to write with a stream ID belonging to a nonexistent
   // server-side stream.
@@ -1294,7 +1292,7 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
 
   QuicHeadersStream* headers_stream =
-      QuicSessionPeer::GetHeadersStream(client_->client()->session());
+      QuicSpdySessionPeer::GetHeadersStream(client_->client()->session());
   EXPECT_LT(
       QuicFlowControllerPeer::SendWindowSize(headers_stream->flow_controller()),
       kStreamIFCW);
@@ -1315,7 +1313,6 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
 }
 
 TEST_P(EndToEndTest, RequestWithNoBodyWillNeverSendStreamFrameWithFIN) {
-  // Regression test for b/16010251.
   // A stream created on receipt of a simple request with no body will never get
   // a stream frame with a FIN. Verify that we don't keep track of the stream in
   // the locally closed streams map: it will never be removed if so.
@@ -1496,6 +1493,125 @@ TEST_P(EndToEndTest, ServerSendVersionNegotiationWithDifferentConnectionId) {
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
 
   client_->client()->session()->connection()->set_debug_visitor(nullptr);
+}
+
+// A bad header shouldn't tear down the connection, because the receiver can't
+// tell the connection ID.
+TEST_P(EndToEndTest, BadPacketHeaderTruncated) {
+  ASSERT_TRUE(Initialize());
+
+  // Start the connection.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  // Packet with invalid public flags.
+  char packet[] = {// public flags (8 byte connection_id)
+                   0x3C,
+                   // truncated connection ID
+                   0x11};
+  client_writer_->WritePacket(&packet[0], sizeof(packet),
+                              client_->client()->client_address().address(),
+                              server_address_);
+  // Give the server time to process the packet.
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  // Pause the server so we can access the server's internals without races.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER,
+            QuicDispatcherPeer::GetAndClearLastError(dispatcher));
+  server_thread_->Resume();
+
+  // The connection should not be terminated.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+}
+
+// A bad header shouldn't tear down the connection, because the receiver can't
+// tell the connection ID.
+TEST_P(EndToEndTest, BadPacketHeaderFlags) {
+  ASSERT_TRUE(Initialize());
+
+  // Start the connection.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  // Packet with invalid public flags.
+  char packet[] = {
+      // invalid public flags
+      0xFF,
+      // connection_id
+      0x10,
+      0x32,
+      0x54,
+      0x76,
+      0x98,
+      0xBA,
+      0xDC,
+      0xFE,
+      // packet sequence number
+      0xBC,
+      0x9A,
+      0x78,
+      0x56,
+      0x34,
+      0x12,
+      // private flags
+      0x00,
+  };
+  client_writer_->WritePacket(&packet[0], sizeof(packet),
+                              client_->client()->client_address().address(),
+                              server_address_);
+  // Give the server time to process the packet.
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  // Pause the server so we can access the server's internals without races.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER,
+            QuicDispatcherPeer::GetAndClearLastError(dispatcher));
+  server_thread_->Resume();
+
+  // The connection should not be terminated.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+}
+
+// Send a packet from the client with bad encrypted data.  The server should not
+// tear down the connection.
+TEST_P(EndToEndTest, BadEncryptedData) {
+  ASSERT_TRUE(Initialize());
+
+  // Start the connection.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  scoped_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
+      client_->client()->session()->connection()->connection_id(), false, false,
+      1, "At least 20 characters.", PACKET_8BYTE_CONNECTION_ID,
+      PACKET_6BYTE_SEQUENCE_NUMBER));
+  // Damage the encrypted data.
+  string damaged_packet(packet->data(), packet->length());
+  damaged_packet[30] ^= 0x01;
+  DVLOG(1) << "Sending bad packet.";
+  client_writer_->WritePacket(damaged_packet.data(), damaged_packet.length(),
+                              client_->client()->client_address().address(),
+                              server_address_);
+  // Give the server time to process the packet.
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  // This error is sent to the connection's OnError (which ignores it), so the
+  // dispatcher doesn't see it.
+  // Pause the server so we can access the server's internals without races.
+  server_thread_->Pause();
+  QuicDispatcher* dispatcher =
+      QuicServerPeer::GetDispatcher(server_thread_->server());
+  EXPECT_EQ(QUIC_NO_ERROR,
+            QuicDispatcherPeer::GetAndClearLastError(dispatcher));
+  server_thread_->Resume();
+
+  // The connection should not be terminated.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
 }
 
 }  // namespace

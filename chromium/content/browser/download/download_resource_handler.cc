@@ -7,10 +7,13 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/metrics/sparse_histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
@@ -127,13 +130,12 @@ DownloadResourceHandler::DownloadResourceHandler(
   // PostTask()
   const ResourceRequestInfoImpl* request_info = GetRequestInfo();
   BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
+      BrowserThread::UI, FROM_HERE,
       base::Bind(&InitializeDownloadTabInfoOnUIThread,
-                 DownloadRequestHandle(AsWeakPtr(),
-                                       request_info->GetChildID(),
+                 DownloadRequestHandle(AsWeakPtr(), request_info->GetChildID(),
                                        request_info->GetRouteID(),
-                                       request_info->GetRequestID()),
+                                       request_info->GetRequestID(),
+                                       request_info->frame_tree_node_id()),
                  tab_info_.get()));
   power_save_blocker_ = PowerSaveBlocker::Create(
       PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
@@ -191,7 +193,7 @@ bool DownloadResourceHandler::OnResponseStarted(
   // Create the ByteStream for sending data to the download sink.
   scoped_ptr<ByteStreamReader> stream_reader;
   CreateByteStream(
-      base::MessageLoopProxy::current(),
+      base::ThreadTaskRunnerHandle::Get(),
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE),
       kDownloadByteStreamSize, &stream_writer_, &stream_reader);
   stream_writer_->RegisterCallback(
@@ -207,10 +209,9 @@ bool DownloadResourceHandler::OnResponseStarted(
   RecordDownloadMimeType(info->mime_type);
   RecordDownloadContentDisposition(info->content_disposition);
 
-  info->request_handle =
-      DownloadRequestHandle(AsWeakPtr(), request_info->GetChildID(),
-                            request_info->GetRouteID(),
-                            request_info->GetRequestID());
+  info->request_handle = DownloadRequestHandle(
+      AsWeakPtr(), request_info->GetChildID(), request_info->GetRouteID(),
+      request_info->GetRequestID(), request_info->frame_tree_node_id());
 
   // Get the last modified time and etag.
   const net::HttpResponseHeaders* headers = request()->response_headers();
@@ -421,6 +422,10 @@ void DownloadResourceHandler::OnResponseCompleted(
         // Server didn't authorize this request.
         reason = DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED;
         break;
+      case net::HTTP_FORBIDDEN:
+        // Server forbids access to this resource.
+        reason = DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN;
+        break;
       default:    // All other errors.
         // Redirection and informational codes should have been handled earlier
         // in the stack.
@@ -453,9 +458,8 @@ void DownloadResourceHandler::OnResponseCompleted(
   // If the error mapped to something unknown, record it so that
   // we can drill down.
   if (reason == DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED) {
-    UMA_HISTOGRAM_CUSTOM_ENUMERATION("Download.MapErrorNetworkFailed",
-                                     std::abs(status.error()),
-                                     net::GetAllErrorCodesForUma());
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Download.MapErrorNetworkFailed",
+                                std::abs(status.error()));
   }
 
   stream_writer_.reset();  // We no longer need the stream.

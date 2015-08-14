@@ -42,14 +42,12 @@ EventConverterEvdevImpl::EventConverterEvdevImpl(
       has_keyboard_(devinfo.HasKeyboard()),
       has_touchpad_(devinfo.HasTouchpad()),
       has_caps_lock_led_(devinfo.HasLedEvent(LED_CAPSL)),
-      x_offset_(0),
-      y_offset_(0),
       cursor_(cursor),
       dispatcher_(dispatcher) {
 }
 
 EventConverterEvdevImpl::~EventConverterEvdevImpl() {
-  Stop();
+  DCHECK(!enabled_);
   close(fd_);
 }
 
@@ -68,9 +66,7 @@ void EventConverterEvdevImpl::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
-  // TODO(spang): Re-implement this by releasing buttons & temporarily closing
-  // the device.
-  if (ignore_events_)
+  if (!enabled_)
     return;
 
   DCHECK_EQ(read_size % sizeof(*inputs), 0u);
@@ -89,16 +85,15 @@ bool EventConverterEvdevImpl::HasCapsLockLed() const {
   return has_caps_lock_led_;
 }
 
-void EventConverterEvdevImpl::SetAllowedKeys(
-    scoped_ptr<std::set<DomCode>> allowed_keys) {
-  DCHECK(HasKeyboard());
-  if (!allowed_keys) {
+void EventConverterEvdevImpl::SetKeyFilter(bool enable_filter,
+                                           std::vector<DomCode> allowed_keys) {
+  if (!enable_filter) {
     blocked_keys_.reset();
     return;
   }
 
   blocked_keys_.set();
-  for (const DomCode& it : *allowed_keys) {
+  for (const DomCode& it : allowed_keys) {
     int evdev_code =
         NativeCodeToEvdevCode(KeycodeConverter::DomCodeToNativeKeycode(it));
     blocked_keys_.reset(evdev_code);
@@ -112,12 +107,7 @@ void EventConverterEvdevImpl::SetAllowedKeys(
   }
 }
 
-void EventConverterEvdevImpl::AllowAllKeys() {
-  DCHECK(HasKeyboard());
-  blocked_keys_.reset();
-}
-
-void EventConverterEvdevImpl::OnStopped() {
+void EventConverterEvdevImpl::OnDisabled() {
   ReleaseKeys();
   ReleaseMouseButtons();
 }
@@ -188,8 +178,9 @@ void EventConverterEvdevImpl::OnKeyChange(unsigned int key,
   // State transition: !(down) -> (down)
   key_state_.set(key, down);
 
-  dispatcher_->DispatchKeyEvent(
-      KeyEventParams(input_device_.id, key, down, timestamp));
+  dispatcher_->DispatchKeyEvent(KeyEventParams(input_device_.id, key, down,
+                                               false /* suppress_auto_repeat */,
+                                               timestamp));
 }
 
 void EventConverterEvdevImpl::ReleaseKeys() {

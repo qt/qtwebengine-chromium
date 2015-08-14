@@ -5,12 +5,11 @@
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/#clients-interface
 [
     Exposed=ServiceWorker,
-    RuntimeEnabled=ServiceWorker,
     GarbageCollected,
     TypeChecking=Interface,
     ImplementedAs=ServiceWorkerClients,
 ] interface Clients {
-    [CallWith=ScriptState] Promise<sequence<Client>?> matchAll(optional ClientQueryOptions options);
+    [CallWith=ScriptState] Promise<sequence<Client>> matchAll(optional ClientQueryOptions options);
     [RuntimeEnabled=ServiceWorkerClientAttributes, CallWith=ScriptState] Promise<WindowClient?> openWindow(USVString url);
     [CallWith=ScriptState] Promise<void> claim();
 };

@@ -432,7 +432,11 @@ def FormatInclude(item, lang, output_dir, type=None, process_html=False):
   #
   # The FileForLanguage() Function has the side effect of generating the file
   # if needed (e.g. if it is an HTML file include).
-  filename = os.path.abspath(item.FileForLanguage(lang, output_dir))
+  file_for_lang = item.FileForLanguage(lang, output_dir)
+  if file_for_lang is None:
+    return ''
+
+  filename = os.path.abspath(file_for_lang)
   if process_html:
     filename = item.Process(output_dir)
   elif filename_only:

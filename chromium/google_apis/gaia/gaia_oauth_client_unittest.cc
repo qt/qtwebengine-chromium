@@ -188,7 +188,7 @@ class GaiaOAuthClientTest : public testing::Test {
   net::TestURLRequestContextGetter* GetRequestContext() {
     if (!request_context_getter_.get()) {
       request_context_getter_ = new net::TestURLRequestContextGetter(
-          message_loop_.message_loop_proxy());
+          message_loop_.task_runner());
     }
     return request_context_getter_.get();
   }
@@ -368,7 +368,7 @@ TEST_F(GaiaOAuthClientTest, GetUserInfo) {
   auth.GetUserInfo("access_token", 1, &delegate);
 
   scoped_ptr<base::Value> value(
-      base::JSONReader::Read(kDummyFullUserInfoResult));
+      base::JSONReader::DeprecatedRead(kDummyFullUserInfoResult));
   DCHECK(value);
   ASSERT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));
   base::DictionaryValue* expected_result;

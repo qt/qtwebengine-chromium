@@ -36,9 +36,9 @@ bool DataURL::Parse(const GURL& url, std::string* mime_type,
   if (comma == end)
     return false;
 
-  std::vector<std::string> meta_data;
-  std::string unparsed_meta_data(after_colon, comma);
-  base::SplitString(unparsed_meta_data, ';', &meta_data);
+  std::vector<std::string> meta_data =
+      base::SplitString(base::StringPiece(after_colon, comma), ";",
+                        base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   std::vector<std::string>::iterator iter = meta_data.begin();
   if (iter != meta_data.end()) {
@@ -99,21 +99,21 @@ bool DataURL::Parse(const GURL& url, std::string* mime_type,
   if (base64_encoded) {
     temp_data = UnescapeURLComponent(temp_data,
         UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS |
-        UnescapeRule::CONTROL_CHARS);
+        UnescapeRule::SPOOFING_AND_CONTROL_CHARS);
   }
 
   // Strip whitespace.
   if (base64_encoded || !(mime_type->compare(0, 5, "text/") == 0 ||
                           mime_type->find("xml") != std::string::npos)) {
     temp_data.erase(std::remove_if(temp_data.begin(), temp_data.end(),
-                                   IsAsciiWhitespace<wchar_t>),
+                                   base::IsAsciiWhitespace<wchar_t>),
                     temp_data.end());
   }
 
   if (!base64_encoded) {
     temp_data = UnescapeURLComponent(temp_data,
         UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS |
-        UnescapeRule::CONTROL_CHARS);
+        UnescapeRule::SPOOFING_AND_CONTROL_CHARS);
   }
 
   if (base64_encoded) {

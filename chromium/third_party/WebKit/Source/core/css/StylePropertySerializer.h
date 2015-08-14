@@ -43,12 +43,12 @@ private:
     String getCommonValue(const StylePropertyShorthand&) const;
     enum CommonValueMode { OmitUncommonValues, ReturnNullOnUncommonValues };
     String borderPropertyValue(CommonValueMode) const;
-    String getLayeredShorthandValue(const StylePropertyShorthand&, bool checkShorthandAvailable = false) const;
+    String getLayeredShorthandValue(const StylePropertyShorthand&) const;
     String get4Values(const StylePropertyShorthand&) const;
     String borderSpacingValue(const StylePropertyShorthand&) const;
     String getShorthandValue(const StylePropertyShorthand&, String separator = " ") const;
     String fontValue() const;
-    void appendFontLonghandValueIfExplicit(CSSPropertyID, StringBuilder& result, String& value) const;
+    void appendFontLonghandValueIfNotNormal(CSSPropertyID, StringBuilder& result, String& value) const;
     String backgroundRepeatPropertyValue() const;
     String getPropertyText(CSSPropertyID, const String& value, bool isImportant, bool isNotFirstDecl) const;
     bool isPropertyShorthandAvailable(const StylePropertyShorthand&) const;

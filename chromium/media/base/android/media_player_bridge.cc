@@ -8,7 +8,6 @@
 #include "base/android/jni_string.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_util.h"
 #include "jni/MediaPlayerBridge_jni.h"
 #include "media/base/android/media_common_android.h"
@@ -161,7 +160,7 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
     DCHECK(j_context);
 
     const std::string data_uri_prefix("data:");
-    if (StartsWithASCII(url, data_uri_prefix, true)) {
+    if (base::StartsWithASCII(url, data_uri_prefix, true)) {
       if (!Java_MediaPlayerBridge_setDataUriDataSource(
           env, j_media_player_bridge_.obj(), j_context, j_url_string.obj())) {
         OnMediaError(MEDIA_ERROR_FORMAT);
@@ -456,6 +455,11 @@ void MediaPlayerBridge::UpdateAllowedOperations() {
 }
 
 void MediaPlayerBridge::StartInternal() {
+  if (!manager()->RequestPlay(player_id())) {
+    Pause(true);
+    return;
+  }
+
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MediaPlayerBridge_start(env, j_media_player_bridge_.obj());
   if (!time_update_timer_.IsRunning()) {

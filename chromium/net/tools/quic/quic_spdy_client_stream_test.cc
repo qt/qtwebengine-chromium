@@ -17,6 +17,7 @@
 using net::test::DefaultQuicConfig;
 using net::test::MockConnection;
 using net::test::SupportedVersions;
+using net::test::kClientDataStreamId1;
 using std::string;
 using testing::StrictMock;
 using testing::TestWithParam;
@@ -32,11 +33,12 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
       : connection_(
             new StrictMock<MockConnection>(Perspective::IS_CLIENT,
                                            SupportedVersions(GetParam()))),
-        session_(DefaultQuicConfig(), connection_),
+        session_(DefaultQuicConfig(),
+                 connection_,
+                 QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
+                 &crypto_config_),
         body_("hello world") {
-    session_.InitializeSession(
-        QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
-        &crypto_config_);
+    session_.Initialize();
 
     headers_.SetResponseFirstlineFromStringPieces("HTTP/1.1", "200", "Ok");
     headers_.ReplaceOrAppendHeader("content-length", "11");
@@ -50,16 +52,16 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
         kInitialStreamFlowControlWindowForTest);
     session_.config()->SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
-    stream_.reset(new QuicSpdyClientStream(3, &session_));
+    stream_.reset(new QuicSpdyClientStream(kClientDataStreamId1, &session_));
   }
 
   StrictMock<MockConnection>* connection_;
+  QuicCryptoClientConfig crypto_config_;
   QuicClientSession session_;
   scoped_ptr<QuicSpdyClientStream> stream_;
   BalsaHeaders headers_;
   string headers_string_;
   string body_;
-  QuicCryptoClientConfig crypto_config_;
 };
 
 INSTANTIATE_TEST_CASE_P(Tests, QuicSpdyClientStreamTest,
@@ -113,7 +115,7 @@ TEST_P(QuicSpdyClientStreamTest, DISABLED_TestFramingExtraData) {
 }
 
 TEST_P(QuicSpdyClientStreamTest, TestNoBidirectionalStreaming) {
-  QuicStreamFrame frame(3, false, 3, MakeIOVector("asd"));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 3, StringPiece("asd"));
 
   EXPECT_FALSE(stream_->write_side_closed());
   stream_->OnStreamFrame(frame);

@@ -52,16 +52,16 @@ struct IDBObjectStoreMetadata;
 class MODULES_EXPORT IDBTransaction final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<IDBTransaction>
     , public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBTransaction>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(IDBTransaction);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBTransaction);
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static IDBTransaction* create(ScriptState*, int64_t, const Vector<String>& objectStoreNames, WebIDBTransactionMode, IDBDatabase*);
+    static IDBTransaction* create(ScriptState*, int64_t, const HashSet<String>& objectStoreNames, WebIDBTransactionMode, IDBDatabase*);
     static IDBTransaction* create(ScriptState*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
-    virtual ~IDBTransaction();
+    ~IDBTransaction() override;
     DECLARE_VIRTUAL_TRACE();
 
-    static WebIDBTransactionMode stringToMode(const String&, ExceptionState&);
+    static WebIDBTransactionMode stringToMode(const String&);
 
     // When the connection is closed backend will be 0.
     WebIDBDatabase* backendDB() const;
@@ -75,6 +75,7 @@ public:
 
     // Implement the IDBTransaction IDL
     const String& mode() const;
+    PassRefPtrWillBeRawPtr<DOMStringList> objectStoreNames() const;
     IDBDatabase* db() const { return m_database.get(); }
     DOMError* error() const { return m_error; }
     IDBObjectStore* objectStore(const String& name, ExceptionState&);
@@ -95,18 +96,18 @@ public:
     void onComplete();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
 private:
-    IDBTransaction(ScriptState*, int64_t, const Vector<String>&, WebIDBTransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
+    IDBTransaction(ScriptState*, int64_t, const HashSet<String>&, WebIDBTransactionMode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
 
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
@@ -119,7 +120,7 @@ private:
 
     int64_t m_id;
     Member<IDBDatabase> m_database;
-    const Vector<String> m_objectStoreNames;
+    const HashSet<String> m_objectStoreNames;
     Member<IDBOpenDBRequest> m_openDBRequest;
     const WebIDBTransactionMode m_mode;
     State m_state;

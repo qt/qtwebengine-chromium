@@ -42,10 +42,9 @@ WebInspector.ElementsTreeOutline = function(domModel, omitRootDOMNode, selectEna
 
     var element = createElement("div");
 
-    this._shadowRoot = element.createShadowRoot();
+    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(element);
     this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement("elements/elementsTreeOutline.css"));
     var outlineDisclosureElement = this._shadowRoot.createChild("div", "elements-disclosure");
-    WebInspector.installComponentRootStyles(outlineDisclosureElement);
 
     TreeOutline.call(this);
     this._element = this.element;
@@ -1087,18 +1086,23 @@ WebInspector.ElementsTreeOutline.prototype = {
                 const classNameSuffix = "-shortcut__";
                 const styleTagId = "__web-inspector-hide-shortcut-style__";
                 var selectors = [];
-                selectors.push("html /deep/ .__web-inspector-hide-shortcut__");
-                selectors.push("html /deep/ .__web-inspector-hide-shortcut__ /deep/ *");
-                selectors.push("html /deep/ .__web-inspector-hidebefore-shortcut__::before");
-                selectors.push("html /deep/ .__web-inspector-hideafter-shortcut__::after");
+                selectors.push(".__web-inspector-hide-shortcut__");
+                selectors.push(".__web-inspector-hide-shortcut__ *");
+                selectors.push(".__web-inspector-hidebefore-shortcut__::before");
+                selectors.push(".__web-inspector-hideafter-shortcut__::after");
                 var selector = selectors.join(", ");
                 var ruleBody = "    visibility: hidden !important;";
                 var rule = "\n" + selector + "\n{\n" + ruleBody + "\n}\n";
-
                 var className = classNamePrefix + (pseudoType || "") + classNameSuffix;
                 this.classList.toggle(className);
 
-                var style = document.head.querySelector("style#" + styleTagId);
+                var localRoot = this;
+                while (localRoot.parentNode)
+                    localRoot = localRoot.parentNode;
+                if (localRoot.nodeType === Node.DOCUMENT_NODE)
+                    localRoot = document.head;
+
+                var style = localRoot.querySelector("style#" + styleTagId);
                 if (style)
                     return;
 
@@ -1106,7 +1110,8 @@ WebInspector.ElementsTreeOutline.prototype = {
                 style.id = styleTagId;
                 style.type = "text/css";
                 style.textContent = rule;
-                document.head.appendChild(style);
+
+                localRoot.appendChild(style);
             }
 
             object.callFunction(toggleClassAndInjectStyleRule, [{ value: pseudoType }], userCallback);

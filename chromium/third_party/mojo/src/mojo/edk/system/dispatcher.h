@@ -8,9 +8,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <ostream>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
@@ -22,6 +22,7 @@
 #include "mojo/public/c/system/data_pipe.h"
 #include "mojo/public/c/system/message_pipe.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 
@@ -41,7 +42,7 @@ class ProxyMessagePipeEndpoint;
 class TransportData;
 class Awakable;
 
-typedef std::vector<scoped_refptr<Dispatcher>> DispatcherVector;
+using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
 namespace test {
 
@@ -59,15 +60,15 @@ DispatcherTryStartTransport(Dispatcher* dispatcher);
 class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
     : public base::RefCountedThreadSafe<Dispatcher> {
  public:
-  enum Type {
-    kTypeUnknown = 0,
-    kTypeMessagePipe,
-    kTypeDataPipeProducer,
-    kTypeDataPipeConsumer,
-    kTypeSharedBuffer,
+  enum class Type {
+    UNKNOWN = 0,
+    MESSAGE_PIPE,
+    DATA_PIPE_PRODUCER,
+    DATA_PIPE_CONSUMER,
+    SHARED_BUFFER,
 
     // "Private" types (not exposed via the public interface):
-    kTypePlatformHandle = -1
+    PLATFORM_HANDLE = -1
   };
   virtual Type GetType() const = 0;
 
@@ -361,7 +362,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   mutable base::Lock lock_;
   bool is_closed_;
 
-  DISALLOW_COPY_AND_ASSIGN(Dispatcher);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(Dispatcher);
 };
 
 // Wrapper around a |Dispatcher| pointer, while it's being processed to be
@@ -398,6 +399,12 @@ class MOJO_SYSTEM_IMPL_EXPORT DispatcherTransport {
 
   // Copy and assign allowed.
 };
+
+// So logging macros and |DCHECK_EQ()|, etc. work.
+MOJO_SYSTEM_IMPL_EXPORT inline std::ostream& operator<<(std::ostream& out,
+                                                        Dispatcher::Type type) {
+  return out << static_cast<int>(type);
+}
 
 }  // namespace system
 }  // namespace mojo

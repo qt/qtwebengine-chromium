@@ -11,10 +11,7 @@
 #include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "wtf/Vector.h"
-
 #include <gtest/gtest.h>
-
-using namespace blink;
 
 namespace blink {
 
@@ -22,7 +19,7 @@ namespace {
 
 class MockPlatform final : public Platform {
 public:
-    MockPlatform() { }
+    MockPlatform() : m_oldPlatform(Platform::current()) { }
     ~MockPlatform() override { }
 
     // From blink::Platform:
@@ -40,7 +37,13 @@ public:
         return m_cachedURLs;
     }
 
+    WebThread* currentThread() override
+    {
+        return m_oldPlatform->currentThread();
+    }
+
 private:
+    Platform* m_oldPlatform; // Not owned.
     Vector<WebURL> m_cachedURLs;
 };
 
@@ -78,7 +81,7 @@ void createTestResourceAndSetCachedMetadata(const ResourceResponse* response)
     return;
 }
 
-} // namespace
+} // anonymous namespace
 
 TEST(ResourceTest, SetCachedMetadata_SendsMetadataToPlatform)
 {

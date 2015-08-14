@@ -36,9 +36,13 @@ class PermissionServiceContext : public WebContentsObserver {
   BrowserContext* GetBrowserContext() const;
   GURL GetEmbeddingOrigin() const;
 
+  RenderFrameHost* render_frame_host() const;
+
  private:
   // WebContentsObserver
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
+  void RenderFrameHostChanged(RenderFrameHost* old_host,
+                              RenderFrameHost* new_host) override;
   void DidNavigateAnyFrame(RenderFrameHost* render_frame_host,
                            const LoadCommittedDetails& details,
                            const FrameNavigateParams& params) override;

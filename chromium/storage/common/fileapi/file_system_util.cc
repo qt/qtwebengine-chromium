@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -183,7 +182,7 @@ bool ParseFileSystemSchemeURL(const GURL& url,
 
   std::string path = net::UnescapeURLComponent(url.path(),
       net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS |
-      net::UnescapeRule::CONTROL_CHARS);
+      net::UnescapeRule::SPOOFING_AND_CONTROL_CHARS);
 
   // Ensure the path is relative.
   while (!path.empty() && path[0] == '/')
@@ -421,8 +420,8 @@ bool CrackIsolatedFileSystemName(const std::string& filesystem_name,
   // names, so we do a case insensitive compare by converting both strings
   // to uppercase.
   // TODO(benwells): Remove this when WebKit uses the same constant.
-  start_token = StringToUpperASCII(start_token);
-  std::string filesystem_name_upper = StringToUpperASCII(filesystem_name);
+  start_token = base::StringToUpperASCII(start_token);
+  std::string filesystem_name_upper = base::StringToUpperASCII(filesystem_name);
   size_t pos = filesystem_name_upper.find(start_token);
   if (pos == std::string::npos)
     return false;

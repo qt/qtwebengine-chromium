@@ -444,10 +444,11 @@ WebInspector.ConsoleViewMessage.prototype = {
     /**
      * @param {!WebInspector.RemoteObject} func
      * @param {!Element} element
+     * @param {boolean=} includePreview
      */
-    _formatParameterAsFunction: function(func, element)
+    _formatParameterAsFunction: function(func, element, includePreview)
     {
-        WebInspector.ObjectPropertiesSection.formatObjectAsFunction(func, element, true);
+        WebInspector.ObjectPropertiesSection.formatObjectAsFunction(func, element, true, includePreview);
         element.addEventListener("contextmenu", this._contextMenuEventFired.bind(this, func), false);
     },
 
@@ -610,7 +611,22 @@ WebInspector.ConsoleViewMessage.prototype = {
     _formatParameterAsError: function(output, elem)
     {
         var span = elem.createChild("span", "object-value-error source-code");
-        span.appendChild(WebInspector.linkifyStringAsFragment(output.description || ""));
+        var text = output.description || "";
+        var lines = text.split("\n", 2);
+        span.appendChild(WebInspector.linkifyStringAsFragment(lines[0]));
+        if (lines.length > 1) {
+            var detailedLink = elem.createChild("a");
+            detailedLink.textContent = "(\u2026)";
+            function showDetailed(event)
+            {
+                span.removeChildren();
+                detailedLink.remove();
+                span.appendChild(WebInspector.linkifyStringAsFragment(text));
+                event.consume(true);
+            }
+            detailedLink._showDetailedForTest = showDetailed.bind(null, new MouseEvent('click'));
+            detailedLink.addEventListener("click", showDetailed, false);
+        }
     },
 
     /**
@@ -777,7 +793,8 @@ WebInspector.ConsoleViewMessage.prototype = {
             buffer.setAttribute("style", obj.description);
             for (var i = 0; i < buffer.style.length; i++) {
                 var property = buffer.style[i];
-                if (isWhitelistedProperty(property))
+                var value = buffer.style.getPropertyValue(property);
+                if (!value.startsWith("url(") && isWhitelistedProperty(property))
                     currentStyle[property] = buffer.style[property];
             }
         }

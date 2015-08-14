@@ -34,12 +34,17 @@ public:
         return adoptRefWillBeNoop(new SVGPathSegArcAbs(element, x, y, r1, r2, angle, largeArcFlag, sweepFlag));
     }
 
+    PassRefPtrWillBeRawPtr<SVGPathSeg> clone() override
+    {
+        return adoptRefWillBeNoop(new SVGPathSegArcAbs(nullptr, x(), y(), r1(), r2(), angle(), largeArcFlag(), sweepFlag()));
+    }
+
 private:
     SVGPathSegArcAbs(SVGPathElement* element, float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
         : SVGPathSegArc(element, x, y, r1, r2, angle, largeArcFlag, sweepFlag) { }
 
-    virtual unsigned short pathSegType() const override { return PATHSEG_ARC_ABS; }
-    virtual String pathSegTypeAsLetter() const override { return "A"; }
+    unsigned short pathSegType() const override { return PATHSEG_ARC_ABS; }
+    String pathSegTypeAsLetter() const override { return "A"; }
 };
 
 } // namespace blink

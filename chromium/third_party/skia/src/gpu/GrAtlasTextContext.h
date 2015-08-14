@@ -24,6 +24,8 @@
 #endif
 
 class BitmapTextBatch;
+class GrDrawContext;
+class GrDrawTarget;
 class GrPipelineBuilder;
 class GrTextBlobCache;
 
@@ -33,12 +35,10 @@ class GrTextBlobCache;
  */
 class GrAtlasTextContext : public GrTextContext {
 public:
-    static GrAtlasTextContext* Create(GrContext*, SkGpuDevice*, const SkDeviceProperties&,
-                                      bool enableDistanceFields);
+    static GrAtlasTextContext* Create(GrContext*, GrDrawContext*, const SkSurfaceProps&);
 
 private:
-    GrAtlasTextContext(GrContext*, SkGpuDevice*, const SkDeviceProperties&,
-                       bool enableDistanceFields);
+    GrAtlasTextContext(GrContext*, GrDrawContext*, const SkSurfaceProps&);
     ~GrAtlasTextContext() override {}
 
     bool canDraw(const GrRenderTarget*, const GrClip&, const GrPaint&,
@@ -47,8 +47,8 @@ private:
     void onDrawText(GrRenderTarget*, const GrClip&, const GrPaint&, const SkPaint&,
                     const SkMatrix& viewMatrix, const char text[], size_t byteLength,
                     SkScalar x, SkScalar y, const SkIRect& regionClipBounds) override;
-    void onDrawPosText(GrRenderTarget*, const GrClip&, const GrPaint&, const SkPaint&,
-                       const SkMatrix& viewMatrix,
+    void onDrawPosText(GrRenderTarget*, const GrClip&, const GrPaint&,
+                       const SkPaint&, const SkMatrix& viewMatrix,
                        const char text[], size_t byteLength,
                        const SkScalar pos[], int scalarsPerPosition,
                        const SkPoint& offset, const SkIRect& regionClipBounds) override;
@@ -109,6 +109,19 @@ private:
                     , fGlyphStartIndex(0)
                     , fGlyphEndIndex(0)
                     , fDrawAsDistanceFields(false) {}
+                SubRunInfo(const SubRunInfo& that)
+                    : fBulkUseToken(that.fBulkUseToken)
+                    , fStrike(SkSafeRef(that.fStrike.get()))
+                    , fAtlasGeneration(that.fAtlasGeneration)
+                    , fVertexStartIndex(that.fVertexStartIndex)
+                    , fVertexEndIndex(that.fVertexEndIndex)
+                    , fGlyphStartIndex(that.fGlyphStartIndex)
+                    , fGlyphEndIndex(that.fGlyphEndIndex)
+                    , fTextRatio(that.fTextRatio)
+                    , fMaskFormat(that.fMaskFormat)
+                    , fDrawAsDistanceFields(that.fDrawAsDistanceFields)
+                    , fUseLCDText(that.fUseLCDText) {
+                }
                 // Distance field text cannot draw coloremoji, and so has to fall back.  However,
                 // though the distance field text and the coloremoji may share the same run, they
                 // will have different descriptors.  If fOverrideDescriptor is non-NULL, then it
@@ -117,6 +130,7 @@ private:
                 // significantly, and then the subrun could just have a refed pointer to the
                 // correct descriptor.
                 GrBatchAtlas::BulkUseTokenUpdater fBulkUseToken;
+                SkAutoTUnref<GrBatchTextStrike> fStrike;
                 uint64_t fAtlasGeneration;
                 size_t fVertexStartIndex;
                 size_t fVertexEndIndex;
@@ -130,8 +144,9 @@ private:
 
             SubRunInfo& push_back() {
                 // Forward glyph / vertex information to seed the new sub run
-                SubRunInfo& prevSubRun = fSubRunInfo.back();
                 SubRunInfo& newSubRun = fSubRunInfo.push_back();
+                SubRunInfo& prevSubRun = fSubRunInfo.fromBack(1);
+
                 newSubRun.fGlyphStartIndex = prevSubRun.fGlyphEndIndex;
                 newSubRun.fGlyphEndIndex = prevSubRun.fGlyphEndIndex;
 
@@ -140,7 +155,6 @@ private:
                 return newSubRun;
             }
             static const int kMinSubRuns = 1;
-            SkAutoTUnref<GrBatchTextStrike> fStrike;
             SkAutoTUnref<SkTypeface> fTypeface;
             SkRect fVertexBounds;
             SkSTArray<kMinSubRuns, SubRunInfo> fSubRunInfo;
@@ -259,36 +273,39 @@ private:
     BitmapTextBlob* setupDFBlob(int glyphCount, const SkPaint& origPaint,
                                 const SkMatrix& viewMatrix, SkGlyphCache** cache,
                                 SkPaint* dfPaint, SkScalar* textRatio);
-    void bmpAppendGlyph(BitmapTextBlob*, int runIndex, GrGlyph::PackedID, int left, int top,
+    void bmpAppendGlyph(BitmapTextBlob*, int runIndex, const SkGlyph&, int left, int top,
                         GrColor color, GrFontScaler*, const SkIRect& clipRect);
-    bool dfAppendGlyph(BitmapTextBlob*, int runIndex, GrGlyph::PackedID, SkScalar sx, SkScalar sy,
+    bool dfAppendGlyph(BitmapTextBlob*, int runIndex, const SkGlyph&, SkScalar sx, SkScalar sy,
                        GrColor color, GrFontScaler*, const SkIRect& clipRect, SkScalar textRatio,
                        const SkMatrix& viewMatrix);
-    inline void appendGlyphPath(BitmapTextBlob* blob, GrGlyph* glyph,
-                                GrFontScaler* scaler, SkScalar x, SkScalar y);
+    inline void appendGlyphPath(BitmapTextBlob*, GrGlyph*, GrFontScaler*, const SkGlyph&,
+                                SkScalar x, SkScalar y);
     inline void appendGlyphCommon(BitmapTextBlob*, Run*, Run::SubRunInfo*,
                                   const SkRect& positions, GrColor color,
                                   size_t vertexStride, bool useVertexColor,
                                   GrGlyph*);
 
-    inline void flushRunAsPaths(const SkTextBlob::RunIterator&, const SkPaint&, SkDrawFilter*,
+    inline void flushRunAsPaths(GrRenderTarget*,
+                                const SkTextBlob::RunIterator&, const GrClip& clip,
+                                const SkPaint&, SkDrawFilter*,
                                 const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x,
                                 SkScalar y);
     inline BitmapTextBatch* createBatch(BitmapTextBlob*, const PerSubRunInfo&,
                                         int glyphCount, int run, int subRun,
                                         GrColor, SkScalar transX, SkScalar transY,
                                         const SkPaint&);
-    inline void flushRun(GrDrawTarget*, GrPipelineBuilder*, BitmapTextBlob*, int run, GrColor,
+    inline void flushRun(GrPipelineBuilder*, BitmapTextBlob*, int run, GrColor,
                          SkScalar transX, SkScalar transY, const SkPaint&);
-    inline void flushBigGlyphs(BitmapTextBlob* cacheBlob, GrRenderTarget* rt,
-                               const SkPaint& skPaint,
+    inline void flushBigGlyphs(BitmapTextBlob* cacheBlob, GrRenderTarget*,
+                               const GrClip& clip, const SkPaint& skPaint,
                                SkScalar transX, SkScalar transY, const SkIRect& clipBounds);
 
     // We have to flush SkTextBlobs differently from drawText / drawPosText
-    void flush(GrDrawTarget*, const SkTextBlob*, BitmapTextBlob*, GrRenderTarget*, const SkPaint&,
-               const GrPaint&, SkDrawFilter*, const GrClip&, const SkMatrix& viewMatrix,
-               const SkIRect& clipBounds, SkScalar x, SkScalar y, SkScalar transX, SkScalar transY);
-    void flush(GrDrawTarget*, BitmapTextBlob*, GrRenderTarget*, const SkPaint&,
+    void flush(const SkTextBlob*, BitmapTextBlob*, GrRenderTarget*,
+               const SkPaint&, const GrPaint&, SkDrawFilter*, const GrClip&,
+               const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x, SkScalar y,
+               SkScalar transX, SkScalar transY);
+    void flush(BitmapTextBlob*, GrRenderTarget*, const SkPaint&,
                const GrPaint&, const GrClip&, const SkIRect& clipBounds);
 
     // A helper for drawing BitmapText in a run of distance fields
@@ -363,25 +380,21 @@ private:
     // Because the GrAtlasTextContext can go out of scope before the final flush, this needs to be
     // refcnted and malloced
     struct DistanceAdjustTable : public SkNVRefCnt<DistanceAdjustTable> {
-        DistanceAdjustTable(float gamma) { this->buildDistanceAdjustTable(gamma); }
+        DistanceAdjustTable() { this->buildDistanceAdjustTable(); }
         ~DistanceAdjustTable() { SkDELETE_ARRAY(fTable); }
-
-        void buildDistanceAdjustTable(float gamma);
-
-        SkScalar& operator[] (int i) {
-            return fTable[i];
-        }
 
         const SkScalar& operator[] (int i) const {
             return fTable[i];
         }
+
+    private:
+        void buildDistanceAdjustTable();
 
         SkScalar* fTable;
     };
 
     GrBatchTextStrike* fCurrStrike;
     GrTextBlobCache* fCache;
-    bool fEnableDFRendering;
     SkAutoTUnref<DistanceAdjustTable> fDistanceAdjustTable;
 
     friend class GrTextBlobCache;

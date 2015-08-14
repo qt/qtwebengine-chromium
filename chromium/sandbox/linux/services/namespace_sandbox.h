@@ -38,8 +38,6 @@ namespace sandbox {
 class SANDBOX_EXPORT NamespaceSandbox {
  public:
 #if !defined(OS_NACL_NONSFI)
-  static const int kDefaultExitCode = 1;
-
   // Launch a new process inside its own user/PID/network namespaces (depending
   // on kernel support). Requires at a minimum that user namespaces are
   // supported (use Credentials::CanCreateProcessInNewUserNS to check this).
@@ -51,6 +49,7 @@ class SANDBOX_EXPORT NamespaceSandbox {
                                      const base::LaunchOptions& options);
   static base::Process LaunchProcess(const std::vector<std::string>& argv,
                                      const base::LaunchOptions& options);
+#endif  // !defined(OS_NACL_NONSFI)
 
   // Forks a process in its own PID namespace. The child process is the init
   // process inside of the PID namespace, so if the child needs to fork further,
@@ -70,8 +69,8 @@ class SANDBOX_EXPORT NamespaceSandbox {
   //
   // SIGHUP, SIGINT, SIGABRT, SIGQUIT, SIGPIPE, SIGTERM, SIGUSR1, SIGUSR2
   //
-  // that exits with kDefaultExitCode. These are signals whose default action is
-  // to terminate the program (apart from SIGILL, SIGFPE, and SIGSEGV, which
+  // that exits with SignalExitCode(sig). These are signals whose default action
+  // is to terminate the program (apart from SIGILL, SIGFPE, and SIGSEGV, which
   // will still terminate the process if e.g. an illegal instruction is
   // encountered, etc.).
   //
@@ -83,7 +82,10 @@ class SANDBOX_EXPORT NamespaceSandbox {
   // signal handler was already present for |sig|, does nothing and returns
   // false.
   static bool InstallTerminationSignalHandler(int sig, int exit_code);
-#endif  // !defined(OS_NACL_NONSFI)
+
+  // Returns an exit code corresponding to the process being killed by sig. This
+  // is the same as exit code that NaCl's default signal handler uses.
+  static int SignalExitCode(int sig) { return -sig & 0xff; }
 
   // Returns whether the namespace sandbox created a new user, PID, and network
   // namespace. In particular, InNewUserNamespace should return true iff the

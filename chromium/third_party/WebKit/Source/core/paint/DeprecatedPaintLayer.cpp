@@ -53,7 +53,6 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameElement.h"
-#include "core/layout/ColumnInfo.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/HitTestingTransformState.h"
@@ -110,7 +109,6 @@ DeprecatedPaintLayer::DeprecatedPaintLayer(LayoutBoxModelObject* layoutObject, D
     , m_visibleDescendantStatusDirty(false)
     , m_hasVisibleDescendant(false)
     , m_hasVisibleNonLayerContent(false)
-    , m_isPaginated(false)
 #if ENABLE(ASSERT)
     , m_needsPositionUpdate(true)
 #endif
@@ -162,8 +160,7 @@ DeprecatedPaintLayer::~DeprecatedPaintLayer()
 
     if (groupedMapping()) {
         DisableCompositingQueryAsserts disabler;
-        groupedMapping()->removeLayerFromSquashingGraphicsLayer(this);
-        setGroupedMapping(0);
+        setGroupedMapping(0, InvalidateLayerAndRemoveFromMapping);
     }
 
     // Child layers will be deleted by their corresponding layout objects, so
@@ -173,6 +170,9 @@ DeprecatedPaintLayer::~DeprecatedPaintLayer()
 
     if (m_reflectionInfo)
         m_reflectionInfo->destroy();
+
+    if (m_scrollableArea)
+        m_scrollableArea->dispose();
 }
 
 String DeprecatedPaintLayer::debugName() const
@@ -244,8 +244,7 @@ void DeprecatedPaintLayer::updateLayerPositionsAfterLayout()
         // FIXME: Remove incremental compositing updates after fixing the chicken/egg issues
         // https://code.google.com/p/chromium/issues/detail?id=343756
         DisableCompositingQueryAsserts disabler;
-        bool needsPaginationUpdate = isPaginated() || enclosingPaginationLayer();
-        updatePaginationRecursive(needsPaginationUpdate);
+        updatePaginationRecursive(enclosingPaginationLayer());
     }
 }
 
@@ -344,7 +343,7 @@ void DeprecatedPaintLayer::updateTransformationMatrix()
         LayoutBox* box = layoutBox();
         ASSERT(box);
         m_transform->makeIdentity();
-        box->style()->applyTransform(*m_transform, LayoutSize(box->pixelSnappedSize()), ComputedStyle::IncludeTransformOrigin);
+        box->style()->applyTransform(*m_transform, LayoutSize(box->pixelSnappedSize()), ComputedStyle::IncludeTransformOrigin, ComputedStyle::IncludeMotionPath, ComputedStyle::IncludeIndependentTransformProperties);
         makeMatrixRenderable(*m_transform, compositor()->hasAcceleratedCompositing());
     }
 }
@@ -398,20 +397,10 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::renderingContextRoot()
     return renderingContext;
 }
 
-TransformationMatrix DeprecatedPaintLayer::currentTransform(ComputedStyle::ApplyTransformOrigin applyOrigin) const
+TransformationMatrix DeprecatedPaintLayer::currentTransform() const
 {
     if (!m_transform)
         return TransformationMatrix();
-
-    // m_transform includes transform-origin, so we need to recompute the transform here.
-    if (applyOrigin == ComputedStyle::ExcludeTransformOrigin) {
-        LayoutBox* box = layoutBox();
-        TransformationMatrix currTransform;
-        box->style()->applyTransform(currTransform, LayoutSize(box->pixelSnappedSize()), ComputedStyle::ExcludeTransformOrigin);
-        makeMatrixRenderable(currTransform, compositor()->hasAcceleratedCompositing());
-        return currTransform;
-    }
-
     return *m_transform;
 }
 
@@ -427,28 +416,6 @@ TransformationMatrix DeprecatedPaintLayer::renderableTransform(PaintBehavior pai
     }
 
     return *m_transform;
-}
-
-static bool checkContainingBlockChainForPagination(LayoutBoxModelObject* layoutObject, LayoutBox* ancestorColumnsLayoutObject)
-{
-    LayoutView* view = layoutObject->view();
-    LayoutBoxModelObject* prevBlock = layoutObject;
-    LayoutBlock* containingBlock;
-    for (containingBlock = layoutObject->containingBlock();
-        containingBlock && containingBlock != view && containingBlock != ancestorColumnsLayoutObject;
-        containingBlock = containingBlock->containingBlock())
-        prevBlock = containingBlock;
-
-    // If the columns block wasn't in our containing block chain, then we aren't paginated by it.
-    if (containingBlock != ancestorColumnsLayoutObject)
-        return false;
-
-    // If the previous block is absolutely positioned, then we can't be paginated by the columns block.
-    if (prevBlock->isOutOfFlowPositioned())
-        return false;
-
-    // Otherwise we are paginated by the columns block.
-    return true;
 }
 
 // Convert a bounding box from flow thread coordinates, relative to |layer|, to visual coordinates, relative to |ancestorLayer|.
@@ -481,90 +448,23 @@ static void convertFromFlowThreadToVisualBoundingBoxInAncestor(const DeprecatedP
 
 void DeprecatedPaintLayer::updatePaginationRecursive(bool needsPaginationUpdate)
 {
-    m_isPaginated = false;
     m_enclosingPaginationLayer = 0;
 
-    if (RuntimeEnabledFeatures::regionBasedColumnsEnabled() && layoutObject()->isLayoutFlowThread())
+    if (layoutObject()->isLayoutFlowThread())
         needsPaginationUpdate = true;
 
-    if (needsPaginationUpdate)
-        updatePagination();
-
-    if (layoutObject()->hasColumns())
-        needsPaginationUpdate = true;
+    if (needsPaginationUpdate) {
+        // Each paginated layer has to paint on its own. There is no recurring into child layers. Each
+        // layer has to be checked individually and genuinely know if it is going to have to split
+        // itself up when painting only its contents (and not any other descendant layers). We track an
+        // enclosingPaginationLayer instead of using a simple bit, since we want to be able to get back
+        // to that layer easily.
+        if (LayoutFlowThread* containingFlowThread = layoutObject()->flowThreadContainingBlock())
+            m_enclosingPaginationLayer = containingFlowThread->layer();
+    }
 
     for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling())
         child->updatePaginationRecursive(needsPaginationUpdate);
-}
-
-void DeprecatedPaintLayer::updatePagination()
-{
-    bool usesRegionBasedColumns = RuntimeEnabledFeatures::regionBasedColumnsEnabled();
-    if ((!usesRegionBasedColumns && compositingState() != NotComposited) || !parent())
-        return; // FIXME: For now the LayoutView can't be paginated.  Eventually printing will move to a model where it is though.
-
-    // The main difference between the paginated booleans for the old column code and the new column code
-    // is that each paginated layer has to paint on its own with the new code. There is no
-    // recurring into child layers. This means that the m_isPaginated bits for the new column code can't just be set on
-    // "roots" that get split and paint all their descendants. Instead each layer has to be checked individually and
-    // genuinely know if it is going to have to split itself up when painting only its contents (and not any other descendant
-    // layers). We track an enclosingPaginationLayer instead of using a simple bit, since we want to be able to get back
-    // to that layer easily.
-    if (usesRegionBasedColumns && layoutObject()->isLayoutFlowThread()) {
-        m_enclosingPaginationLayer = this;
-        return;
-    }
-
-    if (m_stackingNode->isNormalFlowOnly()) {
-        if (usesRegionBasedColumns) {
-            // We cannot take the fast path for spanners, as they do not have their nearest ancestor
-            // pagination layer (flow thread) in their containing block chain.
-            if (!layoutObject()->isColumnSpanAll()) {
-                // Content inside a transform is not considered to be paginated, since we simply
-                // paint the transform multiple times in each column, so we don't have to use
-                // fragments for the transformed content.
-                m_enclosingPaginationLayer = parent()->enclosingPaginationLayer();
-                if (m_enclosingPaginationLayer && m_enclosingPaginationLayer->hasTransformRelatedProperty())
-                    m_enclosingPaginationLayer = 0;
-                return;
-            }
-        } else {
-            m_isPaginated = parent()->layoutObject()->hasColumns();
-            return;
-        }
-    }
-
-    // For the new columns code, we want to walk up our containing block chain looking for an enclosing layer. Once
-    // we find one, then we just check its pagination status.
-    if (usesRegionBasedColumns) {
-        LayoutView* view = layoutObject()->view();
-        LayoutBlock* containingBlock;
-        for (containingBlock = layoutObject()->containingBlock();
-            containingBlock && containingBlock != view;
-            containingBlock = containingBlock->containingBlock()) {
-            if (containingBlock->hasLayer()) {
-                // Content inside a transform is not considered to be paginated, since we simply
-                // paint the transform multiple times in each column, so we don't have to use
-                // fragments for the transformed content.
-                m_enclosingPaginationLayer = containingBlock->layer()->enclosingPaginationLayer();
-                if (m_enclosingPaginationLayer && m_enclosingPaginationLayer->hasTransformRelatedProperty())
-                    m_enclosingPaginationLayer = 0;
-                return;
-            }
-        }
-        return;
-    }
-
-    // If we're not normal flow, then we need to look for a multi-column object between us and our stacking container.
-    DeprecatedPaintLayerStackingNode* ancestorStackingContextNode = m_stackingNode->ancestorStackingContextNode();
-    for (DeprecatedPaintLayer* curr = parent(); curr; curr = curr->parent()) {
-        if (curr->layoutObject()->hasColumns()) {
-            m_isPaginated = checkContainingBlockChainForPagination(layoutObject(), curr->layoutBox());
-            return;
-        }
-        if (curr->stackingNode() == ancestorStackingContextNode)
-            return;
-    }
 }
 
 void DeprecatedPaintLayer::clearPaginationRecursive()
@@ -651,9 +551,13 @@ LayoutRect DeprecatedPaintLayer::computePaintInvalidationRect(const LayoutObject
 
 void DeprecatedPaintLayer::dirtyVisibleContentStatus()
 {
+    compositor()->setNeedsUpdateDescendantDependentFlags();
     m_visibleContentStatusDirty = true;
     if (parent())
         parent()->dirtyAncestorChainVisibleDescendantStatus();
+    // Non-self-painting layers paint into their ancestor layer, and count as part of the "visible contents" of the parent, so we need to dirty it.
+    if (!isSelfPaintingLayer())
+        parent()->dirtyVisibleContentStatus();
 }
 
 void DeprecatedPaintLayer::potentiallyDirtyVisibleContentStatus(EVisibility visibility)
@@ -667,10 +571,11 @@ void DeprecatedPaintLayer::potentiallyDirtyVisibleContentStatus(EVisibility visi
 
 void DeprecatedPaintLayer::dirtyAncestorChainVisibleDescendantStatus()
 {
+    compositor()->setNeedsUpdateDescendantDependentFlags();
+
     for (DeprecatedPaintLayer* layer = this; layer; layer = layer->parent()) {
         if (layer->m_visibleDescendantStatusDirty)
             break;
-
         layer->m_visibleDescendantStatusDirty = true;
     }
 }
@@ -695,22 +600,6 @@ void DeprecatedPaintLayer::updateScrollingStateAfterCompositingChange()
             return;
         }
     }
-}
-
-// The descendant-dependent flags system is badly broken because we clean dirty
-// bits in upward tree walks, which means we need to call updateDescendantDependentFlags
-// at every node in the tree to fully clean all the dirty bits. While we'll in
-// the process of fixing this issue, updateDescendantDependentFlagsForEntireSubtree
-// provides a big hammer for actually cleaning all the dirty bits in a subtree.
-//
-// FIXME: Remove this function once the descendant-dependent flags system keeps
-// its dirty bits scoped to subtrees.
-void DeprecatedPaintLayer::updateDescendantDependentFlagsForEntireSubtree()
-{
-    updateDescendantDependentFlags();
-
-    for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling())
-        child->updateDescendantDependentFlagsForEntireSubtree();
 }
 
 void DeprecatedPaintLayer::updateDescendantDependentFlags()
@@ -739,12 +628,12 @@ void DeprecatedPaintLayer::updateDescendantDependentFlags()
             m_hasVisibleContent = false;
             LayoutObject* r = layoutObject()->slowFirstChild();
             while (r) {
-                if (r->style()->visibility() == VISIBLE && !r->hasLayer()) {
+                if (r->style()->visibility() == VISIBLE && (!r->hasLayer() || !r->enclosingLayer()->isSelfPaintingLayer())) {
                     m_hasVisibleContent = true;
                     break;
                 }
                 LayoutObject* layoutObjectFirstChild = r->slowFirstChild();
-                if (layoutObjectFirstChild && !r->hasLayer()) {
+                if (layoutObjectFirstChild && (!r->hasLayer() || !r->enclosingLayer()->isSelfPaintingLayer())) {
                     r = layoutObjectFirstChild;
                 } else if (r->nextSibling()) {
                     r = r->nextSibling();
@@ -848,9 +737,7 @@ bool DeprecatedPaintLayer::updateLayerPosition()
     }
 
     // Subtract our parent's scroll offset.
-    if (layoutObject()->isOutOfFlowPositioned() && enclosingPositionedAncestor()) {
-        DeprecatedPaintLayer* positionedParent = enclosingPositionedAncestor();
-
+    if (DeprecatedPaintLayer* positionedParent = layoutObject()->isOutOfFlowPositioned() ? enclosingPositionedAncestor() : nullptr) {
         // For positioned layers, we subtract out the enclosing positioned layer's scroll offset.
         if (positionedParent->layoutObject()->hasOverflowClip()) {
             IntSize offset = positionedParent->layoutBox()->scrolledContentOffset();
@@ -861,24 +748,9 @@ bool DeprecatedPaintLayer::updateLayerPosition()
             LayoutSize offset = toLayoutInline(positionedParent->layoutObject())->offsetForInFlowPositionedInline(*toLayoutBox(layoutObject()));
             localPoint += offset;
         }
-    } else if (parent()) {
-        // FIXME: This code is very wrong, but luckily only needed in the old/current multicol
-        // implementation. The compositing system doesn't understand columns and we're hacking
-        // around that fact by faking the position of the Layers when we think we'll end up
-        // being composited.
-        if (hasStyleDeterminedDirectCompositingReasons() && !RuntimeEnabledFeatures::regionBasedColumnsEnabled()) {
-            // FIXME: Composited layers ignore pagination, so about the best we can do is make sure they're offset into the appropriate column.
-            // They won't split across columns properly.
-            if (!parent()->layoutObject()->hasColumns() && parent()->layoutObject()->isDocumentElement() && layoutObject()->view()->hasColumns())
-                localPoint += layoutObject()->view()->columnOffset(localPoint);
-            else
-                localPoint += parent()->layoutObject()->columnOffset(localPoint);
-        }
-
-        if (parent()->layoutObject()->hasOverflowClip()) {
-            IntSize scrollOffset = parent()->layoutBox()->scrolledContentOffset();
-            localPoint -= scrollOffset;
-        }
+    } else if (parent() && parent()->layoutObject()->hasOverflowClip()) {
+        IntSize scrollOffset = parent()->layoutBox()->scrolledContentOffset();
+        localPoint -= scrollOffset;
     }
 
     bool positionOrOffsetChanged = false;
@@ -934,19 +806,28 @@ static inline bool isFixedPositionedContainer(DeprecatedPaintLayer* layer)
     return layer->isRootLayer() || layer->hasTransformRelatedProperty();
 }
 
-DeprecatedPaintLayer* DeprecatedPaintLayer::enclosingPositionedAncestor() const
+DeprecatedPaintLayer* DeprecatedPaintLayer::enclosingPositionedAncestor(const DeprecatedPaintLayer* ancestor, bool* skippedAncestor) const
 {
+    ASSERT(!ancestor || skippedAncestor); // If we have specified an ancestor, surely the caller needs to know whether we skipped it.
+    if (skippedAncestor)
+        *skippedAncestor = false;
     if (layoutObject()->style()->position() == FixedPosition) {
         DeprecatedPaintLayer* curr = parent();
-        while (curr && !isFixedPositionedContainer(curr))
+        while (curr && !isFixedPositionedContainer(curr)) {
+            if (skippedAncestor && curr == ancestor)
+                *skippedAncestor = true;
             curr = curr->parent();
+        }
 
         return curr;
     }
 
     DeprecatedPaintLayer* curr = parent();
-    while (curr && !curr->isPositionedContainer())
+    while (curr && !curr->isPositionedContainer()) {
+        if (skippedAncestor && curr == ancestor)
+            *skippedAncestor = true;
         curr = curr->parent();
+    }
 
     return curr;
 }
@@ -973,7 +854,7 @@ LayoutPoint DeprecatedPaintLayer::computeOffsetFromTransformedAncestor() const
 
 const DeprecatedPaintLayer* DeprecatedPaintLayer::compositingContainer() const
 {
-    if (stackingNode()->isNormalFlowOnly())
+    if (!stackingNode()->isTreatedAsStackingContextForPainting())
         return parent();
     if (DeprecatedPaintLayerStackingNode* ancestorStackingNode = stackingNode()->ancestorStackingContextNode())
         return ancestorStackingNode->layer();
@@ -1199,7 +1080,7 @@ LayoutRect DeprecatedPaintLayer::paintingExtent(const DeprecatedPaintLayer* root
 
 void* DeprecatedPaintLayer::operator new(size_t sz)
 {
-    return partitionAlloc(WTF::Partitions::getRenderingPartition(), sz);
+    return partitionAlloc(WTF::Partitions::layoutPartition(), sz);
 }
 
 void DeprecatedPaintLayer::operator delete(void* ptr)
@@ -1230,15 +1111,19 @@ void DeprecatedPaintLayer::addChild(DeprecatedPaintLayer* child, DeprecatedPaint
 
     setNeedsCompositingInputsUpdate();
 
-    if (child->stackingNode()->isNormalFlowOnly())
-        m_stackingNode->dirtyNormalFlowList();
+    if (!child->stackingNode()->isTreatedAsStackingContextForPainting() && !layoutObject()->documentBeingDestroyed())
+        compositor()->setNeedsCompositingUpdate(CompositingUpdateRebuildTree);
 
-    if (!child->stackingNode()->isNormalFlowOnly() || child->firstChild()) {
+    if (child->stackingNode()->isTreatedAsStackingContextForPainting() || child->firstChild()) {
         // Dirty the z-order list in which we are contained. The ancestorStackingContextNode() can be null in the
         // case where we're building up generated content layers. This is ok, since the lists will start
         // off dirty in that case anyway.
         child->stackingNode()->dirtyStackingContextZOrderLists();
     }
+
+    // Non-self-painting children paint into this layer, so the visible contents status of this layer is affected.
+    if (!child->isSelfPaintingLayer())
+        dirtyVisibleContentStatus();
 
     dirtyAncestorChainVisibleDescendantStatus();
     dirtyAncestorChainHasSelfPaintingLayerDescendantStatus();
@@ -1258,9 +1143,10 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::removeChild(DeprecatedPaintLayer* ol
     if (m_last == oldChild)
         m_last = oldChild->previousSibling();
 
-    if (oldChild->stackingNode()->isNormalFlowOnly())
-        m_stackingNode->dirtyNormalFlowList();
-    if (!oldChild->stackingNode()->isNormalFlowOnly() || oldChild->firstChild()) {
+    if (!oldChild->stackingNode()->isTreatedAsStackingContextForPainting() && !layoutObject()->documentBeingDestroyed())
+        compositor()->setNeedsCompositingUpdate(CompositingUpdateRebuildTree);
+
+    if (oldChild->stackingNode()->isTreatedAsStackingContextForPainting() || oldChild->firstChild()) {
         // Dirty the z-order list in which we are contained.  When called via the
         // reattachment process in removeOnlyThisLayer, the layer may already be disconnected
         // from the main layer tree, so we need to null-check the
@@ -1299,7 +1185,7 @@ void DeprecatedPaintLayer::removeOnlyThisLayer()
             // Our children will be reparented and contained by a new paint invalidation container,
             // so need paint invalidation. CompositingUpdate can't see this layer (which has been
             // removed) so won't do this for us.
-            setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
+            layoutObject()->setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
         }
     }
 
@@ -1356,11 +1242,6 @@ static inline const DeprecatedPaintLayer* accumulateOffsetTowardsAncestor(const 
     const LayoutBoxModelObject* layoutObject = layer->layoutObject();
     EPosition position = layoutObject->style()->position();
 
-    // FIXME: Positioning of out-of-flow(fixed, absolute) elements collected in a LayoutFlowThread
-    // may need to be revisited in a future patch.
-    // If the fixed layoutObject is inside a LayoutFlowThread, we should not compute location using localToAbsolute,
-    // since localToAbsolute maps the coordinates from flow thread to column set coordinates and column sets can be
-    // positioned in a completely different place in the viewport (LayoutView).
     if (position == FixedPosition && (!ancestorLayer || ancestorLayer == layoutObject->view()->layer())) {
         // If the fixed layer's container is the root, just add in the offset of the view. We can obtain this by calling
         // localToAbsolute() on the LayoutView.
@@ -1369,9 +1250,6 @@ static inline const DeprecatedPaintLayer* accumulateOffsetTowardsAncestor(const 
         return ancestorLayer;
     }
 
-    // For the fixed positioned elements inside a layout flow thread, we should also skip the code path below
-    // Otherwise, for the case of ancestorLayer == rootLayer and fixed positioned element child of a transformed
-    // element in layout flow thread, we will hit the fixed positioned container before hitting the ancestor layer.
     if (position == FixedPosition) {
         // For a fixed layers, we need to walk up to the root to see if there's a fixed position container
         // (e.g. a transformed layer). It's an error to call convertToLayerCoords() across a layer with a transform,
@@ -1418,38 +1296,18 @@ static inline const DeprecatedPaintLayer* accumulateOffsetTowardsAncestor(const 
 
     DeprecatedPaintLayer* parentLayer;
     if (position == AbsolutePosition) {
-        // Do what enclosingPositionedAncestor() does, but check for ancestorLayer along the way.
-        parentLayer = layer->parent();
-        bool foundAncestorFirst = false;
-        while (parentLayer) {
-            // LayoutFlowThread is a positioned container, child of LayoutView, positioned at (0,0).
-            // This implies that, for out-of-flow positioned elements inside a LayoutFlowThread,
-            // we are bailing out before reaching root layer.
-            if (parentLayer->isPositionedContainer())
-                break;
-
-            if (parentLayer == ancestorLayer) {
-                foundAncestorFirst = true;
-                break;
-            }
-
-            parentLayer = parentLayer->parent();
-        }
-
-        // We should not reach LayoutView layer past the LayoutFlowThread layer for any
-        // children of the LayoutFlowThread.
-        ASSERT(!layoutObject->flowThreadContainingBlock() || parentLayer != layoutObject->view()->layer());
+        bool foundAncestorFirst;
+        parentLayer = layer->enclosingPositionedAncestor(ancestorLayer, &foundAncestorFirst);
 
         if (foundAncestorFirst) {
             // Found ancestorLayer before the abs. positioned container, so compute offset of both relative
-            // to enclosingPositionedAncestor and subtract.
-            DeprecatedPaintLayer* positionedAncestor = parentLayer->enclosingPositionedAncestor();
+            // to the positioned ancestor and subtract.
 
             LayoutPoint thisCoords;
-            layer->convertToLayerCoords(positionedAncestor, thisCoords);
+            layer->convertToLayerCoords(parentLayer, thisCoords);
 
             LayoutPoint ancestorCoords;
-            ancestorLayer->convertToLayerCoords(positionedAncestor, ancestorCoords);
+            ancestorLayer->convertToLayerCoords(parentLayer, ancestorCoords);
 
             location += (thisCoords - ancestorCoords);
             return ancestorLayer;
@@ -1536,18 +1394,16 @@ void DeprecatedPaintLayer::updateReflectionInfo(const ComputedStyle* oldStyle)
 
 void DeprecatedPaintLayer::updateStackingNode()
 {
+    ASSERT(!m_stackingNode);
     if (requiresStackingNode())
-        m_stackingNode = adoptPtr(new DeprecatedPaintLayerStackingNode(this));
-    else
-        m_stackingNode = nullptr;
+        m_stackingNode = adoptPtr(new DeprecatedPaintLayerStackingNode(*layoutObject()));
 }
 
 void DeprecatedPaintLayer::updateScrollableArea()
 {
+    ASSERT(!m_scrollableArea);
     if (requiresScrollableArea())
-        m_scrollableArea = adoptPtr(new DeprecatedPaintLayerScrollableArea(*this));
-    else
-        m_scrollableArea = nullptr;
+        m_scrollableArea = DeprecatedPaintLayerScrollableArea::create(*this);
 }
 
 bool DeprecatedPaintLayer::hasOverflowControls() const
@@ -1660,16 +1516,14 @@ static inline LayoutRect frameVisibleRect(LayoutObject* layoutObject)
 
 bool DeprecatedPaintLayer::hitTest(HitTestResult& result)
 {
-    return hitTest(result.hitTestRequest(), result.hitTestLocation(), result);
-}
-
-bool DeprecatedPaintLayer::hitTest(const HitTestRequest& request, const HitTestLocation& hitTestLocation, HitTestResult& result)
-{
     ASSERT(isSelfPaintingLayer() || hasSelfPaintingLayerDescendant());
 
     // LayoutView should make sure to update layout before entering hit testing
     ASSERT(!layoutObject()->frame()->view()->layoutPending());
     ASSERT(!layoutObject()->document().layoutView()->needsLayout());
+
+    const HitTestRequest& request = result.hitTestRequest();
+    const HitTestLocation& hitTestLocation = result.hitTestLocation();
 
     // Start with frameVisibleRect to ensure we include the scrollbars.
     LayoutRect hitTestArea = frameVisibleRect(layoutObject());
@@ -1683,10 +1537,16 @@ bool DeprecatedPaintLayer::hitTest(const HitTestRequest& request, const HitTestL
         // exited the WebView, and so hit testing over a scrollbar hits the content document.
         // In addtion, it is possible for the mouse to stay in the document but there is no element.
         // At that time, the events of the mouse should be fired.
+        // TODO(majidvp): This should apply more consistently across different event types and we
+        // should not use RequestType for it. Perhaps best for it to be done at a higher level. See
+        // http://crbug.com/505825
         LayoutPoint hitPoint = hitTestLocation.point();
         if (!request.isChildFrameHitTest() && ((request.active() || request.release()) || (request.move() && hitTestArea.contains(hitPoint.x(), hitPoint.y()))) && isRootLayer()) {
             layoutObject()->updateHitTestResult(result, toLayoutView(layoutObject())->flipForWritingMode(hitTestLocation.point()));
             insideLayer = this;
+
+            // Don't cache this result since it really wasn't a true hit.
+            result.setCacheable(false);
         }
     }
 
@@ -1708,12 +1568,6 @@ Node* DeprecatedPaintLayer::enclosingElement() const
     }
     ASSERT_NOT_REACHED();
     return 0;
-}
-
-bool DeprecatedPaintLayer::isInTopLayer() const
-{
-    Node* node = layoutObject()->node();
-    return node && node->isElementNode() && toElement(node)->isInTopLayer();
 }
 
 // Compute the z-offset of the point in the transformState.
@@ -1806,16 +1660,16 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestLayer(DeprecatedPaintLayer* r
     if (!isSelfPaintingLayer() && !hasSelfPaintingLayerDescendant())
         return 0;
 
-    // The natural thing would be to keep HitTestingTransformState on the stack, but it's big, so we heap-allocate.
+    ClipRectsCacheSlot clipRectsCacheSlot = result.hitTestRequest().ignoreClipping() ? RootRelativeClipRectsIgnoringViewportClip : RootRelativeClipRects;
 
     // Apply a transform if we have one.
     if (transform() && !appliedTransform) {
         if (enclosingPaginationLayer())
-            return hitTestTransformedLayerInFragments(rootLayer, containerLayer, result, hitTestRect, hitTestLocation, transformState, zOffset);
+            return hitTestTransformedLayerInFragments(rootLayer, containerLayer, result, hitTestRect, hitTestLocation, transformState, zOffset, clipRectsCacheSlot);
 
         // Make sure the parent's clip rects have been calculated.
         if (parent()) {
-            ClipRect clipRect = clipper().backgroundClipRect(ClipRectsContext(rootLayer, RootRelativeClipRects, IncludeOverlayScrollbarSize));
+            ClipRect clipRect = clipper().backgroundClipRect(ClipRectsContext(rootLayer, clipRectsCacheSlot, IncludeOverlayScrollbarSize));
             // Go ahead and test the enclosing clip now.
             if (!clipRect.intersects(hitTestLocation))
                 return 0;
@@ -1828,6 +1682,7 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestLayer(DeprecatedPaintLayer* r
     m_stackingNode->updateLayerListsIfNeeded();
     update3DTransformedDescendantStatus();
 
+    // The natural thing would be to keep HitTestingTransformState on the stack, but it's big, so we heap-allocate.
     RefPtr<HitTestingTransformState> localTransformState;
     if (appliedTransform) {
         // We computed the correct state in the caller (above code), so just reference it.
@@ -1896,9 +1751,9 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestLayer(DeprecatedPaintLayer* r
     // Collect the fragments. This will compute the clip rectangles for each layer fragment.
     DeprecatedPaintLayerFragments layerFragments;
     if (appliedTransform)
-        appendSingleFragmentIgnoringPagination(layerFragments, rootLayer, hitTestRect, RootRelativeClipRects, IncludeOverlayScrollbarSize);
+        appendSingleFragmentIgnoringPagination(layerFragments, rootLayer, hitTestRect, clipRectsCacheSlot, IncludeOverlayScrollbarSize);
     else
-        collectFragments(layerFragments, rootLayer, hitTestRect, RootRelativeClipRects, IncludeOverlayScrollbarSize);
+        collectFragments(layerFragments, rootLayer, hitTestRect, clipRectsCacheSlot, IncludeOverlayScrollbarSize);
 
     if (m_scrollableArea && m_scrollableArea->hitTestResizerInFragments(layerFragments, hitTestLocation)) {
         layoutObject()->updateHitTestResult(result, hitTestLocation.point());
@@ -1977,14 +1832,14 @@ bool DeprecatedPaintLayer::hitTestContentsForFragments(const DeprecatedPaintLaye
 }
 
 DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestTransformedLayerInFragments(DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer* containerLayer, HitTestResult& result,
-    const LayoutRect& hitTestRect, const HitTestLocation& hitTestLocation, const HitTestingTransformState* transformState, double* zOffset)
+    const LayoutRect& hitTestRect, const HitTestLocation& hitTestLocation, const HitTestingTransformState* transformState, double* zOffset, ClipRectsCacheSlot clipRectsCacheSlot)
 {
     DeprecatedPaintLayerFragments enclosingPaginationFragments;
     LayoutPoint offsetOfPaginationLayerFromRoot;
     // FIXME: We're missing a sub-pixel offset here crbug.com/348728
     LayoutRect transformedExtent = transparencyClipBox(this, enclosingPaginationLayer(), HitTestingTransparencyClipBox, DeprecatedPaintLayer::RootOfTransparencyClipBox, LayoutSize());
     enclosingPaginationLayer()->collectFragments(enclosingPaginationFragments, rootLayer, hitTestRect,
-        RootRelativeClipRects, IncludeOverlayScrollbarSize, RespectOverflowClip, &offsetOfPaginationLayerFromRoot, LayoutSize(), &transformedExtent);
+        clipRectsCacheSlot, IncludeOverlayScrollbarSize, RespectOverflowClip, &offsetOfPaginationLayerFromRoot, LayoutSize(), &transformedExtent);
 
     for (int i = enclosingPaginationFragments.size() - 1; i >= 0; --i) {
         const DeprecatedPaintLayerFragment& fragment = enclosingPaginationFragments.at(i);
@@ -1996,7 +1851,7 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestTransformedLayerInFragments(D
         // Now compute the clips within a given fragment
         if (parent() != enclosingPaginationLayer()) {
             enclosingPaginationLayer()->convertToLayerCoords(rootLayer, offsetOfPaginationLayerFromRoot);
-            LayoutRect parentClipRect = clipper().backgroundClipRect(ClipRectsContext(enclosingPaginationLayer(), RootRelativeClipRects, IncludeOverlayScrollbarSize)).rect();
+            LayoutRect parentClipRect = clipper().backgroundClipRect(ClipRectsContext(enclosingPaginationLayer(), clipRectsCacheSlot, IncludeOverlayScrollbarSize)).rect();
             parentClipRect.moveBy(fragment.paginationOffset + offsetOfPaginationLayerFromRoot);
             clipRect.intersect(parentClipRect);
         }
@@ -2095,10 +1950,7 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestChildren(ChildrenIteration ch
         DeprecatedPaintLayer* childLayer = child->layer();
         DeprecatedPaintLayer* hitLayer = 0;
         HitTestResult tempResult(result.hitTestRequest(), result.hitTestLocation());
-        if (childLayer->isPaginated())
-            hitLayer = hitTestPaginatedChildLayer(childLayer, rootLayer, tempResult, hitTestRect, hitTestLocation, transformState, zOffsetForDescendants);
-        else
-            hitLayer = childLayer->hitTestLayer(rootLayer, this, tempResult, hitTestRect, hitTestLocation, false, transformState, zOffsetForDescendants);
+        hitLayer = childLayer->hitTestLayer(rootLayer, this, tempResult, hitTestRect, hitTestLocation, false, transformState, zOffsetForDescendants);
 
         // If it is a list-based test, we can safely append the temporary result since it might had hit
         // nodes but not necesserily had hitLayer set.
@@ -2116,126 +1968,6 @@ DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestChildren(ChildrenIteration ch
     }
 
     return resultLayer;
-}
-
-DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestPaginatedChildLayer(DeprecatedPaintLayer* childLayer, DeprecatedPaintLayer* rootLayer, HitTestResult& result,
-    const LayoutRect& hitTestRect, const HitTestLocation& hitTestLocation, const HitTestingTransformState* transformState, double* zOffset)
-{
-    Vector<DeprecatedPaintLayer*> columnLayers;
-    DeprecatedPaintLayerStackingNode* ancestorNode = m_stackingNode->isNormalFlowOnly() ? parent()->stackingNode() : m_stackingNode->ancestorStackingContextNode();
-    for (DeprecatedPaintLayer* curr = childLayer->parent(); curr; curr = curr->parent()) {
-        if (curr->layoutObject()->hasColumns() && checkContainingBlockChainForPagination(childLayer->layoutObject(), curr->layoutBox()))
-            columnLayers.append(curr);
-        if (curr->stackingNode() == ancestorNode)
-            break;
-    }
-
-    ASSERT(columnLayers.size());
-    return hitTestChildLayerColumns(childLayer, rootLayer, result, hitTestRect, hitTestLocation, transformState, zOffset,
-        columnLayers, columnLayers.size() - 1);
-}
-
-DeprecatedPaintLayer* DeprecatedPaintLayer::hitTestChildLayerColumns(DeprecatedPaintLayer* childLayer, DeprecatedPaintLayer* rootLayer, HitTestResult& result,
-    const LayoutRect& hitTestRect, const HitTestLocation& hitTestLocation, const HitTestingTransformState* transformState, double* zOffset,
-    const Vector<DeprecatedPaintLayer*>& columnLayers, size_t columnIndex)
-{
-    LayoutBlock* columnBlock = toLayoutBlock(columnLayers[columnIndex]->layoutObject());
-
-    ASSERT(columnBlock && columnBlock->hasColumns());
-    if (!columnBlock || !columnBlock->hasColumns())
-        return 0;
-
-    LayoutPoint layerOffset;
-    columnBlock->layer()->convertToLayerCoords(rootLayer, layerOffset);
-
-    ColumnInfo* colInfo = columnBlock->columnInfo();
-    int colCount = columnBlock->columnCount(colInfo);
-
-    // We have to go backwards from the last column to the first.
-    bool isHorizontal = columnBlock->style()->isHorizontalWritingMode();
-    LayoutUnit logicalLeft = columnBlock->logicalLeftOffsetForContent();
-    LayoutUnit currLogicalTopOffset = 0;
-    int i;
-    for (i = 0; i < colCount; i++) {
-        LayoutRect colRect = columnBlock->columnRectAt(colInfo, i);
-        LayoutUnit blockDelta =  (isHorizontal ? colRect.height() : colRect.width());
-        if (columnBlock->style()->isFlippedBlocksWritingMode())
-            currLogicalTopOffset += blockDelta;
-        else
-            currLogicalTopOffset -= blockDelta;
-    }
-    for (i = colCount - 1; i >= 0; i--) {
-        // For each rect, we clip to the rect, and then we adjust our coords.
-        LayoutRect colRect = columnBlock->columnRectAt(colInfo, i);
-        columnBlock->flipForWritingMode(colRect);
-        LayoutUnit currLogicalLeftOffset = (isHorizontal ? colRect.x() : colRect.y()) - logicalLeft;
-        LayoutUnit blockDelta =  (isHorizontal ? colRect.height() : colRect.width());
-        if (columnBlock->style()->isFlippedBlocksWritingMode())
-            currLogicalTopOffset -= blockDelta;
-        else
-            currLogicalTopOffset += blockDelta;
-
-        LayoutSize offset;
-        if (isHorizontal) {
-            if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                offset = LayoutSize(currLogicalLeftOffset, currLogicalTopOffset);
-            else
-                offset = LayoutSize(0, colRect.y() + currLogicalTopOffset - columnBlock->borderTop() - columnBlock->paddingTop());
-        } else {
-            if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                offset = LayoutSize(currLogicalTopOffset, currLogicalLeftOffset);
-            else
-                offset = LayoutSize(colRect.x() + currLogicalTopOffset - columnBlock->borderLeft() - columnBlock->paddingLeft(), 0);
-        }
-
-        colRect.moveBy(layerOffset);
-
-        LayoutRect localClipRect(hitTestRect);
-        localClipRect.intersect(colRect);
-
-        if (!localClipRect.isEmpty() && hitTestLocation.intersects(localClipRect)) {
-            DeprecatedPaintLayer* hitLayer = 0;
-            if (!columnIndex) {
-                // Apply a translation transform to change where the layer paints.
-                TransformationMatrix oldTransform;
-                bool oldHasTransform = childLayer->transform();
-                if (oldHasTransform)
-                    oldTransform = *childLayer->transform();
-                TransformationMatrix newTransform(oldTransform);
-                newTransform.translateRight(offset.width(), offset.height());
-
-                childLayer->m_transform = adoptPtr(new TransformationMatrix(newTransform));
-                hitLayer = childLayer->hitTestLayer(rootLayer, columnLayers[0], result, localClipRect, hitTestLocation, false, transformState, zOffset);
-                if (oldHasTransform)
-                    childLayer->m_transform = adoptPtr(new TransformationMatrix(oldTransform));
-                else
-                    childLayer->m_transform.clear();
-            } else {
-                // Adjust the transform such that the layoutObjects's upper left corner will be at (0,0) in user space.
-                // This involves subtracting out the position of the layer in our current coordinate space.
-                DeprecatedPaintLayer* nextLayer = columnLayers[columnIndex - 1];
-                RefPtr<HitTestingTransformState> newTransformState = nextLayer->createLocalTransformState(rootLayer, nextLayer, localClipRect, hitTestLocation, transformState);
-                newTransformState->translate(offset.width(), offset.height(), HitTestingTransformState::AccumulateTransform);
-                FloatPoint localPoint = newTransformState->mappedPoint();
-                FloatQuad localPointQuad = newTransformState->mappedQuad();
-                LayoutRect localHitTestRect(newTransformState->mappedArea().enclosingBoundingBox());
-                HitTestLocation newHitTestLocation;
-                if (hitTestLocation.isRectBasedTest())
-                    newHitTestLocation = HitTestLocation(localPoint, localPointQuad);
-                else
-                    newHitTestLocation = HitTestLocation(localPoint);
-                newTransformState->flatten();
-
-                hitLayer = hitTestChildLayerColumns(childLayer, columnLayers[columnIndex - 1], result, localHitTestRect, newHitTestLocation,
-                    newTransformState.get(), zOffset, columnLayers, columnIndex - 1);
-            }
-
-            if (hitLayer)
-                return hitLayer;
-        }
-    }
-
-    return 0;
 }
 
 void DeprecatedPaintLayer::blockSelectionGapsBoundsChanged()
@@ -2456,7 +2188,7 @@ LayoutRect DeprecatedPaintLayer::boundingBoxForCompositing(const DeprecatedPaint
     // The layer created for the LayoutFlowThread is just a helper for painting and hit-testing,
     // and should not contribute to the bounding box. The LayoutMultiColumnSets will contribute
     // the correct size for the layout content of the multicol container.
-    if (RuntimeEnabledFeatures::regionBasedColumnsEnabled() && layoutObject()->isLayoutFlowThread())
+    if (layoutObject()->isLayoutFlowThread())
         return LayoutRect();
 
     LayoutRect result = clipper().localClipRect();
@@ -2578,17 +2310,18 @@ void DeprecatedPaintLayer::clearCompositedDeprecatedPaintLayerMapping(bool layer
         updateOrRemoveFilterEffectBuilder();
 }
 
-void DeprecatedPaintLayer::setGroupedMapping(CompositedDeprecatedPaintLayerMapping* groupedMapping, bool layerBeingDestroyed)
+void DeprecatedPaintLayer::setGroupedMapping(CompositedDeprecatedPaintLayerMapping* groupedMapping, SetGroupMappingOptions options)
 {
     if (groupedMapping == m_groupedMapping)
         return;
 
-    if (!layerBeingDestroyed && m_groupedMapping) {
+    if (options == InvalidateLayerAndRemoveFromMapping && m_groupedMapping) {
         m_groupedMapping->setNeedsGraphicsLayerUpdate(GraphicsLayerUpdateSubtree);
         m_groupedMapping->removeLayerFromSquashingGraphicsLayer(this);
     }
     m_groupedMapping = groupedMapping;
-    if (!layerBeingDestroyed && m_groupedMapping)
+    ASSERT(!m_groupedMapping || m_groupedMapping->verifyLayerInSquashingVector(this));
+    if (options == InvalidateLayerAndRemoveFromMapping && m_groupedMapping)
         m_groupedMapping->setNeedsGraphicsLayerUpdate(GraphicsLayerUpdateSubtree);
 }
 
@@ -2630,7 +2363,7 @@ bool DeprecatedPaintLayer::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& l
     // FIXME: Remove this check.
     // This function should not be called when layer-lists are dirty.
     // It is somehow getting triggered during style update.
-    if (m_stackingNode->zOrderListsDirty() || m_stackingNode->normalFlowListDirty())
+    if (m_stackingNode->zOrderListsDirty())
         return false;
 
     // FIXME: We currently only check the immediate layoutObject,
@@ -2804,7 +2537,7 @@ void DeprecatedPaintLayer::styleChanged(StyleDifference diff, const ComputedStyl
     if (attemptDirectCompositingUpdate(diff, oldStyle))
         return;
 
-    m_stackingNode->updateIsNormalFlowOnly();
+    m_stackingNode->updateIsTreatedAsStackingContextForPainting();
     m_stackingNode->updateStackingNodesAfterStyleChange(oldStyle);
 
     if (m_scrollableArea)
@@ -2846,7 +2579,7 @@ FilterOperations DeprecatedPaintLayer::computeFilterOperations(const ComputedSty
             ReferenceFilterOperation& referenceOperation = toReferenceFilterOperation(*filterOperation);
             // FIXME: Cache the ReferenceFilter if it didn't change.
             RefPtrWillBeRawPtr<ReferenceFilter> referenceFilter = ReferenceFilter::create(style.effectiveZoom());
-            referenceFilter->setLastEffect(ReferenceFilterBuilder::build(referenceFilter.get(), *layoutObject(), referenceFilter->sourceGraphic(),
+            referenceFilter->setLastEffect(ReferenceFilterBuilder::build(referenceFilter.get(), toElement(enclosingElement()), referenceFilter->sourceGraphic(),
                 referenceOperation));
             referenceOperation.setFilter(referenceFilter.release());
         }
@@ -2888,7 +2621,8 @@ void DeprecatedPaintLayer::updateOrRemoveFilterEffectBuilder()
 
     // If the filter fails to build, remove it from the layer. It will still attempt to
     // go through regular processing (e.g. compositing), but never apply anything.
-    if (!filterInfo->builder()->build(layoutObject(), computeFilterOperations(layoutObject()->styleRef())))
+    float zoom = layoutObject()->style() ? layoutObject()->style()->effectiveZoom() : 1.0f;
+    if (!filterInfo->builder()->build(toElement(enclosingElement()), computeFilterOperations(layoutObject()->styleRef()), zoom))
         filterInfo->setBuilder(nullptr);
 }
 
@@ -2941,19 +2675,6 @@ void DeprecatedPaintLayer::computeSelfHitTestRects(LayerHitTestRects& rects) con
             rect.append(logicalBoundingBox());
             rects.set(this, rect);
         }
-    }
-}
-
-void DeprecatedPaintLayer::setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants()
-{
-    layoutObject()->setShouldDoFullPaintInvalidation();
-
-    // Disable for reading compositingState() in isPaintInvalidationContainer() below.
-    DisableCompositingQueryAsserts disabler;
-
-    for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->isPaintInvalidationContainer())
-            child->setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
     }
 }
 

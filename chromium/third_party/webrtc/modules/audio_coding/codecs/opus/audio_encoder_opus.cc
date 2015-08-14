@@ -114,10 +114,10 @@ int AudioEncoderOpus::NumChannels() const {
 size_t AudioEncoderOpus::MaxEncodedBytes() const {
   // Calculate the number of bytes we expect the encoder to produce,
   // then multiply by two to give a wide margin for error.
-  int frame_size_ms = num_10ms_frames_per_packet_ * 10;
-  int bytes_per_millisecond = bitrate_bps_ / (1000 * 8) + 1;
+  size_t bytes_per_millisecond =
+       static_cast<size_t>(bitrate_bps_ / (1000 * 8) + 1);
   size_t approx_encoded_bytes =
-      static_cast<size_t>(frame_size_ms * bytes_per_millisecond);
+      num_10ms_frames_per_packet_ * 10 * bytes_per_millisecond;
   return 2 * approx_encoded_bytes;
 }
 
@@ -127,6 +127,10 @@ int AudioEncoderOpus::Num10MsFramesInNextPacket() const {
 
 int AudioEncoderOpus::Max10MsFramesInAPacket() const {
   return num_10ms_frames_per_packet_;
+}
+
+int AudioEncoderOpus::GetTargetBitrate() const {
+  return bitrate_bps_;
 }
 
 void AudioEncoderOpus::SetTargetBitrate(int bits_per_second) {
@@ -198,7 +202,7 @@ AudioEncoder::EncodedInfo AudioEncoderOpus::EncodeInternal(
   CHECK_EQ(input_buffer_.size(),
            static_cast<size_t>(num_10ms_frames_per_packet_) *
            samples_per_10ms_frame_);
-  int16_t status = WebRtcOpus_Encode(
+  int status = WebRtcOpus_Encode(
       inst_, &input_buffer_[0],
       rtc::CheckedDivExact(CastInt16(input_buffer_.size()),
                            static_cast<int16_t>(num_channels_)),
@@ -206,7 +210,7 @@ AudioEncoder::EncodedInfo AudioEncoderOpus::EncodeInternal(
   CHECK_GE(status, 0);  // Fails only if fed invalid data.
   input_buffer_.clear();
   EncodedInfo info;
-  info.encoded_bytes = status;
+  info.encoded_bytes = static_cast<size_t>(status);
   info.encoded_timestamp = first_timestamp_in_buffer_;
   info.payload_type = payload_type_;
   info.send_even_if_empty = true;  // Allows Opus to send empty packets.

@@ -124,13 +124,6 @@ public:
     // isAcceleratedCompositingActive() is true.
     virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) { }
 
-    // Returns true if we've started tracking repaint rectangles.
-    virtual bool isTrackingRepaints() const { return false; }
-
-    // Indicates that the compositing surface associated with this WebWidget is
-    // ready to use.
-    virtual void setCompositorSurfaceReady() { }
-
     // Called to inform the WebWidget of a change in theme.
     // Implementors that cache rendered copies of widgets need to re-render
     // on receiving this message
@@ -149,15 +142,8 @@ public:
     // Applies viewport related properties during a commit from the compositor
     // thread.
     virtual void applyViewportDeltas(
-        const WebSize& scrollDelta,
-        float scaleFactor,
-        float topControlsShownRatioDelta) { }
-
-    // Applies viewport related properties during a commit from the compositor
-    // thread.
-    virtual void applyViewportDeltas(
         const WebFloatSize& pinchViewportDelta,
-        const WebFloatSize& mainFrameDelta,
+        const WebFloatSize& layoutViewportDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,
         float topControlsShownRatioDelta) { }
@@ -218,13 +204,6 @@ public:
     // If the selection range is empty, it returns the caret bounds.
     virtual bool selectionBounds(WebRect& anchor, WebRect& focus) const { return false; }
 
-    // Called to notify that IME candidate window has changed its visibility or
-    // its appearance. These calls correspond to trigger
-    // candidatewindow{show,update,hide} events defined in W3C IME API.
-    virtual void didShowCandidateWindow() { }
-    virtual void didUpdateCandidateWindow() { }
-    virtual void didHideCandidateWindow() { }
-
     // Returns the text direction at the start and end bounds of the current selection.
     // If the selection range is empty, it returns false.
     virtual bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const { return false; }
@@ -250,8 +229,6 @@ public:
     virtual bool isWebView() const { return false; }
     // Returns true if the WebWidget created is of type WebPagePopup.
     virtual bool isPagePopup() const { return false; }
-    // Returns true if the WebWidget created is of type WebPopupMenu.
-    virtual bool isPopupMenu() const { return false; }
 
     // The WebLayerTreeView initialized on this WebWidgetClient will be going away and
     // is no longer safe to access.

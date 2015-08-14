@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/background_sync/background_sync.pb.h"
+#include "content/browser/background_sync/background_sync_registration.h"
 #include "content/browser/cache_storage/cache_storage_scheduler.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_storage.h"
@@ -22,6 +23,7 @@
 namespace content {
 
 class BackgroundSyncNetworkObserver;
+class BackgroundSyncPowerObserver;
 class ServiceWorkerContextWrapper;
 
 // BackgroundSyncManager manages and stores the set of background sync
@@ -49,33 +51,6 @@ class CONTENT_EXPORT BackgroundSyncManager
     ERROR_TYPE_NO_SERVICE_WORKER
   };
 
-  // TODO(jkarlin): Remove this and use the struct from IPC messages once it
-  // lands.
-  struct CONTENT_EXPORT BackgroundSyncRegistration {
-    using RegistrationId = int64;
-    static const RegistrationId kInvalidRegistrationId;
-    static const RegistrationId kInitialId;
-    BackgroundSyncRegistration() {}
-
-    bool Equals(const BackgroundSyncRegistration& other) const {
-      return this->tag == other.tag && this->periodicity == other.periodicity &&
-             this->min_period == other.min_period &&
-             network_state == other.network_state &&
-             power_state == other.power_state;
-    }
-
-    // Registrations options from the specification
-    std::string tag;
-    int64 min_period = 0;
-    SyncNetworkState network_state = NETWORK_STATE_ONLINE;
-    SyncPowerState power_state = POWER_STATE_AVOID_DRAINING;
-
-    // Implementation specific members
-    RegistrationId id = kInvalidRegistrationId;
-    SyncPeriodicity periodicity = SYNC_ONE_SHOT;
-    SyncState sync_state = SYNC_STATE_PENDING;
-  };
-
   using StatusCallback = base::Callback<void(ErrorType)>;
   using StatusAndRegistrationCallback =
       base::Callback<void(ErrorType, const BackgroundSyncRegistration&)>;
@@ -94,7 +69,7 @@ class CONTENT_EXPORT BackgroundSyncManager
   // registration will have a unique id. It may also have altered parameters if
   // the user or UA chose different parameters than those supplied.
   void Register(int64 sw_registration_id,
-                const BackgroundSyncRegistration& sync_registration,
+                const BackgroundSyncRegistrationOptions& options,
                 const StatusAndRegistrationCallback& callback);
 
   // Removes the background sync with tag |sync_registration_tag|, periodicity
@@ -152,6 +127,7 @@ class CONTENT_EXPORT BackgroundSyncManager
   class RegistrationKey {
    public:
     explicit RegistrationKey(const BackgroundSyncRegistration& registration);
+    explicit RegistrationKey(const BackgroundSyncRegistrationOptions& options);
     RegistrationKey(const std::string& tag, SyncPeriodicity periodicity);
     RegistrationKey(const RegistrationKey& other) = default;
     RegistrationKey& operator=(const RegistrationKey& other) = default;
@@ -219,7 +195,7 @@ class CONTENT_EXPORT BackgroundSyncManager
 
   // Register callbacks
   void RegisterImpl(int64 sw_registration_id,
-                    const BackgroundSyncRegistration& sync_registration,
+                    const BackgroundSyncRegistrationOptions& options,
                     const StatusAndRegistrationCallback& callback);
   void RegisterDidStore(int64 sw_registration_id,
                         const BackgroundSyncRegistration& sync_registration,
@@ -249,6 +225,12 @@ class CONTENT_EXPORT BackgroundSyncManager
 
   bool IsRegistrationReadyToFire(
       const BackgroundSyncRegistration& registration);
+
+  // Schedules pending registrations to run in the future. For one-shots this
+  // means keeping the browser alive so that network connectivity events can be
+  // seen (on Android the browser is instead woken up the next time it goes
+  // online). For periodic syncs this means creating an alarm.
+  void SchedulePendingRegistrations();
 
   // FireReadyEvents and callbacks
   void FireReadyEvents();
@@ -287,6 +269,7 @@ class CONTENT_EXPORT BackgroundSyncManager
   void OnStorageWipedImpl(const base::Closure& callback);
 
   void OnNetworkChanged();
+  void OnPowerChanged();
 
   // Operation Scheduling callback and convenience functions.
   template <typename CallbackT, typename... Params>
@@ -306,6 +289,7 @@ class CONTENT_EXPORT BackgroundSyncManager
   bool disabled_;
 
   scoped_ptr<BackgroundSyncNetworkObserver> network_observer_;
+  scoped_ptr<BackgroundSyncPowerObserver> power_observer_;
 
   base::WeakPtrFactory<BackgroundSyncManager> weak_ptr_factory_;
 

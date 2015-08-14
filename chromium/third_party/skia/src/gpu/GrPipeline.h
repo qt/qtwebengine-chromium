@@ -11,6 +11,7 @@
 #include "GrColor.h"
 #include "GrGpu.h"
 #include "GrPendingFragmentStage.h"
+#include "GrPrimitiveProcessor.h"
 #include "GrProgramDesc.h"
 #include "GrStencil.h"
 #include "GrTypesPriv.h"
@@ -27,14 +28,14 @@ class GrPipelineBuilder;
  */
 class GrPipeline {
 public:
-    SK_DECLARE_INST_COUNT(GrPipeline)
+    
 
     GrPipeline(const GrPipelineBuilder&,
                const GrProcOptInfo& colorPOI,
                const GrProcOptInfo& coveragePOI,
-               const GrDrawTargetCaps&,
+               const GrCaps&,
                const GrScissorState&,
-               const GrDeviceCoordTexture* dstCopy);
+               const GrXferProcessor::DstTexture*);
 
     /*
      * Returns true if these pipelines are equivalent.
@@ -96,7 +97,9 @@ public:
 
     bool readsFragPosition() const { return fReadsFragPosition; }
 
-    const GrPipelineInfo& getInitBatchTracker() const { return fInitBT; }
+    const GrPipelineInfo& infoForPrimitiveProcessor() const {
+        return fInfoForPrimitiveProcessor;
+    }
 
 private:
     /**
@@ -115,7 +118,7 @@ private:
      * blend coeffs will represent those used by backend API.
      */
     void setOutputStateInfo(const GrPipelineBuilder& ds, GrXferProcessor::OptFlags,
-                            const GrDrawTargetCaps&);
+                            const GrCaps&);
 
     enum Flags {
         kDither_Flag            = 0x1,
@@ -134,7 +137,7 @@ private:
     ProgramXferProcessor                fXferProcessor;
     FragmentStageArray                  fFragmentStages;
     bool                                fReadsFragPosition;
-    GrPipelineInfo                      fInitBT;
+    GrPipelineInfo                      fInfoForPrimitiveProcessor;
 
     // This function is equivalent to the offset into fFragmentStages where coverage stages begin.
     int                                 fNumColorStages;

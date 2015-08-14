@@ -42,9 +42,9 @@ class EVENTS_OZONE_EVDEV_EXPORT EventConverterEvdevImpl
   bool HasKeyboard() const override;
   bool HasTouchpad() const override;
   bool HasCapsLockLed() const override;
-  void SetAllowedKeys(scoped_ptr<std::set<DomCode>> allowed_keys) override;
-  void AllowAllKeys() override;
-  void OnStopped() override;
+  void SetKeyFilter(bool enable_filter,
+                    std::vector<DomCode> allowed_keys) override;
+  void OnDisabled() override;
 
   void ProcessEvents(const struct input_event* inputs, int count);
 
@@ -72,10 +72,10 @@ class EVENTS_OZONE_EVDEV_EXPORT EventConverterEvdevImpl
   bool has_caps_lock_led_;
 
   // Save x-axis events of relative devices to be flushed at EV_SYN time.
-  int x_offset_;
+  int x_offset_ = 0;
 
   // Save y-axis events of relative devices to be flushed at EV_SYN time.
-  int y_offset_;
+  int y_offset_ = 0;
 
   // Controller for watching the input fd.
   base::MessagePumpLibevent::FileDescriptorWatcher controller_;

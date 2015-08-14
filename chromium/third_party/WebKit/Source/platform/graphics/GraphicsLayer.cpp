@@ -288,9 +288,10 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     if (m_displayItemList && contentsOpaque()) {
         ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
         FloatRect rect(FloatPoint(), size());
-        DrawingRecorder recorder(context, *this, DisplayItem::DebugRedFill, rect);
-        if (!recorder.canUseCachedDrawing())
+        if (!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::DebugRedFill)) {
+            DrawingRecorder recorder(context, *this, DisplayItem::DebugRedFill, rect);
             context.fillRect(rect, SK_ColorRED);
+        }
     }
 #endif
     m_client->paintContents(this, context, m_paintingPhase, clip);
@@ -701,11 +702,12 @@ PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, Rend
             json->setBoolean("hasClipParent", true);
     }
 
-    if (flags & LayerTreeIncludesDebugInfo) {
+    if (flags & (LayerTreeIncludesDebugInfo | LayerTreeIncludesCompositingReasons)) {
+        bool debug = flags & LayerTreeIncludesDebugInfo;
         RefPtr<JSONArray> compositingReasonsJSON = adoptRef(new JSONArray);
         for (size_t i = 0; i < kNumberOfCompositingReasons; ++i) {
             if (m_debugInfo.compositingReasons() & kCompositingReasonStringMap[i].reason)
-                compositingReasonsJSON->pushString(kCompositingReasonStringMap[i].description);
+                compositingReasonsJSON->pushString(debug ? kCompositingReasonStringMap[i].description : kCompositingReasonStringMap[i].shortName);
         }
         json->setArray("compositingReasons", compositingReasonsJSON);
     }
@@ -1150,9 +1152,10 @@ void GraphicsLayer::didScroll()
 {
     if (m_scrollableArea) {
         DoublePoint newPosition = m_scrollableArea->minimumScrollPosition() + toDoubleSize(m_layer->layer()->scrollPositionDouble());
-        bool cancelProgrammaticAnimations = false;
-        // FIXME: Remove the toFloatPoint(). crbug.com/414283.
-        m_scrollableArea->scrollToOffsetWithoutAnimation(toFloatPoint(newPosition), cancelProgrammaticAnimations);
+
+        // FrameView::setScrollPosition doesn't work for compositor commits (interacts poorly with programmatic scroll animations)
+        // so we need to use the ScrollableArea version. The FrameView method should go away soon anyway.
+        m_scrollableArea->ScrollableArea::setScrollPosition(newPosition, CompositorScroll);
     }
 }
 

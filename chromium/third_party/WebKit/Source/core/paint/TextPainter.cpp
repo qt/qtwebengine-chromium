@@ -10,6 +10,7 @@
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTextCombine.h"
 #include "core/layout/line/InlineTextBox.h"
+#include "core/paint/BoxPainter.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/ShadowList.h"
 #include "platform/fonts/Font.h"
@@ -17,11 +18,11 @@
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/text/TextRun.h"
 #include "wtf/Assertions.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
-TextPainter::TextPainter(GraphicsContext* context, const Font& font, const TextRun& run, const FloatPoint& textOrigin, const FloatRect& textBounds, bool horizontal)
+TextPainter::TextPainter(GraphicsContext* context, const Font& font, const TextRun& run, const LayoutPoint& textOrigin, const LayoutRect& textBounds, bool horizontal)
     : m_graphicsContext(context)
     , m_font(font)
     , m_run(run)
@@ -115,11 +116,12 @@ static Color textColorForWhiteBackground(Color textColor)
 }
 
 // static
-TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, const ComputedStyle& style, bool forceBlackText, bool isPrinting)
+TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, const ComputedStyle& style, bool usesTextAsClip, bool isPrinting)
 {
     TextPainter::Style textStyle;
 
-    if (forceBlackText) {
+    if (usesTextAsClip) {
+        // When we use the text as a clip, we only care about the alpha, thus we make all the colors black.
         textStyle.currentColor = Color::black;
         textStyle.fillColor = Color::black;
         textStyle.strokeColor = Color::black;
@@ -135,13 +137,8 @@ TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, co
         textStyle.shadow = style.textShadow();
 
         // Adjust text color when printing with a white background.
-        bool forceBackgroundToWhite = false;
-        if (isPrinting) {
-            if (style.printColorAdjust() == PrintColorAdjustEconomy)
-                forceBackgroundToWhite = true;
-            if (layoutObject.document().settings() && layoutObject.document().settings()->shouldPrintBackgrounds())
-                forceBackgroundToWhite = false;
-        }
+        ASSERT(layoutObject.document().printing() == isPrinting);
+        bool forceBackgroundToWhite = BoxPainter::shouldForceWhiteBackgroundForPrintEconomy(style, layoutObject.document());
         if (forceBackgroundToWhite) {
             textStyle.fillColor = textColorForWhiteBackground(textStyle.fillColor);
             textStyle.strokeColor = textColorForWhiteBackground(textStyle.strokeColor);
@@ -156,20 +153,20 @@ TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, co
     return textStyle;
 }
 
-TextPainter::Style TextPainter::selectionPaintingStyle(LayoutObject& layoutObject, bool haveSelection, bool forceBlackText, bool isPrinting, const TextPainter::Style& textStyle)
+TextPainter::Style TextPainter::selectionPaintingStyle(LayoutObject& layoutObject, bool haveSelection, bool usesTextAsClip, bool isPrinting, const TextPainter::Style& textStyle)
 {
     TextPainter::Style selectionStyle = textStyle;
 
     if (haveSelection) {
-        if (!forceBlackText) {
+        if (!usesTextAsClip) {
             selectionStyle.fillColor = layoutObject.selectionForegroundColor();
             selectionStyle.emphasisMarkColor = layoutObject.selectionEmphasisMarkColor();
         }
 
         if (const ComputedStyle* pseudoStyle = layoutObject.getCachedPseudoStyle(SELECTION)) {
-            selectionStyle.strokeColor = forceBlackText ? Color::black : layoutObject.resolveColor(*pseudoStyle, CSSPropertyWebkitTextStrokeColor);
+            selectionStyle.strokeColor = usesTextAsClip ? Color::black : layoutObject.resolveColor(*pseudoStyle, CSSPropertyWebkitTextStrokeColor);
             selectionStyle.strokeWidth = pseudoStyle->textStrokeWidth();
-            selectionStyle.shadow = forceBlackText ? 0 : pseudoStyle->textShadow();
+            selectionStyle.shadow = usesTextAsClip ? 0 : pseudoStyle->textShadow();
         }
 
         // Text shadows are disabled when printing. http://crbug.com/258321
@@ -191,10 +188,10 @@ void TextPainter::paintInternalRun(TextRunPaintInfo& textRunPaintInfo, int from,
 
     if (step == PaintEmphasisMark) {
         m_graphicsContext->drawEmphasisMarks(m_font, textRunPaintInfo, m_emphasisMark,
-            m_textOrigin + IntSize(0, m_emphasisMarkOffset));
+            FloatPoint(m_textOrigin) + IntSize(0, m_emphasisMarkOffset));
     } else {
         ASSERT(step == PaintText);
-        m_graphicsContext->drawText(m_font, textRunPaintInfo, m_textOrigin);
+        m_graphicsContext->drawText(m_font, textRunPaintInfo, FloatPoint(m_textOrigin));
     }
 }
 
@@ -219,7 +216,7 @@ void TextPainter::paintEmphasisMarkForCombinedText()
 {
     ASSERT(m_combinedText);
     DEFINE_STATIC_LOCAL(TextRun, placeholderTextRun, (&ideographicFullStopCharacter, 1));
-    FloatPoint emphasisMarkTextOrigin(m_textBounds.x(), m_textBounds.y() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
+    FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
     TextRunPaintInfo textRunPaintInfo(placeholderTextRun);
     textRunPaintInfo.bounds = m_textBounds;
     m_graphicsContext->concatCTM(rotation(m_textBounds, Clockwise));

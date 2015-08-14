@@ -188,6 +188,15 @@ cr.define('cr.ui', function() {
   };
 
   /**
+   * Show user-pods.
+   */
+  Oobe.showUserPods = function() {
+    $('pod-row').loadLastWallpaper();
+    Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
+    Oobe.resetSigninUI(true);
+  };
+
+  /**
    * Clears error bubble as well as optional menus that could be open.
    */
   Oobe.clearErrors = function() {
@@ -337,18 +346,23 @@ cr.define('cr.ui', function() {
   };
 
   /**
+   * Returns true if enrollment was successful. Dismisses the enrollment
+   * attribute screen if it's present.
+   */
+  Oobe.isEnrollmentSuccessfulForTest = function() {
+    if (document.querySelector(
+        '.oauth-enroll-state-attribute-prompt') != undefined) {
+      chrome.send('oauthEnrollAttributes', ['', '']);
+    }
+
+    return document.querySelector('.oauth-enroll-state-success') != undefined;
+  };
+
+  /**
    * Shows/hides login UI control bar with buttons like [Shut down].
    */
   Oobe.showControlBar = function(show) {
     Oobe.getInstance().headerHidden = !show;
-  };
-
-  /**
-   * Sets the current state of the virtual keyboard (shown/hidden, size).
-   */
-  Oobe.setKeyboardState = function(shown, width, height) {
-    Oobe.getInstance().virtualKeyboardShown = shown;
-    Oobe.getInstance().setVirtualKeyboardSize(width, height);
   };
 
   /**
@@ -395,7 +409,7 @@ disableTextSelectAndDrag(function(e) {
 (function() {
   'use strict';
 
-  function initializeOobe() {
+  document.addEventListener('DOMContentLoaded', function() {
     // Immediately load async assets.
     // TODO(dconnelly): remove this at some point and only load as needed.
     // See crbug.com/236426
@@ -407,15 +421,5 @@ disableTextSelectAndDrag(function(e) {
     });
 
     cr.ui.Oobe.initialize();
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    if (!window['WAIT_FOR_POLYMER']) {
-      initializeOobe();
-      return;
-    }
-    window.addEventListener('polymer-ready', function() {
-      initializeOobe();
-    });
   });
 })();

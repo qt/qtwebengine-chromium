@@ -22,6 +22,7 @@
 #ifndef WTF_LinkedHashSet_h
 #define WTF_LinkedHashSet_h
 
+#include "wtf/AddressSanitizer.h"
 #include "wtf/DefaultAllocator.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -53,6 +54,7 @@ class LinkedHashSetNodeBase {
 public:
     LinkedHashSetNodeBase() : m_prev(this), m_next(this) { }
 
+    NO_LAZY_SWEEP_SANITIZE_ADDRESS
     void unlink()
     {
         if (!m_next)

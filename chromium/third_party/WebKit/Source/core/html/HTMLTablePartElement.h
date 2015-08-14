@@ -40,12 +40,12 @@ protected:
     {
     }
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     HTMLTableElement* findParentTable() const;
 };
 
-} //namespace
+} // namespace
 
 #endif

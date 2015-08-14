@@ -27,7 +27,6 @@
 #include "bindings/core/v8/V8PerIsolateData.h"
 
 #include "bindings/core/v8/DOMDataStore.h"
-#include "bindings/core/v8/ScriptDebugServer.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8HiddenValue.h"
@@ -35,6 +34,7 @@
 #include "bindings/core/v8/V8RecursionScope.h"
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/ScriptDebuggerBase.h"
 #include "public/platform/Platform.h"
 #include "wtf/MainThread.h"
 
@@ -65,6 +65,9 @@ static void useCounterCallback(v8::Isolate* isolate, v8::Isolate::UseCounterFeat
         break;
     case v8::Isolate::kLegacyConst:
         UseCounter::count(callingExecutionContext(isolate), UseCounter::LegacyConst);
+        break;
+    case v8::Isolate::kObjectObserve:
+        UseCounter::count(callingExecutionContext(isolate), UseCounter::ObjectObserve);
         break;
     default:
         // This can happen if V8 has added counters that this version of Blink
@@ -101,10 +104,6 @@ V8PerIsolateData::V8PerIsolateData()
 
 V8PerIsolateData::~V8PerIsolateData()
 {
-    if (m_scriptRegexpScriptState)
-        m_scriptRegexpScriptState->disposePerContextData();
-    if (isMainThread())
-        mainThreadPerIsolateData = 0;
 }
 
 v8::Isolate* V8PerIsolateData::mainThreadIsolate()
@@ -148,9 +147,23 @@ void V8PerIsolateData::destroy(v8::Isolate* isolate)
         isolate->RemoveCallCompletedCallback(&assertV8RecursionScope);
 #endif
     V8PerIsolateData* data = from(isolate);
+
+    // Clear everything before exiting the Isolate.
+    if (data->m_scriptRegexpScriptState)
+        data->m_scriptRegexpScriptState->disposePerContextData();
+    data->m_scriptDebugger.clear();
+    data->m_liveRoot.clear();
+    data->m_hiddenValue.clear();
+    data->m_stringCache->dispose();
+    data->m_stringCache.clear();
+    data->m_toStringTemplate.clear();
+    data->m_domTemplateMapForNonMainWorld.clear();
+    data->m_domTemplateMapForMainWorld.clear();
+    if (isMainThread())
+        mainThreadPerIsolateData = 0;
+
     // FIXME: Remove once all v8::Isolate::GetCurrent() calls are gone.
     isolate->Exit();
-    data->m_scriptDebugger.clear();
     delete data;
 }
 

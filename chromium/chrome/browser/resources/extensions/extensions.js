@@ -125,17 +125,10 @@ cr.define('extensions', function() {
     dragEnabled_: false,
 
     /**
-     * Callback for testing purposes. This is called after the "Developer mode"
-     * checkbox is toggled and the div containing developer buttons' height has
-     * been set.
-     * @type {function()?}
-     */
-    testingDeveloperModeCallback: null,
-
-    /**
      * Perform initial setup.
      */
     initialize: function() {
+      this.setLoading_(true);
       uber.onContentFrameLoaded();
       cr.ui.FocusOutlineManager.forDocument(document);
       measureCheckboxStrings();
@@ -148,10 +141,12 @@ cr.define('extensions', function() {
       var wrapper = $('extension-list-wrapper');
       wrapper.insertBefore(extensionList, wrapper.firstChild);
 
-      this.update_();
-      // TODO(devlin): Remove this once all notifications are moved to events on
-      // the developerPrivate api.
-      chrome.send('extensionSettingsRegister');
+      // Get the initial profile state, and register to be notified of any
+      // future changes.
+      chrome.developerPrivate.getProfileConfiguration(
+          this.update_.bind(this));
+      chrome.developerPrivate.onProfileStateChanged.addListener(
+          this.update_.bind(this));
 
       var extensionLoader = extensions.ExtensionLoader.getInstance();
 
@@ -240,23 +235,15 @@ cr.define('extensions', function() {
     },
 
     /**
-     * Updates the extensions page to the latest profile and extensions
-     * configuration.
-     * @private
-     */
-    update_: function() {
-      chrome.developerPrivate.getProfileConfiguration(
-          this.returnProfileConfiguration_.bind(this));
-    },
-
-    /**
      * [Re]-Populates the page with data representing the current state of
      * installed extensions.
      * @param {ProfileInfo} profileInfo
      * @private
      */
-    returnProfileConfiguration_: function(profileInfo) {
+    update_: function(profileInfo) {
+      this.setLoading_(true);
       webuiResponded = true;
+
       /** @const */
       var supervised = profileInfo.isSupervised;
 
@@ -268,24 +255,30 @@ cr.define('extensions', function() {
       devControlsCheckbox.checked = profileInfo.inDeveloperMode;
       devControlsCheckbox.disabled = supervised;
 
-      this.updateDevControlsVisibility_(false);
-
       $('load-unpacked').disabled = !profileInfo.canLoadUnpacked;
       var extensionList = $('extension-settings-list');
       extensionList.updateExtensionsData(
           profileInfo.isIncognitoAvailable,
           profileInfo.appInfoDialogEnabled).then(function() {
-        // We can get called many times in short order, thus we need to
-        // be careful to remove the 'finished loading' timeout.
-        if (this.loadingTimeout_)
-          window.clearTimeout(this.loadingTimeout_);
-        document.documentElement.classList.add('loading');
-        this.loadingTimeout_ = window.setTimeout(function() {
-          document.documentElement.classList.remove('loading');
-        }, 0);
-
+        this.setLoading_(false);
         this.onExtensionCountChanged();
       }.bind(this));
+    },
+
+    /**
+     * Shows the loading spinner and hides elements that shouldn't be visible
+     * while loading.
+     * @param {boolean} isLoading
+     * @private
+     */
+    setLoading_: function(isLoading) {
+      document.documentElement.classList.toggle('loading', isLoading);
+      $('loading-spinner').hidden = !isLoading;
+      $('dev-controls').hidden = isLoading;
+      this.updateDevControlsVisibility_(false);
+
+      // The extension list is already hidden/shown elsewhere and shouldn't be
+      // updated here because it can be hidden if there are no extensions.
     },
 
     /**
@@ -352,8 +345,7 @@ cr.define('extensions', function() {
         devControls.style.height = !showDevControls ? '' :
             buttons.offsetHeight + 'px';
 
-        if (this.testingDeveloperModeCallback)
-          this.testingDeveloperModeCallback();
+        document.dispatchEvent(new Event('devControlsVisibilityUpdated'));
       }.bind(this));
     },
 
@@ -364,14 +356,6 @@ cr.define('extensions', function() {
       $('no-extensions').hidden = hasExtensions;
       $('extension-list-wrapper').hidden = !hasExtensions;
     },
-  };
-
-  /**
-   * Called by the WebUI when something has changed and the extensions UI needs
-   * to be updated.
-   */
-  ExtensionSettings.onExtensionsChanged = function() {
-    ExtensionSettings.getInstance().update_();
   };
 
   /**
@@ -401,9 +385,19 @@ cr.define('extensions', function() {
     }
 
     if (node) {
-      var lastFocused = document.activeElement;
+      var lastFocused;
+
+      var focusOutlineManager = cr.ui.FocusOutlineManager.forDocument(document);
+      if (focusOutlineManager.visible)
+        lastFocused = document.activeElement;
+
       $('overlay').addEventListener('cancelOverlay', function f() {
-        lastFocused.focus();
+        console.log('cancelOverlay');
+        console.log('lastFocused', lastFocused);
+        console.log('focusOutlineManager.visible', focusOutlineManager.visible);
+        if (lastFocused && focusOutlineManager.visible)
+          lastFocused.focus();
+
         $('overlay').removeEventListener('cancelOverlay', f);
       });
       node.classList.add('showing');
@@ -483,6 +477,5 @@ cr.define('extensions', function() {
 });
 
 window.addEventListener('load', function(e) {
-  document.documentElement.classList.add('loading');
   extensions.ExtensionSettings.getInstance().initialize();
 });

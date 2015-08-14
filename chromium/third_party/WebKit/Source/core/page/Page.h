@@ -44,7 +44,6 @@
 namespace blink {
 
 class AutoscrollController;
-class Chrome;
 class ChromeClient;
 class ClientRectList;
 class ContextMenuClient;
@@ -130,7 +129,7 @@ public:
     void setOpenedByDOM();
 
     PageAnimator& animator() { return *m_animator; }
-    Chrome& chrome() const { return *m_chrome; }
+    ChromeClient& chromeClient() const { return *m_chromeClient; }
     AutoscrollController& autoscrollController() const { return *m_autoscrollController; }
     DragCaretController& dragCaretController() const { return *m_dragCaretController; }
     DragController& dragController() const { return *m_dragController; }
@@ -214,13 +213,13 @@ private:
 
     RefPtrWillBeMember<PageAnimator> m_animator;
     const OwnPtr<AutoscrollController> m_autoscrollController;
-    const OwnPtr<Chrome> m_chrome;
+    ChromeClient* m_chromeClient;
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtrWillBeMember<FocusController> m_focusController;
     const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
     const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
-    OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
+    OwnPtrWillBeMember<ScrollingCoordinator> m_scrollingCoordinator;
     const OwnPtrWillBeMember<UndoStack> m_undoStack;
 
     // Typically, the main frame and Page should both be owned by the embedder,
@@ -270,7 +269,7 @@ private:
     OwnPtrWillBeMember<FrameHost> m_frameHost;
 };
 
-extern template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;
 
 } // namespace blink
 

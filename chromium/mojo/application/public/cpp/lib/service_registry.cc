@@ -30,9 +30,6 @@ ServiceRegistry::ServiceRegistry()
     : application_impl_(nullptr), local_binding_(this) {
 }
 
-ServiceRegistry::~ServiceRegistry() {
-}
-
 void ServiceRegistry::SetServiceConnector(ServiceConnector* connector) {
   service_connector_registry_.set_service_connector(connector);
 }
@@ -42,6 +39,10 @@ void ServiceRegistry::SetServiceConnectorForName(
     const std::string& interface_name) {
   service_connector_registry_.SetServiceConnectorForName(service_connector,
                                                          interface_name);
+}
+
+ServiceProvider* ServiceRegistry::GetLocalServiceProvider() {
+  return this;
 }
 
 void ServiceRegistry::RemoveServiceConnectorForName(
@@ -61,6 +62,14 @@ const std::string& ServiceRegistry::GetRemoteApplicationURL() {
 
 ServiceProvider* ServiceRegistry::GetServiceProvider() {
   return remote_service_provider_.get();
+}
+
+ServiceRegistry::~ServiceRegistry() {
+}
+
+void ServiceRegistry::OnCloseConnection() {
+  if (application_impl_)
+    application_impl_->CloseConnection(this);
 }
 
 void ServiceRegistry::ConnectToService(const mojo::String& service_name,

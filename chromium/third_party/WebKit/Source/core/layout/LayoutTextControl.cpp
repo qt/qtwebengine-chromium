@@ -27,7 +27,7 @@
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/TextRunConstructor.h"
 #include "platform/scroll/ScrollbarTheme.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
@@ -205,7 +205,7 @@ static const char* const fontFamiliesWithInvalidCharWidth[] = {
 // all platforms.
 bool LayoutTextControl::hasValidAvgCharWidth(AtomicString family)
 {
-    static HashSet<AtomicString>* fontFamiliesWithInvalidCharWidthMap = 0;
+    static HashSet<AtomicString>* fontFamiliesWithInvalidCharWidthMap = nullptr;
 
     if (family.isEmpty())
         return false;
@@ -290,9 +290,9 @@ void LayoutTextControl::addFocusRingRects(Vector<LayoutRect>& rects, const Layou
 LayoutObject* LayoutTextControl::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
     HTMLElement* placeholder = toHTMLTextFormControlElement(node())->placeholderElement();
-    LayoutObject* placeholderLayoutObject = placeholder ? placeholder->layoutObject() : 0;
+    LayoutObject* placeholderLayoutObject = placeholder ? placeholder->layoutObject() : nullptr;
     if (!placeholderLayoutObject)
-        return 0;
+        return nullptr;
     if (relayoutChildren)
         layoutScope.setChildNeedsLayout(placeholderLayoutObject);
     return placeholderLayoutObject;

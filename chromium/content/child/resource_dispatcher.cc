@@ -18,11 +18,13 @@
 #include "base/strings/string_util.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/request_info.h"
-#include "content/child/site_isolation_policy.h"
+#include "content/child/shared_memory_received_data_factory.h"
+#include "content/child/site_isolation_stats_gatherer.h"
 #include "content/child/sync_load_response.h"
 #include "content/child/threaded_data_provider.h"
 #include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/resource_messages.h"
+#include "content/public/child/fixed_received_data.h"
 #include "content/public/child/request_peer.h"
 #include "content/public/child/resource_dispatcher_delegate.h"
 #include "content/public/common/resource_response.h"
@@ -84,7 +86,7 @@ bool ResourceDispatcher::OnMessageReceived(const IPC::Message& message) {
 
   int request_id;
 
-  PickleIterator iter(message);
+  base::PickleIterator iter(message);
   if (!iter.ReadInt(&request_id)) {
     NOTREACHED() << "malformed resource message";
     return true;
@@ -159,11 +161,10 @@ void ResourceDispatcher::OnReceivedResponse(
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
   request_info->site_isolation_metadata =
-      SiteIsolationPolicy::OnReceivedResponse(request_info->frame_origin,
-                                              request_info->response_url,
-                                              request_info->resource_type,
-                                              request_info->origin_pid,
-                                              renderer_response_info);
+      SiteIsolationStatsGatherer::OnReceivedResponse(
+          request_info->frame_origin, request_info->response_url,
+          request_info->resource_type, request_info->origin_pid,
+          renderer_response_info);
   request_info->peer->OnReceivedResponse(renderer_response_info);
 }
 
@@ -191,6 +192,9 @@ void ResourceDispatcher::OnSetDataBuffer(int request_id,
 
   request_info->buffer.reset(
       new base::SharedMemory(shm_handle, true));  // read only
+  request_info->received_data_factory =
+      make_scoped_refptr(new SharedMemoryReceivedDataFactory(
+          message_sender_, request_id, request_info->buffer));
 
   bool ok = request_info->buffer->Map(shm_size);
   if (!ok) {
@@ -222,7 +226,9 @@ void ResourceDispatcher::OnReceivedData(int request_id,
 
     // Ensure that the SHM buffer remains valid for the duration of this scope.
     // It is possible for Cancel() to be called before we exit this scope.
-    linked_ptr<base::SharedMemory> retain_buffer(request_info->buffer);
+    // SharedMemoryReceivedDataFactory stores the SHM buffer inside it.
+    scoped_refptr<SharedMemoryReceivedDataFactory> factory(
+        request_info->received_data_factory);
 
     base::TimeTicks time_start = base::TimeTicks::Now();
 
@@ -232,36 +238,25 @@ void ResourceDispatcher::OnReceivedData(int request_id,
     const char* data_ptr = data_start + data_offset;
 
     // Check whether this response data is compliant with our cross-site
-    // document blocking policy. We only do this for the first packet.
-    std::string alternative_data;
+    // document blocking policy. We only do this for the first chunk of data.
     if (request_info->site_isolation_metadata.get()) {
-      request_info->blocked_response =
-          SiteIsolationPolicy::ShouldBlockResponse(
-              request_info->site_isolation_metadata, data_ptr, data_length,
-              &alternative_data);
+      SiteIsolationStatsGatherer::OnReceivedFirstChunk(
+          request_info->site_isolation_metadata, data_ptr, data_length);
       request_info->site_isolation_metadata.reset();
-
-      // When the response is blocked we may have any alternative data to
-      // send to the renderer. When |alternative_data| is zero-sized, we do not
-      // call peer's callback.
-      if (request_info->blocked_response && !alternative_data.empty()) {
-        data_ptr = alternative_data.data();
-        data_length = alternative_data.size();
-        encoded_data_length = alternative_data.size();
-      }
     }
 
-    if (!request_info->blocked_response || !alternative_data.empty()) {
-      if (request_info->threaded_data_provider) {
-        request_info->threaded_data_provider->OnReceivedDataOnForegroundThread(
-            data_ptr, data_length, encoded_data_length);
-        // A threaded data provider will take care of its own ACKing, as the
-        // data may be processed later on another thread.
-        send_ack = false;
-      } else {
-        request_info->peer->OnReceivedData(
-            data_ptr, data_length, encoded_data_length);
-      }
+    if (request_info->threaded_data_provider) {
+      // A threaded data provider will take care of its own ACKing, as the data
+      // may be processed later on another thread.
+      send_ack = false;
+      request_info->threaded_data_provider->OnReceivedDataOnForegroundThread(
+          data_ptr, data_length, encoded_data_length);
+    } else {
+      scoped_ptr<RequestPeer::ReceivedData> data =
+          factory->Create(data_offset, data_length, encoded_data_length);
+      // |data| takes care of ACKing.
+      send_ack = false;
+      request_info->peer->OnReceivedData(data.Pass());
     }
 
     UMA_HISTOGRAM_TIMES("ResourceDispatcher.OnReceivedDataTime",
@@ -306,7 +301,7 @@ void ResourceDispatcher::OnReceivedRedirect(
     if (!request_info)
       return;
     // We update the response_url here so that we can send it to
-    // SiteIsolationPolicy later when OnReceivedResponse is called.
+    // SiteIsolationStatsGatherer later when OnReceivedResponse is called.
     request_info->response_url = redirect_info.new_url;
     request_info->pending_redirect_message.reset(
         new ResourceHostMsg_FollowRedirect(request_id));
@@ -336,6 +331,9 @@ void ResourceDispatcher::OnRequestComplete(
     return;
   request_info->completion_time = ConsumeIOTimestamp();
   request_info->buffer.reset();
+  if (request_info->received_data_factory)
+    request_info->received_data_factory->Stop();
+  request_info->received_data_factory = nullptr;
   request_info->buffer_size = 0;
 
   RequestPeer* peer = request_info->peer;
@@ -473,7 +471,6 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
       resource_type(RESOURCE_TYPE_SUB_RESOURCE),
       is_deferred(false),
       download_to_file(false),
-      blocked_response(false),
       buffer_size(0) {
 }
 
@@ -493,8 +490,8 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
       frame_origin(frame_origin),
       response_url(request_url),
       download_to_file(download_to_file),
-      request_start(base::TimeTicks::Now()),
-      blocked_response(false) {}
+      request_start(base::TimeTicks::Now()) {
+}
 
 ResourceDispatcher::PendingRequestInfo::~PendingRequestInfo() {
   if (threaded_data_provider)
@@ -630,12 +627,8 @@ void ResourceDispatcher::ToResourceResponseInfo(
   RemoteToLocalTimeTicks(converter, &load_timing->send_start);
   RemoteToLocalTimeTicks(converter, &load_timing->send_end);
   RemoteToLocalTimeTicks(converter, &load_timing->receive_headers_end);
-  RemoteToLocalTimeTicks(converter,
-                         &renderer_info->service_worker_fetch_start);
-  RemoteToLocalTimeTicks(converter,
-                         &renderer_info->service_worker_fetch_ready);
-  RemoteToLocalTimeTicks(converter,
-                         &renderer_info->service_worker_fetch_end);
+  RemoteToLocalTimeTicks(converter, &renderer_info->service_worker_start_time);
+  RemoteToLocalTimeTicks(converter, &renderer_info->service_worker_ready_time);
 
   // Collect UMA on the inter-process skew.
   bool is_skew_additive = false;
@@ -704,7 +697,7 @@ bool ResourceDispatcher::IsResourceDispatcherMessage(
 // static
 void ResourceDispatcher::ReleaseResourcesInDataMessage(
     const IPC::Message& message) {
-  PickleIterator iter(message);
+  base::PickleIterator iter(message);
   int request_id;
   if (!iter.ReadInt(&request_id)) {
     NOTREACHED() << "malformed resource message";

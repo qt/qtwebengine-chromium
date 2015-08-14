@@ -345,7 +345,7 @@ static bool calculate_inverse_path(const SkRect& bounds, const SkPath& invPath,
     SkPath clipPath;
     clipPath.addRect(bounds);
 
-    return Op(clipPath, invPath, kIntersect_PathOp, outPath);
+    return Op(clipPath, invPath, kIntersect_SkPathOp, outPath);
 }
 
 #ifdef SK_PDF_USE_PATHOPS_CLIPPING
@@ -353,16 +353,16 @@ static bool calculate_inverse_path(const SkRect& bounds, const SkPath& invPath,
 // enums so region_op_to_pathops_op can do a straight passthrough cast.
 // If these are failing, it may be necessary to make region_op_to_pathops_op
 // do more.
-SK_COMPILE_ASSERT(SkRegion::kDifference_Op == (int)kDifference_PathOp,
+SK_COMPILE_ASSERT(SkRegion::kDifference_Op == (int)kDifference_SkPathOp,
                   region_pathop_mismatch);
-SK_COMPILE_ASSERT(SkRegion::kIntersect_Op == (int)kIntersect_PathOp,
+SK_COMPILE_ASSERT(SkRegion::kIntersect_Op == (int)kIntersect_SkPathOp,
                   region_pathop_mismatch);
-SK_COMPILE_ASSERT(SkRegion::kUnion_Op == (int)kUnion_PathOp,
+SK_COMPILE_ASSERT(SkRegion::kUnion_Op == (int)kUnion_SkPathOp,
                   region_pathop_mismatch);
-SK_COMPILE_ASSERT(SkRegion::kXOR_Op == (int)kXOR_PathOp,
+SK_COMPILE_ASSERT(SkRegion::kXOR_Op == (int)kXOR_SkPathOp,
                   region_pathop_mismatch);
 SK_COMPILE_ASSERT(SkRegion::kReverseDifference_Op ==
-                  (int)kReverseDifference_PathOp,
+                  (int)kReverseDifference_SkPathOp,
                   region_pathop_mismatch);
 
 static SkPathOp region_op_to_pathops_op(SkRegion::Op op) {
@@ -708,7 +708,8 @@ SkPDFDevice::SkPDFDevice(SkISize pageSize,
                          SkScalar rasterDpi,
                          SkPDFCanon* canon,
                          bool flip)
-    : fPageSize(pageSize)
+    : INHERITED(SkSurfaceProps(0, kUnknown_SkPixelGeometry))
+    , fPageSize(pageSize)
     , fContentSize(pageSize)
     , fExistingClipRegion(SkIRect::MakeSize(pageSize))
     , fAnnotations(NULL)
@@ -1160,7 +1161,7 @@ void SkPDFDevice::drawText(const SkDraw& d, const void* text, size_t len,
     SkTDArray<uint16_t> glyphIDsCopy(glyphIDs, numGlyphs);
 
     while (numGlyphs > consumedGlyphCount) {
-        updateFont(textPaint, glyphIDs[consumedGlyphCount], content.entry());
+        this->updateFont(textPaint, glyphIDs[consumedGlyphCount], content.entry());
         SkPDFFont* font = content.entry()->fState.fFont;
 
         int availableGlyphs = font->glyphsToPDFFontEncoding(
@@ -1205,14 +1206,14 @@ void SkPDFDevice::drawPosText(const SkDraw& d, const void* text, size_t len,
 
     SkDrawCacheProc glyphCacheProc = textPaint.getDrawCacheProc();
     content.entry()->fContent.writeText("BT\n");
-    updateFont(textPaint, glyphIDs[0], content.entry());
+    this->updateFont(textPaint, glyphIDs[0], content.entry());
     for (size_t i = 0; i < numGlyphs; i++) {
         SkPDFFont* font = content.entry()->fState.fFont;
         uint16_t encodedValue = glyphIDs[i];
         if (font->glyphsToPDFFontEncoding(&encodedValue, 1) != 1) {
             // The current pdf font cannot encode the current glyph.
             // Try to get a pdf font which can encode the current glyph.
-            updateFont(textPaint, glyphIDs[i], content.entry());
+            this->updateFont(textPaint, glyphIDs[i], content.entry());
             font = content.entry()->fState.fFont;
             if (font->glyphsToPDFFontEncoding(&encodedValue, 1) != 1) {
                 SkDEBUGFAIL("PDF could not encode glyph.");

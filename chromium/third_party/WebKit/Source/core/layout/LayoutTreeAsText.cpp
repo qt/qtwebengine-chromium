@@ -35,6 +35,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLElement.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutDetailsMarker.h"
 #include "core/layout/LayoutFileUploadControl.h"
 #include "core/layout/LayoutInline.h"
@@ -55,9 +56,10 @@
 #include "core/layout/svg/SVGLayoutTreeAsText.h"
 #include "core/page/PrintContext.h"
 #include "core/paint/DeprecatedPaintLayer.h"
+#include "platform/LayoutUnit.h"
 #include "wtf/HexNumber.h"
 #include "wtf/Vector.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
@@ -404,13 +406,59 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
     }
 }
 
+static void writeInlineBox(TextStream& ts, const InlineBox& box, int indent)
+{
+    writeIndent(ts, indent);
+    ts << "+ ";
+    ts << box.boxName() << " {" << box.layoutObject().debugName() << "}"
+        << " pos=(" << box.x() << "," << box.y() << ")"
+        << " size=(" << box.width() << "," << box.height() << ")"
+        << " baseline=" << box.baselinePosition(AlphabeticBaseline)
+        << "/" << box.baselinePosition(IdeographicBaseline);
+}
+
+static void writeInlineTextBox(TextStream& ts, const InlineTextBox& textBox, int indent)
+{
+    writeInlineBox(ts, textBox, indent);
+    String value = textBox.text();
+    value.replaceWithLiteral('\\', "\\\\");
+    value.replaceWithLiteral('\n', "\\n");
+    value.replaceWithLiteral('"', "\\\"");
+    ts << " range=(" << textBox.start() << "," << (textBox.start() + textBox.len()) << ")"
+        << " \"" << value << "\"";
+}
+
+static void writeInlineFlowBox(TextStream& ts, const InlineFlowBox& rootBox, int indent)
+{
+    writeInlineBox(ts, rootBox, indent);
+    ts << "\n";
+    for (const InlineBox* box = rootBox.firstChild(); box; box = box->nextOnLine()) {
+        if (box->isInlineFlowBox()) {
+            writeInlineFlowBox(ts, static_cast<const InlineFlowBox&>(*box), indent + 1);
+            continue;
+        }
+        if (box->isInlineTextBox())
+            writeInlineTextBox(ts, static_cast<const InlineTextBox&>(*box), indent + 1);
+        else
+            writeInlineBox(ts, *box, indent + 1);
+        ts << "\n";
+    }
+}
+
+void LayoutTreeAsText::writeLineBoxTree(TextStream& ts, const LayoutBlockFlow& o, int indent)
+{
+    for (const InlineFlowBox* rootBox = o.firstLineBox(); rootBox; rootBox = rootBox->nextLineBox()) {
+        writeInlineFlowBox(ts, *rootBox, indent);
+    }
+}
+
 static void writeTextRun(TextStream& ts, const LayoutText& o, const InlineTextBox& run)
 {
     // FIXME: For now use an "enclosingIntRect" model for x, y and logicalWidth, although this makes it harder
     // to detect any changes caused by the conversion to floating point. :(
     int x = run.x();
     int y = run.y();
-    int logicalWidth = ceilf(run.left() + run.logicalWidth()) - x;
+    int logicalWidth = (run.left() + run.logicalWidth()).ceil() - x;
 
     // FIXME: Table cell adjustment is temporary until results can be updated.
     if (o.containingBlock()->isTableCell())
@@ -468,6 +516,10 @@ void write(TextStream& ts, const LayoutObject& o, int indent, LayoutAsTextBehavi
 
     LayoutTreeAsText::writeLayoutObject(ts, o, behavior);
     ts << "\n";
+
+    if ((behavior & LayoutAsTextShowLineTrees) && o.isLayoutBlockFlow()) {
+        LayoutTreeAsText::writeLineBoxTree(ts, toLayoutBlockFlow(o), indent + 1);
+    }
 
     if (o.isText() && !o.isBR()) {
         const LayoutText& text = toLayoutText(o);
@@ -590,6 +642,15 @@ static void write(TextStream& ts, DeprecatedPaintLayer& layer,
         write(ts, *layer.layoutObject(), indent + 1, behavior);
 }
 
+static Vector<DeprecatedPaintLayerStackingNode*> normalFlowListFor(DeprecatedPaintLayerStackingNode* node)
+{
+    DeprecatedPaintLayerStackingNodeIterator it(*node, NormalFlowChildren);
+    Vector<DeprecatedPaintLayerStackingNode*> vector;
+    while (DeprecatedPaintLayerStackingNode* normalFlowChild = it.next())
+        vector.append(normalFlowChild);
+    return vector;
+}
+
 void LayoutTreeAsText::writeLayers(TextStream& ts, const DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer* layer,
     const LayoutRect& paintRect, int indent, LayoutAsTextBehavior behavior)
 {
@@ -622,15 +683,16 @@ void LayoutTreeAsText::writeLayers(TextStream& ts, const DeprecatedPaintLayer* r
     if (shouldPaint)
         write(ts, *layer, layerBounds, damageRect.rect(), clipRectToApply.rect(), outlineRect.rect(), paintsBackgroundSeparately ? LayerPaintPhaseForeground : LayerPaintPhaseAll, indent, behavior);
 
-    if (Vector<DeprecatedPaintLayerStackingNode*>* normalFlowList = layer->stackingNode()->normalFlowList()) {
+    Vector<DeprecatedPaintLayerStackingNode*> normalFlowList = normalFlowListFor(layer->stackingNode());
+    if (!normalFlowList.isEmpty()) {
         int currIndent = indent;
         if (behavior & LayoutAsTextShowLayerNesting) {
             writeIndent(ts, indent);
-            ts << " normal flow list(" << normalFlowList->size() << ")\n";
+            ts << " normal flow list(" << normalFlowList.size() << ")\n";
             ++currIndent;
         }
-        for (unsigned i = 0; i != normalFlowList->size(); ++i)
-            writeLayers(ts, rootLayer, normalFlowList->at(i)->layer(), paintRect, currIndent, behavior);
+        for (unsigned i = 0; i != normalFlowList.size(); ++i)
+            writeLayers(ts, rootLayer, normalFlowList.at(i)->layer(), paintRect, currIndent, behavior);
     }
 
     if (Vector<DeprecatedPaintLayerStackingNode*>* posList = layer->stackingNode()->posZOrderList()) {

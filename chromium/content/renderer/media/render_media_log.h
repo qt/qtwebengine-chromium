@@ -11,10 +11,6 @@
 #include "content/common/content_export.h"
 #include "media/base/media_log.h"
 
-namespace base {
-class MessageLoopProxy;
-}
-
 namespace content {
 
 // RenderMediaLog is an implementation of MediaLog that forwards events to the
@@ -38,6 +34,9 @@ class CONTENT_EXPORT RenderMediaLog : public media::MediaLog {
 
  private:
   ~RenderMediaLog() override;
+
+  // Add event on the |task_runner_|.
+  void AddEventInternal(scoped_ptr<media::MediaLogEvent> event);
 
   // Posted as a delayed task to throttle ipc message frequency.
   void SendQueuedMediaEvents();

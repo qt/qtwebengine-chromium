@@ -118,6 +118,7 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       this.context.addObserver(CONTEXT_KEY_UI_STATE, function(ui_state) {
         self.setUIState(ui_state);
       });
+      $('error-close-button').addEventListener('click', this.cancel.bind(this));
     },
 
     /**
@@ -128,6 +129,7 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       $('auto-enrollment-offline-message-text').innerHTML =
           loadTimeData.getStringF(
               'autoEnrollmentOfflineMessageBody',
+              loadTimeData.getString('deviceType'),
               '<b class="' + CURRENT_NETWORK_NAME_CLASS + '"></b>',
               '<a id="auto-enrollment-learn-more" class="signin-link" ' +
                   '"href="#">',
@@ -219,6 +221,9 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     onBeforeShow: function(data) {
       cr.ui.Oobe.clearErrors();
       cr.ui.DropDown.show('offline-networks-list', false);
+      $('login-header-bar').signinUIState = SIGNIN_UI_STATE.ERROR;
+      $('error-close-button').hidden =
+          !(Oobe.isNewGaiaFlow() && $('login-header-bar').allowCancel);
     },
 
     /**
@@ -226,6 +231,7 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
      */
     onBeforeHide: function() {
       cr.ui.DropDown.hide('offline-networks-list');
+      $('login-header-bar').signinUIState = SIGNIN_UI_STATE.HIDDEN;
     },
 
     /**
@@ -412,6 +418,14 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     showConnectingIndicator: function(show) {
       this.classList.toggle('show-connecting-indicator', show);
       this.onContentChange_();
+    },
+
+    /**
+     * Cancels error screen and drops to user pods.
+     */
+    cancel: function() {
+      if ($('login-header-bar').allowCancel)
+        Oobe.showUserPods();
     }
   };
 });

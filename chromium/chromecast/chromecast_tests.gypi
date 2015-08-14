@@ -16,9 +16,32 @@
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
+        'base/error_codes_unittest.cc',
+        'base/path_utils_unittest.cc',
+        'base/process_utils_unittest.cc',
         'base/serializers_unittest.cc',
       ],
-    },
+    },  # end of cast_base_unittests
+    {
+      'target_name': 'cast_crash_unittests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        'chromecast.gyp:cast_crash',
+        '../base/base.gyp:run_all_unittests',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'include_dirs': [
+        '../breakpad/src',
+      ],
+      'sources': [
+        'crash/cast_crashdump_uploader_unittest.cc',
+        'crash/linux/dummy_minidump_generator_unittest.cc',
+        'crash/linux/dump_info_unittest.cc',
+        'crash/linux/synchronized_minidump_manager_unittest.cc',
+        'crash/linux/minidump_writer_unittest.cc',
+      ],
+    },  # end of cast_crash_unittests
     {
       'target_name': 'cast_tests',
       'type': 'none',
@@ -39,6 +62,7 @@
       'type': 'none',
       'dependencies': [
         'cast_base_unittests',
+        'cast_crash_unittests',
         '../base/base.gyp:base_unittests',
         '../content/content_shell_and_tests.gyp:content_unittests',
         '../crypto/crypto.gyp:crypto_unittests',
@@ -111,8 +135,8 @@
         }],
         ['OS!="android"', {
           'dependencies': [
+            'cast_shell_unittests',
             'cast_shell_browser_test',
-            'cast_shell_media_unittests',
             'media/media.gyp:cast_media_unittests',
           ],
           'variables': {
@@ -120,6 +144,19 @@
               'cast_shell_browser_test --no-sandbox --disable-gpu',
             ],
           },
+        }],
+        ['disable_display==1', {
+          'variables': {
+            'filters': [
+              # These are not supported by the backend right now. b/21737919
+              'cast_media_unittests --gtest_filter=-AudioVideoPipelineDeviceTest.VorbisPlayback:AudioVideoPipelineDeviceTest.WebmPlayback',
+            ],
+          }
+        }],
+        ['enable_plugins==1', {
+          'dependencies': [
+            '../ppapi/ppapi_internal.gyp:ppapi_unittests',
+          ],
         }],
       ],
       'includes': ['build/tests/test_list.gypi'],
@@ -229,26 +266,6 @@
     }, {  # OS!="android"
       'targets': [
         {
-          'target_name': 'cast_shell_media_unittests',
-          'type': '<(gtest_target_type)',
-          'dependencies': [
-            'cast_metrics_test_support',
-            'cast_shell_media',
-            'media/media.gyp:cast_media',
-            '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
-            '../ipc/ipc.gyp:test_support_ipc',
-            '../media/media.gyp:media_test_support',
-            '../testing/gmock.gyp:gmock',
-            '../testing/gtest.gyp:gtest',
-            '../testing/gtest.gyp:gtest_main',
-          ],
-          'sources': [
-            'renderer/media/cma_renderer_unittest.cc',
-            'media/cma/test/run_all_unittests.cc',
-          ],
-        },
-        {
           'target_name': 'cast_shell_test_support',
           'type': '<(component)',
           'defines': [
@@ -280,6 +297,18 @@
             'browser/test/chromecast_shell_browser_test.cc',
           ],
         },
+        {
+          'target_name': 'cast_shell_unittests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            'chromecast.gyp:cast_crash_client',
+            '../base/base.gyp:run_all_unittests',
+            '../testing/gtest.gyp:gtest',
+          ],
+          'sources': [
+            'app/linux/cast_crash_reporter_client_unittest.cc',
+          ],
+        },  # end of cast_shell_unittests
       ],  # end of targets
     }],
   ],  # end of conditions

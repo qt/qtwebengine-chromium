@@ -53,11 +53,6 @@ public:
     }
     ~HistoryItem();
 
-    // Used when the frame this item represents was navigated to a different
-    // url but a new item wasn't created.
-    void generateNewItemSequenceNumber();
-    void generateNewDocumentSequenceNumber();
-
     const String& urlString() const;
     KURL url() const;
 
@@ -71,7 +66,6 @@ public:
     void setPinchViewportScrollPoint(const FloatPoint&);
     const IntPoint& scrollPoint() const;
     void setScrollPoint(const IntPoint&);
-    void clearScrollPoint();
 
     float pageScaleFactor() const;
     void setPageScaleFactor(float);
@@ -95,9 +89,6 @@ public:
 
     void setDocumentSequenceNumber(long long number) { m_documentSequenceNumber = number; }
     long long documentSequenceNumber() const { return m_documentSequenceNumber; }
-
-    void setFrameSequenceNumber(long long number) { m_frameSequenceNumber = number; }
-    long long frameSequenceNumber() const { return m_frameSequenceNumber; }
 
     void setScrollRestorationType(HistoryScrollRestorationType  type) { m_scrollRestorationType = type; }
     HistoryScrollRestorationType scrollRestorationType() { return m_scrollRestorationType; }
@@ -133,12 +124,6 @@ private:
     // refer to the same instance of a document. Traversing history from one
     // such HistoryItem to another preserves the document.
     int64_t m_documentSequenceNumber;
-
-    // If two HistoryItems have the same frame sequence number, then they
-    // refer to the same instance of a Frame. This is used to determine whether
-    // whether a HistoryItem should navigate an existing frame or create a new
-    // one during a history navigation.
-    int64_t m_frameSequenceNumber;
 
     // Type of the scroll restoration for the history item determines if scroll
     // position should be restored when it is loaded during history traversal.

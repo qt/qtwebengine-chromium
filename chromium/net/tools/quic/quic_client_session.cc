@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/quic_server_id.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 
@@ -15,19 +16,19 @@ namespace net {
 namespace tools {
 
 QuicClientSession::QuicClientSession(const QuicConfig& config,
-                                     QuicConnection* connection)
-    : QuicClientSessionBase(connection, config), respect_goaway_(true) {
+                                     QuicConnection* connection,
+                                     const QuicServerId& server_id,
+                                     QuicCryptoClientConfig* crypto_config)
+    : QuicClientSessionBase(connection, config),
+      crypto_stream_(new QuicCryptoClientStream(
+          server_id,
+          this,
+          new ProofVerifyContextChromium(0, BoundNetLog()),
+          crypto_config)),
+      respect_goaway_(true) {
 }
 
 QuicClientSession::~QuicClientSession() {
-}
-
-void QuicClientSession::InitializeSession(
-    const QuicServerId& server_id,
-    QuicCryptoClientConfig* crypto_config) {
-  crypto_stream_.reset(
-      new QuicCryptoClientStream(server_id, this, nullptr, crypto_config));
-  QuicClientSessionBase::InitializeSession();
 }
 
 void QuicClientSession::OnProofValid(
@@ -36,7 +37,7 @@ void QuicClientSession::OnProofValid(
 void QuicClientSession::OnProofVerifyDetailsAvailable(
     const ProofVerifyDetails& /*verify_details*/) {}
 
-QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
+QuicSpdyClientStream* QuicClientSession::CreateOutgoingDynamicStream() {
   if (!crypto_stream_->encryption_established()) {
     DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return nullptr;
@@ -51,10 +52,13 @@ QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
              << "Already received goaway.";
     return nullptr;
   }
-  QuicSpdyClientStream* stream
-      = new QuicSpdyClientStream(GetNextStreamId(), this);
+  QuicSpdyClientStream* stream = CreateClientStream();
   ActivateStream(stream);
   return stream;
+}
+
+QuicSpdyClientStream* QuicClientSession::CreateClientStream() {
+  return new QuicSpdyClientStream(GetNextStreamId(), this);
 }
 
 QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
@@ -70,7 +74,7 @@ int QuicClientSession::GetNumSentClientHellos() const {
   return crypto_stream_->num_sent_client_hellos();
 }
 
-QuicDataStream* QuicClientSession::CreateIncomingDataStream(
+QuicDataStream* QuicClientSession::CreateIncomingDynamicStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return nullptr;

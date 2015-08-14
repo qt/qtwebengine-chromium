@@ -75,7 +75,7 @@ class TraceNetLogObserverTest : public testing::Test {
     trace_buffer_.Finish();
 
     scoped_ptr<base::Value> trace_value;
-    trace_value.reset(base::JSONReader::Read(
+    trace_value.reset(base::JSONReader::DeprecatedRead(
         json_output_.json_output,
         base::JSON_PARSE_RFC | base::JSON_DETACHABLE_CHILDREN));
 
@@ -91,8 +91,8 @@ class TraceNetLogObserverTest : public testing::Test {
 
   static void EnableTraceLog() {
     TraceLog::GetInstance()->SetEnabled(
-        base::trace_event::CategoryFilter(kNetLogTracingCategory),
-        TraceLog::RECORDING_MODE, base::trace_event::TraceOptions());
+        base::trace_event::TraceConfig(kNetLogTracingCategory, ""),
+        TraceLog::RECORDING_MODE);
   }
 
   void EndTraceAndFlush() {

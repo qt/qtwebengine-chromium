@@ -5,9 +5,9 @@
 #include "cc/layers/layer_iterator.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
-#include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_output_surface.h"
+#include "cc/test/fake_picture_layer.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -23,10 +23,10 @@ class LayerTreeHostCopyRequestTestMultipleRequests
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root = FakeContentLayer::Create(&client_);
+    root = FakePictureLayer::Create(layer_settings(), &client_);
     root->SetBounds(gfx::Size(20, 20));
 
-    child = FakeContentLayer::Create(&client_);
+    child = FakePictureLayer::Create(layer_settings(), &client_);
     child->SetBounds(gfx::Size(10, 10));
     root->AddChild(child);
 
@@ -114,48 +114,47 @@ class LayerTreeHostCopyRequestTestMultipleRequests
   bool use_gl_renderer_;
   std::vector<gfx::Size> callbacks_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root;
-  scoped_refptr<FakeContentLayer> child;
+  scoped_refptr<FakePictureLayer> root;
+  scoped_refptr<FakePictureLayer> child;
 };
 
 // Readback can't be done with a delegating renderer.
-// Disabled due to flake: http://crbug.com/448521
 TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
-       DISABLED_GLRenderer_RunSingleThread) {
+       GLRenderer_RunSingleThread) {
   use_gl_renderer_ = true;
-  RunTest(false, false, false);
+  RunTest(false, false);
 }
 
 TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
-       GLRenderer_RunMultiThread_MainThreadPainting) {
+       GLRenderer_RunMultiThread) {
   use_gl_renderer_ = true;
-  RunTest(true, false, false);
+  RunTest(true, false);
 }
 
 TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
        SoftwareRenderer_RunSingleThread) {
   use_gl_renderer_ = false;
-  RunTest(false, false, false);
+  RunTest(false, false);
 }
 
 TEST_F(LayerTreeHostCopyRequestTestMultipleRequests,
-       SoftwareRenderer_RunMultiThread_MainThreadPainting) {
+       SoftwareRenderer_RunMultiThread) {
   use_gl_renderer_ = false;
-  RunTest(true, false, false);
+  RunTest(true, false);
 }
 
 class LayerTreeHostCopyRequestTestLayerDestroyed
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    main_destroyed_ = FakeContentLayer::Create(&client_);
+    main_destroyed_ = FakePictureLayer::Create(layer_settings(), &client_);
     main_destroyed_->SetBounds(gfx::Size(15, 15));
     root_->AddChild(main_destroyed_);
 
-    impl_destroyed_ = FakeContentLayer::Create(&client_);
+    impl_destroyed_ = FakePictureLayer::Create(layer_settings(), &client_);
     impl_destroyed_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(impl_destroyed_);
 
@@ -229,9 +228,9 @@ class LayerTreeHostCopyRequestTestLayerDestroyed
 
   int callback_count_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> main_destroyed_;
-  scoped_refptr<FakeContentLayer> impl_destroyed_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> main_destroyed_;
+  scoped_refptr<FakePictureLayer> impl_destroyed_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostCopyRequestTestLayerDestroyed);
@@ -240,20 +239,20 @@ class LayerTreeHostCopyRequestTestInHiddenSubtree
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    grand_parent_layer_ = FakeContentLayer::Create(&client_);
+    grand_parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     grand_parent_layer_->SetBounds(gfx::Size(15, 15));
     root_->AddChild(grand_parent_layer_);
 
     // parent_layer_ owns a render surface.
-    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     parent_layer_->SetBounds(gfx::Size(15, 15));
     parent_layer_->SetForceRenderSurface(true);
     grand_parent_layer_->AddChild(parent_layer_);
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     parent_layer_->AddChild(copy_layer_);
 
@@ -326,34 +325,34 @@ class LayerTreeHostCopyRequestTestInHiddenSubtree
 
   int callback_count_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> grand_parent_layer_;
-  scoped_refptr<FakeContentLayer> parent_layer_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> grand_parent_layer_;
+  scoped_refptr<FakePictureLayer> parent_layer_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostCopyRequestTestInHiddenSubtree);
 
 class LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    grand_parent_layer_ = FakeContentLayer::Create(&client_);
+    grand_parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     grand_parent_layer_->SetBounds(gfx::Size(15, 15));
     grand_parent_layer_->SetHideLayerAndSubtree(true);
     root_->AddChild(grand_parent_layer_);
 
     // parent_layer_ owns a render surface.
-    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     parent_layer_->SetBounds(gfx::Size(15, 15));
     parent_layer_->SetForceRenderSurface(true);
     grand_parent_layer_->AddChild(parent_layer_);
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     parent_layer_->AddChild(copy_layer_);
 
@@ -403,10 +402,10 @@ class LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest
 
   FakeContentLayerClient client_;
   bool did_draw_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> grand_parent_layer_;
-  scoped_refptr<FakeContentLayer> parent_layer_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> grand_parent_layer_;
+  scoped_refptr<FakePictureLayer> parent_layer_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
 // No output to copy for delegated renderers.
@@ -417,15 +416,15 @@ class LayerTreeHostCopyRequestTestClippedOut
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     parent_layer_->SetBounds(gfx::Size(15, 15));
     parent_layer_->SetMasksToBounds(true);
     root_->AddChild(parent_layer_);
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetPosition(gfx::Point(15, 15));
     copy_layer_->SetBounds(gfx::Size(10, 10));
     parent_layer_->AddChild(copy_layer_);
@@ -453,9 +452,9 @@ class LayerTreeHostCopyRequestTestClippedOut
   void AfterTest() override {}
 
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> parent_layer_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> parent_layer_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
@@ -465,10 +464,10 @@ class LayerTreeHostTestAsyncTwoReadbacksWithoutDraw
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(copy_layer_);
 
@@ -513,11 +512,24 @@ class LayerTreeHostTestAsyncTwoReadbacksWithoutDraw
 
   void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
     EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
-    EXPECT_EQ(copy_layer_->bounds().ToString(), result->size().ToString());
-    ++callback_count_;
 
-    if (callback_count_ == 2)
-      EndTest();
+    // The first frame can't be drawn.
+    switch (callback_count_) {
+      case 0:
+        EXPECT_TRUE(result->IsEmpty());
+        EXPECT_EQ(gfx::Size(), result->size());
+        break;
+      case 1:
+        EXPECT_FALSE(result->IsEmpty());
+        EXPECT_EQ(copy_layer_->bounds().ToString(), result->size().ToString());
+        EndTest();
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+
+    ++callback_count_;
   }
 
   void AfterTest() override { EXPECT_TRUE(saw_copy_request_); }
@@ -525,11 +537,11 @@ class LayerTreeHostTestAsyncTwoReadbacksWithoutDraw
   bool saw_copy_request_;
   int callback_count_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostTestAsyncTwoReadbacksWithoutDraw);
 
 class LayerTreeHostCopyRequestTestLostOutputSurface
@@ -547,10 +559,10 @@ class LayerTreeHostCopyRequestTestLostOutputSurface
   }
 
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(copy_layer_);
 
@@ -652,12 +664,12 @@ class LayerTreeHostCopyRequestTestLostOutputSurface
   size_t num_textures_without_readback_;
   size_t num_textures_after_loss_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
   scoped_ptr<CopyOutputResult> result_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostCopyRequestTestLostOutputSurface);
 
 class LayerTreeHostCopyRequestTestCountTextures
@@ -669,10 +681,12 @@ class LayerTreeHostCopyRequestTestCountTextures
   }
 
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    client_.set_fill_with_nonsolid_color(true);
+
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(copy_layer_);
 
@@ -728,8 +742,8 @@ class LayerTreeHostCopyRequestTestCountTextures
   size_t num_textures_with_readback_;
   unsigned waited_sync_point_after_readback_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
 class LayerTreeHostCopyRequestTestCreatesTexture
@@ -763,7 +777,7 @@ class LayerTreeHostCopyRequestTestCreatesTexture
   }
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostCopyRequestTestCreatesTexture);
 
 class LayerTreeHostCopyRequestTestProvideTexture
@@ -816,17 +830,17 @@ class LayerTreeHostCopyRequestTestProvideTexture
   unsigned sync_point_;
 };
 
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostCopyRequestTestProvideTexture);
 
 class LayerTreeHostCopyRequestTestDestroyBeforeCopy
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(copy_layer_);
 
@@ -889,8 +903,8 @@ class LayerTreeHostCopyRequestTestDestroyBeforeCopy
 
   int callback_count_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
@@ -900,10 +914,10 @@ class LayerTreeHostCopyRequestTestShutdownBeforeCopy
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
 
-    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     copy_layer_->SetBounds(gfx::Size(10, 10));
     root_->AddChild(copy_layer_);
 
@@ -960,8 +974,8 @@ class LayerTreeHostCopyRequestTestShutdownBeforeCopy
 
   int callback_count_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_;
-  scoped_refptr<FakeContentLayer> copy_layer_;
+  scoped_refptr<FakePictureLayer> root_;
+  scoped_refptr<FakePictureLayer> copy_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
@@ -971,10 +985,11 @@ class LayerTreeHostCopyRequestTestMultipleDrawsHiddenCopyRequest
     : public LayerTreeHostCopyRequestTest {
  protected:
   void SetupTree() override {
-    scoped_refptr<FakeContentLayer> root = FakeContentLayer::Create(&client_);
+    scoped_refptr<FakePictureLayer> root =
+        FakePictureLayer::Create(layer_settings(), &client_);
     root->SetBounds(gfx::Size(20, 20));
 
-    child_ = FakeContentLayer::Create(&client_);
+    child_ = FakePictureLayer::Create(layer_settings(), &client_);
     child_->SetBounds(gfx::Size(10, 10));
     root->AddChild(child_);
     child_->SetHideLayerAndSubtree(true);
@@ -1009,10 +1024,9 @@ class LayerTreeHostCopyRequestTestMultipleDrawsHiddenCopyRequest
 
     bool saw_root = false;
     bool saw_child = false;
-    for (LayerIterator<LayerImpl> it = LayerIterator<LayerImpl>::Begin(
-             frame_data->render_surface_layer_list);
-         it != LayerIterator<LayerImpl>::End(
-                   frame_data->render_surface_layer_list);
+    for (LayerIterator it =
+             LayerIterator::Begin(frame_data->render_surface_layer_list);
+         it != LayerIterator::End(frame_data->render_surface_layer_list);
          ++it) {
       if (it.represents_itself()) {
         if (*it == root)
@@ -1073,7 +1087,7 @@ class LayerTreeHostCopyRequestTestMultipleDrawsHiddenCopyRequest
 
   void AfterTest() override {}
 
-  scoped_refptr<FakeContentLayer> child_;
+  scoped_refptr<FakePictureLayer> child_;
   FakeContentLayerClient client_;
   int num_draws_;
   bool copy_happened_;

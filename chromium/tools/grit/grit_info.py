@@ -67,15 +67,21 @@ def Inputs(filename, defines, ids_file, target_platform=None):
       filename, debug=False, defines=defines, tags_to_ignore=set(['message']),
       first_ids_file=ids_file, target_platform=target_platform)
   files = set()
-  for lang, ctx in grd.GetConfigurations():
+  for lang, ctx, fallback in grd.GetConfigurations():
+    # TODO(tdanderson): Refactor all places which perform the action of setting
+    #                   output attributes on the root. See crbug.com/503637.
     grd.SetOutputLanguage(lang or grd.GetSourceLanguage())
     grd.SetOutputContext(ctx)
+    grd.SetFallbackToDefaultLayout(fallback)
     for node in grd.ActiveDescendants():
       with node:
         if (node.name == 'structure' or node.name == 'skeleton' or
             (node.name == 'file' and node.parent and
              node.parent.name == 'translations')):
-          files.add(grd.ToRealPath(node.GetInputPath()))
+          path = node.GetInputPath()
+          if path is not None:
+            files.add(grd.ToRealPath(path))
+
           # If it's a flattened node, grab inlined resources too.
           if node.name == 'structure' and node.attrs['flattenhtml'] == 'true':
             node.RunPreSubstitutionGatherer()

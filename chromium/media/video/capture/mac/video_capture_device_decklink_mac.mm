@@ -6,8 +6,8 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/synchronization/lock.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "third_party/decklink/mac/include/DeckLinkAPI.h"
 
 namespace {
@@ -183,7 +183,8 @@ void DeckLinkCaptureDelegate::AllocateAndStart(
     return;
   }
 #if !defined(NDEBUG)
-  DVLOG(1) << "Requested format: " << params.requested_format.ToString();
+  DVLOG(1) << "Requested format: "
+           << media::VideoCaptureFormat::ToString(params.requested_format);
   CFStringRef format_name = NULL;
   if (chosen_display_mode->GetName(&format_name) == S_OK)
     DVLOG(1) << "Chosen format: " << base::SysCFStringRefToUTF8(format_name);
@@ -316,7 +317,7 @@ static std::string JoinDeviceNameAndFormat(CFStringRef name,
       base::SysCFStringRefToUTF8(format);
 }
 
-//static
+// static
 void VideoCaptureDeviceDeckLinkMac::EnumerateDevices(
     VideoCaptureDevice::Names* device_names) {
   scoped_refptr<IDeckLinkIterator> decklink_iter(
@@ -422,7 +423,7 @@ void VideoCaptureDeviceDeckLinkMac::EnumerateDeviceCapabilities(
           GetDisplayModeFrameRate(display_mode),
           PIXEL_FORMAT_UNKNOWN);
       supported_formats->push_back(format);
-      DVLOG(2) << device.name() << " " << format.ToString();
+      DVLOG(2) << device.name() << " " << VideoCaptureFormat::ToString(format);
       display_mode.Release();
     }
     return;

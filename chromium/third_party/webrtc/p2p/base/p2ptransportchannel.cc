@@ -25,6 +25,7 @@ namespace {
 enum {
   MSG_SORT = 1,
   MSG_PING,
+  MSG_CHECK_RECEIVING
 };
 
 // When the socket is unwritable, we will use 10 Kbps (ignoring IP+UDP headers)
@@ -39,6 +40,8 @@ static const uint32 UNWRITABLE_DELAY = 1000 * PING_PACKET_SIZE / 10000;  // 50ms
 // If there is a current writable connection, then we will also try hard to
 // make sure it is pinged at this rate.
 static const uint32 MAX_CURRENT_WRITABLE_DELAY = 900;  // 2*WRITABLE_DELAY - bit
+
+static const int MIN_CHECK_RECEIVING_DELAY = 50;  // ms
 
 // The minimum improvement in RTT that justifies a switch.
 static const double kMinImprovement = 10;
@@ -193,7 +196,9 @@ P2PTransportChannel::P2PTransportChannel(const std::string& content_name,
     remote_ice_mode_(ICEMODE_FULL),
     ice_role_(ICEROLE_UNKNOWN),
     tiebreaker_(0),
-    remote_candidate_generation_(0) {
+    remote_candidate_generation_(0),
+    check_receiving_delay_(MIN_CHECK_RECEIVING_DELAY * 5),
+    receiving_timeout_(MIN_CHECK_RECEIVING_DELAY * 50) {
 }
 
 P2PTransportChannel::~P2PTransportChannel() {
@@ -354,6 +359,12 @@ void P2PTransportChannel::SetRemoteIceMode(IceMode mode) {
   remote_ice_mode_ = mode;
 }
 
+void P2PTransportChannel::set_receiving_timeout(int receiving_timeout_ms) {
+  receiving_timeout_ = receiving_timeout_ms;
+  check_receiving_delay_ =
+      std::max(MIN_CHECK_RECEIVING_DELAY, receiving_timeout_ / 10);
+}
+
 // Go into the state of processing candidates, and running in general
 void P2PTransportChannel::Connect() {
   ASSERT(worker_thread_ == rtc::Thread::Current());
@@ -369,6 +380,9 @@ void P2PTransportChannel::Connect() {
 
   // Start pinging as the ports come in.
   thread()->Post(this, MSG_PING);
+
+  thread()->PostDelayed(
+      check_receiving_delay_, this, MSG_CHECK_RECEIVING);
 }
 
 // A new port is available, attempt to make connections for it
@@ -478,17 +492,38 @@ void P2PTransportChannel::OnUnknownAddress(
     remote_password = remote_ice_pwd_;
   }
 
-  Candidate new_remote_candidate;
-  if (candidate != NULL) {
-    new_remote_candidate = *candidate;
+  Candidate remote_candidate;
+  bool remote_candidate_is_new = (candidate == nullptr);
+  if (!remote_candidate_is_new) {
+    remote_candidate = *candidate;
     if (ufrag_per_port) {
-      new_remote_candidate.set_address(address);
+      remote_candidate.set_address(address);
     }
   } else {
     // Create a new candidate with this address.
     std::string type;
+    int remote_candidate_priority;
     if (port->IceProtocol() == ICEPROTO_RFC5245) {
+      // RFC 5245
+      // If the source transport address of the request does not match any
+      // existing remote candidates, it represents a new peer reflexive remote
+      // candidate.
       type = PRFLX_PORT_TYPE;
+
+      // The priority of the candidate is set to the PRIORITY attribute
+      // from the request.
+      const StunUInt32Attribute* priority_attr =
+          stun_msg->GetUInt32(STUN_ATTR_PRIORITY);
+      if (!priority_attr) {
+        LOG(LS_WARNING) << "P2PTransportChannel::OnUnknownAddress - "
+                        << "No STUN_ATTR_PRIORITY found in the "
+                        << "stun request message";
+        port->SendBindingErrorResponse(stun_msg, address,
+                                       STUN_ERROR_BAD_REQUEST,
+                                       STUN_ERROR_REASON_BAD_REQUEST);
+        return;
+      }
+      remote_candidate_priority = priority_attr->value();
     } else {
       // G-ICE doesn't support prflx candidate.
       // We set candidate type to STUN_PORT_TYPE if the binding request comes
@@ -499,43 +534,24 @@ void P2PTransportChannel::OnUnknownAddress(
       } else {
         type = port->Type();
       }
+      remote_candidate_priority = remote_candidate.GetPriority(
+          ICE_TYPE_PREFERENCE_PRFLX, port->Network()->preference(), 0);
     }
 
-    new_remote_candidate =
+    remote_candidate =
         Candidate(component(), ProtoToString(proto), address, 0,
                   remote_username, remote_password, type, 0U, "");
 
     // From RFC 5245, section-7.2.1.3:
     // The foundation of the candidate is set to an arbitrary value, different
     // from the foundation for all other remote candidates.
-    new_remote_candidate.set_foundation(
-        rtc::ToString<uint32>(rtc::ComputeCrc32(new_remote_candidate.id())));
+    remote_candidate.set_foundation(
+        rtc::ToString<uint32>(rtc::ComputeCrc32(remote_candidate.id())));
 
-    new_remote_candidate.set_priority(new_remote_candidate.GetPriority(
-        ICE_TYPE_PREFERENCE_PRFLX, port->Network()->preference(), 0));
+    remote_candidate.set_priority(remote_candidate_priority);
   }
 
   if (port->IceProtocol() == ICEPROTO_RFC5245) {
-    // RFC 5245
-    // If the source transport address of the request does not match any
-    // existing remote candidates, it represents a new peer reflexive remote
-    // candidate.
-
-    // The priority of the candidate is set to the PRIORITY attribute
-    // from the request.
-    const StunUInt32Attribute* priority_attr =
-        stun_msg->GetUInt32(STUN_ATTR_PRIORITY);
-    if (!priority_attr) {
-      LOG(LS_WARNING) << "P2PTransportChannel::OnUnknownAddress - "
-                      << "No STUN_ATTR_PRIORITY found in the "
-                      << "stun request message";
-      port->SendBindingErrorResponse(stun_msg, address,
-                                     STUN_ERROR_BAD_REQUEST,
-                                     STUN_ERROR_REASON_BAD_REQUEST);
-      return;
-    }
-    new_remote_candidate.set_priority(priority_attr->value());
-
     // RFC5245, the agent constructs a pair whose local candidate is equal to
     // the transport address on which the STUN request was received, and a
     // remote candidate equal to the source transport address where the
@@ -545,10 +561,10 @@ void P2PTransportChannel::OnUnknownAddress(
     // When ports are muxed, this channel might get multiple unknown address
     // signals. In that case if the connection is already exists, we should
     // simply ignore the signal othewise send server error.
-    if (port->GetConnection(new_remote_candidate.address())) {
+    if (port->GetConnection(remote_candidate.address())) {
       if (port_muxed) {
         LOG(LS_INFO) << "Connection already exists for peer reflexive "
-                     << "candidate: " << new_remote_candidate.ToString();
+                     << "candidate: " << remote_candidate.ToString();
         return;
       } else {
         ASSERT(false);
@@ -560,7 +576,7 @@ void P2PTransportChannel::OnUnknownAddress(
     }
 
     Connection* connection = port->CreateConnection(
-        new_remote_candidate, cricket::PortInterface::ORIGIN_THIS_PORT);
+        remote_candidate, cricket::PortInterface::ORIGIN_THIS_PORT);
     if (!connection) {
       ASSERT(false);
       port->SendBindingErrorResponse(stun_msg, address,
@@ -569,8 +585,9 @@ void P2PTransportChannel::OnUnknownAddress(
       return;
     }
 
-    LOG(LS_INFO) << "Adding connection from peer reflexive candidate: "
-                 << new_remote_candidate.ToString();
+    LOG(LS_INFO) << "Adding connection from "
+                 << (remote_candidate_is_new ? "peer reflexive" : "resurrected")
+                 << " candidate: " << remote_candidate.ToString();
     AddConnection(connection);
     connection->ReceivedPing();
 
@@ -585,7 +602,7 @@ void P2PTransportChannel::OnUnknownAddress(
     // Check for connectivity to this address. Create connections
     // to this address across all local ports. First, add this as a new remote
     // address
-    if (!CreateConnections(new_remote_candidate, port, true)) {
+    if (!CreateConnections(remote_candidate, port, true)) {
       // Hopefully this won't occur, because changing a destination address
       // shouldn't cause a new connection to fail
       ASSERT(false);
@@ -623,15 +640,20 @@ void P2PTransportChannel::OnUseCandidate(Connection* conn) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
   ASSERT(ice_role_ == ICEROLE_CONTROLLED);
   ASSERT(protocol_type_ == ICEPROTO_RFC5245);
+
   if (conn->write_state() == Connection::STATE_WRITABLE) {
     if (best_connection_ != conn) {
       pending_best_connection_ = NULL;
+      LOG(LS_INFO) << "Switching best connection on controlled side: "
+                   << conn->ToString();
       SwitchBestConnectionTo(conn);
       // Now we have selected the best connection, time to prune other existing
       // connections and update the read/write state of the channel.
       RequestSort();
     }
   } else {
+    LOG(LS_INFO) << "Not switching the best connection on controlled side yet,"
+                 << " because it's not writable: " << conn->ToString();
     pending_best_connection_ = conn;
   }
 }
@@ -988,8 +1010,11 @@ void P2PTransportChannel::SortConnections() {
 
   // If necessary, switch to the new choice.
   if (protocol_type_ != ICEPROTO_RFC5245 || ice_role_ == ICEROLE_CONTROLLING) {
-    if (ShouldSwitch(best_connection_, top_connection))
+    if (ShouldSwitch(best_connection_, top_connection)) {
+      LOG(LS_INFO) << "Switching best connection on controlling side: "
+                   << top_connection->ToString();
       SwitchBestConnectionTo(top_connection);
+    }
   }
 
   // We can prune any connection for which there is a connected, writable
@@ -1056,6 +1081,8 @@ void P2PTransportChannel::SwitchBestConnectionTo(Connection* conn) {
     LOG_J(LS_INFO, this) << "New best connection: "
                          << best_connection_->ToString();
     SignalRouteChange(this, best_connection_->remote_candidate());
+    // When it just switched to a best connection, set receiving to true.
+    set_receiving(true);
   } else {
     LOG_J(LS_INFO, this) << "No best connection";
   }
@@ -1137,6 +1164,9 @@ void P2PTransportChannel::OnMessage(rtc::Message *pmsg) {
     case MSG_PING:
       OnPing();
       break;
+    case MSG_CHECK_RECEIVING:
+      OnCheckReceiving();
+      break;
     default:
       ASSERT(false);
       break;
@@ -1163,6 +1193,19 @@ void P2PTransportChannel::OnPing() {
   // Post ourselves a message to perform the next ping.
   uint32 delay = writable() ? WRITABLE_DELAY : UNWRITABLE_DELAY;
   thread()->PostDelayed(delay, this, MSG_PING);
+}
+
+void P2PTransportChannel::OnCheckReceiving() {
+  // Check receiving only if the best connection has received data packets
+  // because we want to detect not receiving any packets only after the media
+  // have started flowing.
+  if (best_connection_ && best_connection_->recv_total_bytes() > 0) {
+    bool receiving = rtc::Time() <=
+        best_connection_->last_received() + receiving_timeout_;
+    set_receiving(receiving);
+  }
+
+  thread()->PostDelayed(check_receiving_delay_, this, MSG_CHECK_RECEIVING);
 }
 
 // Is the connection in a state for us to even consider pinging the other side?
@@ -1214,17 +1257,37 @@ Connection* P2PTransportChannel::FindNextPingableConnection() {
     return best_connection_;
   }
 
-  Connection* oldest_conn = NULL;
-  uint32 oldest_time = 0xFFFFFFFF;
-  for (uint32 i = 0; i < connections_.size(); ++i) {
-    if (IsPingable(connections_[i])) {
-      if (connections_[i]->last_ping_sent() < oldest_time) {
-        oldest_time = connections_[i]->last_ping_sent();
-        oldest_conn = connections_[i];
-      }
+  // First, find "triggered checks".  We ping first those connections
+  // that have received a ping but have not sent a ping since receiving
+  // it (last_received_ping > last_sent_ping).  But we shouldn't do
+  // triggered checks if the connection is already writable.
+  Connection* oldest_needing_triggered_check = nullptr;
+  Connection* oldest = nullptr;
+  for (Connection* conn : connections_) {
+    if (!IsPingable(conn)) {
+      continue;
+    }
+    bool needs_triggered_check =
+        (protocol_type_ == ICEPROTO_RFC5245 &&
+         !conn->writable() &&
+         conn->last_ping_received() > conn->last_ping_sent());
+    if (needs_triggered_check &&
+        (!oldest_needing_triggered_check ||
+         (conn->last_ping_received() <
+          oldest_needing_triggered_check->last_ping_received()))) {
+      oldest_needing_triggered_check = conn;
+    }
+    if (!oldest || (conn->last_ping_sent() < oldest->last_ping_sent())) {
+      oldest = conn;
     }
   }
-  return oldest_conn;
+
+  if (oldest_needing_triggered_check) {
+    LOG(LS_INFO) << "Selecting connection for triggered check: " <<
+        oldest_needing_triggered_check->ToString();
+    return oldest_needing_triggered_check;
+  }
+  return oldest;
 }
 
 // Apart from sending ping from |conn| this method also updates
@@ -1265,6 +1328,8 @@ void P2PTransportChannel::OnConnectionStateChange(Connection* connection) {
   if (protocol_type_ == ICEPROTO_RFC5245 && ice_role_ == ICEROLE_CONTROLLED) {
     if (connection == pending_best_connection_ && connection->writable()) {
       pending_best_connection_ = NULL;
+      LOG(LS_INFO) << "Switching best connection on controlled side"
+                   << " because it's now writable: " << connection->ToString();
       SwitchBestConnectionTo(connection);
     }
   }
@@ -1301,6 +1366,7 @@ void P2PTransportChannel::OnConnectionDestroyed(Connection* connection) {
   // Since this connection is no longer an option, we can just set best to NULL
   // and re-choose a best assuming that there was no best connection.
   if (best_connection_ == connection) {
+    LOG(LS_INFO) << "Best connection destroyed.  Will choose a new one.";
     SwitchBestConnectionTo(NULL);
     RequestSort();
   }

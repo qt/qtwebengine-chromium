@@ -47,6 +47,7 @@ class ScriptState;
 class ServiceWorkerClients;
 class ServiceWorkerRegistration;
 class ServiceWorkerThread;
+class StashedPortCollection;
 class WaitUntilObserver;
 class WebServiceWorkerRegistration;
 class WorkerThreadStartupData;
@@ -58,15 +59,16 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final : public WorkerGlobalScope {
 public:
     static PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> create(ServiceWorkerThread*, PassOwnPtr<WorkerThreadStartupData>);
 
-    virtual ~ServiceWorkerGlobalScope();
-    virtual bool isServiceWorkerGlobalScope() const override { return true; }
+    ~ServiceWorkerGlobalScope() override;
+    bool isServiceWorkerGlobalScope() const override { return true; }
 
     // WorkerGlobalScope
-    virtual void didEvaluateWorkerScript() override;
+    void didEvaluateWorkerScript() override;
 
     // ServiceWorkerGlobalScope.idl
     ServiceWorkerClients* clients();
     ServiceWorkerRegistration* registration();
+    StashedPortCollection* ports();
 
     ScriptPromise fetch(ScriptState*, const RequestInfo&, const Dictionary&, ExceptionState&);
 
@@ -77,9 +79,9 @@ public:
     void setRegistration(WebServiceWorkerRegistration*);
 
     // EventTarget
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    virtual const AtomicString& interfaceName() const override;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    const AtomicString& interfaceName() const override;
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     void dispatchExtendableEvent(PassRefPtrWillBeRawPtr<Event>, WaitUntilObserver*);
 
@@ -102,6 +104,7 @@ private:
 
     PersistentWillBeMember<ServiceWorkerClients> m_clients;
     PersistentWillBeMember<ServiceWorkerRegistration> m_registration;
+    PersistentWillBeMember<StashedPortCollection> m_ports;
     bool m_didEvaluateScript;
     bool m_hadErrorInTopLevelEventHandler;
     unsigned m_eventNestingLevel;
@@ -109,6 +112,8 @@ private:
     size_t m_scriptTotalSize;
     size_t m_scriptCachedMetadataTotalSize;
 };
+
+DEFINE_TYPE_CASTS(ServiceWorkerGlobalScope, ExecutionContext, context, context->isServiceWorkerGlobalScope(), context.isServiceWorkerGlobalScope());
 
 } // namespace blink
 

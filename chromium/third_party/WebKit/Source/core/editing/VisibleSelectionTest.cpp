@@ -5,12 +5,8 @@
 #include "config.h"
 #include "core/editing/VisibleSelection.h"
 
-#include "core/dom/Document.h"
 #include "core/dom/Range.h"
-#include "core/dom/Text.h"
-#include "core/html/HTMLElement.h"
-#include "core/testing/DummyPageHolder.h"
-#include <gtest/gtest.h>
+#include "core/editing/EditingTestBase.h"
 
 #define LOREM_IPSUM \
     "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor " \
@@ -22,17 +18,8 @@
 
 namespace blink {
 
-class VisibleSelectionTest : public ::testing::Test {
+class VisibleSelectionTest : public EditingTestBase {
 protected:
-    virtual void SetUp() override;
-
-    Document& document() const { return m_dummyPageHolder->document(); }
-
-    static PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRootForElementWithIDAndSetInnerHTML(TreeScope&, const char* hostElementID, const char* shadowRootContent);
-
-    void setBodyContent(const char*);
-    PassRefPtrWillBeRawPtr<ShadowRoot> setShadowContent(const char*);
-
     // Helper function to set the VisibleSelection base/extent.
     void setSelection(VisibleSelection& selection, int base) { setSelection(selection, base, base); }
 
@@ -40,34 +27,28 @@ protected:
     void setSelection(VisibleSelection& selection, int base, int extend)
     {
         Node* node = document().body()->firstChild();
-        selection.setBase(Position(node, base, Position::PositionIsOffsetInAnchor));
-        selection.setExtent(Position(node, extend, Position::PositionIsOffsetInAnchor));
+        selection.setBase(Position(node, base));
+        selection.setExtent(Position(node, extend));
     }
 
-private:
-    OwnPtr<DummyPageHolder> m_dummyPageHolder;
+    static bool equalPositions(const Position&, const PositionInComposedTree&);
+    static void testComposedTreePositionsToEqualToDOMTreePositions(const VisibleSelection&);
 };
 
-void VisibleSelectionTest::SetUp()
+bool VisibleSelectionTest::equalPositions(const Position& positionInDOMTree, const PositionInComposedTree& positionInComposedTree)
 {
-    m_dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
+    // Since DOM tree positions can't be map to composed tree version, e.g.
+    // shadow root, not distributed node, we map a position in composed tree
+    // to DOM tree position.
+    return positionInDOMTree == toPositionInDOMTree(positionInComposedTree);
 }
 
-PassRefPtrWillBeRawPtr<ShadowRoot> VisibleSelectionTest::createShadowRootForElementWithIDAndSetInnerHTML(TreeScope& scope, const char* hostElementID, const char* shadowRootContent)
+void VisibleSelectionTest::testComposedTreePositionsToEqualToDOMTreePositions(const VisibleSelection& selection)
 {
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRoot(ASSERT_NO_EXCEPTION);
-    shadowRoot->setInnerHTML(String::fromUTF8(shadowRootContent), ASSERT_NO_EXCEPTION);
-    return shadowRoot.release();
-}
-
-void VisibleSelectionTest::setBodyContent(const char* bodyContent)
-{
-    document().body()->setInnerHTML(String::fromUTF8(bodyContent), ASSERT_NO_EXCEPTION);
-}
-
-PassRefPtrWillBeRawPtr<ShadowRoot> VisibleSelectionTest::setShadowContent(const char* shadowContent)
-{
-    return createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
+    EXPECT_TRUE(equalPositions(selection.start(), VisibleSelection::InComposedTree::selectionStart(selection)));
+    EXPECT_TRUE(equalPositions(selection.end(), VisibleSelection::InComposedTree::selectionEnd(selection)));
+    EXPECT_TRUE(equalPositions(selection.base(), VisibleSelection::InComposedTree::selectionBase(selection)));
+    EXPECT_TRUE(equalPositions(selection.extent(), VisibleSelection::InComposedTree::selectionExtent(selection)));
 }
 
 TEST_F(VisibleSelectionTest, Initialisation)
@@ -84,6 +65,7 @@ TEST_F(VisibleSelectionTest, Initialisation)
     EXPECT_EQ(0, range->startOffset());
     EXPECT_EQ(0, range->endOffset());
     EXPECT_EQ("", range->text());
+    testComposedTreePositionsToEqualToDOMTreePositions(selection);
 }
 
 TEST_F(VisibleSelectionTest, ShadowCrossing)
@@ -96,16 +78,14 @@ TEST_F(VisibleSelectionTest, ShadowCrossing)
     RefPtrWillBeRawPtr<Element> body = document().body();
     RefPtrWillBeRawPtr<Element> host = body->querySelector("#host", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> one = body->querySelector("#one", ASSERT_NO_EXCEPTION);
-    RefPtrWillBeRawPtr<Element> two = body->querySelector("#two", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> six = shadowRoot->querySelector("#s6", ASSERT_NO_EXCEPTION);
-
-    ASSERT_UNUSED(two, two);
-    (void)six;
 
     VisibleSelection selection(Position::firstPositionInNode(one.get()), Position::lastPositionInNode(shadowRoot.get()));
 
-    EXPECT_EQ(Position(host.get(), Position::PositionIsBeforeAnchor), selection.start());
-    EXPECT_EQ(Position(one->firstChild(), 0, Position::PositionIsOffsetInAnchor), selection.end());
+    EXPECT_EQ(Position(host.get(), PositionAnchorType::BeforeAnchor), selection.start());
+    EXPECT_EQ(Position(one->firstChild(), 0), selection.end());
+    EXPECT_EQ(PositionInComposedTree(one->firstChild(), 0), selection.startInComposedTree());
+    EXPECT_EQ(PositionInComposedTree(six->firstChild(), 2), selection.endInComposedTree());
 }
 
 TEST_F(VisibleSelectionTest, ShadowDistributedNodes)
@@ -116,18 +96,16 @@ TEST_F(VisibleSelectionTest, ShadowDistributedNodes)
     RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = setShadowContent(shadowContent);
 
     RefPtrWillBeRawPtr<Element> body = document().body();
-    RefPtrWillBeRawPtr<Element> host = body->querySelector("#host", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> one = body->querySelector("#one", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> two = body->querySelector("#two", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> five = shadowRoot->querySelector("#s5", ASSERT_NO_EXCEPTION);
 
-    ASSERT_UNUSED(host, host);
-    ASSERT_UNUSED(five, five);
-
     VisibleSelection selection(Position::firstPositionInNode(one.get()), Position::lastPositionInNode(two.get()));
 
-    EXPECT_EQ(Position(one->firstChild(), 0, Position::PositionIsOffsetInAnchor), selection.start());
-    EXPECT_EQ(Position(two->firstChild(), 2, Position::PositionIsOffsetInAnchor), selection.end());
+    EXPECT_EQ(Position(one->firstChild(), 0), selection.start());
+    EXPECT_EQ(Position(two->firstChild(), 2), selection.end());
+    EXPECT_EQ(PositionInComposedTree(five->firstChild(), 0), selection.startInComposedTree());
+    EXPECT_EQ(PositionInComposedTree(five->firstChild(), 2), selection.endInComposedTree());
 }
 
 TEST_F(VisibleSelectionTest, ShadowNested)
@@ -142,18 +120,14 @@ TEST_F(VisibleSelectionTest, ShadowNested)
     RefPtrWillBeRawPtr<Element> body = document().body();
     RefPtrWillBeRawPtr<Element> host = body->querySelector("#host", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> one = body->querySelector("#one", ASSERT_NO_EXCEPTION);
-    RefPtrWillBeRawPtr<Element> two = body->querySelector("#two", ASSERT_NO_EXCEPTION);
-    RefPtrWillBeRawPtr<Element> host2 = shadowRoot->querySelector("#host2", ASSERT_NO_EXCEPTION);
     RefPtrWillBeRawPtr<Element> eight = shadowRoot2->querySelector("#s8", ASSERT_NO_EXCEPTION);
-
-    ASSERT_UNUSED(two, two);
-    ASSERT_UNUSED(eight, eight);
-    (void)host2;
 
     VisibleSelection selection(Position::firstPositionInNode(one.get()), Position::lastPositionInNode(shadowRoot2.get()));
 
-    EXPECT_EQ(Position(host.get(), Position::PositionIsBeforeAnchor), selection.start());
-    EXPECT_EQ(Position(one->firstChild(), 0, Position::PositionIsOffsetInAnchor), selection.end());
+    EXPECT_EQ(Position(host.get(), PositionAnchorType::BeforeAnchor), selection.start());
+    EXPECT_EQ(Position(one->firstChild(), 0), selection.end());
+    EXPECT_EQ(PositionInComposedTree(eight->firstChild(), 2), selection.startInComposedTree());
+    EXPECT_EQ(PositionInComposedTree(one->firstChild(), 0), selection.endInComposedTree());
 }
 
 TEST_F(VisibleSelectionTest, WordGranularity)
@@ -171,6 +145,8 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(0, range->startOffset());
         EXPECT_EQ(5, range->endOffset());
         EXPECT_EQ("Lorem", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
+
     }
 
     // Middle of a word.
@@ -182,6 +158,8 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(6, range->startOffset());
         EXPECT_EQ(11, range->endOffset());
         EXPECT_EQ("ipsum", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
+
     }
 
     // End of a word.
@@ -195,6 +173,7 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(5, range->startOffset());
         EXPECT_EQ(6, range->endOffset());
         EXPECT_EQ(" ", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
     }
 
     // Before comma.
@@ -208,6 +187,7 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(26, range->startOffset());
         EXPECT_EQ(27, range->endOffset());
         EXPECT_EQ(",", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
     }
 
     // After comma.
@@ -219,6 +199,7 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(27, range->startOffset());
         EXPECT_EQ(28, range->endOffset());
         EXPECT_EQ(" ", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
     }
 
     // When selecting part of a word.
@@ -230,6 +211,7 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(0, range->startOffset());
         EXPECT_EQ(5, range->endOffset());
         EXPECT_EQ("Lorem", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
     }
 
     // When selecting part of two words.
@@ -241,6 +223,7 @@ TEST_F(VisibleSelectionTest, WordGranularity)
         EXPECT_EQ(0, range->startOffset());
         EXPECT_EQ(11, range->endOffset());
         EXPECT_EQ("Lorem ipsum", range->text());
+        testComposedTreePositionsToEqualToDOMTreePositions(selection);
     }
 }
 

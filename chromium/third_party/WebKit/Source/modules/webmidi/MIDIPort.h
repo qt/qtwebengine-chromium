@@ -43,7 +43,7 @@ namespace blink {
 class MIDIAccess;
 
 class MIDIPort : public RefCountedGarbageCollectedEventTargetWithInlineData<MIDIPort>, public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MIDIPort>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(MIDIPort);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIPort);
 public:
@@ -58,7 +58,7 @@ public:
         TypeOutput
     };
 
-    virtual ~MIDIPort() { }
+    ~MIDIPort() override { }
 
     String connection() const;
     String id() const { return m_id; }
@@ -82,7 +82,7 @@ public:
 
     // EventTarget
     const AtomicString& interfaceName() const override { return EventTargetNames::MIDIPort; }
-    ExecutionContext* executionContext() const override final;
+    ExecutionContext* executionContext() const final;
 
     // ActiveDOMObject
     bool hasPendingActivity() const override;

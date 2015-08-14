@@ -29,8 +29,8 @@
 #include "config.h"
 #include "core/xml/XSLTUnicodeSort.h"
 
+#include "wtf/text/Collator.h"
 #include "wtf/text/WTFString.h"
-#include "wtf/unicode/Collator.h"
 #include <libxslt/templates.h>
 #include <libxslt/xsltutils.h>
 
@@ -51,8 +51,8 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
     xsltStylePreCompPtr comp;
 #endif
     xmlXPathObjectPtr* resultsTab[XSLT_MAX_SORT];
-    xmlXPathObjectPtr* results = 0;
-    xmlNodeSetPtr list = 0;
+    xmlXPathObjectPtr* results = nullptr;
+    xmlNodeSetPtr list = nullptr;
     int depth;
     xmlNodePtr node;
     int tempstype[XSLT_MAX_SORT], temporder[XSLT_MAX_SORT];

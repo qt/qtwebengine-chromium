@@ -4,11 +4,12 @@
 
 #include "config.h"
 #include "core/dom/DOMNodeIds.h"
+
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-template class WeakIdentifierMap<Node>;
+DEFINE_WEAK_IDENTIFIER_MAP(Node);
 
 #if !ENABLE(OILPAN)
 void WeakIdentifierMapTraits<Node>::removedFromIdentifierMap(Node* node)
@@ -22,20 +23,16 @@ void WeakIdentifierMapTraits<Node>::addedToIdentifierMap(Node* node)
 }
 #endif
 
-static WeakNodeMap& nodeIds()
-{
-    DEFINE_STATIC_LOCAL(WeakNodeMap::ReferenceType, self, (new WeakNodeMap()));
-    return *self;
-}
-
+// static
 int DOMNodeIds::idForNode(Node* node)
 {
-    return nodeIds().identifier(node);
+    return WeakIdentifierMap<Node>::identifier(node);
 }
 
+// static
 Node* DOMNodeIds::nodeForId(int id)
 {
-    return nodeIds().lookup(id);
+    return WeakIdentifierMap<Node>::lookup(id);
 }
 
 }

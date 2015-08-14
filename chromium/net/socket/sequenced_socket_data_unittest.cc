@@ -194,6 +194,7 @@ class SequencedSocketDataTest : public testing::Test {
   void AssertSyncWriteEquals(const char* data, int len);
   void AssertAsyncWriteEquals(const char* data, int len);
   void AssertWriteReturns(const char* data, int len, int rv);
+  void CompleteRead();
 
   // When a given test completes, data_.at_eof() is expected to
   // match the value specified here. Most test should consume all
@@ -242,8 +243,8 @@ SequencedSocketDataTest::~SequencedSocketDataTest() {
   // Make sure no unexpected pending tasks will cause a failure.
   base::RunLoop().RunUntilIdle();
   if (expect_eof_) {
-    EXPECT_EQ(expect_eof_, data_->at_read_eof());
-    EXPECT_EQ(expect_eof_, data_->at_write_eof());
+    EXPECT_EQ(expect_eof_, data_->AllReadDataConsumed());
+    EXPECT_EQ(expect_eof_, data_->AllWriteDataConsumed());
   }
 }
 
@@ -311,6 +312,10 @@ void SequencedSocketDataTest::AssertAsyncWriteEquals(const char* data,
   EXPECT_TRUE(sock_->IsConnected());
 
   ASSERT_EQ(len, write_callback_.WaitForResult());
+}
+
+void SequencedSocketDataTest::CompleteRead() {
+  data_->CompleteRead();
 }
 
 void SequencedSocketDataTest::AssertWriteReturns(const char* data,
@@ -603,6 +608,28 @@ TEST_F(SequencedSocketDataTest, HangingRead) {
   ASSERT_FALSE(read_callback_.have_result());
 }
 
+TEST_F(SequencedSocketDataTest, CompleteRead) {
+  MockRead reads[] = {
+      MockRead(ASYNC, ERR_IO_PENDING, 0), MockRead(ASYNC, kMsg1, kLen1, 1),
+  };
+
+  Initialize(reads, arraysize(reads), nullptr, 0);
+
+  AssertReadReturns(kLen1, ERR_IO_PENDING);
+  ASSERT_FALSE(read_callback_.have_result());
+
+  // Even though the read is scheduled to complete at sequence number 0,
+  // verify that the read callback in not called, until CompleteRead() is.
+  base::MessageLoop::current()->RunUntilIdle();
+  ASSERT_FALSE(read_callback_.have_result());
+
+  CompleteRead();
+
+  ASSERT_TRUE(read_callback_.have_result());
+  ASSERT_EQ(kLen1, read_callback_.WaitForResult());
+  AssertReadBufferEquals(kMsg1, kLen1);
+}
+
 // ----------- Write
 
 TEST_F(SequencedSocketDataTest, SingleSyncWriteTooEarly) {
@@ -620,15 +647,46 @@ TEST_F(SequencedSocketDataTest, SingleSyncWriteTooEarly) {
   set_expect_eof(false);
 }
 
-TEST_F(SequencedSocketDataTest, DISABLED_SingleSyncWriteTooSmall) {
+TEST_F(SequencedSocketDataTest, SingleSyncWriteTooSmall) {
   MockWrite writes[] = {
       MockWrite(SYNCHRONOUS, kMsg1, kLen1, 0),
   };
 
   Initialize(nullptr, 0, writes, arraysize(writes));
 
-  // Attempt to write all of the message, but only some will be written.
-  EXPECT_NONFATAL_FAILURE(AssertSyncWriteEquals(kMsg1, kLen1 - 1), "");
+  // Expecting too small of a write triggers multiple expectation failures.
+  //
+  // The gtest infrastructure does not have a macro similar to
+  // EXPECT_NONFATAL_FAILURE which works when there is more than one
+  // failure.
+  //
+  // However, tests can gather the TestPartResultArray and directly
+  // validate the test failures. That's what the rest of this test does.
+
+  ::testing::TestPartResultArray gtest_failures;
+
+  {
+    ::testing::ScopedFakeTestPartResultReporter gtest_reporter(
+        ::testing::ScopedFakeTestPartResultReporter::
+            INTERCEPT_ONLY_CURRENT_THREAD,
+        &gtest_failures);
+    AssertSyncWriteEquals(kMsg1, kLen1 - 1);
+  }
+
+  static const char* kExpectedFailures[] = {
+      "Expected: (data.length()) >= (expected_data.length())",
+      "Value of: actual_data",
+      "Value of: sock_->Write(buf.get(), len, failing_callback_)"};
+  ASSERT_EQ(arraysize(kExpectedFailures),
+            static_cast<size_t>(gtest_failures.size()));
+
+  for (int i = 0; i < gtest_failures.size(); ++i) {
+    const ::testing::TestPartResult& result =
+        gtest_failures.GetTestPartResult(i);
+    EXPECT_TRUE(strstr(result.message(), kExpectedFailures[i]) != NULL);
+  }
+
+  set_expect_eof(false);
 }
 
 TEST_F(SequencedSocketDataTest, SingleSyncPartialWrite) {

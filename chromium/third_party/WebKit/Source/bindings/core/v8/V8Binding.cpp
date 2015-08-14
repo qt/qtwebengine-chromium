@@ -52,7 +52,6 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/inspector/BindingVisitors.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -66,11 +65,11 @@
 #include "wtf/Threading.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/CString.h"
+#include "wtf/text/CharacterNames.h"
 #include "wtf/text/StringBuffer.h"
 #include "wtf/text/StringHash.h"
+#include "wtf/text/Unicode.h"
 #include "wtf/text/WTFString.h"
-#include "wtf/unicode/CharacterNames.h"
-#include "wtf/unicode/Unicode.h"
 
 namespace blink {
 
@@ -762,10 +761,12 @@ v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld& w
     ASSERT(context);
     if (context->isDocument()) {
         if (LocalFrame* frame = toDocument(context)->frame())
-            return frame->script().windowProxy(world)->context();
+            return toV8Context(frame, world);
     } else if (context->isWorkerGlobalScope()) {
-        if (WorkerScriptController* script = toWorkerGlobalScope(context)->script())
-            return script->context();
+        if (WorkerScriptController* script = toWorkerGlobalScope(context)->script()) {
+            if (script->scriptState()->contextIsValid())
+                return script->scriptState()->context();
+        }
     }
     return v8::Local<v8::Context>();
 }
@@ -774,11 +775,19 @@ v8::Local<v8::Context> toV8Context(Frame* frame, DOMWrapperWorld& world)
 {
     if (!frame)
         return v8::Local<v8::Context>();
-    v8::Local<v8::Context> context = frame->windowProxy(world)->context();
-    if (context.IsEmpty())
-        return v8::Local<v8::Context>();
-    Frame* attachedFrame = toFrameIfNotDetached(context);
-    return frame == attachedFrame ? context : v8::Local<v8::Context>();
+    v8::Local<v8::Context> context = toV8ContextEvenIfDetached(frame, world);
+    ScriptState* scriptState = ScriptState::from(context);
+    if (scriptState->contextIsValid()) {
+        ASSERT(toFrameIfNotDetached(context) == frame);
+        return scriptState->context();
+    }
+    return v8::Local<v8::Context>();
+}
+
+v8::Local<v8::Context> toV8ContextEvenIfDetached(Frame* frame, DOMWrapperWorld& world)
+{
+    ASSERT(frame);
+    return frame->windowProxy(world)->context();
 }
 
 void crashIfV8IsDead()

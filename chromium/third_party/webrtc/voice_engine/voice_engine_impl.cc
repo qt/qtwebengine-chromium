@@ -12,10 +12,7 @@
 #include "webrtc/modules/audio_device/android/audio_device_template.h"
 #include "webrtc/modules/audio_device/android/audio_record_jni.h"
 #include "webrtc/modules/audio_device/android/audio_track_jni.h"
-#if !defined(WEBRTC_CHROMIUM_BUILD)
-#include "webrtc/modules/audio_device/android/opensles_input.h"
-#include "webrtc/modules/audio_device/android/opensles_output.h"
-#endif
+#include "webrtc/modules/utility/interface/jvm_android.h"
 #endif
 
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
@@ -144,20 +141,11 @@ bool VoiceEngine::Delete(VoiceEngine*& voiceEngine) {
 }
 
 #if !defined(WEBRTC_CHROMIUM_BUILD)
+// TODO(henrika): change types to JavaVM* and jobject instead of void*.
 int VoiceEngine::SetAndroidObjects(void* javaVM, void* context) {
 #ifdef WEBRTC_ANDROID
-#ifdef WEBRTC_ANDROID_OPENSLES
-  typedef AudioDeviceTemplate<OpenSlesInput, OpenSlesOutput>
-      AudioDeviceInstance;
-#else
-  typedef AudioDeviceTemplate<AudioRecordJni, AudioTrackJni>
-      AudioDeviceInstance;
-#endif
-  if (javaVM && context) {
-    AudioDeviceInstance::SetAndroidAudioDeviceObjects(javaVM, context);
-  } else {
-    AudioDeviceInstance::ClearAndroidAudioDeviceObjects();
-  }
+  webrtc::JVM::Initialize(reinterpret_cast<JavaVM*>(javaVM),
+                          reinterpret_cast<jobject>(context));
   return 0;
 #else
   return -1;

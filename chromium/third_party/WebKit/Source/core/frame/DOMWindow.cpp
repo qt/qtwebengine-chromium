@@ -12,12 +12,18 @@
 #include "core/events/MessageEvent.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameClient.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/Location.h"
+#include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/page/ChromeClient.h"
+#include "core/page/Page.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
@@ -131,7 +137,7 @@ bool DOMWindow::isInsecureScriptAccess(LocalDOMWindow& callingWindow, const Stri
 
         // FIXME: The name canAccess seems to be a roundabout way to ask "can execute script".
         // Can we name the SecurityOrigin function better to make this more clear?
-        if (callingWindow.frame()->securityContext()->securityOrigin()->canAccess(frame()->securityContext()->securityOrigin()))
+        if (callingWindow.frame()->securityContext()->securityOrigin()->canAccessCheckSuborigins(frame()->securityContext()->securityOrigin()))
             return false;
     }
 
@@ -173,7 +179,7 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
         }
     }
 
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(executionContext(), ports, exceptionState);
     if (exceptionState.hadException())
         return;
 
@@ -220,7 +226,7 @@ String DOMWindow::sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* calling
     if (callingWindowURL.isNull())
         return String();
 
-    ASSERT(!callingWindow->document()->securityOrigin()->canAccess(frame()->securityContext()->securityOrigin()));
+    ASSERT(!callingWindow->document()->securityOrigin()->canAccessCheckSuborigins(frame()->securityContext()->securityOrigin()));
 
     SecurityOrigin* activeOrigin = callingWindow->document()->securityOrigin();
     String message = "Blocked a frame with origin \"" + activeOrigin->toString() + "\" from accessing a cross-origin frame.";
@@ -242,7 +248,7 @@ String DOMWindow::crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow)
     // FIXME: This message, and other console messages, have extra newlines. Should remove them.
     SecurityOrigin* activeOrigin = callingWindow->document()->securityOrigin();
     SecurityOrigin* targetOrigin = frame()->securityContext()->securityOrigin();
-    ASSERT(!activeOrigin->canAccess(targetOrigin));
+    ASSERT(!activeOrigin->canAccessCheckSuborigins(targetOrigin));
 
     String message = "Blocked a frame with origin \"" + activeOrigin->toString() + "\" from accessing a frame with origin \"" + targetOrigin->toString() + "\". ";
 
@@ -276,6 +282,50 @@ String DOMWindow::crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow)
 
     // Default.
     return message + "Protocols, domains, and ports must match.";
+}
+
+void DOMWindow::close(ExecutionContext* context)
+{
+    if (!frame() || !frame()->isMainFrame())
+        return;
+
+    Page* page = frame()->page();
+    if (!page)
+        return;
+
+    Document* activeDocument = nullptr;
+    if (context) {
+        ASSERT(isMainThread());
+        activeDocument = toDocument(context);
+        if (!activeDocument)
+            return;
+
+        if (!activeDocument->frame() || !activeDocument->frame()->canNavigate(*frame()))
+            return;
+    }
+
+    Settings* settings = frame()->settings();
+    bool allowScriptsToCloseWindows = settings && settings->allowScriptsToCloseWindows();
+
+    if (!page->openedByDOM() && frame()->client()->backForwardLength() > 1 && !allowScriptsToCloseWindows) {
+        if (activeDocument) {
+            activeDocument->domWindow()->frameConsole()->addMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it."));
+        }
+        return;
+    }
+
+    if (!frame()->shouldClose())
+        return;
+
+    InspectorInstrumentation::willCloseWindow(context);
+
+    page->chromeClient().closeWindowSoon();
+
+    // So as to make window.closed return the expected result
+    // after window.close(), separately record the to-be-closed
+    // state of this window. Scripts may access window.closed
+    // before the deferred close operation has gone ahead.
+    m_windowIsClosing = true;
 }
 
 DEFINE_TRACE(DOMWindow)

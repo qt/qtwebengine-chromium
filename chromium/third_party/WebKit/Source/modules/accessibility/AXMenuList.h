@@ -35,25 +35,25 @@ class LayoutMenuList;
 
 class AXMenuList final : public AXLayoutObject {
 public:
-    static PassRefPtr<AXMenuList> create(LayoutMenuList* layoutObject, AXObjectCacheImpl*);
+    static PassRefPtrWillBeRawPtr<AXMenuList> create(LayoutMenuList* layoutObject, AXObjectCacheImpl&);
 
-    virtual bool isCollapsed() const override;
-    virtual AccessibilityExpanded isExpanded() const override final;
-    virtual bool press() const override;
-    virtual void clearChildren() override;
+    bool isCollapsed() const override;
+    AccessibilityExpanded isExpanded() const final;
+    bool press() const override;
+    void clearChildren() override;
 
     void didUpdateActiveOption(int optionIndex);
     void didShowPopup();
     void didHidePopup();
 
 private:
-    AXMenuList(LayoutMenuList*, AXObjectCacheImpl*);
+    AXMenuList(LayoutMenuList*, AXObjectCacheImpl&);
 
-    virtual bool isMenuList() const override { return true; }
-    virtual AccessibilityRole determineAccessibilityRole() override final;
-    virtual bool canSetFocusAttribute() const override;
+    bool isMenuList() const override { return true; }
+    AccessibilityRole determineAccessibilityRole() final;
+    bool canSetFocusAttribute() const override;
 
-    virtual void addChildren() override;
+    void addChildren() override;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXMenuList, isMenuList());

@@ -5,11 +5,13 @@
 #include "net/quic/quic_client_session.h"
 
 #include "base/callback_helpers.h"
-#include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
+#include "base/location.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -96,12 +98,12 @@ void RecordHandshakeState(HandshakeState state) {
                             NUM_HANDSHAKE_STATES);
 }
 
-base::Value* NetLogQuicClientSessionCallback(
+scoped_ptr<base::Value> NetLogQuicClientSessionCallback(
     const QuicServerId* server_id,
     int cert_verify_flags,
     bool require_confirmation,
     NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("host", server_id->host());
   dict->SetInteger("port", server_id->port());
   dict->SetBoolean("is_https", server_id->is_https());
@@ -109,7 +111,7 @@ base::Value* NetLogQuicClientSessionCallback(
                    server_id->privacy_mode() == PRIVACY_MODE_ENABLED);
   dict->SetBoolean("require_confirmation", require_confirmation);
   dict->SetInteger("cert_verify_flags", cert_verify_flags);
-  return dict;
+  return dict.Pass();
 }
 
 }  // namespace
@@ -157,21 +159,24 @@ QuicClientSession::QuicClientSession(
     QuicConnection* connection,
     scoped_ptr<DatagramClientSocket> socket,
     QuicStreamFactory* stream_factory,
+    QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     TransportSecurityState* transport_security_state,
     scoped_ptr<QuicServerInfo> server_info,
+    const QuicServerId& server_id,
     int cert_verify_flags,
     const QuicConfig& config,
+    QuicCryptoClientConfig* crypto_config,
     const char* const connection_description,
     base::TimeTicks dns_resolution_end_time,
     base::TaskRunner* task_runner,
     NetLog* net_log)
     : QuicClientSessionBase(connection, config),
+      server_id_(server_id),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
       transport_security_state_(transport_security_state),
       server_info_(server_info.Pass()),
-      cert_verify_flags_(cert_verify_flags),
       num_total_streams_(0),
       task_runner_(task_runner),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
@@ -179,49 +184,40 @@ QuicClientSession::QuicClientSession(
       dns_resolution_end_time_(dns_resolution_end_time),
       logger_(new QuicConnectionLogger(this, connection_description, net_log_)),
       going_away_(false),
+      disabled_reason_(QUIC_DISABLED_NOT),
       weak_factory_(this) {
-  connection->set_debug_visitor(logger_.get());
-  IPEndPoint address;
-  if (socket && socket->GetLocalAddress(&address) == OK &&
-      address.GetFamily() == ADDRESS_FAMILY_IPV6) {
-    connection->set_max_packet_length(
-        connection->max_packet_length() - kAdditionalOverheadForIPv6);
-  }
-}
-
-void QuicClientSession::InitializeSession(
-    const QuicServerId& server_id,
-    QuicCryptoClientConfig* crypto_config,
-    QuicCryptoClientStreamFactory* crypto_client_stream_factory) {
-  server_id_ = server_id;
   crypto_stream_.reset(
       crypto_client_stream_factory
           ? crypto_client_stream_factory->CreateQuicCryptoClientStream(
                 server_id, this, crypto_config)
           : new QuicCryptoClientStream(
                 server_id, this,
-                new ProofVerifyContextChromium(cert_verify_flags_, net_log_),
+                new ProofVerifyContextChromium(cert_verify_flags, net_log_),
                 crypto_config));
-  QuicClientSessionBase::InitializeSession();
-  // TODO(rch): pass in full host port proxy pair
+  connection->set_debug_visitor(logger_.get());
   net_log_.BeginEvent(NetLog::TYPE_QUIC_SESSION,
                       base::Bind(NetLogQuicClientSessionCallback, &server_id,
-                                 cert_verify_flags_, require_confirmation_));
+                                 cert_verify_flags, require_confirmation_));
+  IPEndPoint address;
+  if (socket && socket->GetLocalAddress(&address) == OK &&
+      address.GetFamily() == ADDRESS_FAMILY_IPV6) {
+    connection->set_max_packet_length(connection->max_packet_length() -
+                                      kAdditionalOverheadForIPv6);
+  }
 }
 
 QuicClientSession::~QuicClientSession() {
-  if (!streams()->empty())
+  if (!dynamic_streams().empty())
     RecordUnexpectedOpenStreams(DESTRUCTOR);
   if (!observers_.empty())
     RecordUnexpectedObservers(DESTRUCTOR);
   if (!going_away_)
     RecordUnexpectedNotGoingAway(DESTRUCTOR);
 
-  while (!streams()->empty() ||
-         !observers_.empty() ||
+  while (!dynamic_streams().empty() || !observers_.empty() ||
          !stream_requests_.empty()) {
     // The session must be closed before it is destroyed.
-    DCHECK(streams()->empty());
+    DCHECK(dynamic_streams().empty());
     CloseAllStreams(ERR_UNEXPECTED);
     DCHECK(observers_.empty());
     CloseAllObservers(ERR_UNEXPECTED);
@@ -311,6 +307,17 @@ QuicClientSession::~QuicClientSession() {
     }
   }
 
+  // The MTU used by QUIC is limited to a fairly small set of predefined values
+  // (initial values and MTU discovery values), but does not fare well when
+  // bucketed.  Because of that, a sparse histogram is used here.
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ClientSideMtu",
+                              connection()->max_packet_length());
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.ServerSideMtu",
+                              stats.max_received_packet_size);
+
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.MtuProbesSent",
+                       connection()->mtu_probe_count());
+
   if (stats.max_sequence_reordering == 0)
     return;
   const base::HistogramBase::Sample kMaxReordering = 100;
@@ -347,7 +354,7 @@ void QuicClientSession::OnStreamFrames(
                          it->second);
   }
 
-  return QuicSession::OnStreamFrames(frames);
+  return QuicSpdySession::OnStreamFrames(frames);
 }
 
 void QuicClientSession::AddObserver(Observer* observer) {
@@ -407,7 +414,7 @@ void QuicClientSession::CancelRequest(StreamRequest* request) {
   }
 }
 
-QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
+QuicReliableClientStream* QuicClientSession::CreateOutgoingDynamicStream() {
   if (!crypto_stream_->encryption_established()) {
     DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return nullptr;
@@ -559,7 +566,7 @@ bool QuicClientSession::CanPool(const std::string& hostname,
                               server_id_.host(), hostname);
 }
 
-QuicDataStream* QuicClientSession::CreateIncomingDataStream(
+QuicDataStream* QuicClientSession::CreateIncomingDynamicStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return nullptr;
@@ -572,14 +579,14 @@ void QuicClientSession::CloseStream(QuicStreamId stream_id) {
         stream_id, stream->num_frames_received(),
         stream->num_duplicate_frames_received());
   }
-  QuicSession::CloseStream(stream_id);
+  QuicSpdySession::CloseStream(stream_id);
   OnClosedStream();
 }
 
 void QuicClientSession::SendRstStream(QuicStreamId id,
                                       QuicRstStreamErrorCode error,
                                       QuicStreamOffset bytes_written) {
-  QuicSession::SendRstStream(id, error, bytes_written);
+  QuicSpdySession::SendRstStream(id, error, bytes_written);
   OnClosedStream();
 }
 
@@ -650,7 +657,7 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     if (server_info_)
       server_info_->OnExternalCacheHit();
   }
-  QuicSession::OnCryptoHandshakeEvent(event);
+  QuicSpdySession::OnCryptoHandshakeEvent(event);
 }
 
 void QuicClientSession::OnCryptoHandshakeMessageSent(
@@ -681,6 +688,7 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
         GetNumOpenStreams());
     if (IsCryptoHandshakeConfirmed()) {
       if (GetNumOpenStreams() > 0) {
+        disabled_reason_ = QUIC_DISABLED_TIMEOUT_WITH_OPEN_STREAMS;
         UMA_HISTOGRAM_BOOLEAN(
             "Net.QuicSession.TimedOutWithOpenStreams.HasUnackedPackets",
             connection()->sent_packet_manager().HasUnackedPackets());
@@ -727,6 +735,8 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
           "Net.QuicSession.ConnectionClose.HandshakeFailureUnknown.QuicError",
           error);
     }
+  } else if (error == QUIC_PUBLIC_RESET) {
+    disabled_reason_ = QUIC_DISABLED_PUBLIC_RESET_POST_HANDSHAKE;
   }
 
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
@@ -737,7 +747,7 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
   }
   socket_->Close();
   QuicSession::OnConnectionClosed(error, from_peer);
-  DCHECK(streams()->empty());
+  DCHECK(dynamic_streams().empty());
   CloseAllStreams(ERR_UNEXPECTED);
   CloseAllObservers(ERR_UNEXPECTED);
   NotifyFactoryOfSessionClosedLater();
@@ -746,7 +756,7 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
 void QuicClientSession::OnSuccessfulVersionNegotiation(
     const QuicVersion& version) {
   logger_->OnSuccessfulVersionNegotiation(version);
-  QuicSession::OnSuccessfulVersionNegotiation(version);
+  QuicSpdySession::OnSuccessfulVersionNegotiation(version);
 }
 
 void QuicClientSession::OnProofValid(
@@ -818,8 +828,8 @@ void QuicClientSession::CloseSessionOnErrorInner(int net_error,
 }
 
 void QuicClientSession::CloseAllStreams(int net_error) {
-  while (!streams()->empty()) {
-    ReliableQuicStream* stream = streams()->begin()->second;
+  while (!dynamic_streams().empty()) {
+    ReliableQuicStream* stream = dynamic_streams().begin()->second;
     QuicStreamId id = stream->id();
     static_cast<QuicReliableClientStream*>(stream)->OnError(net_error);
     CloseStream(id);
@@ -834,20 +844,19 @@ void QuicClientSession::CloseAllObservers(int net_error) {
   }
 }
 
-base::Value* QuicClientSession::GetInfoAsValue(
+scoped_ptr<base::Value> QuicClientSession::GetInfoAsValue(
     const std::set<HostPortPair>& aliases) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
-  base::ListValue* stream_list = new base::ListValue();
-  for (base::hash_map<QuicStreamId, QuicDataStream*>::const_iterator it
-           = streams()->begin();
-       it != streams()->end();
-       ++it) {
-    stream_list->Append(new base::StringValue(
-        base::Uint64ToString(it->second->id())));
+  scoped_ptr<base::ListValue> stream_list(new base::ListValue());
+  for (base::hash_map<QuicStreamId, ReliableQuicStream*>::const_iterator it =
+           dynamic_streams().begin();
+       it != dynamic_streams().end(); ++it) {
+    stream_list->Append(
+        new base::StringValue(base::UintToString(it->second->id())));
   }
-  dict->Set("active_streams", stream_list);
+  dict->Set("active_streams", stream_list.Pass());
 
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
@@ -860,14 +869,14 @@ base::Value* QuicClientSession::GetInfoAsValue(
   SSLInfo ssl_info;
   dict->SetBoolean("secure", GetSSLInfo(&ssl_info) && ssl_info.cert.get());
 
-  base::ListValue* alias_list = new base::ListValue();
+  scoped_ptr<base::ListValue> alias_list(new base::ListValue());
   for (std::set<HostPortPair>::const_iterator it = aliases.begin();
        it != aliases.end(); it++) {
     alias_list->Append(new base::StringValue(it->ToString()));
   }
-  dict->Set("aliases", alias_list);
+  dict->Set("aliases", alias_list.Pass());
 
-  return dict;
+  return dict.Pass();
 }
 
 base::WeakPtr<QuicClientSession> QuicClientSession::GetWeakPtr() {
@@ -900,7 +909,7 @@ void QuicClientSession::NotifyFactoryOfSessionGoingAway() {
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
-  if (!streams()->empty())
+  if (!dynamic_streams().empty())
     RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
 
   if (!going_away_)
@@ -909,14 +918,13 @@ void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
   going_away_ = true;
   DCHECK_EQ(0u, GetNumOpenStreams());
   DCHECK(!connection()->connected());
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&QuicClientSession::NotifyFactoryOfSessionClosed,
-                 weak_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&QuicClientSession::NotifyFactoryOfSessionClosed,
+                            weak_factory_.GetWeakPtr()));
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosed() {
-  if (!streams()->empty())
+  if (!dynamic_streams().empty())
     RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED);
 
   if (!going_away_)

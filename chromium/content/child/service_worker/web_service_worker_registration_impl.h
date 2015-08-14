@@ -39,6 +39,9 @@ class CONTENT_EXPORT WebServiceWorkerRegistrationImpl
   virtual void setProxy(blink::WebServiceWorkerRegistrationProxy* proxy);
   virtual blink::WebServiceWorkerRegistrationProxy* proxy();
   virtual blink::WebURL scope() const;
+  virtual void update(blink::WebServiceWorkerProvider* provider);
+  virtual void unregister(blink::WebServiceWorkerProvider* provider,
+                          WebServiceWorkerUnregistrationCallbacks* callbacks);
 
   int64 registration_id() const;
 

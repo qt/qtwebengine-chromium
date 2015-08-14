@@ -13,7 +13,6 @@ namespace media {
 
 AudioClock::AudioClock(base::TimeDelta start_timestamp, int sample_rate)
     : start_timestamp_(start_timestamp),
-      sample_rate_(sample_rate),
       microseconds_per_frame_(
           static_cast<double>(base::Time::kMicrosecondsPerSecond) /
           sample_rate),
@@ -43,6 +42,7 @@ void AudioClock::WroteAudio(int frames_written,
   //
   // The ordering of compute -> push -> pop eliminates unnecessary memory
   // reallocations in cases where |buffered_| gets emptied.
+  const int64_t original_buffered_frames = total_buffered_frames_;
   int64_t frames_played =
       std::max(INT64_C(0), total_buffered_frames_ - delay_frames);
   front_timestamp_ += ComputeBufferedMediaTime(frames_played);
@@ -52,6 +52,16 @@ void AudioClock::WroteAudio(int frames_written,
 
   back_timestamp_ += base::TimeDelta::FromMicroseconds(
       frames_written * playback_rate * microseconds_per_frame_);
+
+  // Ensure something crazy hasn't happened to desync the front and back values.
+  DCHECK_LE(front_timestamp_.InMicroseconds(), back_timestamp_.InMicroseconds())
+      << "frames_written=" << frames_written
+      << ", frames_requested=" << frames_requested
+      << ", delay_frames=" << delay_frames
+      << ", playback_rate=" << playback_rate
+      << ", frames_played=" << frames_played
+      << ", original_buffered_frames=" << original_buffered_frames
+      << ", total_buffered_frames_=" << total_buffered_frames_;
 
   // Update cached values.
   double scaled_frames = 0;

@@ -36,13 +36,11 @@ class SVGPathSegListBuilder final : public SVGPathConsumer {
 public:
     SVGPathSegListBuilder(SVGPathElement*, PassRefPtrWillBeRawPtr<SVGPathSegList>);
 
-    DECLARE_VIRTUAL_TRACE();
-
 private:
-    virtual void incrementPathSegmentCount() override { }
-    virtual bool continueConsuming() override { return true; }
+    void incrementPathSegmentCount() override { }
+    bool continueConsuming() override { return true; }
 
-    virtual void emitSegment(const PathSegmentData&) override;
+    void emitSegment(const PathSegmentData&) override;
 
     RawPtrWillBeMember<SVGPathElement> m_pathElement;
     RefPtrWillBeMember<SVGPathSegList> m_pathSegList;

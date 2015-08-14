@@ -63,6 +63,12 @@ protected:
         FrameFetchContext::provideDocumentToContext(*fetchContext, document.get());
     }
 
+    virtual void TearDown()
+    {
+        documentLoader->detachFromFrame();
+        documentLoader.clear();
+    }
+
     void expectUpgrade(const char* input, const char* expected)
     {
         expectUpgrade(input, WebURLRequest::RequestContextScript, WebURLRequest::FrameTypeNone, expected);
@@ -98,7 +104,7 @@ protected:
         fetchContext->upgradeInsecureRequest(fetchRequest);
 
         EXPECT_STREQ(shouldPrefer ? "1" : "",
-            fetchRequest.resourceRequest().httpHeaderField("HTTPS").utf8().data());
+            fetchRequest.resourceRequest().httpHeaderField("Upgrade-Insecure-Requests").utf8().data());
     }
 
     KURL secureURL;
@@ -108,9 +114,9 @@ protected:
     OwnPtr<DummyPageHolder> dummyPageHolder;
     // We don't use the DocumentLoader directly in any tests, but need to keep it around as long
     // as the ResourceFetcher and Document live due to indirect usage.
-    RefPtr<DocumentLoader> documentLoader;
+    RefPtrWillBePersistent<DocumentLoader> documentLoader;
     RefPtrWillBePersistent<Document> document;
-    FetchContext* fetchContext;
+    Persistent<FetchContext> fetchContext;
 };
 
 TEST_F(FrameFetchContextUpgradeTest, UpgradeInsecureResourceRequests)
@@ -226,14 +232,26 @@ protected:
         dummyPageHolder->page().setDeviceScaleFactor(1.0);
         documentLoader = DocumentLoader::create(&dummyPageHolder->frame(), ResourceRequest("http://www.example.com"), SubstituteData());
         document = toHTMLDocument(&dummyPageHolder->document());
-        fetchContext = &documentLoader->fetcher()->context();
+        fetchContext = static_cast<FrameFetchContext*>(&documentLoader->fetcher()->context());
         FrameFetchContext::provideDocumentToContext(*fetchContext, document.get());
     }
 
-    void expectHeader(const char* input, const char* headerName, bool isPresent, const char* headerValue)
+    virtual void TearDown()
+    {
+        documentLoader->detachFromFrame();
+        documentLoader.clear();
+    }
+
+    void expectHeader(const char* input, const char* headerName, bool isPresent, const char* headerValue, float width = 0)
     {
         KURL inputURL(ParsedURLString, input);
         FetchRequest fetchRequest = FetchRequest(ResourceRequest(inputURL), FetchInitiatorInfo());
+        if (width > 0) {
+            FetchRequest::ResourceWidth resourceWidth;
+            resourceWidth.width = width;
+            resourceWidth.isSet = true;
+            fetchRequest.setResourceWidth(resourceWidth);
+        }
         fetchContext->addClientHintsIfNecessary(fetchRequest);
 
         EXPECT_STREQ(isPresent ? headerValue : "",
@@ -243,9 +261,9 @@ protected:
     OwnPtr<DummyPageHolder> dummyPageHolder;
     // We don't use the DocumentLoader directly in any tests, but need to keep it around as long
     // as the ResourceFetcher and Document live due to indirect usage.
-    RefPtr<DocumentLoader> documentLoader;
+    RefPtrWillBePersistent<DocumentLoader> documentLoader;
     RefPtrWillBePersistent<Document> document;
-    FetchContext* fetchContext;
+    Persistent<FrameFetchContext> fetchContext;
 };
 
 TEST_F(FrameFetchContextHintsTest, MonitorDPRHints)
@@ -257,34 +275,49 @@ TEST_F(FrameFetchContextHintsTest, MonitorDPRHints)
     expectHeader("http://www.example.com/1.gif", "DPR", true, "1");
     dummyPageHolder->page().setDeviceScaleFactor(2.5);
     expectHeader("http://www.example.com/1.gif", "DPR", true, "2.5");
-    expectHeader("http://www.example.com/1.gif", "RW", false, "");
+    expectHeader("http://www.example.com/1.gif", "Width", false, "");
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
 }
 
-TEST_F(FrameFetchContextHintsTest, MonitorRWHints)
+TEST_F(FrameFetchContextHintsTest, MonitorResourceWidthHints)
 {
-    expectHeader("http://www.example.com/1.gif", "RW", false, "");
+    expectHeader("http://www.example.com/1.gif", "Width", false, "");
     ClientHintsPreferences preferences;
-    preferences.setShouldSendRW(true);
+    preferences.setShouldSendResourceWidth(true);
     document->setClientHintsPreferences(preferences);
-    expectHeader("http://www.example.com/1.gif", "RW", true, "500");
+    expectHeader("http://www.example.com/1.gif", "Width", true, "500", 500);
+    expectHeader("http://www.example.com/1.gif", "Width", true, "667", 666.6666);
+    expectHeader("http://www.example.com/1.gif", "DPR", false, "");
+}
+
+TEST_F(FrameFetchContextHintsTest, MonitorViewportWidthHints)
+{
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+    ClientHintsPreferences preferences;
+    preferences.setShouldSendViewportWidth(true);
+    document->setClientHintsPreferences(preferences);
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", true, "500");
     dummyPageHolder->frameView().setLayoutSizeFixedToFrameSize(false);
     dummyPageHolder->frameView().setLayoutSize(IntSize(800, 800));
-    expectHeader("http://www.example.com/1.gif", "RW", true, "800");
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", true, "800");
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", true, "800", 666.6666);
     expectHeader("http://www.example.com/1.gif", "DPR", false, "");
 }
 
-TEST_F(FrameFetchContextHintsTest, MonitorBothHints)
+TEST_F(FrameFetchContextHintsTest, MonitorAllHints)
 {
     expectHeader("http://www.example.com/1.gif", "DPR", false, "");
-    expectHeader("http://www.example.com/1.gif", "RW", false, "");
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
+    expectHeader("http://www.example.com/1.gif", "Width", false, "");
 
     ClientHintsPreferences preferences;
     preferences.setShouldSendDPR(true);
-    preferences.setShouldSendRW(true);
+    preferences.setShouldSendResourceWidth(true);
+    preferences.setShouldSendViewportWidth(true);
     document->setClientHintsPreferences(preferences);
     expectHeader("http://www.example.com/1.gif", "DPR", true, "1");
-    expectHeader("http://www.example.com/1.gif", "RW", true, "500");
+    expectHeader("http://www.example.com/1.gif", "Width", true, "400", 400);
+    expectHeader("http://www.example.com/1.gif", "Viewport-Width", true, "500");
 }
 
 } // namespace
-

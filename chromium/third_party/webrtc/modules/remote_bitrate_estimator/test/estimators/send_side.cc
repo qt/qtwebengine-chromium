@@ -11,17 +11,21 @@
 #include "webrtc/modules/remote_bitrate_estimator/test/estimators/send_side.h"
 
 #include "webrtc/base/logging.h"
+#include "webrtc/modules/remote_bitrate_estimator/remote_bitrate_estimator_abs_send_time.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 
 namespace webrtc {
 namespace testing {
 namespace bwe {
 
+const int kFeedbackIntervalMs = 50;
+
 FullBweSender::FullBweSender(int kbps, BitrateObserver* observer, Clock* clock)
     : bitrate_controller_(
           BitrateController::CreateBitrateController(clock, observer)),
-      rbe_(AbsoluteSendTimeRemoteBitrateEstimatorFactory()
-               .Create(this, clock, kAimdControl, 1000 * kMinBitrateKbps)),
+      rbe_(new RemoteBitrateEstimatorAbsSendTime(this,
+                                                 clock,
+                                                 1000 * kMinBitrateKbps)),
       feedback_observer_(bitrate_controller_->CreateRtcpBandwidthObserver()),
       clock_(clock),
       send_time_history_(10000),
@@ -38,7 +42,7 @@ FullBweSender::~FullBweSender() {
 }
 
 int FullBweSender::GetFeedbackIntervalMs() const {
-  return 100;
+  return kFeedbackIntervalMs;
 }
 
 void FullBweSender::GiveFeedback(const FeedbackPacket& feedback) {
@@ -124,11 +128,15 @@ void SendSideBweReceiver::ReceivePacket(int64_t arrival_time_ms,
                                         const MediaPacket& media_packet) {
   packet_feedback_vector_.push_back(PacketInfo(
       arrival_time_ms, media_packet.sender_timestamp_us() / 1000,
-      media_packet.header().sequenceNumber, media_packet.payload_size()));
+      media_packet.header().sequenceNumber, media_packet.payload_size(), true));
+
+  received_packets_.Insert(media_packet.sequence_number(),
+                           media_packet.send_time_ms(), arrival_time_ms,
+                           media_packet.payload_size());
 }
 
 FeedbackPacket* SendSideBweReceiver::GetFeedback(int64_t now_ms) {
-  if (now_ms - last_feedback_ms_ < 100)
+  if (now_ms - last_feedback_ms_ < kFeedbackIntervalMs)
     return NULL;
   last_feedback_ms_ = now_ms;
   int64_t corrected_send_time_ms =

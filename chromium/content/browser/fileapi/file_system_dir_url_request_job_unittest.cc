@@ -10,12 +10,13 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
@@ -153,7 +154,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
 
     ScopedVector<storage::FileSystemBackend> additional_providers;
     additional_providers.push_back(new TestFileSystemBackend(
-        base::MessageLoopProxy::current().get(), *mnt_point));
+        base::ThreadTaskRunnerHandle::Get().get(), *mnt_point));
 
     std::vector<storage::URLRequestAutoMountHandler> handlers;
     handlers.push_back(base::Bind(&TestAutoMountForURLRequest));
@@ -264,7 +265,8 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     EXPECT_EQ(icu::UnicodeString(is_directory ? "1" : "0"),
               match.group(3, status));
     if (size >= 0) {
-      icu::UnicodeString size_string(FormatBytesUnlocalized(size).c_str());
+      icu::UnicodeString size_string(
+          base::FormatBytesUnlocalized(size).c_str());
       EXPECT_EQ(size_string, match.group(4, status));
     }
 
@@ -285,7 +287,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   }
 
   // Put the message loop at the top, so that it's the last thing deleted.
-  // Delete all MessageLoopProxy objects before the MessageLoop, to help prevent
+  // Delete all task runner objects before the MessageLoop, to help prevent
   // leaks caused by tasks posted during shutdown.
   base::MessageLoopForIO message_loop_;
 

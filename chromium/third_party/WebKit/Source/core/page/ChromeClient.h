@@ -24,11 +24,11 @@
 
 #include "core/CoreExport.h"
 #include "core/dom/AXObjectCache.h"
+#include "core/frame/ConsoleTypes.h"
+#include "core/html/forms/PopupMenuClient.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/NavigationPolicy.h"
-#include "core/frame/ConsoleTypes.h"
-#include "core/html/forms/PopupMenuClient.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
@@ -50,6 +50,7 @@ class DateTimeChooserClient;
 class Element;
 class FileChooser;
 class Frame;
+class FloatPoint;
 class GraphicsContext;
 class GraphicsLayer;
 class GraphicsLayerFactory;
@@ -60,8 +61,8 @@ class IntRect;
 class LocalFrame;
 class Node;
 class Page;
-class PagePopupDriver;
 class PopupMenuClient;
+class PopupOpeningObserver;
 class WebCompositorAnimationTimeline;
 
 struct CompositedSelection;
@@ -71,11 +72,13 @@ struct GraphicsDeviceAdapter;
 struct ViewportDescription;
 struct WindowFeatures;
 
-class CORE_EXPORT ChromeClient {
+class CORE_EXPORT ChromeClient : public HostWindow {
 public:
     virtual void chromeDestroyed() = 0;
 
-    virtual void setWindowRect(const IntRect&) = 0;
+    // The specified rectangle is adjusted for the minimum window size and the
+    // screen, then setWindowRect with the adjusted rectangle is called.
+    void setWindowRectWithAdjustment(const IntRect&);
     virtual IntRect windowRect() = 0;
 
     virtual IntRect pageRect() = 0;
@@ -96,7 +99,11 @@ public:
     // The FrameLoadRequest parameter is only for ChromeClient to check if the
     // request could be fulfilled. The ChromeClient should not load the request.
     virtual Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) = 0;
-    virtual void show(NavigationPolicy) = 0;
+    virtual void show(NavigationPolicy = NavigationPolicyIgnore) = 0;
+
+    void setWindowFeatures(const WindowFeatures&);
+
+    virtual void didOverscroll(const FloatSize&, const FloatSize&, const FloatPoint&, const FloatSize&) = 0;
 
     virtual void setToolbarsVisible(bool) = 0;
     virtual bool toolbarsVisible() = 0;
@@ -115,14 +122,14 @@ public:
     virtual bool shouldReportDetailedMessageForSource(LocalFrame&, const String& source) = 0;
     virtual void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID, const String& stackTrace) = 0;
 
-    virtual bool canRunBeforeUnloadConfirmPanel() = 0;
-    virtual bool runBeforeUnloadConfirmPanel(const String& message, LocalFrame*) = 0;
+    virtual bool canOpenBeforeUnloadConfirmPanel() = 0;
+    bool openBeforeUnloadConfirmPanel(const String& message, LocalFrame*);
 
     virtual void closeWindowSoon() = 0;
 
-    virtual void runJavaScriptAlert(LocalFrame*, const String&) = 0;
-    virtual bool runJavaScriptConfirm(LocalFrame*, const String&) = 0;
-    virtual bool runJavaScriptPrompt(LocalFrame*, const String& message, const String& defaultValue, String& result) = 0;
+    bool openJavaScriptAlert(LocalFrame*, const String&);
+    bool openJavaScriptConfirm(LocalFrame*, const String&);
+    bool openJavaScriptPrompt(LocalFrame*, const String& message, const String& defaultValue, String& result);
     virtual void setStatusbarText(const String&) = 0;
     virtual bool tabsToLinks() = 0;
 
@@ -131,12 +138,10 @@ public:
     virtual IntRect windowResizerRect() const = 0;
 
     // Methods used by HostWindow.
-    virtual void invalidateRect(const IntRect&) = 0;
-    virtual IntRect viewportToScreen(const IntRect&) const = 0;
     virtual WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
-    virtual void scheduleAnimation() = 0;
     // End methods used by HostWindow.
+    virtual Cursor lastSetCursorForTesting() const = 0;
 
     virtual void scheduleAnimationForFrame(LocalFrame*) { }
 
@@ -147,15 +152,14 @@ public:
     virtual float clampPageScaleFactorToLimits(float scale) const { return scale; }
     virtual void layoutUpdated(LocalFrame*) const { }
 
-    virtual void mouseDidMoveOverElement(const HitTestResult&) = 0;
-
+    void mouseDidMoveOverElement(const HitTestResult&);
     virtual void setToolTip(const String&, TextDirection) = 0;
 
-    virtual void print(LocalFrame*) = 0;
+    void print(LocalFrame*);
 
     virtual void annotatedRegionsChanged() = 0;
 
-    virtual PassOwnPtrWillBeRawPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
+    virtual PassOwnPtrWillBeRawPtr<ColorChooser> openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
 
     // This function is used for:
     //  - Mandatory date/time choosers if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -165,9 +169,9 @@ public:
     //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 
-    virtual void openTextDataListChooser(HTMLInputElement&) = 0;
+    virtual void openTextDataListChooser(HTMLInputElement&)= 0;
 
-    virtual void runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>) = 0;
+    virtual void openFileChooser(LocalFrame*, PassRefPtr<FileChooser>) = 0;
 
     // Asychronous request to enumerate all files in a directory chosen by the user.
     virtual void enumerateChosenDirectory(FileChooser*) = 0;
@@ -176,8 +180,8 @@ public:
     virtual GraphicsLayerFactory* graphicsLayerFactory() const { return nullptr; }
 
     // Pass 0 as the GraphicsLayer to detach the root layer.
-    // This sets the graphics layer for the LocalFrame's WebWidget, if it has one. Otherwise
-    // it sets it for the WebViewImpl.
+    // This sets the graphics layer for the LocalFrame's WebWidget, if it has
+    // one. Otherwise it sets it for the WebViewImpl.
     virtual void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) = 0;
 
     virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
@@ -195,7 +199,7 @@ public:
 
     // Checks if there is an opened popup, called by LayoutMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
-    virtual PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) = 0;
+    virtual PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, PopupMenuClient*) = 0;
     virtual DOMWindow* pagePopupWindowForTesting() const = 0;
 
     virtual void postAccessibilityNotification(AXObject*, AXObjectCache::AXNotification) { }
@@ -207,7 +211,7 @@ public:
         PromptDialog = 2,
         HTMLDialog = 3
     };
-    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String&, Document::PageDismissalType) const { return true; }
+    virtual bool shouldOpenModalDialogDuringPageDismissal(const DialogType&, const String&, Document::PageDismissalType) const { return true; }
 
     virtual bool isSVGImageChromeClient() const { return false; }
 
@@ -224,6 +228,7 @@ public:
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
     virtual void textFieldDataListChanged(HTMLInputElement&) { }
     virtual void xhrSucceeded(LocalFrame*) { }
+    virtual void ajaxSucceeded(LocalFrame*) { }
 
     // Input mehtod editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
@@ -235,10 +240,29 @@ public:
 
     virtual void showUnhandledTapUIIfNeeded(IntPoint, Node*, bool) { }
 
+    virtual void onMouseDown(Node*) { }
+
     virtual void didUpdateTopControls() const { }
+
+    virtual void registerPopupOpeningObserver(PopupOpeningObserver*) = 0;
+    virtual void unregisterPopupOpeningObserver(PopupOpeningObserver*) = 0;
+
+    virtual FloatSize elasticOverscroll() const { return FloatSize(); }
 
 protected:
     virtual ~ChromeClient() { }
+
+    virtual void showMouseOverURL(const HitTestResult&) = 0;
+    virtual void setWindowRect(const IntRect&) = 0;
+    virtual bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String& message) = 0;
+    virtual bool openJavaScriptAlertDelegate(LocalFrame*, const String&) = 0;
+    virtual bool openJavaScriptConfirmDelegate(LocalFrame*, const String&) = 0;
+    virtual bool openJavaScriptPromptDelegate(LocalFrame*, const String& message, const String& defaultValue, String& result) = 0;
+    virtual void printDelegate(LocalFrame*) = 0;
+
+private:
+    bool canOpenModalIfDuringPageDismissal(Frame* mainFrame, DialogType, const String& message);
+    void setToolTip(const HitTestResult&);
 };
 
 } // namespace blink

@@ -88,6 +88,13 @@ void writeIndent(int depth, StringBuilder* output)
 
 } // anonymous namespace
 
+String JSONValue::quoteString(const String& input)
+{
+    StringBuilder builder;
+    doubleQuoteString(input, &builder);
+    return builder.toString();
+}
+
 bool JSONValue::asBoolean(bool*) const
 {
     return false;
@@ -121,12 +128,6 @@ bool JSONValue::asNumber(unsigned*) const
 bool JSONValue::asString(String*) const
 {
     return false;
-}
-
-bool JSONValue::asValue(RefPtr<JSONValue>* output)
-{
-    *output = this;
-    return true;
 }
 
 bool JSONValue::asObject(RefPtr<JSONObject>*)

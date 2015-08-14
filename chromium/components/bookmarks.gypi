@@ -59,6 +59,8 @@
         'bookmarks/browser/bookmark_utils.h',
         'bookmarks/browser/scoped_group_bookmark_actions.cc',
         'bookmarks/browser/scoped_group_bookmark_actions.h',
+        'bookmarks/browser/startup_task_runner_service.cc',
+        'bookmarks/browser/startup_task_runner_service.h',
       ],
       'conditions': [
         ['OS == "android"', {
@@ -74,6 +76,11 @@
             'bookmarks/common/android/bookmark_type_list.h',
             'bookmarks/common/android/component_jni_registrar.cc',
             'bookmarks/common/android/component_jni_registrar.h',
+          ],
+        }],
+        ['toolkit_views==1', {
+          'dependencies': [
+            '<(DEPTH)/ui/views/views.gyp:views',
           ],
         }],
       ],

@@ -313,6 +313,15 @@ unsigned long long PerformanceTiming::loadEventEnd() const
     return monotonicTimeToIntegerMilliseconds(timing->loadEventEnd());
 }
 
+unsigned long long PerformanceTiming::firstLayout() const
+{
+    const DocumentTiming* timing = documentTiming();
+    if (!timing)
+        return 0;
+
+    return monotonicTimeToIntegerMilliseconds(timing->firstLayout());
+}
+
 DocumentLoader* PerformanceTiming::documentLoader() const
 {
     if (!m_frame)
@@ -351,7 +360,7 @@ ResourceLoadTiming* PerformanceTiming::resourceLoadTiming() const
     return loader->response().resourceLoadTiming();
 }
 
-ScriptValue PerformanceTiming::toJSONForBinding(ScriptState* scriptState)
+ScriptValue PerformanceTiming::toJSONForBinding(ScriptState* scriptState) const
 {
     V8ObjectBuilder result(scriptState);
     result.addNumber("navigationStart", navigationStart());

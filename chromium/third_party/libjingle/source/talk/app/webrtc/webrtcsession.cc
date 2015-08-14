@@ -44,6 +44,7 @@
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/mediasession.h"
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringencode.h"
@@ -489,6 +490,7 @@ WebRtcSession::WebRtcSession(
       mediastream_signaling_(mediastream_signaling),
       ice_observer_(NULL),
       ice_connection_state_(PeerConnectionInterface::kIceConnectionNew),
+      ice_connection_receiving_(true),
       older_version_remote_peer_(false),
       dtls_enabled_(false),
       data_channel_type_(cricket::DCT_NONE),
@@ -497,6 +499,7 @@ WebRtcSession::WebRtcSession(
 }
 
 WebRtcSession::~WebRtcSession() {
+  ASSERT(signaling_thread()->IsCurrent());
   // Destroy video_channel_ first since it may have a pointer to the
   // voice_channel_.
   if (video_channel_) {
@@ -523,6 +526,8 @@ bool WebRtcSession::Initialize(
     DTLSIdentityServiceInterface* dtls_identity_service,
     const PeerConnectionInterface::RTCConfiguration& rtc_configuration) {
   bundle_policy_ = rtc_configuration.bundle_policy;
+  rtcp_mux_policy_ = rtc_configuration.rtcp_mux_policy;
+  SetSslMaxProtocolVersion(options.ssl_max_version);
 
   // TODO(perkj): Take |constraints| into consideration. Return false if not all
   // mandatory constraints can be fulfilled. Note that |constraints|
@@ -641,6 +646,9 @@ bool WebRtcSession::Initialize(
 
   audio_options_.audio_jitter_buffer_max_packets.Set(
       rtc_configuration.audio_jitter_buffer_max_packets);
+
+  audio_options_.audio_jitter_buffer_fast_accelerate.Set(
+      rtc_configuration.audio_jitter_buffer_fast_accelerate);
 
   const cricket::VideoCodec default_codec(
       JsepSessionDescription::kDefaultVideoCodecId,
@@ -1387,13 +1395,42 @@ void WebRtcSession::OnTransportCompleted(cricket::Transport* transport) {
   SetIceConnectionState(PeerConnectionInterface::kIceConnectionCompleted);
   // Only report once when Ice connection is completed.
   if (old_state != PeerConnectionInterface::kIceConnectionCompleted) {
-    ReportBestConnectionState(transport);
+    cricket::TransportStats stats;
+    if (metrics_observer_ && transport->GetStats(&stats)) {
+      ReportBestConnectionState(stats);
+      ReportNegotiatedCiphers(stats);
+    }
   }
 }
 
 void WebRtcSession::OnTransportFailed(cricket::Transport* transport) {
   ASSERT(signaling_thread()->IsCurrent());
   SetIceConnectionState(PeerConnectionInterface::kIceConnectionFailed);
+}
+
+void WebRtcSession::OnTransportReceiving(cricket::Transport* transport) {
+  ASSERT(signaling_thread()->IsCurrent());
+  // The ice connection is considered receiving if at least one transport is
+  // receiving on any channels.
+  bool receiving = false;
+  for (const auto& kv : transport_proxies()) {
+    cricket::Transport* transport = kv.second->impl();
+    if (transport && transport->any_channel_receiving()) {
+      receiving = true;
+      break;
+    }
+  }
+  SetIceConnectionReceiving(receiving);
+}
+
+void WebRtcSession::SetIceConnectionReceiving(bool receiving) {
+  if (ice_connection_receiving_ == receiving) {
+    return;
+  }
+  ice_connection_receiving_ = receiving;
+  if (ice_observer_) {
+    ice_observer_->OnIceConnectionReceivingChange(receiving);
+  }
 }
 
 void WebRtcSession::OnTransportProxyCandidatesReady(
@@ -1600,6 +1637,18 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
     }
   }
 
+  if (rtcp_mux_policy_ == PeerConnectionInterface::kRtcpMuxPolicyRequire) {
+    if (voice_channel()) {
+      voice_channel()->ActivateRtcpMux();
+    }
+    if (video_channel()) {
+      video_channel()->ActivateRtcpMux();
+    }
+    if (data_channel()) {
+      data_channel()->ActivateRtcpMux();
+    }
+  }
+
   // Enable bundle before when kMaxBundle policy is in effect.
   if (bundle_policy_ == PeerConnectionInterface::kBundlePolicyMaxBundle) {
     const cricket::ContentGroup* bundle_group = desc->GetGroupByName(
@@ -1619,12 +1668,11 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
 
 bool WebRtcSession::CreateVoiceChannel(const cricket::ContentInfo* content) {
   voice_channel_.reset(channel_manager_->CreateVoiceChannel(
-      this, content->name, true));
+      this, content->name, true, audio_options_));
   if (!voice_channel_) {
     return false;
   }
 
-  voice_channel_->SetChannelOptions(audio_options_);
   voice_channel_->SignalDtlsSetupFailure.connect(
       this, &WebRtcSession::OnDtlsSetupFailure);
   return true;
@@ -1856,16 +1904,9 @@ bool WebRtcSession::ReadyToUseRemoteCandidate(
 
 // Walk through the ConnectionInfos to gather best connection usage
 // for IPv4 and IPv6.
-void WebRtcSession::ReportBestConnectionState(cricket::Transport* transport) {
-  if (!metrics_observer_) {
-    return;
-  }
-
-  cricket::TransportStats stats;
-  if (!transport->GetStats(&stats)) {
-    return;
-  }
-
+void WebRtcSession::ReportBestConnectionState(
+    const cricket::TransportStats& stats) {
+  DCHECK(metrics_observer_ != NULL);
   for (cricket::TransportChannelStatsList::const_iterator it =
          stats.channel_stats.begin();
        it != stats.channel_stats.end(); ++it) {
@@ -1881,10 +1922,47 @@ void WebRtcSession::ReportBestConnectionState(cricket::Transport* transport) {
                  AF_INET6) {
         metrics_observer_->IncrementCounter(kBestConnections_IPv6);
       } else {
-        ASSERT(false);
+        RTC_NOTREACHED();
       }
       return;
     }
+  }
+}
+
+void WebRtcSession::ReportNegotiatedCiphers(
+    const cricket::TransportStats& stats) {
+  DCHECK(metrics_observer_ != NULL);
+  if (!dtls_enabled_ || stats.channel_stats.empty()) {
+    return;
+  }
+
+  const std::string& srtp_cipher = stats.channel_stats[0].srtp_cipher;
+  const std::string& ssl_cipher = stats.channel_stats[0].ssl_cipher;
+  if (srtp_cipher.empty() && ssl_cipher.empty()) {
+    return;
+  }
+
+  PeerConnectionMetricsName srtp_name;
+  PeerConnectionMetricsName ssl_name;
+  if (stats.content_name == cricket::CN_AUDIO) {
+    srtp_name = kAudioSrtpCipher;
+    ssl_name = kAudioSslCipher;
+  } else if (stats.content_name == cricket::CN_VIDEO) {
+    srtp_name = kVideoSrtpCipher;
+    ssl_name = kVideoSslCipher;
+  } else if (stats.content_name == cricket::CN_DATA) {
+    srtp_name = kDataSrtpCipher;
+    ssl_name = kDataSslCipher;
+  } else {
+    RTC_NOTREACHED();
+    return;
+  }
+
+  if (!srtp_cipher.empty()) {
+    metrics_observer_->AddHistogramSample(srtp_name, srtp_cipher);
+  }
+  if (!ssl_cipher.empty()) {
+    metrics_observer_->AddHistogramSample(ssl_name, ssl_cipher);
   }
 }
 

@@ -16,6 +16,7 @@
 #include "net/quic/test_tools/quic_data_stream_peer.h"
 #include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/quic/test_tools/quic_sustained_bandwidth_recorder_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/test/gtest_util.h"
@@ -31,6 +32,7 @@ using net::test::QuicConnectionPeer;
 using net::test::QuicDataStreamPeer;
 using net::test::QuicSentPacketManagerPeer;
 using net::test::QuicSessionPeer;
+using net::test::QuicSpdySessionPeer;
 using net::test::QuicSustainedBandwidthRecorderPeer;
 using net::test::SupportedVersions;
 using net::test::ValueRestore;
@@ -47,13 +49,14 @@ namespace test {
 
 class QuicServerSessionPeer {
  public:
-  static QuicDataStream* GetIncomingDataStream(
-      QuicServerSession* s, QuicStreamId id) {
-    return s->GetIncomingDataStream(id);
+  static ReliableQuicStream* GetIncomingDynamicStream(QuicServerSession* s,
+                                                      QuicStreamId id) {
+    return s->GetIncomingDynamicStream(id);
   }
   static void SetCryptoStream(QuicServerSession* s,
                               QuicCryptoServerStream* crypto_stream) {
     s->crypto_stream_.reset(crypto_stream);
+    s->static_streams()[kCryptoStreamId] = crypto_stream;
   }
   static bool IsBandwidthResumptionEnabled(QuicServerSession* s) {
     return s->bandwidth_resumption_enabled_;
@@ -78,12 +81,13 @@ class QuicServerSessionTest : public ::testing::TestWithParam<QuicVersion> {
 
     connection_ = new StrictMock<MockConnection>(Perspective::IS_SERVER,
                                                  SupportedVersions(GetParam()));
-    session_.reset(new QuicServerSession(config_, connection_, &owner_));
+    session_.reset(
+        new QuicServerSession(config_, connection_, &owner_, &crypto_config_));
     MockClock clock;
     handshake_message_.reset(crypto_config_.AddDefaultConfig(
         QuicRandom::GetInstance(), &clock,
         QuicCryptoServerConfig::ConfigOptions()));
-    session_->InitializeSession(&crypto_config_);
+    session_->Initialize();
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
   }
 
@@ -118,7 +122,7 @@ INSTANTIATE_TEST_CASE_P(Tests, QuicServerSessionTest,
 TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
   // Open a stream, then reset it.
   // Send two bytes of payload to open it.
-  QuicStreamFrame data1(kClientDataStreamId1, false, 0, MakeIOVector("HT"));
+  QuicStreamFrame data1(kClientDataStreamId1, false, 0, StringPiece("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
   session_->OnStreamFrames(frames);
@@ -148,7 +152,7 @@ TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
   // Send two bytes of payload.
-  QuicStreamFrame data1(kClientDataStreamId1, false, 0, MakeIOVector("HT"));
+  QuicStreamFrame data1(kClientDataStreamId1, false, 0, StringPiece("HT"));
   vector<QuicStreamFrame> frames;
   frames.push_back(data1);
   visitor_->OnStreamFrames(frames);
@@ -162,9 +166,9 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
   vector<QuicStreamFrame> frames;
   // Send (empty) compressed headers followed by two bytes of data.
   frames.push_back(QuicStreamFrame(kClientDataStreamId1, false, 0,
-                                   MakeIOVector("\1\0\0\0\0\0\0\0HT")));
+                                   StringPiece("\1\0\0\0\0\0\0\0HT")));
   frames.push_back(QuicStreamFrame(kClientDataStreamId2, false, 0,
-                                   MakeIOVector("\2\0\0\0\0\0\0\0HT")));
+                                   StringPiece("\2\0\0\0\0\0\0\0HT")));
   visitor_->OnStreamFrames(frames);
   EXPECT_EQ(2u, session_->GetNumOpenStreams());
 
@@ -179,9 +183,9 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
   // data on the floor, but accept the packet because it has data for stream 5.
   frames.clear();
   frames.push_back(
-      QuicStreamFrame(kClientDataStreamId1, false, 2, MakeIOVector("TP")));
+      QuicStreamFrame(kClientDataStreamId1, false, 2, StringPiece("TP")));
   frames.push_back(
-      QuicStreamFrame(kClientDataStreamId2, false, 2, MakeIOVector("TP")));
+      QuicStreamFrame(kClientDataStreamId2, false, 2, StringPiece("TP")));
   visitor_->OnStreamFrames(frames);
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(1u, session_->GetNumOpenStreams());
@@ -206,23 +210,23 @@ TEST_P(QuicServerSessionTest, MaxOpenStreams) {
   QuicStreamId stream_id = kClientDataStreamId1;
   // Open the max configured number of streams, should be no problem.
   for (size_t i = 0; i < kMaxStreamsForTest; ++i) {
-    EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDataStream(session_.get(),
-                                                             stream_id));
+    EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDynamicStream(session_.get(),
+                                                                stream_id));
     stream_id += 2;
   }
 
   // Open more streams: server should accept slightly more than the limit.
   for (size_t i = 0; i < kMaxStreamsMinimumIncrement; ++i) {
-    EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDataStream(session_.get(),
-                                                             stream_id));
+    EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDynamicStream(session_.get(),
+                                                                stream_id));
     stream_id += 2;
   }
 
   // Now violate the server's internal stream limit.
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_TOO_MANY_OPEN_STREAMS));
   stream_id += 2;
-  EXPECT_FALSE(
-      QuicServerSessionPeer::GetIncomingDataStream(session_.get(), stream_id));
+  EXPECT_FALSE(QuicServerSessionPeer::GetIncomingDynamicStream(session_.get(),
+                                                               stream_id));
 }
 
 TEST_P(QuicServerSessionTest, MaxOpenStreamsImplicit) {
@@ -240,19 +244,19 @@ TEST_P(QuicServerSessionTest, MaxOpenStreamsImplicit) {
             session_->get_max_open_streams());
 
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
-  EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDataStream(
+  EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDynamicStream(
       session_.get(), kClientDataStreamId1));
   // Implicitly open streams up to the server's limit.
   const int kActualMaxStreams =
       kMaxStreamsForTest + kMaxStreamsMinimumIncrement;
   const int kMaxValidStreamId =
       kClientDataStreamId1 + (kActualMaxStreams - 1) * 2;
-  EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDataStream(
+  EXPECT_TRUE(QuicServerSessionPeer::GetIncomingDynamicStream(
       session_.get(), kMaxValidStreamId));
 
   // Opening a further stream will result in connection close.
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_TOO_MANY_OPEN_STREAMS));
-  EXPECT_FALSE(QuicServerSessionPeer::GetIncomingDataStream(
+  EXPECT_FALSE(QuicServerSessionPeer::GetIncomingDynamicStream(
       session_.get(), kMaxValidStreamId + 2));
 }
 
@@ -260,14 +264,15 @@ TEST_P(QuicServerSessionTest, GetEvenIncomingError) {
   // Incoming streams on the server session must be odd.
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_INVALID_STREAM_ID));
   EXPECT_EQ(nullptr,
-            QuicServerSessionPeer::GetIncomingDataStream(session_.get(), 4));
+            QuicServerSessionPeer::GetIncomingDynamicStream(session_.get(), 4));
 }
 
 TEST_P(QuicServerSessionTest, GetStreamDisconnected) {
   // Don't create new streams if the connection is disconnected.
   QuicConnectionPeer::CloseConnection(connection_);
-  EXPECT_DFATAL(QuicServerSessionPeer::GetIncomingDataStream(session_.get(), 4),
-                "ShouldCreateIncomingDataStream called when disconnected");
+  EXPECT_DFATAL(
+      QuicServerSessionPeer::GetIncomingDynamicStream(session_.get(), 5),
+      "ShouldCreateIncomingDynamicStream called when disconnected");
 }
 
 TEST_P(QuicServerSessionTest, SetFecProtectionFromConfig) {
@@ -281,9 +286,9 @@ TEST_P(QuicServerSessionTest, SetFecProtectionFromConfig) {
 
   // Verify that headers stream is always protected and data streams are
   // optionally protected.
-  EXPECT_EQ(FEC_PROTECT_ALWAYS,
-            QuicSessionPeer::GetHeadersStream(session_.get())->fec_policy());
-  QuicDataStream* stream = QuicServerSessionPeer::GetIncomingDataStream(
+  EXPECT_EQ(FEC_PROTECT_ALWAYS, QuicSpdySessionPeer::GetHeadersStream(
+                                    session_.get())->fec_policy());
+  ReliableQuicStream* stream = QuicServerSessionPeer::GetIncomingDynamicStream(
       session_.get(), kClientDataStreamId1);
   ASSERT_TRUE(stream);
   EXPECT_EQ(FEC_PROTECT_OPTIONAL, stream->fec_policy());

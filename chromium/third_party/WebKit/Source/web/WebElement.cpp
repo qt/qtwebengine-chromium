@@ -36,11 +36,8 @@
 #include "core/dom/Fullscreen.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/custom/CustomElementProcessingStack.h"
-#include "core/dom/shadow/ShadowRoot.h"
-#include "core/layout/LayoutBoxModelObject.h"
-#include "core/layout/LayoutObject.h"
+#include "platform/graphics/Image.h"
 #include "public/platform/WebRect.h"
-#include "public/web/WebDocument.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
@@ -106,14 +103,6 @@ unsigned WebElement::attributeCount() const
     return constUnwrap<Element>()->attributes().size();
 }
 
-WebNode WebElement::shadowRoot() const
-{
-    ShadowRoot* shadowRoot = constUnwrap<Element>()->shadowRoot();
-    if (!shadowRoot)
-        return WebNode();
-    return WebNode(shadowRoot->toNode());
-}
-
 WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
@@ -128,25 +117,20 @@ WebString WebElement::attributeValue(unsigned index) const
     return constUnwrap<Element>()->attributes().at(index).value();
 }
 
-WebString WebElement::textContent()
+WebString WebElement::textContent() const
 {
-    return unwrap<Element>()->textContent();
-}
-
-WebString WebElement::innerText()
-{
-    return unwrap<Element>()->innerText();
-}
-
-WebString WebElement::computeInheritedLanguage() const
-{
-    return WebString(constUnwrap<Element>()->computeInheritedLanguage());
+    return constUnwrap<Element>()->textContent();
 }
 
 void WebElement::requestFullScreen()
 {
     Element* element = unwrap<Element>();
     Fullscreen::from(element->document()).requestFullscreen(*element, Fullscreen::PrefixedRequest);
+}
+
+bool WebElement::hasNonEmptyLayoutSize() const
+{
+    return constUnwrap<Element>()->hasNonEmptyLayoutSize();
 }
 
 WebRect WebElement::boundsInViewportSpace()

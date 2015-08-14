@@ -24,17 +24,11 @@ cvox.AriaUtil = function() {
 
 
 /**
- * A constant indicating no role name.
- * @type {string}
- */
-cvox.AriaUtil.NO_ROLE_NAME = ' ';
-
-/**
  * A mapping from ARIA role names to their message ids.
  * Note: If you are adding a new mapping, the new message identifier needs a
  * corresponding braille message. For example, a message id 'tag_button'
  * requires another message 'tag_button_brl' within messages.js.
- * @type {Object<string, string>}
+ * @type {Object<string>}
  */
 cvox.AriaUtil.WIDGET_ROLE_TO_NAME = {
   'alert' : 'aria_role_alert',
@@ -55,7 +49,7 @@ cvox.AriaUtil.WIDGET_ROLE_TO_NAME = {
   'menuitem' : 'aria_role_menuitem',
   'menuitemcheckbox' : 'aria_role_menuitemcheckbox',
   'menuitemradio' : 'aria_role_menuitemradio',
-  'option' : cvox.AriaUtil.NO_ROLE_NAME,
+  'option' : 'aria_role_option',
   'progressbar' : 'aria_role_progressbar',
   'radio' : 'aria_role_radio',
   'radiogroup' : 'aria_role_radiogroup',
@@ -79,7 +73,7 @@ cvox.AriaUtil.WIDGET_ROLE_TO_NAME = {
  * Note: If you are adding a new mapping, the new message identifier needs a
  * corresponding braille message. For example, a message id 'tag_button'
  * requires another message 'tag_button_brl' within messages.js.
- * @type {Object<string, string>}
+ * @type {Object<string>}
  */
 cvox.AriaUtil.STRUCTURE_ROLE_TO_NAME = {
   'article' : 'aria_role_article',
@@ -265,10 +259,6 @@ cvox.AriaUtil.getRoleNameMsgForRole_ = function(role) {
   var msgId = cvox.AriaUtil.WIDGET_ROLE_TO_NAME[role];
   if (!msgId) {
     return null;
-  }
-  if (msgId == cvox.AriaUtil.NO_ROLE_NAME) {
-    // TODO(dtseng): This isn't the way to insert silence; beware!
-    return ' ';
   }
   return msgId;
 };

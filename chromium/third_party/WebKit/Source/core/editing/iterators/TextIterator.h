@@ -28,6 +28,7 @@
 
 #include "core/CoreExport.h"
 #include "core/dom/Range.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FindOptions.h"
 #include "core/editing/iterators/FullyClippedStateStack.h"
 #include "core/editing/iterators/TextIteratorFlags.h"
@@ -41,10 +42,7 @@ class InlineTextBox;
 class LayoutText;
 class LayoutTextFragment;
 
-CORE_EXPORT String plainText(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
-String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
-CORE_EXPORT PassRefPtrWillBeRawPtr<Range> findPlainText(const Range*, const String&, FindOptions);
-CORE_EXPORT void findPlainText(const Position& inputStart, const Position& inputEnd, const String&, FindOptions, Position& resultStart, Position& resultEnd);
+CORE_EXPORT String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
 String plainText(const PositionInComposedTree& start, const PositionInComposedTree& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
@@ -53,7 +51,7 @@ String plainText(const PositionInComposedTree& start, const PositionInComposedTr
 // chunks so as to optimize for performance of the iteration.
 
 template<typename Strategy>
-class TextIteratorAlgorithm {
+class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
     // [start, end] indicates the document range that the iteration should take place within (both ends inclusive).
@@ -64,7 +62,7 @@ public:
     void advance();
     bool isInsideReplacedElement() const;
 
-    PassRefPtrWillBeRawPtr<Range> createRange() const;
+    EphemeralRange range() const;
     Node* node() const;
 
     Document* ownerDocument() const;
@@ -74,7 +72,7 @@ public:
     typename Strategy::PositionType startPositionInCurrentContainer() const;
     typename Strategy::PositionType endPositionInCurrentContainer() const;
 
-    const TextIteratorTextState& text() const { return m_textState; };
+    const TextIteratorTextState& text() const { return m_textState; }
     int length() const { return m_textState.length(); }
 
     bool breaksAtReplacedElement() { return !(m_behavior & TextIteratorDoesNotBreakAtReplacedElement); }
@@ -85,8 +83,7 @@ public:
     // also emits spaces for other non-text nodes using the
     // |TextIteratorEmitsCharactersBetweenAllVisiblePosition| mode.
     static int rangeLength(const typename Strategy::PositionType& start, const typename Strategy::PositionType& end, bool forSelectionPreservation = false);
-    static PassRefPtrWillBeRawPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
-    static void subrange(Position& start, Position& end, int characterOffset, int characterCount);
+    static EphemeralRange subrange(const Position& start, const Position& end, int characterOffset, int characterCount);
 
     static bool shouldEmitTabBeforeNode(Node*);
     static bool shouldEmitNewlineBeforeNode(Node&);
@@ -164,7 +161,7 @@ private:
     // remaining text box.
     InlineTextBox* m_remainingTextBox;
     // Used to point to LayoutText object for :first-letter.
-    RawPtrWillBeMember<LayoutText> m_firstLetterText;
+    LayoutText* m_firstLetterText;
 
     // Used to do the whitespace collapsing logic.
     RawPtrWillBeMember<Text> m_lastTextNode;
@@ -180,13 +177,16 @@ private:
     bool m_handledFirstLetter;
     // Used when stopsOnFormControls() is true to determine if the iterator should keep advancing.
     bool m_shouldStop;
+    // Used for use counter |InnerTextWithShadowTree| and
+    // |SelectionToStringWithShadowTree|, we should not use other purpose.
+    bool m_handleShadowRoot;
 
     // Contains state of emitted text.
     TextIteratorTextState m_textState;
 };
 
-extern template class CORE_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingStrategy>;
-extern template class CORE_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingInComposedTreeStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT TextIteratorAlgorithm<EditingInComposedTreeStrategy>;
 
 using TextIterator = TextIteratorAlgorithm<EditingStrategy>;
 using TextIteratorInComposedTree = TextIteratorAlgorithm<EditingInComposedTreeStrategy>;

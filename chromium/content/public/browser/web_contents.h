@@ -96,13 +96,21 @@ class WebContents : public PageNavigator,
     // privileged process.
     SiteInstance* site_instance;
 
-    // The opener WebContents is the WebContents that initiated this request,
-    // if any.
-    WebContents* opener;
+    // The process id of the frame initiating the open.
+    int opener_render_process_id;
+
+    // The routing id of the frame initiating the open.
+    int opener_render_frame_id;
 
     // If the opener is suppressed, then the new WebContents doesn't hold a
     // reference to its opener.
     bool opener_suppressed;
+
+    // Indicates whether this WebContents was created with a window.opener.
+    // This is used when determining whether the WebContents is allowed to be
+    // closed via window.close(). This may be true even with a null |opener|
+    // (e.g., for blocked popups).
+    bool created_with_opener;
 
     // The routing ids of the RenderView and of the main RenderFrame. Either
     // both must be provided, or both must be MSG_ROUTING_NONE to have the
@@ -305,6 +313,7 @@ class WebContents : public PageNavigator,
   virtual bool IsWaitingForResponse() const = 0;
 
   // Returns the current load state and the URL associated with it.
+  // The load state is only updated while IsLoading() is true.
   virtual const net::LoadStateWithParam& GetLoadState() const = 0;
   virtual const base::string16& GetLoadStateHost() const = 0;
 
@@ -377,6 +386,12 @@ class WebContents : public PageNavigator,
   // has one.
   virtual void DispatchBeforeUnload(bool for_cross_site_transition) = 0;
 
+  // Attaches this inner WebContents to its container frame
+  // |outer_contents_frame| in |outer_web_contents|.
+  virtual void AttachToOuterWebContentsFrame(
+      WebContents* outer_web_contents,
+      RenderFrameHost* outer_contents_frame) = 0;
+
   // Commands ------------------------------------------------------------------
 
   // Stop any pending navigation.
@@ -401,6 +416,13 @@ class WebContents : public PageNavigator,
   virtual void Delete() = 0;
   virtual void SelectAll() = 0;
   virtual void Unselect() = 0;
+
+  // Adjust the selection starting and ending points in the focused frame by
+  // the given amounts. A negative amount moves the selection towards the
+  // beginning of the document, a positive amount moves the selection towards
+  // the end of the document.
+  virtual void AdjustSelectionByCharacterOffset(int start_adjust,
+                                                int end_adjust) = 0;
 
   // Replaces the currently selected word or a word around the cursor.
   virtual void Replace(const base::string16& word) = 0;
@@ -546,7 +568,7 @@ class WebContents : public PageNavigator,
   virtual void ViewSource() = 0;
 
   virtual void ViewFrameSource(const GURL& url,
-                               const PageState& page_state)= 0;
+                               const PageState& page_state) = 0;
 
   // Gets the minimum/maximum zoom percent.
   virtual int GetMinimumZoomPercent() const = 0;
@@ -646,6 +668,11 @@ class WebContents : public PageNavigator,
   virtual void ResumeLoadingCreatedWebContents() = 0;
 
 #if defined(OS_ANDROID)
+  // Requests to resume the current media session.
+  virtual void ResumeMediaSession() = 0;
+  // Requests to suspend the current media session.
+  virtual void SuspendMediaSession() = 0;
+
   CONTENT_EXPORT static WebContents* FromJavaWebContents(
       jobject jweb_contents_android);
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;

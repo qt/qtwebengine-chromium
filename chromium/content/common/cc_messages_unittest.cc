@@ -30,6 +30,7 @@ using cc::PictureDrawQuad;
 using cc::RenderPass;
 using cc::RenderPassId;
 using cc::RenderPassDrawQuad;
+using cc::ResourceId;
 using cc::ResourceProvider;
 using cc::SharedQuadState;
 using cc::SoftwareFrameData;
@@ -53,12 +54,13 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->damage_rect.ToString(), b->damage_rect.ToString());
     EXPECT_EQ(a->transform_to_root_target, b->transform_to_root_target);
     EXPECT_EQ(a->has_transparent_background, b->has_transparent_background);
+    EXPECT_EQ(a->referenced_surfaces, b->referenced_surfaces);
   }
 
   void Compare(const SharedQuadState* a, const SharedQuadState* b) {
-    EXPECT_EQ(a->content_to_target_transform, b->content_to_target_transform);
-    EXPECT_EQ(a->content_bounds, b->content_bounds);
-    EXPECT_EQ(a->visible_content_rect, b->visible_content_rect);
+    EXPECT_EQ(a->quad_to_target_transform, b->quad_to_target_transform);
+    EXPECT_EQ(a->quad_layer_bounds, b->quad_layer_bounds);
+    EXPECT_EQ(a->visible_quad_layer_rect, b->visible_quad_layer_rect);
     EXPECT_EQ(a->clip_rect, b->clip_rect);
     EXPECT_EQ(a->is_clipped, b->is_clipped);
     EXPECT_EQ(a->opacity, b->opacity);
@@ -138,13 +140,13 @@ class CCMessagesTest : public testing::Test {
 
   void Compare(const IOSurfaceDrawQuad* a, const IOSurfaceDrawQuad* b) {
     EXPECT_EQ(a->io_surface_size.ToString(), b->io_surface_size.ToString());
-    EXPECT_EQ(a->io_surface_resource_id, b->io_surface_resource_id);
+    EXPECT_EQ(a->io_surface_resource_id(), b->io_surface_resource_id());
     EXPECT_EQ(a->orientation, b->orientation);
   }
 
   void Compare(const RenderPassDrawQuad* a, const RenderPassDrawQuad* b) {
     EXPECT_EQ(a->render_pass_id, b->render_pass_id);
-    EXPECT_EQ(a->mask_resource_id, b->mask_resource_id);
+    EXPECT_EQ(a->mask_resource_id(), b->mask_resource_id());
     EXPECT_EQ(a->mask_uv_scale.ToString(), b->mask_uv_scale.ToString());
     EXPECT_EQ(a->mask_texture_size.ToString(), b->mask_texture_size.ToString());
     EXPECT_EQ(a->filters.size(), b->filters.size());
@@ -167,7 +169,9 @@ class CCMessagesTest : public testing::Test {
   }
 
   void Compare(const StreamVideoDrawQuad* a, const StreamVideoDrawQuad* b) {
-    EXPECT_EQ(a->resource_id, b->resource_id);
+    EXPECT_EQ(a->resource_id(), b->resource_id());
+    EXPECT_EQ(a->resource_size_in_pixels(), b->resource_size_in_pixels());
+    EXPECT_EQ(a->allow_overlay(), b->allow_overlay());
     EXPECT_EQ(a->matrix, b->matrix);
   }
 
@@ -176,7 +180,9 @@ class CCMessagesTest : public testing::Test {
   }
 
   void Compare(const TextureDrawQuad* a, const TextureDrawQuad* b) {
-    EXPECT_EQ(a->resource_id, b->resource_id);
+    EXPECT_EQ(a->resource_id(), b->resource_id());
+    EXPECT_EQ(a->resource_size_in_pixels(), b->resource_size_in_pixels());
+    EXPECT_EQ(a->allow_overlay(), b->allow_overlay());
     EXPECT_EQ(a->premultiplied_alpha, b->premultiplied_alpha);
     EXPECT_EQ(a->uv_top_left, b->uv_top_left);
     EXPECT_EQ(a->uv_bottom_right, b->uv_bottom_right);
@@ -190,7 +196,7 @@ class CCMessagesTest : public testing::Test {
   }
 
   void Compare(const TileDrawQuad* a, const TileDrawQuad* b) {
-    EXPECT_EQ(a->resource_id, b->resource_id);
+    EXPECT_EQ(a->resource_id(), b->resource_id());
     EXPECT_EQ(a->tex_coord_rect, b->tex_coord_rect);
     EXPECT_EQ(a->texture_size, b->texture_size);
     EXPECT_EQ(a->swizzle_contents, b->swizzle_contents);
@@ -202,10 +208,10 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->uv_tex_coord_rect, b->uv_tex_coord_rect);
     EXPECT_EQ(a->ya_tex_size, b->ya_tex_size);
     EXPECT_EQ(a->uv_tex_size, b->uv_tex_size);
-    EXPECT_EQ(a->y_plane_resource_id, b->y_plane_resource_id);
-    EXPECT_EQ(a->u_plane_resource_id, b->u_plane_resource_id);
-    EXPECT_EQ(a->v_plane_resource_id, b->v_plane_resource_id);
-    EXPECT_EQ(a->a_plane_resource_id, b->a_plane_resource_id);
+    EXPECT_EQ(a->y_plane_resource_id(), b->y_plane_resource_id());
+    EXPECT_EQ(a->u_plane_resource_id(), b->u_plane_resource_id());
+    EXPECT_EQ(a->v_plane_resource_id(), b->v_plane_resource_id());
+    EXPECT_EQ(a->a_plane_resource_id(), b->a_plane_resource_id());
     EXPECT_EQ(a->color_space, b->color_space);
   }
 
@@ -262,6 +268,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   bool arbitrary_bool2 = false;
   bool arbitrary_bool3 = true;
   bool arbitrary_bool4 = true;
+  bool arbitrary_bool5 = false;
   int arbitrary_context_id1 = 12;
   int arbitrary_context_id2 = 57;
   int arbitrary_context_id3 = -503;
@@ -272,10 +279,10 @@ TEST_F(CCMessagesTest, AllQuads) {
   SkXfermode::Mode arbitrary_blend_mode3 = SkXfermode::kOverlay_Mode;
   IOSurfaceDrawQuad::Orientation arbitrary_orientation =
       IOSurfaceDrawQuad::UNFLIPPED;
-  ResourceProvider::ResourceId arbitrary_resourceid1 = 55;
-  ResourceProvider::ResourceId arbitrary_resourceid2 = 47;
-  ResourceProvider::ResourceId arbitrary_resourceid3 = 23;
-  ResourceProvider::ResourceId arbitrary_resourceid4 = 16;
+  ResourceId arbitrary_resourceid1 = 55;
+  ResourceId arbitrary_resourceid2 = 47;
+  ResourceId arbitrary_resourceid3 = 23;
+  ResourceId arbitrary_resourceid4 = 16;
   SkScalar arbitrary_sigma = SkFloatToScalar(2.0f);
   YUVVideoDrawQuad::ColorSpace arbitrary_color_space =
       YUVVideoDrawQuad::REC_601;
@@ -396,10 +403,10 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   StreamVideoDrawQuad* streamvideo_in =
       pass_in->CreateAndAppendDrawQuad<StreamVideoDrawQuad>();
-  streamvideo_in->SetAll(shared_state3_in, arbitrary_rect2,
-                         arbitrary_rect2_inside_rect2,
-                         arbitrary_rect1_inside_rect2, arbitrary_bool1,
-                         arbitrary_resourceid2, arbitrary_matrix1);
+  streamvideo_in->SetAll(
+      shared_state3_in, arbitrary_rect2, arbitrary_rect2_inside_rect2,
+      arbitrary_rect1_inside_rect2, arbitrary_bool1, arbitrary_resourceid2,
+      arbitrary_size1, arbitrary_bool2, arbitrary_matrix1);
   pass_cmp->CopyFromAndAppendDrawQuad(streamvideo_in,
                                       streamvideo_in->shared_quad_state);
 
@@ -414,22 +421,17 @@ TEST_F(CCMessagesTest, AllQuads) {
                      arbitrary_surface_id);
   pass_cmp->CopyFromAndAppendDrawQuad(surface_in,
                                       surface_in->shared_quad_state);
+  pass_in->referenced_surfaces.push_back(arbitrary_surface_id);
+  pass_cmp->referenced_surfaces.push_back(arbitrary_surface_id);
 
   TextureDrawQuad* texture_in =
       pass_in->CreateAndAppendDrawQuad<TextureDrawQuad>();
-  texture_in->SetAll(shared_state3_in,
-                     arbitrary_rect2,
-                     arbitrary_rect2_inside_rect2,
-                     arbitrary_rect1_inside_rect2,
-                     arbitrary_bool1,
-                     arbitrary_resourceid1,
-                     arbitrary_bool2,
-                     arbitrary_pointf1,
-                     arbitrary_pointf2,
-                     arbitrary_color,
-                     arbitrary_float_array,
-                     arbitrary_bool3,
-                     arbitrary_bool4);
+  texture_in->SetAll(shared_state3_in, arbitrary_rect2,
+                     arbitrary_rect2_inside_rect2, arbitrary_rect1_inside_rect2,
+                     arbitrary_bool1, arbitrary_resourceid1, arbitrary_size1,
+                     arbitrary_bool2, arbitrary_bool3, arbitrary_pointf1,
+                     arbitrary_pointf2, arbitrary_color, arbitrary_float_array,
+                     arbitrary_bool4, arbitrary_bool5);
   pass_cmp->CopyFromAndAppendDrawQuad(texture_in,
                                       texture_in->shared_quad_state);
 
@@ -494,7 +496,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   IPC::ParamTraits<DelegatedFrameData>::Write(&msg, frame_in);
 
   DelegatedFrameData frame_out;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<DelegatedFrameData>::Read(&msg,
       &iter, &frame_out));
 
@@ -616,7 +618,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
   IPC::ParamTraits<DelegatedFrameData>::Write(&msg, frame_in);
 
   DelegatedFrameData frame_out;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(
       IPC::ParamTraits<DelegatedFrameData>::Read(&msg, &iter, &frame_out));
 
@@ -628,12 +630,12 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
   ASSERT_EQ(2u, pass_out->shared_quad_state_list.size());
   ASSERT_EQ(2u, pass_out->quad_list.size());
 
-  EXPECT_EQ(
-      gfx::Size(1, 1).ToString(),
-      pass_out->shared_quad_state_list.ElementAt(0)->content_bounds.ToString());
-  EXPECT_EQ(
-      gfx::Size(4, 4).ToString(),
-      pass_out->shared_quad_state_list.ElementAt(1)->content_bounds.ToString());
+  EXPECT_EQ(gfx::Size(1, 1).ToString(),
+            pass_out->shared_quad_state_list.ElementAt(0)
+                ->quad_layer_bounds.ToString());
+  EXPECT_EQ(gfx::Size(4, 4).ToString(),
+            pass_out->shared_quad_state_list.ElementAt(1)
+                ->quad_layer_bounds.ToString());
 }
 
 TEST_F(CCMessagesTest, Resources) {
@@ -684,7 +686,7 @@ TEST_F(CCMessagesTest, Resources) {
   IPC::ParamTraits<DelegatedFrameData>::Write(&msg, frame_in);
 
   DelegatedFrameData frame_out;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<DelegatedFrameData>::Read(&msg,
       &iter, &frame_out));
 
@@ -706,7 +708,7 @@ TEST_F(CCMessagesTest, SoftwareFrameData) {
 
   // Read the frame.
   cc::SoftwareFrameData frame_out;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(
       IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));
   EXPECT_EQ(frame_in.id, frame_out.id);
@@ -730,7 +732,7 @@ TEST_F(CCMessagesTest, SoftwareFrameDataMaxInt) {
     IPC::WriteParam(&msg, frame_in.damage_rect);
     IPC::WriteParam(&msg, frame_in.bitmap_id);
     SoftwareFrameData frame_out;
-    PickleIterator iter(msg);
+    base::PickleIterator iter(msg);
     EXPECT_TRUE(
         IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));
   }
@@ -751,7 +753,7 @@ TEST_F(CCMessagesTest, SoftwareFrameDataMaxInt) {
     IPC::WriteParam(&msg, frame_in.damage_rect);
     IPC::WriteParam(&msg, frame_in.bitmap_id);
     SoftwareFrameData frame_out;
-    PickleIterator iter(msg);
+    base::PickleIterator iter(msg);
     EXPECT_EQ(
         expect_read,
         IPC::ParamTraits<SoftwareFrameData>::Read(&msg, &iter, &frame_out));

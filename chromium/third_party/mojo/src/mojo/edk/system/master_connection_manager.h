@@ -8,13 +8,13 @@
 #include <stdint.h>
 
 #include "base/containers/hash_tables.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "mojo/edk/embedder/scoped_platform_handle.h"
 #include "mojo/edk/system/connection_manager.h"
 #include "mojo/edk/system/system_impl_export.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace base {
 class TaskRunner;
@@ -25,13 +25,10 @@ namespace mojo {
 
 namespace embedder {
 class MasterProcessDelegate;
-typedef void* SlaveInfo;
+using SlaveInfo = void*;
 }
 
 namespace system {
-
-// The master process will always have this "process identifier".
-const ProcessIdentifier kMasterProcessIdentifier = 1;
 
 // The |ConnectionManager| implementation for the master process.
 //
@@ -39,7 +36,7 @@ const ProcessIdentifier kMasterProcessIdentifier = 1;
 // its internal, private thread), with condition that |Init()| be called before
 // anything else and |Shutdown()| be called before destruction (and no other
 // public methods may be called during/after |Shutdown()|).
-class MOJO_SYSTEM_IMPL_EXPORT MasterConnectionManager
+class MOJO_SYSTEM_IMPL_EXPORT MasterConnectionManager final
     : public ConnectionManager {
  public:
   // Note: None of the public methods may be called from |private_thread_|.
@@ -61,9 +58,21 @@ class MOJO_SYSTEM_IMPL_EXPORT MasterConnectionManager
   // |embedder::MasterProcessDelegate| to track this process. It must remain
   // alive until the delegate's |OnSlaveDisconnect()| is called with it as the
   // argument. |OnSlaveDisconnect()| will always be called for each slave,
-  // assuming proper shutdown.)
-  void AddSlave(embedder::SlaveInfo slave_info,
-                embedder::ScopedPlatformHandle platform_handle);
+  // assuming proper shutdown. Returns the process identifier for the
+  // newly-added slave.
+  ProcessIdentifier AddSlave(embedder::SlaveInfo slave_info,
+                             embedder::ScopedPlatformHandle platform_handle);
+
+  // Like |AddSlave()|, but allows a connection to be bootstrapped: both the
+  // master and slave may call |Connect()| with |connection_id| immediately (as
+  // if both had already called |AllowConnect()|). |connection_id| must be
+  // unique (i.e., not previously used).
+  // TODO(vtl): Is |AddSlave()| really needed? (It's probably mostly useful for
+  // tests.)
+  ProcessIdentifier AddSlaveAndBootstrap(
+      embedder::SlaveInfo slave_info,
+      embedder::ScopedPlatformHandle platform_handle,
+      const ConnectionIdentifier& connection_id);
 
   // |ConnectionManager| methods:
   void Shutdown() override;
@@ -92,6 +101,7 @@ class MOJO_SYSTEM_IMPL_EXPORT MasterConnectionManager
   // Signals |*event| on completion.
   void AddSlaveOnPrivateThread(embedder::SlaveInfo slave_info,
                                embedder::ScopedPlatformHandle platform_handle,
+                               ProcessIdentifier slave_process_identifier,
                                base::WaitableEvent* event);
   // Called by |Helper::OnError()|.
   void OnError(ProcessIdentifier process_identifier);
@@ -120,18 +130,19 @@ class MOJO_SYSTEM_IMPL_EXPORT MasterConnectionManager
   base::Thread private_thread_;
 
   // The following members are only accessed on |private_thread_|:
-  ProcessIdentifier next_process_identifier_;
   base::hash_map<ProcessIdentifier, Helper*> helpers_;  // Owns its values.
 
   // Protects the members below (except in the constructor, |Init()|,
   // |Shutdown()|/|ShutdownOnPrivateThread()|, and the destructor).
   base::Lock lock_;
 
+  ProcessIdentifier next_process_identifier_;
+
   struct PendingConnectionInfo;
   base::hash_map<ConnectionIdentifier, PendingConnectionInfo*>
       pending_connections_;  // Owns its values.
 
-  DISALLOW_COPY_AND_ASSIGN(MasterConnectionManager);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(MasterConnectionManager);
 };
 
 }  // namespace system

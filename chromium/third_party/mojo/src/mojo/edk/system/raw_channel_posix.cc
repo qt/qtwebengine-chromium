@@ -14,7 +14,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -23,14 +22,15 @@
 #include "mojo/edk/embedder/platform_handle.h"
 #include "mojo/edk/embedder/platform_handle_vector.h"
 #include "mojo/edk/system/transport_data.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace system {
 
 namespace {
 
-class RawChannelPosix : public RawChannel,
-                        public base::MessageLoopForIO::Watcher {
+class RawChannelPosix final : public RawChannel,
+                              public base::MessageLoopForIO::Watcher {
  public:
   explicit RawChannelPosix(embedder::ScopedPlatformHandle handle);
   ~RawChannelPosix() override;
@@ -87,7 +87,7 @@ class RawChannelPosix : public RawChannel,
   // are only used/invalidated on the I/O thread.
   base::WeakPtrFactory<RawChannelPosix> weak_ptr_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(RawChannelPosix);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(RawChannelPosix);
 };
 
 RawChannelPosix::RawChannelPosix(embedder::ScopedPlatformHandle handle)
@@ -134,16 +134,16 @@ void RawChannelPosix::EnqueueMessageNoLock(
                  embedder::kPlatformChannelMaxNumHandles;
            i += embedder::kPlatformChannelMaxNumHandles) {
         scoped_ptr<MessageInTransit> fd_message(new MessageInTransit(
-            MessageInTransit::kTypeRawChannel,
-            MessageInTransit::kSubtypeRawChannelPosixExtraPlatformHandles, 0,
-            nullptr));
+            MessageInTransit::Type::RAW_CHANNEL,
+            MessageInTransit::Subtype::RAW_CHANNEL_POSIX_EXTRA_PLATFORM_HANDLES,
+            0, nullptr));
         embedder::ScopedPlatformHandleVectorPtr fds(
             new embedder::PlatformHandleVector(
                 platform_handles->begin() + i,
                 platform_handles->begin() + i +
                     embedder::kPlatformChannelMaxNumHandles));
-        fd_message->SetTransportData(
-            make_scoped_ptr(new TransportData(fds.Pass())));
+        fd_message->SetTransportData(make_scoped_ptr(
+            new TransportData(fds.Pass(), GetSerializedPlatformHandleSize())));
         RawChannel::EnqueueMessageNoLock(fd_message.Pass());
       }
 
@@ -158,10 +158,10 @@ void RawChannelPosix::EnqueueMessageNoLock(
 
 bool RawChannelPosix::OnReadMessageForRawChannel(
     const MessageInTransit::View& message_view) {
-  DCHECK_EQ(message_view.type(), MessageInTransit::kTypeRawChannel);
+  DCHECK_EQ(message_view.type(), MessageInTransit::Type::RAW_CHANNEL);
 
   if (message_view.subtype() ==
-      MessageInTransit::kSubtypeRawChannelPosixExtraPlatformHandles) {
+      MessageInTransit::Subtype::RAW_CHANNEL_POSIX_EXTRA_PLATFORM_HANDLES) {
     // We don't need to do anything. |RawChannel| won't extract the platform
     // handles, and they'll be accumulated in |Read()|.
     return true;

@@ -25,6 +25,7 @@
 
 #include "base/files/file_path.h"
 #include "base/strings/string_util.h"
+#include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/sdch_net_log_params.h"
 #include "net/filter/gzip_filter.h"
@@ -183,12 +184,12 @@ bool Filter::FlushStreamBuffer(int stream_data_len) {
 Filter::FilterType Filter::ConvertEncodingToType(
     const std::string& filter_type) {
   FilterType type_id;
-  if (LowerCaseEqualsASCII(filter_type, kDeflate)) {
+  if (base::LowerCaseEqualsASCII(filter_type, kDeflate)) {
     type_id = FILTER_TYPE_DEFLATE;
-  } else if (LowerCaseEqualsASCII(filter_type, kGZip) ||
-             LowerCaseEqualsASCII(filter_type, kXGZip)) {
+  } else if (base::LowerCaseEqualsASCII(filter_type, kGZip) ||
+             base::LowerCaseEqualsASCII(filter_type, kXGZip)) {
     type_id = FILTER_TYPE_GZIP;
-  } else if (LowerCaseEqualsASCII(filter_type, kSdch)) {
+  } else if (base::LowerCaseEqualsASCII(filter_type, kSdch)) {
     type_id = FILTER_TYPE_SDCH;
   } else {
     // Note we also consider "identity" and "uncompressed" UNSUPPORTED as
@@ -266,7 +267,8 @@ void Filter::FixupEncodingTypes(
   // supported server side on paths that only send HTML content, this mode has
   // never surfaced in the wild (and is unlikely to).
   // We will gather a lot of stats as we perform the fixups
-  if (StartsWithASCII(mime_type, kTextHtml, false)) {
+  if (base::StartsWith(mime_type, kTextHtml,
+                       base::CompareCase::INSENSITIVE_ASCII)) {
     // Suspicious case: Advertised dictionary, but server didn't use sdch, and
     // we're HTML tagged.
     if (encoding_types->empty()) {

@@ -32,7 +32,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
     : public DesktopWindowTreeHost,
       public aura::client::AnimationHost,
       public aura::WindowTreeHost,
-      public ui::EventSource,
       public HWNDMessageHandlerDelegate {
  public:
   DesktopWindowTreeHostWin(
@@ -58,6 +57,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void ShowMaximizedWithBounds(const gfx::Rect& restored_bounds) override;
   bool IsVisible() const override;
   void SetSize(const gfx::Size& size) override;
+  void StackAbove(aura::Window* window) override;
   void StackAtTop() override;
   void CenterWindow(const gfx::Size& size) override;
   void GetWindowPlacement(gfx::Rect* bounds,
@@ -66,7 +66,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   gfx::Rect GetClientAreaBoundsInScreen() const override;
   gfx::Rect GetRestoredBounds() const override;
   gfx::Rect GetWorkAreaBoundsInScreen() const override;
-  void SetShape(gfx::NativeRegion native_region) override;
+  void SetShape(SkRegion* native_region) override;
   void Activate() override;
   void Deactivate() override;
   bool IsActive() const override;
@@ -107,8 +107,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   // Overridden from aura::WindowTreeHost:
   ui::EventSource* GetEventSource() override;
   gfx::AcceleratedWidget GetAcceleratedWidget() override;
-  void Show() override;
-  void Hide() override;
+  void ShowImpl() override;
+  void HideImpl() override;
   gfx::Rect GetBounds() const override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Point GetLocationOnNativeScreen() const override;
@@ -117,9 +117,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void OnCursorVisibilityChangedNative(bool show) override;
   void MoveCursorToNative(const gfx::Point& location) override;
-
-  // Overridden frm ui::EventSource
-  ui::EventProcessor* GetEventProcessor() override;
 
   // Overridden from aura::client::AnimationHost
   void SetHostTransitionOffsets(
@@ -147,10 +144,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void GetMinMaxSize(gfx::Size* min_size, gfx::Size* max_size) const override;
   gfx::Size GetRootViewSize() const override;
   void ResetWindowControls() override;
-  void PaintLayeredWindow(gfx::Canvas* canvas) override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   bool ShouldHandleSystemCommands() const override;
-  InputMethod* GetInputMethod() override;
   void HandleAppDeactivated() override;
   void HandleActivationChanged(bool active) override;
   bool HandleAppCommand(short command) override;
@@ -258,14 +253,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   static bool is_cursor_visible_;
 
   scoped_ptr<aura::client::ScopedTooltipDisabler> tooltip_disabler_;
-
-  // This flag is set to true in cases where we need to force a synchronous
-  // paint via the compositor. Cases include restoring/resizing/maximizing the
-  // window. Defaults to false.
-  bool need_synchronous_paint_;
-
-  // Set to true if we are about to enter a sizing loop.
-  bool in_sizing_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostWin);
 };

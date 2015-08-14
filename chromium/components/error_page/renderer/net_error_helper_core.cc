@@ -17,7 +17,8 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -36,6 +37,21 @@
 namespace error_page {
 
 namespace {
+
+// Recorded when a user interacts with an error page, part of investigation into
+// http://crbug.com/500556.  Note that these are flags that can be or-ed
+// together.
+// TODO(mmenke): Remove when http://crbug.com/500556 is fixed.
+enum ErrorPageUnexpectedStateFlags {
+  // According to blink, the page reporting a button press is not an error page.
+  ERROR_PAGE_BUTTON_PRESS_FOR_NON_ERROR_PAGE_URL = 0x1,
+  // NetErrorHelperCore's state machine things the current page is not an error
+  // page.
+  ERROR_PAGE_BUTTON_PRESS_WITH_NO_ERROR_INFO     = 0x2,
+
+  // Must be strictly greater than a value with all flags set.
+  ERROR_PAGE_BUTTON_PRESS_MAX                    = 0x4,
+};
 
 struct CorrectionTypeToResourceTable {
   int resource_id;
@@ -198,7 +214,7 @@ std::string CreateRequestBody(
   request_dict.Set("params", params_dict.release());
 
   std::string request_body;
-  bool success = base::JSONWriter::Write(&request_dict, &request_body);
+  bool success = base::JSONWriter::Write(request_dict, &request_body);
   DCHECK(success);
   return request_body;
 }
@@ -261,7 +277,7 @@ base::string16 FormatURLForDisplay(const GURL& url, bool is_rtl,
 scoped_ptr<NavigationCorrectionResponse> ParseNavigationCorrectionResponse(
     const std::string raw_response) {
   // TODO(mmenke):  Open source related protocol buffers and use them directly.
-  scoped_ptr<base::Value> parsed(base::JSONReader::Read(raw_response));
+  scoped_ptr<base::Value> parsed = base::JSONReader::Read(raw_response);
   scoped_ptr<NavigationCorrectionResponse> response(
       new NavigationCorrectionResponse());
   base::JSONValueConverter<NavigationCorrectionResponse> converter;
@@ -333,6 +349,8 @@ scoped_ptr<ErrorPageParams> CreateErrorPageParams(
                               accept_languages));
       suggest->SetString("originalUrlForDisplay", original_url_for_display);
       suggest->SetInteger("trackingId", tracking_id);
+      suggest->SetInteger("type", static_cast<int>(correction_index));
+
       params->override_suggestions->Append(suggest);
       break;
     }
@@ -346,24 +364,19 @@ scoped_ptr<ErrorPageParams> CreateErrorPageParams(
 void ReportAutoReloadSuccess(const blink::WebURLError& error, size_t count) {
   if (error.domain.utf8() != net::kErrorDomain)
     return;
-  UMA_HISTOGRAM_CUSTOM_ENUMERATION("Net.AutoReload.ErrorAtSuccess",
-                                   -error.reason,
-                                   net::GetAllErrorCodesForUma());
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.AutoReload.ErrorAtSuccess", -error.reason);
   UMA_HISTOGRAM_COUNTS("Net.AutoReload.CountAtSuccess",
                        static_cast<base::HistogramBase::Sample>(count));
   if (count == 1) {
-    UMA_HISTOGRAM_CUSTOM_ENUMERATION("Net.AutoReload.ErrorAtFirstSuccess",
-                                     -error.reason,
-                                     net::GetAllErrorCodesForUma());
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.AutoReload.ErrorAtFirstSuccess",
+                                -error.reason);
   }
 }
 
 void ReportAutoReloadFailure(const blink::WebURLError& error, size_t count) {
   if (error.domain.utf8() != net::kErrorDomain)
     return;
-  UMA_HISTOGRAM_CUSTOM_ENUMERATION("Net.AutoReload.ErrorAtStop",
-                                   -error.reason,
-                                   net::GetAllErrorCodesForUma());
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.AutoReload.ErrorAtStop", -error.reason);
   UMA_HISTOGRAM_COUNTS("Net.AutoReload.CountAtStop",
                        static_cast<base::HistogramBase::Sample>(count));
 }
@@ -378,6 +391,8 @@ struct NetErrorHelperCore::ErrorPageInfo {
         needs_load_navigation_corrections(false),
         reload_button_in_page(false),
         show_saved_copy_button_in_page(false),
+        show_cached_page_button_in_page(false),
+        show_cached_copy_button_in_page(false),
         is_finished_loading(false),
         auto_reload_triggered(false) {
   }
@@ -411,6 +426,8 @@ struct NetErrorHelperCore::ErrorPageInfo {
   // Track if specific buttons are included in an error page, for statistics.
   bool reload_button_in_page;
   bool show_saved_copy_button_in_page;
+  bool show_cached_page_button_in_page;
+  bool show_cached_copy_button_in_page;
 
   // True if a page has completed loading, at which point it can receive
   // updates.
@@ -597,6 +614,13 @@ void NetErrorHelperCore::OnFinishLoad(FrameType frame_type) {
     chrome_common_net::RecordEvent(
         chrome_common_net::NETWORK_ERROR_PAGE_BOTH_BUTTONS_SHOWN);
   }
+  if (committed_error_page_info_->show_cached_copy_button_in_page) {
+    chrome_common_net::RecordEvent(
+        chrome_common_net::NETWORK_ERROR_PAGE_CACHED_COPY_BUTTON_SHOWN);
+  } else if (committed_error_page_info_->show_cached_page_button_in_page) {
+    chrome_common_net::RecordEvent(
+        chrome_common_net::NETWORK_ERROR_PAGE_CACHED_PAGE_BUTTON_SHOWN);
+  }
 
   delegate_->EnablePageHelperFunctions();
 
@@ -642,10 +666,13 @@ void NetErrorHelperCore::GetErrorHTML(
     // These values do not matter, as error pages in iframes hide the buttons.
     bool reload_button_in_page;
     bool show_saved_copy_button_in_page;
+    bool show_cached_copy_button_in_page;
+    bool show_cached_page_button_in_page;
 
     delegate_->GenerateLocalizedErrorPage(
         error, is_failed_post, scoped_ptr<ErrorPageParams>(),
         &reload_button_in_page, &show_saved_copy_button_in_page,
+        &show_cached_copy_button_in_page, &show_cached_page_button_in_page,
         error_html);
   }
 }
@@ -707,6 +734,8 @@ void NetErrorHelperCore::GetErrorHtmlForMainFrame(
       scoped_ptr<ErrorPageParams>(),
       &pending_error_page_info->reload_button_in_page,
       &pending_error_page_info->show_saved_copy_button_in_page,
+      &pending_error_page_info->show_cached_copy_button_in_page,
+      &pending_error_page_info->show_cached_page_button_in_page,
       error_html);
 }
 
@@ -768,6 +797,8 @@ void NetErrorHelperCore::OnNavigationCorrectionsFetched(
         params.Pass(),
         &pending_error_page_info_->reload_button_in_page,
         &pending_error_page_info_->show_saved_copy_button_in_page,
+        &pending_error_page_info_->show_cached_copy_button_in_page,
+        &pending_error_page_info_->show_cached_page_button_in_page,
         &error_html);
   } else {
     // Since |navigation_correction_params| in |pending_error_page_info_| is
@@ -898,7 +929,28 @@ bool NetErrorHelperCore::ShouldSuppressErrorPage(FrameType frame_type,
   return true;
 }
 
-void NetErrorHelperCore::ExecuteButtonPress(Button button) {
+void NetErrorHelperCore::ExecuteButtonPress(bool is_error_page, Button button) {
+  // UMA to investigate http://crbug.com/500556.
+  // TODO(mmenke): Remove when the issue is fixed.
+  int button_press_info = 0;
+  if (!is_error_page)
+    button_press_info |= ERROR_PAGE_BUTTON_PRESS_FOR_NON_ERROR_PAGE_URL;
+  if (!committed_error_page_info_)
+    button_press_info |= ERROR_PAGE_BUTTON_PRESS_WITH_NO_ERROR_INFO;
+  UMA_HISTOGRAM_ENUMERATION("Net.ErrorPageButtonPressUnexpectedStates",
+                            button_press_info,
+                            ERROR_PAGE_BUTTON_PRESS_MAX);
+  if (button_press_info != 0) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Net.ErrorPageButtonPressedWhileInUnexpectedState",
+        button, BUTTON_MAX);
+  }
+
+  // Unclear why this happens.
+  // TODO(mmenke): Remove when http://crbug.com/500556 is fixed.
+  if (!committed_error_page_info_)
+    return;
+
   switch (button) {
     case RELOAD_BUTTON:
       chrome_common_net::RecordEvent(
@@ -930,6 +982,15 @@ void NetErrorHelperCore::ExecuteButtonPress(Button button) {
       chrome_common_net::RecordEvent(
           chrome_common_net::NETWORK_ERROR_EASTER_EGG_ACTIVATED);
       return;
+    case SHOW_CACHED_COPY_BUTTON:
+      chrome_common_net::RecordEvent(
+          chrome_common_net::NETWORK_ERROR_PAGE_CACHED_COPY_BUTTON_CLICKED);
+      return;
+    case SHOW_CACHED_PAGE_BUTTON:
+      chrome_common_net::RecordEvent(
+          chrome_common_net::NETWORK_ERROR_PAGE_CACHED_PAGE_BUTTON_CLICKED);
+      return;
+    case BUTTON_MAX:
     case NO_BUTTON:
       NOTREACHED();
       return;

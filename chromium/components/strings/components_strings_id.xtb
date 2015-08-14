@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="id">
 <translation id="2774256287122201187">Anda dapat melanjutkannya. Jika Anda melanjutkan ke laman tersebut, peringatan ini tidak akan muncul lagi selama lima menit.</translation>
+<translation id="3963721102035795474">Mode Pembaca</translation>
 <translation id="7485870689360869515">Tidak ada data yang ditemukan.</translation>
 <translation id="3884278016824448484">Pengenal perangkat bertentangan</translation>
 <translation id="5172758083709347301">Mesin</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">Wajib</translation>
 <translation id="2958431318199492670">Konfigurasi jaringan tidak mematuhi standar ONC. Bagian dari konfigurasi mungkin tidak diimpor.</translation>
 <translation id="3583757800736429874">&amp;Ulangi Pemindahan</translation>
+<translation id="7887683347370398519">Periksa CVC dan coba lagi</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">Catatan perangkat hilang</translation>
 <translation id="1491151370853475546">Muat Ulang Laman Ini</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">Selalu terjemahkan <ph name="LANGUAGE"/></translation>
 <translation id="1227633850867390598">Sembunyikan nilai</translation>
 <translation id="6753269504797312559">Nilai kebijakan</translation>
+<translation id="3369366829301677151">Perbarui dan verifikasi <ph name="CREDIT_CARD"/> Anda</translation>
 <translation id="8834246243508017242">Aktifkan IsiOtomatis menggunakan Kontak...</translation>
 <translation id="7275334191706090484">Bookmark yang Terkelola</translation>
 <translation id="7400418766976504921">URL</translation>
 <translation id="7378627244592794276">Nggak</translation>
 <translation id="2704283930420550640">Nilai tidak sesuai format.</translation>
 <translation id="1055184225775184556">&amp;Urungkan Penambahan</translation>
+<translation id="7813600968533626083">Hapus sebagai saran dari Chrome?</translation>
 <translation id="4850886885716139402">Lihat</translation>
 <translation id="8091372947890762290">Aktivasi ditunda di server</translation>
 <translation id="6874604403660855544">&amp;Ulangi penambahan</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">Area</translation>
 <translation id="1871208020102129563">Proxy disetel untuk menggunakan server proxy tetap, bukan URL skrip .pac.</translation>
+<translation id="8988760548304185580">Masukkan tanggal masa berlaku habis dan 3 digit CVC di belakang kartu Anda</translation>
 <translation id="8940229512486821554">Jalankan perintah <ph name="EXTENSION_NAME"/>: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">Kesalahan tidak dikenal</translation>
 <translation id="112840717907525620">Cache kebijakan Oke</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">Kesalahan validasi: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">Penerjemahan ke <ph name="TARGET_LANGUAGE"/> gagal.</translation>
 <translation id="4103249731201008433">Nomor seri perangkat tidak valid</translation>
+<translation id="3219579145727097045">Masukkan tanggal masa berlaku habis dan 4 digit CVC di depan kartu Anda</translation>
 <translation id="59107663811261420">Kartu jenis ini tidak didukung oleh Google Payments untuk pedagang ini. Pilih kartu lain.</translation>
-<translation id="3667681724235208644">Lihat Laman Asli</translation>
 <translation id="4079302484614802869">Konfigurasi proxy disetel untuk menggunakan URL skrip .pac, bukan server proxy yang tetap.</translation>
 <translation id="5540224163453853">Tidak dapat menemukan artikel yang diminta.</translation>
 <translation id="8437238597147034694">&amp;Urungkan pemindahan</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">Terjemahkan dari <ph name="ORIGINAL_LANGUAGE"/> ke <ph name="TARGET_LANGUAGE"/>?</translation>
 <translation id="8218327578424803826">Lokasi yang Ditetapkan:</translation>
 <translation id="3542684924769048008">Gunakan sandi untuk:</translation>
+<translation id="2855922900409897335">Verifikasi <ph name="CREDIT_CARD"/> Anda</translation>
 <translation id="7186367841673660872">Laman ini telah diterjemahkan dari<ph name="ORIGINAL_LANGUAGE"/>ke<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">Hapus alamat dari Chrome?</translation>
 <translation id="7139724024395191329">Emirate</translation>
+<translation id="6646897916597483132">Masukkan 4 digit CVC di depan kartu Anda</translation>
 <translation id="5145883236150621069">Ada kode kesalahan dalam tanggapan kebijakan</translation>
 <translation id="7983301409776629893">Selalu terjemahkan <ph name="ORIGINAL_LANGUAGE"/> ke <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="6970216967273061347">Distrik</translation>
 <translation id="3427342743765426898">&amp;Ulangi Pengeditan</translation>
 <translation id="3010559122411665027">Entri daftar &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Hapus kartu kredit dari Chrome?</translation>
 <translation id="6445051938772793705">Negara</translation>
 <translation id="5031870354684148875">Tentang Google Terjemahan</translation>
 <translation id="1152921474424827756">Akses <ph name="BEGIN_LINK"/>salinan yang disimpan dalam cache<ph name="END_LINK"/> dari <ph name="URL"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">Bookmark <ph name="DOMAIN"/></translation>
 <translation id="4300246636397505754">Saran induk</translation>
 <translation id="111844081046043029">Yakin ingin meninggalkan laman ini?</translation>
+<translation id="2495083838625180221">Pengurai JSON</translation>
 <translation id="1973335181906896915">Kesalahan serialisasi</translation>
 <translation id="5989320800837274978">Baik proxy server tetap ataupun URL skrip .pac tidak ditentukan.</translation>
 <translation id="7805768142964895445">Status</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">Gagal menyimpan setelan kebijakan</translation>
 <translation id="5439770059721715174">Kesalahan validasi skema di &quot;<ph name="ERROR_PATH"/>&quot;: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">Bilah bookmark</translation>
+<translation id="587701087903783706">Tutup tampilan mobile-friendly</translation>
 <translation id="7208899522964477531">Telusuri <ph name="SEARCH_TERMS"/> dengan <ph name="SITE_NAME"/></translation>
 <translation id="7956713633345437162">Bookmark seluler</translation>
 <translation id="5089810972385038852">Negara bagian</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">Mode proxy tidak valid.</translation>
 <translation id="3105172416063519923">ID Aset:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">JavaScript harus diaktifkan untuk menggunakan fitur ini.</translation>
 <translation id="2587841377698384444">ID API Direktori:</translation>
 <translation id="7752995774971033316">Tidak terkelola</translation>
 <translation id="3712624925041724820">Lisensi habis</translation>
 <translation id="4926049483395192435">Harus ditentukan.</translation>
+<translation id="1455235771979731432">Terjadi masalah saat memverifikasi kartu. Periksa sambungan internet Anda dan coba lagi.</translation>
 <translation id="7542995811387359312">Pengisian kartu kredit otomatis dinonaktifkan karena formulir ini tidak menggunakan sambungan aman.</translation>
 <translation id="5179510805599951267">Bukan <ph name="ORIGINAL_LANGUAGE"/>? Laporkan kesalahan deteksi ini</translation>
 <translation id="8088680233425245692">Gagal melihat artikel.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">Aktif</translation>
 <translation id="7568593326407688803">Laman ini dalam bahasa<ph name="ORIGINAL_LANGUAGE"/>Ingin diterjemahkan?</translation>
 <translation id="8876793034577346603">Konfigurasi jaringan gagal diuraikan.</translation>
+<translation id="4800132727771399293">Periksa tanggal masa berlaku habis dan CVC, lalu coba lagi</translation>
 <translation id="4171400957073367226">Tanda tangan verifikasi tidak valid</translation>
+<translation id="9125941078353557812">Masukkan 3 digit CVC di belakang kartu Anda</translation>
 <translation id="106701514854093668">Bookmark Desktop</translation>
 <translation id="6154808779448689242">Token kebijakan yang dikembalikan tidak cocok dengan token saat ini</translation>
 <translation id="7995512525968007366">Tidak Ditentukan</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;Urungkan Pengaturan Ulang</translation>
 <translation id="20817612488360358">Setelan proxy sistem disetel untuk digunakan namun konfigurasi proxy eksplisit juga ditentukan.</translation>
 <translation id="2639739919103226564">Status:</translation>
+<translation id="8824019021993735287">Chrome tidak dapat memverifikasi kartu saat ini. Coba lagi nanti.</translation>
 <translation id="4968547170521245791">Tidak Dapat Memberi Proxy</translation>
 <translation id="385051799172605136">Mundur</translation>
 <translation id="4196861286325780578">&amp;Ulangi pemindahan</translation>

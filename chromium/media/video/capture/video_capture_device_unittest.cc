@@ -82,6 +82,7 @@ class MockClient : public VideoCaptureDevice::Client {
   MOCK_METHOD0(DoOnIncomingCapturedBuffer, void(void));
   MOCK_METHOD0(DoOnIncomingCapturedVideoFrame, void(void));
   MOCK_METHOD1(OnError, void(const std::string& reason));
+  MOCK_CONST_METHOD0(GetBufferPoolUtilization, double(void));
 
   explicit MockClient(base::Callback<void(const VideoCaptureFormat&)> frame_cb)
       : main_thread_(base::ThreadTaskRunnerHandle::Get()),
@@ -98,9 +99,12 @@ class MockClient : public VideoCaptureDevice::Client {
   }
 
   // Trampoline methods to workaround GMOCK problems with scoped_ptr<>.
-  scoped_ptr<Buffer> ReserveOutputBuffer(VideoPixelFormat format,
-                                         const gfx::Size& dimensions) override {
+  scoped_ptr<Buffer> ReserveOutputBuffer(
+      const gfx::Size& dimensions,
+      media::VideoPixelFormat format,
+      media::VideoPixelStorage storage) override {
     DoReserveOutputBuffer();
+    NOTREACHED() << "This should never be called";
     return scoped_ptr<Buffer>();
   }
   void OnIncomingCapturedBuffer(scoped_ptr<Buffer> buffer,
@@ -322,8 +326,7 @@ TEST_P(VideoCaptureDeviceTest, CaptureWithSize) {
   EXPECT_EQ(last_format().frame_size.width(), width);
   EXPECT_EQ(last_format().frame_size.height(), height);
   if (last_format().pixel_format != PIXEL_FORMAT_MJPEG)
-    EXPECT_LE(static_cast<size_t>(width * height * 3 / 2),
-              last_format().ImageAllocationSize());
+    EXPECT_EQ(size.GetArea(), last_format().frame_size.GetArea());
   device->StopAndDeAllocate();
 }
 
@@ -345,6 +348,7 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
 
   EXPECT_CALL(*client_, OnError(_)).Times(0);
 
+  const gfx::Size input_size(640, 480);
   VideoCaptureParams capture_params;
   capture_params.requested_format.frame_size.SetSize(637, 472);
   capture_params.requested_format.frame_rate = 35;
@@ -352,10 +356,10 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
   device->AllocateAndStart(capture_params, client_.Pass());
   WaitForCapturedFrame();
   device->StopAndDeAllocate();
-  EXPECT_EQ(last_format().frame_size.width(), 640);
-  EXPECT_EQ(last_format().frame_size.height(), 480);
-  EXPECT_EQ(static_cast<size_t>(640 * 480 * 3 / 2),
-            last_format().ImageAllocationSize());
+  EXPECT_EQ(last_format().frame_size.width(), input_size.width());
+  EXPECT_EQ(last_format().frame_size.height(), input_size.height());
+  if (last_format().pixel_format != PIXEL_FORMAT_MJPEG)
+    EXPECT_EQ(input_size.GetArea(), last_format().frame_size.GetArea());
 }
 
 // Cause hangs on Windows Debug. http://crbug.com/417824

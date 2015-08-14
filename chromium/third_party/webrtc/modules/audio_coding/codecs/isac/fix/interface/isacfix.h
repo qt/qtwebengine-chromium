@@ -11,9 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_INTERFACE_ISACFIX_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_INTERFACE_ISACFIX_H_
 
-/*
- * Define the fixpoint numeric formats
- */
+#include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
 #include "webrtc/typedefs.h"
 
 typedef struct {
@@ -128,9 +126,9 @@ extern "C" {
    *                            -1 - Error
    */
 
-  int16_t WebRtcIsacfix_Encode(ISACFIX_MainStruct *ISAC_main_inst,
-                               const int16_t *speechIn,
-                               uint8_t* encoded);
+  int WebRtcIsacfix_Encode(ISACFIX_MainStruct *ISAC_main_inst,
+                           const int16_t *speechIn,
+                           uint8_t* encoded);
 
 
 
@@ -227,10 +225,10 @@ extern "C" {
 
   int16_t WebRtcIsacfix_UpdateBwEstimate(ISACFIX_MainStruct *ISAC_main_inst,
                                          const uint8_t* encoded,
-                                         int32_t          packet_size,
-                                         uint16_t         rtp_seq_number,
-                                         uint32_t         send_ts,
-                                         uint32_t         arr_ts);
+                                         int32_t packet_size,
+                                         uint16_t rtp_seq_number,
+                                         uint32_t send_ts,
+                                         uint32_t arr_ts);
 
   /****************************************************************************
    * WebRtcIsacfix_Decode(...)
@@ -251,11 +249,11 @@ extern "C" {
    *                            -1 - Error
    */
 
-  int16_t WebRtcIsacfix_Decode(ISACFIX_MainStruct *ISAC_main_inst,
-                               const uint8_t* encoded,
-                               int16_t len,
-                               int16_t *decoded,
-                               int16_t *speechType);
+  int WebRtcIsacfix_Decode(ISACFIX_MainStruct *ISAC_main_inst,
+                           const uint8_t* encoded,
+                           int16_t len,
+                           int16_t *decoded,
+                           int16_t *speechType);
 
 
   /****************************************************************************
@@ -280,11 +278,11 @@ extern "C" {
    */
 
 #ifdef WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
-  int16_t WebRtcIsacfix_DecodeNb(ISACFIX_MainStruct *ISAC_main_inst,
-                                 const uint16_t *encoded,
-                                 int16_t len,
-                                 int16_t *decoded,
-                                 int16_t *speechType);
+  int WebRtcIsacfix_DecodeNb(ISACFIX_MainStruct *ISAC_main_inst,
+                             const uint16_t *encoded,
+                             int16_t len,
+                             int16_t *decoded,
+                             int16_t *speechType);
 #endif //  WEBRTC_ISAC_FIX_NB_CALLS_ENABLED
 
 
@@ -378,8 +376,8 @@ extern "C" {
    */
 
   int16_t WebRtcIsacfix_Control(ISACFIX_MainStruct *ISAC_main_inst,
-                                int16_t          rate,
-                                int16_t          framesize);
+                                int16_t rate,
+                                int framesize);
 
 
 
@@ -407,7 +405,7 @@ extern "C" {
 
   int16_t WebRtcIsacfix_ControlBwe(ISACFIX_MainStruct *ISAC_main_inst,
                                    int16_t rateBPS,
-                                   int16_t frameSizeMs,
+                                   int frameSizeMs,
                                    int16_t enforceFrameSize);
 
 
@@ -626,6 +624,13 @@ extern "C" {
 
   int16_t WebRtcIsacfix_GetNewFrameLen(ISACFIX_MainStruct *ISAC_main_inst);
 
+  /* Fills in an IsacBandwidthInfo struct. */
+  void WebRtcIsacfix_GetBandwidthInfo(ISACFIX_MainStruct* ISAC_main_inst,
+                                      IsacBandwidthInfo* bwinfo);
+
+  /* Uses the values from an IsacBandwidthInfo struct. */
+  void WebRtcIsacfix_SetBandwidthInfo(ISACFIX_MainStruct* ISAC_main_inst,
+                                      const IsacBandwidthInfo* bwinfo);
 
 #if defined(__cplusplus)
 }

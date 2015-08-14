@@ -11,7 +11,7 @@
 #include "SkCodec.h"
 #include "SkImageInfo.h"
 #include "SkJpegDecoderMgr.h"
-#include "SkJpegUtility.h"
+#include "SkJpegUtility_codec.h"
 #include "SkStream.h"
 
 extern "C" {
@@ -95,9 +95,22 @@ private:
     SkJpegCodec(const SkImageInfo& srcInfo, SkStream* stream, JpegDecoderMgr* decoderMgr);
 
     /*
+     * Explicit destructor is used to ensure that the scanline decoder is deleted
+     * before the decode manager.
+     */
+    ~SkJpegCodec() override;
+
+    /*
      * Handles rewinding the input stream if it is necessary
      */
     bool handleRewind();
+
+    /*
+     * Checks if the conversion between the input image and the requested output
+     * image has been implemented
+     * Sets the output color space
+     */
+    bool setOutputColorSpace(const SkImageInfo& dst);
 
     /*
      * Checks if we can scale to the requested dimensions and scales the dimensions
@@ -112,8 +125,6 @@ private:
             const Options& options);
 
     SkAutoTDelete<JpegDecoderMgr> fDecoderMgr;
-    SkAutoTDelete<SkSwizzler>     fSwizzler;
-    size_t                        fSrcRowBytes;
 
     friend class SkJpegScanlineDecoder;
 

@@ -102,7 +102,6 @@ public:
 
     void willDrawVideo() { m_surface->willDrawVideo(); }
 
-    GraphicsContext* context() const; // Deprecated: use canvas()
     SkCanvas* canvas() const;
 
     // Called at the end of a task that rendered a whole frame
@@ -135,9 +134,6 @@ public:
     // Destroys the TEXTURE_2D binding for the active texture unit of the passed context
     bool copyToPlatformTexture(WebGraphicsContext3D*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
 
-    Platform3DObject getBackingTexture();
-    void didModifyBackingTexture();
-
     bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, SourceDrawingBuffer);
 
     void flush();
@@ -149,16 +145,12 @@ public:
     DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
     String debugName() const { return "ImageBuffer"; }
 
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect*, SkXfermode::Mode);
+
 private:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect*, SkXfermode::Mode);
-
-    friend class GraphicsContext;
-    friend class SkiaImageFilterBuilder;
-
     OwnPtr<ImageBufferSurface> m_surface;
-    OwnPtr<GraphicsContext> m_context;
     ImageBufferClient* m_client;
 };
 

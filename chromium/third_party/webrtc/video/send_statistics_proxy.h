@@ -52,6 +52,8 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   // From VideoEncoderRateObserver.
   void OnSetRates(uint32_t bitrate_bps, int framerate) override;
 
+  void OnInactiveSsrc(uint32_t ssrc);
+
  protected:
   // From CpuOveruseMetricsObserver.
   void CpuOveruseMetricsUpdated(const CpuOveruseMetrics& metrics) override;
@@ -91,16 +93,21 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   struct StatsUpdateTimes {
     StatsUpdateTimes() : resolution_update_ms(0) {}
     int64_t resolution_update_ms;
+    int64_t bitrate_update_ms;
   };
   void PurgeOldStats() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   VideoSendStream::StreamStats* GetStatsEntry(uint32_t ssrc)
       EXCLUSIVE_LOCKS_REQUIRED(crit_);
+  void UpdateHistograms() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   Clock* const clock_;
   const VideoSendStream::Config config_;
   mutable rtc::CriticalSection crit_;
   VideoSendStream::Stats stats_ GUARDED_BY(crit_);
   rtc::RateTracker input_frame_rate_tracker_ GUARDED_BY(crit_);
+  rtc::RateTracker input_frame_rate_tracker_total_ GUARDED_BY(crit_);
+  rtc::RateTracker sent_frame_rate_tracker_total_ GUARDED_BY(crit_);
+  uint32_t last_sent_frame_timestamp_ GUARDED_BY(crit_);
   std::map<uint32_t, StatsUpdateTimes> update_times_ GUARDED_BY(crit_);
 };
 

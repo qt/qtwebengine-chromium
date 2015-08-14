@@ -16,7 +16,6 @@
 #include "media/base/audio_converter.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
-#include "third_party/webrtc/modules/interface/module_common_types.h"
 
 namespace blink {
 class WebMediaConstraints;
@@ -29,7 +28,6 @@ class AudioParameters;
 }  // namespace media
 
 namespace webrtc {
-class AudioFrame;
 class TypingDetection;
 }
 
@@ -128,7 +126,14 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
   // Helper to initialize the WebRtc AudioProcessing.
   void InitializeAudioProcessingModule(
       const blink::WebMediaConstraints& constraints, int effects);
-  void ConfigureBeamforming(webrtc::Config* config);
+  void ConfigureBeamforming(webrtc::Config* config,
+                            const std::string& geometry_str) const;
+
+  // Parses the array geometry from the URL string formatted as
+  // "x1 y1 z1 ... xn yn zn" for an n-microphone array.
+  // Returns a zero-sized vector if |geometry_str| isn't a parseable geometry.
+  std::vector<webrtc::Point> ParseArrayGeometry(
+      const std::string& geometry_str) const;
 
   // Helper to initialize the capture converter.
   void InitializeCaptureFifo(const media::AudioParameters& input_format);
@@ -200,9 +205,6 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
   // Object for logging echo information when the AEC is enabled. Accessible by
   // the libjingle thread through GetStats().
   scoped_ptr<EchoInformation> echo_information_;
-
-  // Flag is enabled if AudioProcessing supports 48kHz sample rate.
-  bool audio_proc_48kHz_support_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamAudioProcessor);
 };

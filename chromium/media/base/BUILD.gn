@@ -63,10 +63,13 @@ source_set("base") {
     "byte_queue.h",
     "cdm_callback_promise.cc",
     "cdm_callback_promise.h",
+    "cdm_config.h",
     "cdm_context.cc",
     "cdm_context.h",
     "cdm_factory.cc",
     "cdm_factory.h",
+    "cdm_initialized_promise.cc",
+    "cdm_initialized_promise.h",
     "cdm_key_information.cc",
     "cdm_key_information.h",
     "cdm_promise.cc",
@@ -119,10 +122,14 @@ source_set("base") {
     "media_permission.h",
     "media_switches.cc",
     "media_switches.h",
+    "mime_util.cc",
+    "mime_util.h",
     "moving_average.cc",
     "moving_average.h",
     "multi_channel_resampler.cc",
     "multi_channel_resampler.h",
+    "null_video_sink.cc",
+    "null_video_sink.h",
     "pipeline.cc",
     "pipeline.h",
     "pipeline_status.h",
@@ -263,11 +270,13 @@ source_set("base") {
   }
 
   if (current_cpu == "x86" || current_cpu == "x64") {
-    sources += [ "simd/convert_yuv_to_rgb_x86.cc" ]
-    deps += [
-      ":media_yasm",
-      ":media_sse2",
+    sources += [
+      "simd/convert_rgb_to_yuv_sse2.cc",
+      "simd/convert_rgb_to_yuv_ssse3.cc",
+      "simd/convert_yuv_to_rgb_x86.cc",
+      "simd/filter_yuv_sse2.cc",
     ]
+    deps += [ ":media_yasm" ]
   }
 
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
@@ -329,8 +338,6 @@ source_set("test_support") {
     "mock_demuxer_host.h",
     "mock_filters.cc",
     "mock_filters.h",
-    "null_video_sink.cc",
-    "null_video_sink.h",
     "test_data_util.cc",
     "test_data_util.h",
     "test_helpers.cc",
@@ -374,6 +381,7 @@ source_set("unittests") {
     "fake_demuxer_stream_unittest.cc",
     "gmock_callback_support_unittest.cc",
     "key_systems_unittest.cc",
+    "mime_util_unittest.cc",
     "moving_average_unittest.cc",
     "multi_channel_resampler_unittest.cc",
     "null_video_sink_unittest.cc",
@@ -454,21 +462,6 @@ source_set("perftests") {
 }
 
 if (current_cpu == "x86" || current_cpu == "x64") {
-  source_set("media_sse2") {
-    sources = [
-      "simd/convert_rgb_to_yuv_sse2.cc",
-      "simd/convert_rgb_to_yuv_ssse3.cc",
-      "simd/filter_yuv_sse2.cc",
-    ]
-    configs += [
-      "//media:media_config",
-      "//media:media_implementation",
-    ]
-    if (!is_win) {
-      cflags = [ "-msse2" ]
-    }
-  }
-
   import("//third_party/yasm/yasm_assemble.gni")
   yasm_assemble("media_yasm") {
     sources = [

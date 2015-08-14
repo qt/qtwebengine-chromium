@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_TEST_HELPER_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_TEST_HELPER_H_
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
@@ -21,6 +23,7 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class EmbeddedWorkerTestHelper;
+class MessagePortMessageFilter;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
 struct ServiceWorkerFetchRequest;
@@ -81,9 +84,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   virtual void OnStartWorker(int embedded_worker_id,
                              int64 service_worker_version_id,
                              const GURL& scope,
-                             const GURL& script_url,
-                             bool pause_after_download);
-  virtual void OnResumeAfterDownload(int embedded_worker_id);
+                             const GURL& script_url);
   virtual void OnStopWorker(int embedded_worker_id);
   virtual bool OnMessageToWorker(int thread_id,
                                  int embedded_worker_id,
@@ -98,10 +99,13 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   virtual void OnFetchEvent(int embedded_worker_id,
                             int request_id,
                             const ServiceWorkerFetchRequest& request);
+  virtual void OnPushEvent(int embedded_worker_id,
+                           int request_id,
+                           const std::string& data);
+  virtual void OnSyncEvent(int embedded_worker_id, int request_id);
 
   // These functions simulate sending an EmbeddedHostMsg message to the
   // browser.
-  void SimulatePausedAfterDownload(int embedded_worker_id);
   void SimulateWorkerReadyForInspection(int embedded_worker_id);
   void SimulateWorkerScriptCached(int embedded_worker_id);
   void SimulateWorkerScriptLoaded(int thread_id, int embedded_worker_id);
@@ -114,7 +118,6 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
 
  private:
   void OnStartWorkerStub(const EmbeddedWorkerMsg_StartWorker_Params& params);
-  void OnResumeAfterDownloadStub(int embedded_worker_id);
   void OnStopWorkerStub(int embedded_worker_id);
   void OnMessageToWorkerStub(int thread_id,
                              int embedded_worker_id,
@@ -123,6 +126,10 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnInstallEventStub(int request_id);
   void OnFetchEventStub(int request_id,
                         const ServiceWorkerFetchRequest& request);
+  void OnPushEventStub(int request_id, const std::string& data);
+  void OnSyncEventStub(int request_id);
+
+  MessagePortMessageFilter* NewMessagePortMessageFilter();
 
   scoped_refptr<ServiceWorkerContextWrapper> wrapper_;
 
@@ -136,6 +143,9 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
 
   // Updated each time MessageToWorker message is received.
   int current_embedded_worker_id_;
+
+  std::vector<scoped_refptr<MessagePortMessageFilter>>
+      message_port_message_filters_;
 
   base::WeakPtrFactory<EmbeddedWorkerTestHelper> weak_factory_;
 

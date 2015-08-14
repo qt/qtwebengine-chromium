@@ -33,12 +33,13 @@ class ExceptionState;
 class CSSRuleList;
 
 class CSSGroupingRule : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~CSSGroupingRule();
 
     virtual void reattach(StyleRuleBase*) override;
 
-    CSSRuleList* cssRules() const;
+    CSSRuleList* cssRules() const override;
 
     unsigned insertRule(const String& rule, unsigned index, ExceptionState&);
     void deleteRule(unsigned index, ExceptionState&);

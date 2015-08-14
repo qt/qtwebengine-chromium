@@ -17,6 +17,7 @@ namespace net {
 
 using base::IntToString;
 using base::StringPiece;
+using base::UintToString;
 using std::string;
 
 // A mock the handler class to check that we parse out the correct headers
@@ -55,9 +56,9 @@ class SpdyHeadersBlockParserTest :
       // Build the key.
       string key;
       if (insert_nulls) {
-        key = string(kBaseKey) + string("\0", 1) + IntToString(i);
+        key = string(kBaseKey) + string("\0", 1) + UintToString(i);
       } else {
-        key = string(kBaseKey) + IntToString(i);
+        key = string(kBaseKey) + UintToString(i);
       }
       // Encode the key as SPDY header.
       headers += EncodeLength(key.length());
@@ -66,9 +67,9 @@ class SpdyHeadersBlockParserTest :
       // Build the value.
       string value;
       if (insert_nulls) {
-        value = string(kBaseValue) + string("\0", 1) + IntToString(i);
+        value = string(kBaseValue) + string("\0", 1) + UintToString(i);
       } else {
-        value = string(kBaseValue) + IntToString(i);
+        value = string(kBaseValue) + UintToString(i);
       }
       // Encode the value as SPDY header.
       headers += EncodeLength(value.length());
@@ -108,10 +109,10 @@ class SpdyHeadersBlockParserTest :
 const char *const SpdyHeadersBlockParserTest::kBaseKey = "test_key";
 const char *const SpdyHeadersBlockParserTest::kBaseValue = "test_value";
 
-// All tests are run with 3 different SPDY versions: SPDY/2, SPDY/3, SPDY/4.
+// All tests are run with 3 different SPDY versions: SPDY/2, SPDY/3, HTTP/2.
 INSTANTIATE_TEST_CASE_P(SpdyHeadersBlockParserTests,
                         SpdyHeadersBlockParserTest,
-                        ::testing::Values(SPDY2, SPDY3, SPDY4));
+                        ::testing::Values(SPDY2, SPDY3, HTTP2));
 
 TEST_P(SpdyHeadersBlockParserTest, BasicTest) {
   // Sanity test, verify that we parse out correctly a block with

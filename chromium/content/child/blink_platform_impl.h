@@ -81,6 +81,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual blink::WebDiscardableMemory* allocateAndLockDiscardableMemory(
       size_t bytes);
   virtual size_t maxDecodedImageBytes();
+  virtual uint32_t getUniqueIdForProcess();
   virtual blink::WebURLLoader* createURLLoader();
   virtual blink::WebSocketHandle* createWebSocketHandle();
   virtual blink::WebString userAgent();
@@ -93,7 +94,9 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual blink::WebThread* createThread(const char* name);
   virtual blink::WebThread* currentThread();
   virtual void yieldCurrentThread();
-  virtual blink::WebWaitableEvent* createWaitableEvent();
+  virtual blink::WebWaitableEvent* createWaitableEvent(
+      blink::WebWaitableEvent::ResetPolicy policy,
+      blink::WebWaitableEvent::InitialState state);
   virtual blink::WebWaitableEvent* waitMultipleEvents(
       const blink::WebVector<blink::WebWaitableEvent*>& events);
   virtual void decrementStatsCounter(const char* name);
@@ -136,6 +139,10 @@ class CONTENT_EXPORT BlinkPlatformImpl
       TraceEventHandle);
   virtual void registerMemoryDumpProvider(blink::WebMemoryDumpProvider* wmdp);
   virtual void unregisterMemoryDumpProvider(blink::WebMemoryDumpProvider* wmdp);
+  virtual blink::WebProcessMemoryDump* createProcessMemoryDump();
+  virtual blink::Platform::WebMemoryAllocatorDumpGuid
+  createWebMemoryAllocatorDumpGuid(const blink::WebString& guidStr);
+
   virtual blink::WebData loadResource(const char* name);
   virtual blink::WebString queryLocalizedString(
       blink::WebLocalizedString::Name name);
@@ -152,9 +159,6 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual double systemTraceTime();
   virtual void cryptographicallyRandomValues(
       unsigned char* buffer, size_t length);
-  virtual void setSharedTimerFiredFunction(void (*func)());
-  virtual void setSharedTimerFireInterval(double interval_seconds);
-  virtual void stopSharedTimer();
   virtual blink::WebGestureCurve* createFlingAnimationCurve(
       blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
@@ -166,25 +170,15 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual blink::WebBluetooth* bluetooth();
   virtual blink::WebNotificationManager* notificationManager();
   virtual blink::WebPushProvider* pushProvider();
-  virtual blink::WebNavigatorConnectProvider* navigatorConnectProvider();
+  virtual blink::WebServicePortProvider* createServicePortProvider(
+      blink::WebServicePortProviderClient*);
   virtual blink::WebPermissionClient* permissionClient();
   virtual blink::WebSyncProvider* backgroundSyncProvider();
-
-  void SuspendSharedTimer();
-  void ResumeSharedTimer();
-  virtual void OnStartSharedTimer(base::TimeDelta delay) {}
-
-  WebBluetoothImpl* BluetoothImplForTesting() { return bluetooth_.get(); }
 
   virtual blink::WebString domCodeStringFromEnum(int dom_code);
   virtual int domEnumFromCodeString(const blink::WebString& codeString);
 
  private:
-  void DoTimeout() {
-    if (shared_timer_func_ && !shared_timer_suspended_)
-      shared_timer_func_();
-  }
-
   void InternalInit();
   void UpdateWebThreadTLS(blink::WebThread* thread);
 
@@ -195,11 +189,6 @@ class CONTENT_EXPORT BlinkPlatformImpl
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   WebThemeEngineImpl native_theme_engine_;
   WebFallbackThemeEngineImpl fallback_theme_engine_;
-  base::OneShotTimer<BlinkPlatformImpl> shared_timer_;
-  void (*shared_timer_func_)();
-  double shared_timer_fire_time_;
-  bool shared_timer_fire_time_was_set_while_suspended_;
-  int shared_timer_suspended_;  // counter
   base::ThreadLocalStorage::Slot current_thread_slot_;
   webcrypto::WebCryptoImpl web_crypto_;
   scoped_ptr<WebGeofencingProviderImpl> geofencing_provider_;

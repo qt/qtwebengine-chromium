@@ -94,33 +94,6 @@ class RateCounter {
   std::list<TimeSizePair> window_;
 };
 
-Random::Random(uint32_t seed)
-    : a_(0x531FDB97 ^ seed),
-      b_(0x6420ECA8 + seed) {
-}
-
-float Random::Rand() {
-  const float kScale = 1.0f / 0xffffffff;
-  float result = kScale * b_;
-  a_ ^= b_;
-  b_ += a_;
-  return result;
-}
-
-int Random::Gaussian(int mean, int standard_deviation) {
-  // Creating a Normal distribution variable from two independent uniform
-  // variables based on the Box-Muller transform, which is defined on the
-  // interval (0, 1], hence the mask+add below.
-  const double kPi = 3.14159265358979323846;
-  const double kScale = 1.0 / 0x80000000ul;
-  double u1 = kScale * ((a_ & 0x7ffffffful) + 1);
-  double u2 = kScale * ((b_ & 0x7ffffffful) + 1);
-  a_ ^= b_;
-  b_ += a_;
-  return static_cast<int>(mean + standard_deviation *
-      sqrt(-2 * log(u1)) * cos(2 * kPi * u2));
-}
-
 Packet::Packet()
     : flow_id_(0), creation_time_us_(-1), send_time_us_(-1), payload_size_(0) {
 }
@@ -676,6 +649,7 @@ void VideoSource::RunFor(int64_t time_ms, Packets* in_out) {
           new MediaPacket(flow_id_, send_time_us, size, prototype_header_);
       new_packets.push_back(new_packet);
       new_packet->SetAbsSendTimeMs(next_frame_ms_);
+      new_packet->set_sender_timestamp_us(send_time_us);
       payload_size -= size;
     }
 

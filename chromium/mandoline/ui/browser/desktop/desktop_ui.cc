@@ -8,7 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "mandoline/ui/aura/native_widget_view_manager.h"
 #include "mandoline/ui/browser/browser.h"
-#include "mandoline/ui/browser/omnibox.mojom.h"
+#include "mandoline/ui/browser/public/interfaces/omnibox.mojom.h"
 #include "mojo/common/common_type_converters.h"
 #include "mojo/converters/geometry/geometry_type_converters.h"
 #include "ui/views/background.h"
@@ -23,8 +23,7 @@ namespace mandoline {
 DesktopUI::DesktopUI(Browser* browser, mojo::ApplicationImpl* application_impl)
     : browser_(browser),
       application_impl_(application_impl),
-      omnibox_launcher_(
-          new views::LabelButton(this, base::ASCIIToUTF16("Open Omnibox"))),
+      omnibox_launcher_(nullptr),
       root_(nullptr),
       client_binding_(browser) {
 }
@@ -40,6 +39,8 @@ void DesktopUI::Init(mojo::View* root) {
   views::WidgetDelegateView* widget_delegate = new views::WidgetDelegateView;
   widget_delegate->GetContentsView()->set_background(
     views::Background::CreateSolidBackground(0xFFDDDDDD));
+  omnibox_launcher_ =
+      new views::LabelButton(this, base::ASCIIToUTF16("Open Omnibox"));
   widget_delegate->GetContentsView()->AddChildView(omnibox_launcher_);
   widget_delegate->GetContentsView()->SetLayoutManager(this);
 
@@ -91,7 +92,12 @@ void DesktopUI::Layout(views::View* host) {
 void DesktopUI::ButtonPressed(views::Button* sender, const ui::Event& event) {
   if (!omnibox_.get()) {
     DCHECK(!client_binding_.is_bound());
-    application_impl_->ConnectToService("mojo:omnibox", &omnibox_);
+    mojo::URLRequestPtr request(mojo::URLRequest::New());
+    request->url = mojo::String::From("mojo:omnibox");
+    mojo::ApplicationConnection* application_connection =
+        application_impl_->ConnectToApplication(request.Pass());
+    application_connection->AddService<ViewEmbedder>(browser_);
+    application_connection->ConnectToService(&omnibox_);
     OmniboxClientPtr client;
     client_binding_.Bind(&client);
     omnibox_->SetClient(client.Pass());

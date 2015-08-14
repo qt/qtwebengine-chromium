@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/threading/thread.h"
 #include "components/scheduler/child/scheduler_message_loop_delegate.h"
+#include "components/scheduler/child/task_queue.h"
 #include "components/scheduler/child/task_queue_selector.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -69,7 +70,7 @@ class TaskQueueManagerPerfTest : public testing::Test {
     selector_ = make_scoped_ptr(new SelectorForTest);
     manager_ = make_scoped_ptr(new TaskQueueManager(
         num_queues, SchedulerMessageLoopDelegate::Create(message_loop_.get()),
-        selector_.get(), "fake.category"));
+        selector_.get(), "fake.category", "fake.category.debug"));
   }
 
   void TestDelayedTask() {

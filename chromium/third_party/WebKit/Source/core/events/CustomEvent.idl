@@ -26,14 +26,14 @@
 // https://dom.spec.whatwg.org/#interface-customevent
 
 [
-    EventConstructor,
-    Exposed=(Window,Worker)
+    Constructor(DOMString type, optional CustomEventInit eventInitDict),
+    Exposed=(Window,Worker),
 ] interface CustomEvent : Event {
-    [Custom=Getter, InitializedByEventConstructor] readonly attribute any detail;
+    [Custom=Getter] readonly attribute any detail;
 
     // FIXME: initCustomEvent()'s arguments should not be optional.
-    [Custom] void initCustomEvent([Default=Undefined] optional DOMString typeArg,
-                                  [Default=Undefined] optional boolean canBubbleArg,
-                                  [Default=Undefined] optional boolean cancelableArg,
-                                  [Default=Undefined] optional any detailArg);
+    [Custom, Measure] void initCustomEvent([Default=Undefined] optional DOMString type,
+                                           [Default=Undefined] optional boolean bubbles,
+                                           [Default=Undefined] optional boolean cancelable,
+                                           [Default=Undefined] optional any detail);
 };

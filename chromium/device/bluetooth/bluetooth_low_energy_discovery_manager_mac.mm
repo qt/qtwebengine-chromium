@@ -5,8 +5,10 @@
 #include "device/bluetooth/bluetooth_low_energy_discovery_manager_mac.h"
 
 #include "base/mac/mac_util.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/sys_string_conversions.h"
+#include "device/bluetooth/bluetooth_adapter_mac.h"
 #include "device/bluetooth/bluetooth_low_energy_device_mac.h"
 
 using device::BluetoothLowEnergyDeviceMac;
@@ -79,7 +81,6 @@ class BluetoothLowEnergyDiscoveryManagerMacDelegate {
 
 BluetoothLowEnergyDiscoveryManagerMac::
     ~BluetoothLowEnergyDiscoveryManagerMac() {
-  ClearDevices();
 }
 
 bool BluetoothLowEnergyDiscoveryManagerMac::IsDiscovering() const {
@@ -88,7 +89,6 @@ bool BluetoothLowEnergyDiscoveryManagerMac::IsDiscovering() const {
 
 void BluetoothLowEnergyDiscoveryManagerMac::StartDiscovery(
     BluetoothDevice::UUIDList services_uuids) {
-  ClearDevices();
   discovering_ = true;
   pending_ = true;
   services_uuids_ = services_uuids;
@@ -137,23 +137,7 @@ void BluetoothLowEnergyDiscoveryManagerMac::DiscoveredPeripheral(
     CBPeripheral* peripheral,
     NSDictionary* advertisementData,
     int rssi) {
-  // Look for existing device.
-  auto iter = devices_.find(
-      BluetoothLowEnergyDeviceMac::GetPeripheralIdentifier(peripheral));
-  if (iter == devices_.end()) {
-    // A device has been added.
-    BluetoothLowEnergyDeviceMac* device =
-        new BluetoothLowEnergyDeviceMac(peripheral, advertisementData, rssi);
-    devices_.insert(devices_.begin(),
-                    std::make_pair(device->GetIdentifier(), device));
-    observer_->DeviceFound(device);
-    return;
-  }
-
-  // A device has an update.
-  BluetoothLowEnergyDeviceMac* old_device = iter->second;
-  old_device->Update(peripheral, advertisementData, rssi);
-  observer_->DeviceUpdated(old_device);
+  observer_->LowEnergyDeviceUpdated(peripheral, advertisementData, rssi);
 }
 
 BluetoothLowEnergyDiscoveryManagerMac*
@@ -164,19 +148,18 @@ BluetoothLowEnergyDiscoveryManagerMac::Create(Observer* observer) {
 BluetoothLowEnergyDiscoveryManagerMac::BluetoothLowEnergyDiscoveryManagerMac(
     Observer* observer)
     : observer_(observer) {
+  DCHECK(BluetoothAdapterMac::IsLowEnergyAvailable());
   bridge_.reset([[BluetoothLowEnergyDiscoveryManagerMacBridge alloc]
       initWithManager:this]);
-  // Since CoreBluetooth is only available on OS X 10.7 or later, we
-  // instantiate CBCentralManager only for OS X >= 10.7.
-  if (base::mac::IsOSLionOrLater()) {
-    Class aClass = NSClassFromString(@"CBCentralManager");
-    manager_.reset(
-        [[aClass alloc] initWithDelegate:bridge_
-                                   queue:dispatch_get_main_queue()]);
-  }
+  Class aClass = NSClassFromString(@"CBCentralManager");
+  manager_.reset([[aClass alloc] initWithDelegate:bridge_
+                                            queue:dispatch_get_main_queue()]);
   discovering_ = false;
 }
 
-void BluetoothLowEnergyDiscoveryManagerMac::ClearDevices() {
-  STLDeleteValues(&devices_);
+void BluetoothLowEnergyDiscoveryManagerMac::SetManagerForTesting(
+    CBCentralManager* manager) {
+  DCHECK(BluetoothAdapterMac::IsLowEnergyAvailable());
+  [manager performSelector:@selector(setDelegate:) withObject:bridge_];
+  manager_.reset(manager);
 }

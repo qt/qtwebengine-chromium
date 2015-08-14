@@ -9,6 +9,7 @@
 #include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/rand_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_verify_result.h"
@@ -22,6 +23,7 @@
 #include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_client_session_peer.h"
+#include "net/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
 #include "net/socket/socket_test_util.h"
@@ -45,19 +47,22 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
                                                SupportedVersions(GetParam()))),
         session_(connection_,
                  GetSocket().Pass(),
-                 nullptr,
+                 /*stream_factory=*/nullptr,
+                 /*crypto_client_stream_factory=*/nullptr,
                  &transport_security_state_,
                  make_scoped_ptr((QuicServerInfo*)nullptr),
+                 QuicServerId(kServerHostname,
+                              kServerPort,
+                              /*is_secure=*/false,
+                              PRIVACY_MODE_DISABLED),
                  /*cert_verify_flags=*/0,
                  DefaultQuicConfig(),
+                 &crypto_config_,
                  "CONNECTION_UNKNOWN",
                  base::TimeTicks::Now(),
-                 base::MessageLoop::current()->message_loop_proxy().get(),
+                 base::ThreadTaskRunnerHandle::Get().get(),
                  &net_log_) {
-    session_.InitializeSession(QuicServerId(kServerHostname, kServerPort,
-                                            /*is_secure=*/false,
-                                            PRIVACY_MODE_DISABLED),
-        &crypto_config_, nullptr);
+    session_.Initialize();
     // Advance the time, because timers do not like uninitialized times.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
   }
@@ -106,15 +111,15 @@ TEST_P(QuicClientSessionTest, MaxNumStreams) {
 
   std::vector<QuicReliableClientStream*> streams;
   for (size_t i = 0; i < kDefaultMaxStreamsPerConnection; i++) {
-    QuicReliableClientStream* stream = session_.CreateOutgoingDataStream();
+    QuicReliableClientStream* stream = session_.CreateOutgoingDynamicStream();
     EXPECT_TRUE(stream);
     streams.push_back(stream);
   }
-  EXPECT_FALSE(session_.CreateOutgoingDataStream());
+  EXPECT_FALSE(session_.CreateOutgoingDynamicStream());
 
   // Close a stream and ensure I can now open a new one.
   session_.CloseStream(streams[0]->id());
-  EXPECT_TRUE(session_.CreateOutgoingDataStream());
+  EXPECT_TRUE(session_.CreateOutgoingDynamicStream());
 }
 
 TEST_P(QuicClientSessionTest, MaxNumStreamsViaRequest) {
@@ -122,7 +127,7 @@ TEST_P(QuicClientSessionTest, MaxNumStreamsViaRequest) {
 
   std::vector<QuicReliableClientStream*> streams;
   for (size_t i = 0; i < kDefaultMaxStreamsPerConnection; i++) {
-    QuicReliableClientStream* stream = session_.CreateOutgoingDataStream();
+    QuicReliableClientStream* stream = session_.CreateOutgoingDynamicStream();
     EXPECT_TRUE(stream);
     streams.push_back(stream);
   }
@@ -147,7 +152,7 @@ TEST_P(QuicClientSessionTest, GoAwayReceived) {
   // After receiving a GoAway, I should no longer be able to create outgoing
   // streams.
   session_.OnGoAway(QuicGoAwayFrame(QUIC_PEER_GOING_AWAY, 1u, "Going away."));
-  EXPECT_EQ(nullptr, session_.CreateOutgoingDataStream());
+  EXPECT_EQ(nullptr, session_.CreateOutgoingDynamicStream());
 }
 
 TEST_P(QuicClientSessionTest, CanPool) {

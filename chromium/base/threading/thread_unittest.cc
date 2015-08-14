@@ -194,11 +194,12 @@ TEST_F(ThreadTest, ThreadName) {
   EXPECT_EQ("ThreadName", a.thread_name());
 }
 
-// Make sure we can't use a thread between Start() and Init().
+// Make sure Init() is called after Start() and before
+// WaitUntilThreadInitialized() returns.
 TEST_F(ThreadTest, SleepInsideInit) {
   SleepInsideInitThread t;
   EXPECT_FALSE(t.InitCalled());
-  t.Start();
+  t.StartAndWaitForTesting();
   EXPECT_TRUE(t.InitCalled());
 }
 
@@ -232,4 +233,9 @@ TEST_F(ThreadTest, CleanUp) {
   EXPECT_EQ(THREAD_EVENT_INIT, captured_events[0]);
   EXPECT_EQ(THREAD_EVENT_CLEANUP, captured_events[1]);
   EXPECT_EQ(THREAD_EVENT_MESSAGE_LOOP_DESTROYED, captured_events[2]);
+}
+
+TEST_F(ThreadTest, ThreadNotStarted) {
+  Thread a("Inert");
+  EXPECT_EQ(nullptr, a.task_runner());
 }

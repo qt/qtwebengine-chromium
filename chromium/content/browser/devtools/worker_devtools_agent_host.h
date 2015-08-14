@@ -5,27 +5,27 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_WORKER_DEVTOOLS_AGENT_HOST_H_
 #define CONTENT_BROWSER_DEVTOOLS_WORKER_DEVTOOLS_AGENT_HOST_H_
 
-#include "content/browser/devtools/ipc_devtools_agent_host.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "ipc/ipc_listener.h"
 
 namespace content {
 
 class BrowserContext;
+class DevToolsProtocolHandler;
 class SharedWorkerInstance;
 
-class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
+class WorkerDevToolsAgentHost : public DevToolsAgentHostImpl,
                                 public IPC::Listener {
  public:
   typedef std::pair<int, int> WorkerId;
 
   // DevToolsAgentHost override.
   BrowserContext* GetBrowserContext() override;
+  bool DispatchProtocolMessage(const std::string& message) override;
 
-  // IPCDevToolsAgentHost implementation.
-  void SendMessageToAgent(IPC::Message* message) override;
+  // DevToolsAgentHostImpl overrides.
   void Attach() override;
-  void OnClientAttached(bool reattached) override;
-  void OnClientDetached() override;
+  void Detach() override;
 
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -39,7 +39,7 @@ class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
   bool IsTerminated();
 
  protected:
-  WorkerDevToolsAgentHost(WorkerId worker_id);
+  explicit WorkerDevToolsAgentHost(WorkerId worker_id);
   ~WorkerDevToolsAgentHost() override;
 
   enum WorkerState {
@@ -50,16 +50,19 @@ class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
     WORKER_PAUSED_FOR_REATTACH,
   };
 
-  void AttachToWorker();
-  void DetachFromWorker();
-  void WorkerCreated();
-  void OnDispatchOnInspectorFrontend(const DevToolsMessageChunk& message);
-
+  virtual void OnAttachedStateChanged(bool attached);
   const WorkerId& worker_id() const { return worker_id_; }
 
  private:
   friend class SharedWorkerDevToolsManagerTest;
 
+  void AttachToWorker();
+  void DetachFromWorker();
+  void WorkerCreated();
+  void OnDispatchOnInspectorFrontend(const DevToolsMessageChunk& message);
+
+  scoped_ptr<DevToolsProtocolHandler> protocol_handler_;
+  DevToolsMessageChunkProcessor chunk_processor_;
   WorkerState state_;
   WorkerId worker_id_;
   DISALLOW_COPY_AND_ASSIGN(WorkerDevToolsAgentHost);

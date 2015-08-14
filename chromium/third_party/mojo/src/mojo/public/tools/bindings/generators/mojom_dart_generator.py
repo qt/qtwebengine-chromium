@@ -136,6 +136,8 @@ def DartDefaultValue(field):
     return _kind_to_dart_default_value[field.kind]
   if mojom.IsStructKind(field.kind):
     return "null"
+  if mojom.IsUnionKind(field.kind):
+    return "null"
   if mojom.IsArrayKind(field.kind):
     return "null"
   if mojom.IsMapKind(field.kind):
@@ -150,6 +152,8 @@ def DartDeclType(kind):
   if kind in mojom.PRIMITIVES:
     return _kind_to_dart_decl_type[kind]
   if mojom.IsStructKind(kind):
+    return GetDartType(kind)
+  if mojom.IsUnionKind(kind):
     return GetDartType(kind)
   if mojom.IsArrayKind(kind):
     array_type = DartDeclType(kind.kind)
@@ -189,9 +193,12 @@ def ConstantStyle(name):
     components[0] = '_' + components[0]
   return '_'.join([x.upper() for x in components])
 
+def DotToUnderscore(name):
+    return name.replace('.', '_')
+
 def GetNameForElement(element):
   if (mojom.IsEnumKind(element) or mojom.IsInterfaceKind(element) or
-      mojom.IsStructKind(element)):
+      mojom.IsStructKind(element) or mojom.IsUnionKind(element)):
     return UpperCamelCase(element.name)
   if mojom.IsInterfaceRequestKind(element):
     return GetNameForElement(element.kind)
@@ -207,6 +214,12 @@ def GetNameForElement(element):
                           mojom.EnumField)):
     return ConstantStyle(element.name)
   raise Exception('Unexpected element: %s' % element)
+
+def GetUnionFieldTagName(element):
+  if not isinstance(element, mojom.UnionField):
+    raise Exception('Unexpected element: %s is not a union field.' % element)
+
+  return CamelCase(element.name)
 
 def GetInterfaceResponseName(method):
   return UpperCamelCase(method.name + 'Response')
@@ -291,6 +304,8 @@ def EncodeMethod(kind, variable, offset, bit):
   def _EncodeMethodName(kind):
     if mojom.IsStructKind(kind):
       return 'encodeStruct'
+    if mojom.IsUnionKind(kind):
+      return 'encodeUnion'
     if mojom.IsArrayKind(kind):
       return _EncodeMethodName(kind.kind) + 'Array'
     if mojom.IsEnumKind(kind):
@@ -375,10 +390,13 @@ class Generator(generator.Generator):
     'is_nullable_kind': mojom.IsNullableKind,
     'is_pointer_array_kind': IsPointerArrayKind,
     'is_struct_kind': mojom.IsStructKind,
+    'is_union_kind': mojom.IsUnionKind,
     'dart_true_false': GetDartTrueFalse,
     'dart_type': DartDeclType,
     'name': GetNameForElement,
+    'tag_name': GetUnionFieldTagName,
     'interface_response_name': GetInterfaceResponseName,
+    'dot_to_underscore': DotToUnderscore,
   }
 
   def GetParameters(self, args):
@@ -389,6 +407,7 @@ class Generator(generator.Generator):
       "enums": self.module.enums,
       "module": resolver.ResolveConstants(self.module, ExpressionToText),
       "structs": self.GetStructs() + self.GetStructsFromMethods(),
+      "unions": self.GetUnions(),
       "interfaces": self.GetInterfaces(),
       "imported_interfaces": self.GetImportedInterfaces(),
       "imported_from": self.ImportedFrom(),
@@ -398,10 +417,13 @@ class Generator(generator.Generator):
   def GenerateLibModule(self, args):
     return self.GetParameters(args)
 
+
   def GenerateFiles(self, args):
     elements = self.module.namespace.split('.')
     elements.append("%s.dart" % self.module.name)
-    path = os.path.join("dart-gen", "mojom", *elements)
+    path = os.path.join("dart-pkg", "mojom/lib", *elements)
+    self.Write(self.GenerateLibModule(args), path)
+    path = os.path.join("dart-gen", "mojom/lib", *elements)
     self.Write(self.GenerateLibModule(args), path)
     link = self.MatchMojomFilePath("%s.dart" % self.module.name)
     if os.path.exists(os.path.join(self.output_dir, link)):

@@ -14,7 +14,6 @@
 #include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread.h"
 #include "base/tuple.h"
 #include "base/win/registry.h"
@@ -201,7 +200,7 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
           file_type_index(file_type_index),
           default_extension(default_extension),
           run_state(run_state),
-          ui_proxy(base::MessageLoopForUI::current()->message_loop_proxy()),
+          ui_task_runner(base::MessageLoopForUI::current()->task_runner()),
           owner(owner),
           params(params) {
       if (file_types)
@@ -214,7 +213,7 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
     int file_type_index;
     std::wstring default_extension;
     RunState run_state;
-    scoped_refptr<base::MessageLoopProxy> ui_proxy;
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner;
     HWND owner;
     void* params;
   };
@@ -442,24 +441,21 @@ void SelectFileDialogImpl::ExecuteSelectFile(
     std::vector<base::FilePath> paths;
     if (RunOpenMultiFileDialog(params.title, filter,
                                params.run_state.owner, &paths)) {
-      params.ui_proxy->PostTask(
-          FROM_HERE,
-          base::Bind(&SelectFileDialogImpl::MultiFilesSelected, this, paths,
-                     params.params, params.run_state));
+      params.ui_task_runner->PostTask(
+          FROM_HERE, base::Bind(&SelectFileDialogImpl::MultiFilesSelected, this,
+                                paths, params.params, params.run_state));
       return;
     }
   }
 
   if (success) {
-      params.ui_proxy->PostTask(
-        FROM_HERE,
-        base::Bind(&SelectFileDialogImpl::FileSelected, this, path,
-                   filter_index, params.params, params.run_state));
+    params.ui_task_runner->PostTask(
+        FROM_HERE, base::Bind(&SelectFileDialogImpl::FileSelected, this, path,
+                              filter_index, params.params, params.run_state));
   } else {
-      params.ui_proxy->PostTask(
-        FROM_HERE,
-        base::Bind(&SelectFileDialogImpl::FileNotSelected, this, params.params,
-                   params.run_state));
+    params.ui_task_runner->PostTask(
+        FROM_HERE, base::Bind(&SelectFileDialogImpl::FileNotSelected, this,
+                              params.params, params.run_state));
   }
 }
 
@@ -514,12 +510,12 @@ bool SelectFileDialogImpl::SaveFileAsWithFilter(
   // Figure out what filter got selected. The filter index is 1-based.
   std::wstring filter_selected;
   if (*index > 0) {
-    std::vector<Tuple<base::string16, base::string16>> filters =
+    std::vector<base::Tuple<base::string16, base::string16>> filters =
         ui::win::OpenFileName::GetFilters(save_as.GetOPENFILENAME());
     if (*index > filters.size())
       NOTREACHED() << "Invalid filter index.";
     else
-      filter_selected = get<1>(filters[*index - 1]);
+      filter_selected = base::get<1>(filters[*index - 1]);
   }
 
   // Get the extension that was suggested to the user (when the Save As dialog

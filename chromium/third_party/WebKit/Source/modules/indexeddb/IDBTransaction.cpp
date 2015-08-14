@@ -44,7 +44,7 @@ using blink::WebIDBDatabase;
 
 namespace blink {
 
-IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db)
+IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, const HashSet<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db)
 {
     IDBOpenDBRequest* openDBRequest = nullptr;
     IDBTransaction* transaction = new IDBTransaction(scriptState, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata());
@@ -54,7 +54,7 @@ IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, con
 
 IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
 {
-    IDBTransaction* transaction = new IDBTransaction(scriptState, id, Vector<String>(), WebIDBTransactionModeVersionChange, db, openDBRequest, previousMetadata);
+    IDBTransaction* transaction = new IDBTransaction(scriptState, id, HashSet<String>(), WebIDBTransactionModeVersionChange, db, openDBRequest, previousMetadata);
     transaction->suspendIfNeeded();
     return transaction;
 }
@@ -83,7 +83,7 @@ private:
 
 } // namespace
 
-IDBTransaction::IDBTransaction(ScriptState* scriptState, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
+IDBTransaction::IDBTransaction(ScriptState* scriptState, int64_t id, const HashSet<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
     : ActiveDOMObject(scriptState->executionContext())
     , m_id(id)
     , m_database(db)
@@ -140,7 +140,7 @@ IDBObjectStore* IDBTransaction::objectStore(const String& name, ExceptionState& 
 {
     if (m_state == Finished) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBObjectStoreMap::iterator it = m_objectStoreMap.find(name);
@@ -149,14 +149,14 @@ IDBObjectStore* IDBTransaction::objectStore(const String& name, ExceptionState& 
 
     if (!isVersionChange() && !m_objectStoreNames.contains(name)) {
         exceptionState.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     int64_t objectStoreId = m_database->findObjectStoreId(name);
     if (objectStoreId == IDBObjectStoreMetadata::InvalidId) {
         ASSERT(isVersionChange());
         exceptionState.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     const IDBDatabaseMetadata& metadata = m_database->metadata();
@@ -299,14 +299,15 @@ bool IDBTransaction::hasPendingActivity() const
     return m_hasPendingActivity && !m_contextStopped;
 }
 
-WebIDBTransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& exceptionState)
+WebIDBTransactionMode IDBTransaction::stringToMode(const String& modeString)
 {
     if (modeString == IndexedDBNames::readonly)
         return WebIDBTransactionModeReadOnly;
     if (modeString == IndexedDBNames::readwrite)
         return WebIDBTransactionModeReadWrite;
-
-    exceptionState.throwTypeError("The mode provided ('" + modeString + "') is not one of 'readonly' or 'readwrite'.");
+    if (modeString == IndexedDBNames::versionchange)
+        return WebIDBTransactionModeVersionChange;
+    ASSERT_NOT_REACHED();
     return WebIDBTransactionModeReadOnly;
 }
 
@@ -325,6 +326,18 @@ const String& IDBTransaction::mode() const
 
     ASSERT_NOT_REACHED();
     return IndexedDBNames::readonly;
+}
+
+PassRefPtrWillBeRawPtr<DOMStringList> IDBTransaction::objectStoreNames() const
+{
+    if (m_mode == WebIDBTransactionModeVersionChange)
+        return m_database->objectStoreNames();
+
+    RefPtrWillBeRawPtr<DOMStringList> objectStoreNames = DOMStringList::create(DOMStringList::IndexedDB);
+    for (const String& name : m_objectStoreNames)
+        objectStoreNames->append(name);
+    objectStoreNames->sort();
+    return objectStoreNames.release();
 }
 
 const AtomicString& IDBTransaction::interfaceName() const

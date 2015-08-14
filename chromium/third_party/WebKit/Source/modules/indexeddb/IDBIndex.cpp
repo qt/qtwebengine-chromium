@@ -76,27 +76,24 @@ IDBRequest* IDBIndex::openCursor(ScriptState* scriptState, const ScriptValue& ra
     IDB_TRACE("IDBIndex::openCursor");
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_transaction->isFinished() || m_transaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_transaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
-    WebIDBCursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
-    if (exceptionState.hadException())
-        return 0;
-
+    WebIDBCursorDirection direction = IDBCursor::stringToDirection(directionString);
     IDBKeyRange* keyRange = IDBKeyRange::fromScriptValue(scriptState->executionContext(), range, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     if (!backendDB()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     return openCursor(scriptState, keyRange, direction);
@@ -115,24 +112,24 @@ IDBRequest* IDBIndex::count(ScriptState* scriptState, const ScriptValue& range, 
     IDB_TRACE("IDBIndex::count");
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_transaction->isFinished() || m_transaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_transaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBKeyRange* keyRange = IDBKeyRange::fromScriptValue(scriptState->executionContext(), range, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     if (!backendDB()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBRequest* request = IDBRequest::create(scriptState, IDBAny::create(this), m_transaction.get());
@@ -145,26 +142,23 @@ IDBRequest* IDBIndex::openKeyCursor(ScriptState* scriptState, const ScriptValue&
     IDB_TRACE("IDBIndex::openKeyCursor");
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_transaction->isFinished() || m_transaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_transaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
-    WebIDBCursorDirection direction = IDBCursor::stringToDirection(directionString, exceptionState);
-    if (exceptionState.hadException())
-        return 0;
-
+    WebIDBCursorDirection direction = IDBCursor::stringToDirection(directionString);
     IDBKeyRange* keyRange = IDBKeyRange::fromScriptValue(scriptState->executionContext(), range, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     if (!backendDB()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBRequest* request = IDBRequest::create(scriptState, IDBAny::create(this), m_transaction.get());
@@ -179,6 +173,28 @@ IDBRequest* IDBIndex::get(ScriptState* scriptState, const ScriptValue& key, Exce
     return getInternal(scriptState, key, exceptionState, false);
 }
 
+IDBRequest* IDBIndex::getAll(ScriptState* scriptState, const ScriptValue& range, ExceptionState& exceptionState)
+{
+    return getAll(scriptState, range, std::numeric_limits<uint32_t>::max(), exceptionState);
+}
+
+IDBRequest* IDBIndex::getAll(ScriptState* scriptState, const ScriptValue& range, unsigned long maxCount, ExceptionState& exceptionState)
+{
+    IDB_TRACE("IDBIndex::getAll");
+    return getAllInternal(scriptState, range, maxCount, exceptionState, false);
+}
+
+IDBRequest* IDBIndex::getAllKeys(ScriptState* scriptState, const ScriptValue& range, ExceptionState& exceptionState)
+{
+    return getAllKeys(scriptState, range, std::numeric_limits<uint32_t>::max(), exceptionState);
+}
+
+IDBRequest* IDBIndex::getAllKeys(ScriptState* scriptState, const ScriptValue& range, uint32_t maxCount, ExceptionState& exceptionState)
+{
+    IDB_TRACE("IDBIndex::getAllKeys");
+    return getAllInternal(scriptState, range, maxCount, exceptionState, true /* keyOnly */);
+}
+
 IDBRequest* IDBIndex::getKey(ScriptState* scriptState, const ScriptValue& key, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBIndex::getKey");
@@ -189,31 +205,63 @@ IDBRequest* IDBIndex::getInternal(ScriptState* scriptState, const ScriptValue& k
 {
     if (isDeleted()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_transaction->isFinished() || m_transaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_transaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBKeyRange* keyRange = IDBKeyRange::fromScriptValue(scriptState->executionContext(), key, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     if (!keyRange) {
         exceptionState.throwDOMException(DataError, IDBDatabase::noKeyOrKeyRangeErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!backendDB()) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     IDBRequest* request = IDBRequest::create(scriptState, IDBAny::create(this), m_transaction.get());
     backendDB()->get(m_transaction->id(), m_objectStore->id(), m_metadata.id, keyRange, keyOnly, WebIDBCallbacksImpl::create(request).leakPtr());
+    return request;
+}
+
+IDBRequest* IDBIndex::getAllInternal(ScriptState* scriptState, const ScriptValue& range, unsigned long maxCount, ExceptionState& exceptionState, bool keyOnly)
+{
+    if (!maxCount) {
+        exceptionState.throwTypeError(IDBDatabase::notValidMaxCountErrorMessage);
+        return nullptr;
+    }
+    if (isDeleted()) {
+        exceptionState.throwDOMException(InvalidStateError, IDBDatabase::indexDeletedErrorMessage);
+        return nullptr;
+    }
+    if (m_transaction->isFinished() || m_transaction->isFinishing()) {
+        exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
+        return nullptr;
+    }
+    if (!m_transaction->isActive()) {
+        exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
+        return nullptr;
+    }
+
+    IDBKeyRange* keyRange = IDBKeyRange::fromScriptValue(scriptState->executionContext(), range, exceptionState);
+    if (exceptionState.hadException())
+        return nullptr;
+    if (!backendDB()) {
+        exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
+        return nullptr;
+    }
+
+    IDBRequest* request = IDBRequest::create(scriptState, IDBAny::create(this), m_transaction.get());
+    backendDB()->getAll(m_transaction->id(), m_objectStore->id(), m_metadata.id, keyRange, maxCount, keyOnly, WebIDBCallbacksImpl::create(request).leakPtr());
     return request;
 }
 

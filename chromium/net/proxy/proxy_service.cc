@@ -9,11 +9,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -175,7 +175,7 @@ class ProxyConfigServiceDirect : public ProxyConfigService {
 // Proxy resolver that fails every time.
 class ProxyResolverNull : public ProxyResolver {
  public:
-  ProxyResolverNull() : ProxyResolver(false /*expects_pac_bytes*/) {}
+  ProxyResolverNull() {}
 
   // ProxyResolver implementation.
   int GetProxyForURL(const GURL& url,
@@ -193,13 +193,6 @@ class ProxyResolverNull : public ProxyResolver {
     return LOAD_STATE_IDLE;
   }
 
-  void CancelSetPacScript() override { NOTREACHED(); }
-
-  int SetPacScript(
-      const scoped_refptr<ProxyResolverScriptData>& /*script_data*/,
-      const CompletionCallback& /*callback*/) override {
-    return ERR_NOT_IMPLEMENTED;
-  }
 };
 
 // ProxyResolver that simulates a PAC script which returns
@@ -207,8 +200,7 @@ class ProxyResolverNull : public ProxyResolver {
 class ProxyResolverFromPacString : public ProxyResolver {
  public:
   explicit ProxyResolverFromPacString(const std::string& pac_string)
-      : ProxyResolver(false /*expects_pac_bytes*/),
-        pac_string_(pac_string) {}
+      : pac_string_(pac_string) {}
 
   int GetProxyForURL(const GURL& url,
                      ProxyInfo* results,
@@ -224,13 +216,6 @@ class ProxyResolverFromPacString : public ProxyResolver {
   LoadState GetLoadState(RequestHandle request) const override {
     NOTREACHED();
     return LOAD_STATE_IDLE;
-  }
-
-  void CancelSetPacScript() override { NOTREACHED(); }
-
-  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& pac_script,
-                   const CompletionCallback& callback) override {
-    return OK;
   }
 
  private:
@@ -307,22 +292,23 @@ class ProxyResolverFactoryForPacResult : public ProxyResolverFactory {
 };
 
 // Returns NetLog parameters describing a proxy configuration change.
-base::Value* NetLogProxyConfigChangedCallback(
+scoped_ptr<base::Value> NetLogProxyConfigChangedCallback(
     const ProxyConfig* old_config,
     const ProxyConfig* new_config,
     NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   // The "old_config" is optional -- the first notification will not have
   // any "previous" configuration.
   if (old_config->is_valid())
     dict->Set("old_config", old_config->ToValue());
   dict->Set("new_config", new_config->ToValue());
-  return dict;
+  return dict.Pass();
 }
 
-base::Value* NetLogBadProxyListCallback(const ProxyRetryInfoMap* retry_info,
-                                        NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+scoped_ptr<base::Value> NetLogBadProxyListCallback(
+    const ProxyRetryInfoMap* retry_info,
+    NetLogCaptureMode /* capture_mode */) {
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   base::ListValue* list = new base::ListValue();
 
   for (ProxyRetryInfoMap::const_iterator iter = retry_info->begin();
@@ -330,16 +316,16 @@ base::Value* NetLogBadProxyListCallback(const ProxyRetryInfoMap* retry_info,
     list->Append(new base::StringValue(iter->first));
   }
   dict->Set("bad_proxy_list", list);
-  return dict;
+  return dict.Pass();
 }
 
 // Returns NetLog parameters on a successfuly proxy resolution.
-base::Value* NetLogFinishedResolvingProxyCallback(
+scoped_ptr<base::Value> NetLogFinishedResolvingProxyCallback(
     const ProxyInfo* result,
     NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("pac_string", result->ToPacString());
-  return dict;
+  return dict.Pass();
 }
 
 #if defined(OS_CHROMEOS)
@@ -643,10 +629,9 @@ class ProxyService::ProxyScriptDeciderPoller {
   void StartPollTimer() {
     DCHECK(!decider_.get());
 
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&ProxyScriptDeciderPoller::DoPoll,
-                   weak_factory_.GetWeakPtr()),
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, base::Bind(&ProxyScriptDeciderPoller::DoPoll,
+                              weak_factory_.GetWeakPtr()),
         next_poll_delay_);
   }
 
@@ -691,11 +676,10 @@ class ProxyService::ProxyScriptDeciderPoller {
       // rather than calling it directly -- this is done to avoid an ugly
       // destruction sequence, since |this| might be destroyed as a result of
       // the notification.
-      base::MessageLoop::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::Bind(&ProxyScriptDeciderPoller::NotifyProxyServiceOfChange,
-                     weak_factory_.GetWeakPtr(),
-                     result,
+                     weak_factory_.GetWeakPtr(), result,
                      make_scoped_refptr(decider_->script_data()),
                      decider_->effective_config()));
       return;
@@ -1236,6 +1220,12 @@ void ProxyService::OnInitProxyResolverComplete(int result) {
 
   init_proxy_resolver_.reset();
 
+  // When using the out-of-process resolver, creating the resolver can complete
+  // with the ERR_PAC_SCRIPT_TERMINATED result code, which indicates the
+  // resolver process crashed.
+  UMA_HISTOGRAM_BOOLEAN("Net.ProxyService.ScriptTerminatedOnInit",
+                        result == ERR_PAC_SCRIPT_TERMINATED);
+
   if (result != OK) {
     if (fetched_config_.pac_mandatory()) {
       VLOG(1) << "Failed configuring with mandatory PAC script, blocking all "
@@ -1539,8 +1529,8 @@ ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
 
   return linux_config_service;
 #elif defined(OS_ANDROID)
-  return new ProxyConfigServiceAndroid(
-      io_task_runner, base::MessageLoop::current()->message_loop_proxy());
+  return new ProxyConfigServiceAndroid(io_task_runner,
+                                       base::ThreadTaskRunnerHandle::Get());
 #else
   LOG(WARNING) << "Failed to choose a system proxy settings fetcher "
                   "for this platform.";

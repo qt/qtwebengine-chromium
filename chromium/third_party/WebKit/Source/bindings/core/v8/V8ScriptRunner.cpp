@@ -35,10 +35,10 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/fetch/CachedMetadata.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
-#include "third_party/snappy/src/snappy.h"
 #include "wtf/CurrentTime.h"
 
 #if defined(WTF_OS_WIN)
@@ -115,40 +115,23 @@ v8::MaybeLocal<v8::Script> compileWithoutOptions(V8CompileHistogram::Cacheabilit
 }
 
 // Compile a script, and consume a V8 cache that was generated previously.
-v8::MaybeLocal<v8::Script> compileAndConsumeCache(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions compileOptions, bool compressed, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
+v8::MaybeLocal<v8::Script> compileAndConsumeCache(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions compileOptions, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
 {
     V8CompileHistogram histogramScope(V8CompileHistogram::Cacheable);
     CachedMetadata* cachedMetadata = cacheHandler->cachedMetadata(tag);
     const char* data = cachedMetadata->data();
     int length = cachedMetadata->size();
-    std::string uncompressedOutput;
-    bool invalidCache = false;
-    if (compressed) {
-        if (snappy::Uncompress(data, length, &uncompressedOutput)) {
-            data = uncompressedOutput.data();
-            length = uncompressedOutput.length();
-        } else {
-            invalidCache = true;
-        }
-    }
-    v8::MaybeLocal<v8::Script> script;
-    if (invalidCache) {
-        v8::ScriptCompiler::Source source(code, origin);
-        script = v8::ScriptCompiler::Compile(isolate->GetCurrentContext(), &source, v8::ScriptCompiler::kNoCompileOptions);
-    } else {
-        v8::ScriptCompiler::CachedData* cachedData = new v8::ScriptCompiler::CachedData(
-            reinterpret_cast<const uint8_t*>(data), length, v8::ScriptCompiler::CachedData::BufferNotOwned);
-        v8::ScriptCompiler::Source source(code, origin, cachedData);
-        script = v8::ScriptCompiler::Compile(isolate->GetCurrentContext(), &source, compileOptions);
-        invalidCache = cachedData->rejected;
-    }
-    if (invalidCache)
+    v8::ScriptCompiler::CachedData* cachedData = new v8::ScriptCompiler::CachedData(
+        reinterpret_cast<const uint8_t*>(data), length, v8::ScriptCompiler::CachedData::BufferNotOwned);
+    v8::ScriptCompiler::Source source(code, origin, cachedData);
+    v8::MaybeLocal<v8::Script> script = v8::ScriptCompiler::Compile(isolate->GetCurrentContext(), &source, compileOptions);
+    if (cachedData->rejected)
         cacheHandler->clearCachedMetadata(CachedMetadataHandler::SendToPlatform);
     return script;
 }
 
 // Compile a script, and produce a V8 cache for future use.
-v8::MaybeLocal<v8::Script> compileAndProduceCache(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions compileOptions, bool compressed, CachedMetadataHandler::CacheType cacheType, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
+v8::MaybeLocal<v8::Script> compileAndProduceCache(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions compileOptions, CachedMetadataHandler::CacheType cacheType, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
 {
     V8CompileHistogram histogramScope(V8CompileHistogram::Cacheable);
     v8::ScriptCompiler::Source source(code, origin);
@@ -157,12 +140,6 @@ v8::MaybeLocal<v8::Script> compileAndProduceCache(CachedMetadataHandler* cacheHa
     if (cachedData) {
         const char* data = reinterpret_cast<const char*>(cachedData->data);
         int length = cachedData->length;
-        std::string compressedOutput;
-        if (compressed) {
-            snappy::Compress(data, length, &compressedOutput);
-            data = compressedOutput.data();
-            length = compressedOutput.length();
-        }
         if (length > 1024) {
             // Omit histogram samples for small cache data to avoid outliers.
             int cacheSizeRatio = static_cast<int>(100.0 * length / code->Length());
@@ -176,17 +153,16 @@ v8::MaybeLocal<v8::Script> compileAndProduceCache(CachedMetadataHandler* cacheHa
 
 // Compile a script, and consume or produce a V8 Cache, depending on whether the
 // given resource already has cached data available.
-v8::MaybeLocal<v8::Script> compileAndConsumeOrProduce(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions consumeOptions, v8::ScriptCompiler::CompileOptions produceOptions, bool compressed, CachedMetadataHandler::CacheType cacheType, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
+v8::MaybeLocal<v8::Script> compileAndConsumeOrProduce(CachedMetadataHandler* cacheHandler, unsigned tag, v8::ScriptCompiler::CompileOptions consumeOptions, v8::ScriptCompiler::CompileOptions produceOptions, CachedMetadataHandler::CacheType cacheType, v8::Isolate* isolate, v8::Local<v8::String> code, v8::ScriptOrigin origin)
 {
     return cacheHandler->cachedMetadata(tag)
-        ? compileAndConsumeCache(cacheHandler, tag, consumeOptions, compressed, isolate, code, origin)
-        : compileAndProduceCache(cacheHandler, tag, produceOptions, compressed, cacheType, isolate, code, origin);
+        ? compileAndConsumeCache(cacheHandler, tag, consumeOptions, isolate, code, origin)
+        : compileAndProduceCache(cacheHandler, tag, produceOptions, cacheType, isolate, code, origin);
 }
 
 enum CacheTagKind {
     CacheTagParser = 0,
     CacheTagCode = 1,
-    CacheTagCodeCompressed = 2,
     CacheTagTimeStamp = 3,
     CacheTagLast
 };
@@ -245,7 +221,6 @@ v8::MaybeLocal<v8::Script> postStreamCompile(V8CacheOptions cacheOptions, Cached
     // the cache data. If the code cache uses time stamp as heuristic, set that
     // time stamp.
     switch (cacheOptions) {
-    case V8CacheOptionsParseMemory:
     case V8CacheOptionsParse: {
         const v8::ScriptCompiler::CachedData* newCachedData = streamer->source()->GetCachedData();
         if (!newCachedData)
@@ -257,14 +232,11 @@ v8::MaybeLocal<v8::Script> postStreamCompile(V8CacheOptions cacheOptions, Cached
     }
 
     case V8CacheOptionsDefault:
-    case V8CacheOptionsHeuristics:
-    case V8CacheOptionsHeuristicsMobile:
-    case V8CacheOptionsRecent:
-    case V8CacheOptionsRecentSmall:
+    case V8CacheOptionsCode:
         setCacheTimeStamp(cacheHandler);
         break;
 
-    default:
+    case V8CacheOptionsNone:
         break;
     }
     return script;
@@ -289,6 +261,7 @@ PassOwnPtr<CompileFn> bind(const A&... args)
 PassOwnPtr<CompileFn> selectCompileFunction(V8CacheOptions cacheOptions, CachedMetadataHandler* cacheHandler, v8::Local<v8::String> code)
 {
     static const int minimalCodeLength = 1024;
+    static const int hotHours = 72;
 
     if (!cacheHandler)
         // Caching is not available in this case.
@@ -299,52 +272,29 @@ PassOwnPtr<CompileFn> selectCompileFunction(V8CacheOptions cacheOptions, CachedM
 
     // Caching is not worthwhile for small scripts.  Do not use caching
     // unless explicitly expected, indicated by the cache option.
-    if (code->Length() < minimalCodeLength && cacheOptions != V8CacheOptionsParse && cacheOptions != V8CacheOptionsCode)
+    if (code->Length() < minimalCodeLength)
         return bind(compileWithoutOptions, V8CompileHistogram::Cacheable);
 
     // The cacheOptions will guide our strategy:
-    // FIXME: Clean up code caching options. crbug.com/455187.
     switch (cacheOptions) {
-    case V8CacheOptionsParseMemory:
-        // Use parser-cache; in-memory only.
-        return bind(compileAndConsumeOrProduce, cacheHandler, cacheTag(CacheTagParser, cacheHandler), v8::ScriptCompiler::kConsumeParserCache, v8::ScriptCompiler::kProduceParserCache, false, CachedMetadataHandler::CacheLocally);
-        break;
-
     case V8CacheOptionsParse:
-        // Use parser-cache.
-        return bind(compileAndConsumeOrProduce, cacheHandler, cacheTag(CacheTagParser, cacheHandler), v8::ScriptCompiler::kConsumeParserCache, v8::ScriptCompiler::kProduceParserCache, false, CachedMetadataHandler::SendToPlatform);
-        break;
-
-    case V8CacheOptionsHeuristicsDefault:
-    case V8CacheOptionsCode:
-        // Use code caching.
-        return bind(compileAndConsumeOrProduce, cacheHandler, cacheTag(CacheTagCode, cacheHandler), v8::ScriptCompiler::kConsumeCodeCache, v8::ScriptCompiler::kProduceCodeCache, false, CachedMetadataHandler::SendToPlatform);
-        break;
-
-    case V8CacheOptionsHeuristicsDefaultMobile:
-    case V8CacheOptionsCodeCompressed:
-        // Use code caching with compression.
-        return bind(compileAndConsumeOrProduce, cacheHandler, cacheTag(CacheTagCodeCompressed, cacheHandler), v8::ScriptCompiler::kConsumeCodeCache, v8::ScriptCompiler::kProduceCodeCache, true, CachedMetadataHandler::SendToPlatform);
+        // Use parser-cache; in-memory only.
+        return bind(compileAndConsumeOrProduce, cacheHandler, cacheTag(CacheTagParser, cacheHandler), v8::ScriptCompiler::kConsumeParserCache, v8::ScriptCompiler::kProduceParserCache, CachedMetadataHandler::CacheLocally);
         break;
 
     case V8CacheOptionsDefault:
-    case V8CacheOptionsHeuristics:
-    case V8CacheOptionsHeuristicsMobile:
-    case V8CacheOptionsRecent:
-    case V8CacheOptionsRecentSmall: {
+    case V8CacheOptionsCode: {
         // Use code caching for recently seen resources.
         // Use compression depending on the cache option.
-        bool compress = (cacheOptions == V8CacheOptionsRecentSmall || cacheOptions == V8CacheOptionsHeuristicsMobile);
-        unsigned codeCacheTag = cacheTag(compress ? CacheTagCodeCompressed : CacheTagCode, cacheHandler);
+        unsigned codeCacheTag = cacheTag(CacheTagCode, cacheHandler);
         CachedMetadata* codeCache = cacheHandler->cachedMetadata(codeCacheTag);
         if (codeCache)
-            return bind(compileAndConsumeCache, cacheHandler, codeCacheTag, v8::ScriptCompiler::kConsumeCodeCache, compress);
-        int hotHours = (cacheOptions == V8CacheOptionsRecent || cacheOptions == V8CacheOptionsRecentSmall) ? 36 : 72;
+            return bind(compileAndConsumeCache, cacheHandler, codeCacheTag, v8::ScriptCompiler::kConsumeCodeCache);
         if (!isResourceHotForCaching(cacheHandler, hotHours)) {
             setCacheTimeStamp(cacheHandler);
             return bind(compileWithoutOptions, V8CompileHistogram::Cacheable);
         }
-        return bind(compileAndProduceCache, cacheHandler, codeCacheTag, v8::ScriptCompiler::kProduceCodeCache, compress, CachedMetadataHandler::SendToPlatform);
+        return bind(compileAndProduceCache, cacheHandler, codeCacheTag, v8::ScriptCompiler::kProduceCodeCache, CachedMetadataHandler::SendToPlatform);
         break;
     }
 
@@ -374,13 +324,13 @@ PassOwnPtr<CompileFn> selectCompileFunction(V8CacheOptions cacheOptions, ScriptR
 }
 } // namespace
 
-v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(const ScriptSourceCode& source, v8::Isolate* isolate, AccessControlStatus corsStatus, V8CacheOptions cacheOptions)
+v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(const ScriptSourceCode& source, v8::Isolate* isolate, AccessControlStatus accessControlStatus, V8CacheOptions cacheOptions)
 {
     if (source.source().length() >= v8::String::kMaxLength) {
         V8ThrowException::throwGeneralError(isolate, "Source file too large.");
         return v8::Local<v8::Script>();
     }
-    return compileScript(v8String(isolate, source.source()), source.url(), source.sourceMapUrl(), source.startPosition(), isolate, source.resource(), source.streamer(), source.resource() ? source.resource()->cacheHandler() : nullptr, corsStatus, cacheOptions);
+    return compileScript(v8String(isolate, source.source()), source.url(), source.sourceMapUrl(), source.startPosition(), isolate, source.resource(), source.streamer(), source.resource() ? source.resource()->cacheHandler() : nullptr, accessControlStatus, cacheOptions);
 }
 
 v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(const String& code, const String& fileName, const String& sourceMapUrl, const TextPosition& textPosition, v8::Isolate* isolate, CachedMetadataHandler* cacheMetadataHandler, AccessControlStatus accessControlStatus, V8CacheOptions v8CacheOptions)
@@ -392,7 +342,7 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(const String& code, con
     return compileScript(v8String(isolate, code), fileName, sourceMapUrl, textPosition, isolate, nullptr, nullptr, cacheMetadataHandler, accessControlStatus, v8CacheOptions);
 }
 
-v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(v8::Local<v8::String> code, const String& fileName, const String& sourceMapUrl, const TextPosition& scriptStartPosition, v8::Isolate* isolate, ScriptResource* resource, ScriptStreamer* streamer, CachedMetadataHandler* cacheHandler, AccessControlStatus corsStatus, V8CacheOptions cacheOptions, bool isInternalScript)
+v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(v8::Local<v8::String> code, const String& fileName, const String& sourceMapUrl, const TextPosition& scriptStartPosition, v8::Isolate* isolate, ScriptResource* resource, ScriptStreamer* streamer, CachedMetadataHandler* cacheHandler, AccessControlStatus accessControlStatus, V8CacheOptions cacheOptions, bool isInternalScript)
 {
     TRACE_EVENT1("v8", "v8.compile", "fileName", fileName.utf8());
     TRACE_EVENT_SCOPED_SAMPLING_STATE("v8", "V8Compile");
@@ -406,10 +356,11 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::compileScript(v8::Local<v8::String> c
         v8String(isolate, fileName),
         v8::Integer::New(isolate, scriptStartPosition.m_line.zeroBasedInt()),
         v8::Integer::New(isolate, scriptStartPosition.m_column.zeroBasedInt()),
-        v8Boolean(corsStatus == SharableCrossOrigin, isolate),
+        v8Boolean(accessControlStatus == SharableCrossOrigin, isolate),
         v8::Local<v8::Integer>(),
         v8Boolean(isInternalScript, isolate),
-        v8String(isolate, sourceMapUrl));
+        v8String(isolate, sourceMapUrl),
+        v8Boolean(accessControlStatus == OpaqueResource, isolate));
 
     OwnPtr<CompileFn> compileFn = streamer
         ? selectCompileFunction(cacheOptions, resource, streamer)
@@ -470,7 +421,7 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::runCompiledInternalScript(v8::Isolate*
 
 v8::MaybeLocal<v8::Value> V8ScriptRunner::callFunction(v8::Local<v8::Function> function, ExecutionContext* context, v8::Local<v8::Value> receiver, int argc, v8::Local<v8::Value> args[], v8::Isolate* isolate)
 {
-    TRACE_EVENT0("v8", "v8.callFunction");
+    TRACE_EVENT1("devtools.timeline,v8", "FunctionCall", "data", devToolsTraceEventData(isolate, context, function));
     TRACE_EVENT_SCOPED_SAMPLING_STATE("v8", "V8Execution");
 
     if (V8RecursionScope::recursionLevel(isolate) >= kMaxRecursionDepth)

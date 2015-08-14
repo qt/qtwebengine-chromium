@@ -25,6 +25,9 @@
 #include "net/base/escape.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
+// TODO(eroman): Remove this header and require consumers to include it
+//               directly.
+#include "net/base/network_interfaces.h"
 
 class GURL;
 
@@ -39,20 +42,16 @@ struct Parsed;
 
 namespace net {
 
-// Used by FormatUrl to specify handling of certain parts of the url.
-typedef uint32 FormatUrlType;
-typedef uint32 FormatUrlTypes;
+class AddressList;
 
-// IPAddressNumber is used to represent an IP address's numeric value as an
-// array of bytes, from most significant to least significant. This is the
-// network byte ordering.
-//
-// IPv4 addresses will have length 4, whereas IPv6 address will have length 16.
+// This is a "forward declaration" to avoid including ip_address_number.h
+// Keep this in sync.
 typedef std::vector<unsigned char> IPAddressNumber;
-typedef std::vector<IPAddressNumber> IPAddressList;
 
-static const size_t kIPv4AddressSize = 4;
-static const size_t kIPv6AddressSize = 16;
+// Used by FormatUrl to specify handling of certain parts of the url.
+typedef uint32_t FormatUrlType;
+typedef uint32_t FormatUrlTypes;
+
 #if defined(OS_WIN)
 // Bluetooth address size. Windows Bluetooth is supported via winsock.
 static const size_t kBluetoothAddressSize = 6;
@@ -73,9 +72,6 @@ NET_EXPORT extern const FormatUrlType kFormatUrlOmitTrailingSlashOnBareHostname;
 
 // Convenience for omitting all unecessary types.
 NET_EXPORT extern const FormatUrlType kFormatUrlOmitAll;
-
-// Returns the number of explicitly allowed ports; for testing.
-NET_EXPORT_PRIVATE extern size_t GetCountOfExplicitlyAllowedPorts();
 
 // Splits an input of the form <host>[":"<port>] into its consitituent parts.
 // Saves the result into |*host| and |*port|. If the input did not have
@@ -109,11 +105,6 @@ NET_EXPORT_PRIVATE std::string GetHostAndOptionalPort(const GURL& url);
 // that falls in an IANA-reserved range.
 NET_EXPORT bool IsHostnameNonUnique(const std::string& hostname);
 
-// Returns true if an IP address hostname is in a range reserved by the IANA.
-// Works with both IPv4 and IPv6 addresses, and only compares against a given
-// protocols's reserved ranges.
-NET_EXPORT bool IsIPAddressReserved(const IPAddressNumber& address);
-
 // Convenience struct for when you need a |struct sockaddr|.
 struct SockaddrStorage {
   SockaddrStorage() : addr_len(sizeof(addr_storage)),
@@ -132,18 +123,7 @@ bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
                               socklen_t sock_addr_len,
                               const unsigned char** address,
                               size_t* address_len,
-                              uint16* port);
-
-// Returns the string representation of an IP address.
-// For example: "192.168.0.1" or "::1".
-NET_EXPORT std::string IPAddressToString(const uint8* address,
-                                         size_t address_len);
-
-// Returns the string representation of an IP address along with its port.
-// For example: "192.168.0.1:99" or "[::1]:80".
-NET_EXPORT std::string IPAddressToStringWithPort(const uint8* address,
-                                                 size_t address_len,
-                                                 uint16 port);
+                              uint16_t* port);
 
 // Same as IPAddressToString() but for a sockaddr. This output will not include
 // the IPv6 scope ID.
@@ -154,16 +134,6 @@ NET_EXPORT std::string NetAddressToString(const struct sockaddr* sa,
 // include the IPv6 scope ID.
 NET_EXPORT std::string NetAddressToStringWithPort(const struct sockaddr* sa,
                                                   socklen_t sock_addr_len);
-
-// Same as IPAddressToString() but for an IPAddressNumber.
-NET_EXPORT std::string IPAddressToString(const IPAddressNumber& addr);
-
-// Same as IPAddressToStringWithPort() but for an IPAddressNumber.
-NET_EXPORT std::string IPAddressToStringWithPort(
-    const IPAddressNumber& addr, uint16 port);
-
-// Returns the address as a sequence of bytes in network-byte-order.
-NET_EXPORT std::string IPAddressToPackedString(const IPAddressNumber& addr);
 
 // Returns the hostname of the current system. Returns empty string on failure.
 NET_EXPORT std::string GetHostName();
@@ -236,7 +206,8 @@ NET_EXPORT std::string GetDirectoryListingHeader(const base::string16& title);
 // Both |name| and |raw_bytes| are escaped internally.
 NET_EXPORT std::string GetDirectoryListingEntry(const base::string16& name,
                                                 const std::string& raw_bytes,
-                                                bool is_dir, int64 size,
+                                                bool is_dir,
+                                                int64_t size,
                                                 base::Time modified);
 
 // If text starts with "www." it is removed, otherwise text is returned
@@ -247,20 +218,33 @@ NET_EXPORT base::string16 StripWWW(const base::string16& text);
 NET_EXPORT base::string16 StripWWWFromHost(const GURL& url);
 
 // Checks if |port| is in the valid range (0 to 65535, though 0 is technically
-// reserved).  Should be used before casting a port to a uint16.
+// reserved).  Should be used before casting a port to a uint16_t.
 NET_EXPORT bool IsPortValid(int port);
 
-// Checks |port| against a list of ports which are restricted by default.
-// Returns true if |port| is allowed, false if it is restricted.
-NET_EXPORT bool IsPortAllowedByDefault(int port);
+// Returns true if the port is in the range [0, 1023]. These ports are
+// registered by IANA and typically need root access to listen on.
+bool IsWellKnownPort(int port);
 
-// Checks |port| against a list of ports which are restricted by the FTP
-// protocol.  Returns true if |port| is allowed, false if it is restricted.
-NET_EXPORT_PRIVATE bool IsPortAllowedByFtp(int port);
+// Checks if the port is allowed for the specified scheme.  Ports set as allowed
+// with SetExplicitlyAllowedPorts() or by using ScopedPortException() will be
+// considered allowed for any scheme.
+NET_EXPORT bool IsPortAllowedForScheme(int port, const std::string& url_scheme);
 
-// Check if banned |port| has been overriden by an entry in
-// |explicitly_allowed_ports_|.
-NET_EXPORT_PRIVATE bool IsPortAllowedByOverride(int port);
+// Returns the number of explicitly allowed ports; for testing.
+NET_EXPORT_PRIVATE size_t GetCountOfExplicitlyAllowedPorts();
+
+NET_EXPORT void SetExplicitlyAllowedPorts(const std::string& allowed_ports);
+
+class NET_EXPORT ScopedPortException {
+ public:
+  explicit ScopedPortException(int port);
+  ~ScopedPortException();
+
+ private:
+  int port_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedPortException);
+};
 
 // Set socket to non-blocking mode
 NET_EXPORT int SetNonBlocking(int fd);
@@ -348,19 +332,6 @@ NET_EXPORT bool CanStripTrailingSlash(const GURL& url);
 //   - reference section
 NET_EXPORT_PRIVATE GURL SimplifyUrlForRequest(const GURL& url);
 
-NET_EXPORT void SetExplicitlyAllowedPorts(const std::string& allowed_ports);
-
-class NET_EXPORT ScopedPortException {
- public:
-  explicit ScopedPortException(int port);
-  ~ScopedPortException();
-
- private:
-  int port_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedPortException);
-};
-
 // Returns true if it can determine that only loopback addresses are configured.
 // i.e. if only 127.0.0.1 and ::1 are routable.
 // Also returns false if it cannot determine this.
@@ -373,66 +344,24 @@ NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
 // Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
 NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
-// Parses a URL-safe IP literal (see RFC 3986, Sec 3.2.2) to its numeric value.
-// Returns true on success, and fills |ip_number| with the numeric value
-NET_EXPORT bool ParseURLHostnameToNumber(const std::string& hostname,
-                                         IPAddressNumber* ip_number);
-
-// Parses an IP address literal (either IPv4 or IPv6) to its numeric value.
-// Returns true on success and fills |ip_number| with the numeric value.
-NET_EXPORT bool ParseIPLiteralToNumber(const std::string& ip_literal,
-                                       IPAddressNumber* ip_number);
-
-// Converts an IPv4 address to an IPv4-mapped IPv6 address.
-// For example 192.168.0.1 would be converted to ::ffff:192.168.0.1.
-NET_EXPORT_PRIVATE IPAddressNumber ConvertIPv4NumberToIPv6Number(
-    const IPAddressNumber& ipv4_number);
-
-// Returns true iff |address| is an IPv4-mapped IPv6 address.
-NET_EXPORT_PRIVATE bool IsIPv4Mapped(const IPAddressNumber& address);
-
-// Converts an IPv4-mapped IPv6 address to IPv4 address. Should only be called
-// on IPv4-mapped IPv6 addresses.
-NET_EXPORT_PRIVATE IPAddressNumber ConvertIPv4MappedToIPv4(
-    const IPAddressNumber& address);
-
-// Parses an IP block specifier from CIDR notation to an
-// (IP address, prefix length) pair. Returns true on success and fills
-// |*ip_number| with the numeric value of the IP address and sets
-// |*prefix_length_in_bits| with the length of the prefix.
-//
-// CIDR notation literals can use either IPv4 or IPv6 literals. Some examples:
-//
-//    10.10.3.1/20
-//    a:b:c::/46
-//    ::1/128
-NET_EXPORT bool ParseCIDRBlock(const std::string& cidr_literal,
-                               IPAddressNumber* ip_number,
-                               size_t* prefix_length_in_bits);
-
-// Compares an IP address to see if it falls within the specified IP block.
-// Returns true if it does, false otherwise.
-//
-// The IP block is given by (|ip_prefix|, |prefix_length_in_bits|) -- any
-// IP address whose |prefix_length_in_bits| most significant bits match
-// |ip_prefix| will be matched.
-//
-// In cases when an IPv4 address is being compared to an IPv6 address prefix
-// and vice versa, the IPv4 addresses will be converted to IPv4-mapped
-// (IPv6) addresses.
-NET_EXPORT_PRIVATE bool IPNumberMatchesPrefix(const IPAddressNumber& ip_number,
-                                              const IPAddressNumber& ip_prefix,
-                                              size_t prefix_length_in_bits);
-
 // Retuns the port field of the |sockaddr|.
-const uint16* GetPortFieldFromSockaddr(const struct sockaddr* address,
-                                       socklen_t address_len);
+const uint16_t* GetPortFieldFromSockaddr(const struct sockaddr* address,
+                                         socklen_t address_len);
 // Returns the value of port in |sockaddr| (in host byte ordering).
 NET_EXPORT_PRIVATE int GetPortFromSockaddr(const struct sockaddr* address,
                                            socklen_t address_len);
 
-// Returns true if |host| is one of the names (e.g. "localhost") or IP
-// addresses (IPv4 127.0.0.0/8 or IPv6 ::1) that indicate a loopback.
+// Resolves a local hostname (such as "localhost" or "localhost6") into
+// IP endpoints with the given port. Returns true if |host| is a local
+// hostname and false otherwise. Special IPv6 names (e.g. "localhost6")
+// will resolve to an IPv6 address only, whereas other names will
+// resolve to both IPv4 and IPv6.
+NET_EXPORT_PRIVATE bool ResolveLocalHostname(const std::string& host,
+                                             uint16_t port,
+                                             AddressList* address_list);
+
+// Returns true if |host| is one of the local hostnames
+// (e.g. "localhost") or IP addresses (IPv4 127.0.0.0/8 or IPv6 ::1).
 //
 // Note that this function does not check for IP addresses other than
 // the above, although other IP addresses may point to the local
@@ -462,99 +391,6 @@ enum IPAddressAttributes {
   // create new connections.
   IP_ADDRESS_ATTRIBUTE_DEPRECATED = 1 << 1,
 };
-
-// struct that is used by GetNetworkList() to represent a network
-// interface.
-struct NET_EXPORT NetworkInterface {
-  NetworkInterface();
-  NetworkInterface(const std::string& name,
-                   const std::string& friendly_name,
-                   uint32 interface_index,
-                   NetworkChangeNotifier::ConnectionType type,
-                   const IPAddressNumber& address,
-                   uint32 prefix_length,
-                   int ip_address_attributes);
-  ~NetworkInterface();
-
-  std::string name;
-  std::string friendly_name;  // Same as |name| on non-Windows.
-  uint32 interface_index;  // Always 0 on Android.
-  NetworkChangeNotifier::ConnectionType type;
-  IPAddressNumber address;
-  uint32 prefix_length;
-  int ip_address_attributes;  // Combination of |IPAddressAttributes|.
-};
-
-typedef std::vector<NetworkInterface> NetworkInterfaceList;
-
-// Policy settings to include/exclude network interfaces.
-enum HostAddressSelectionPolicy {
-  INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x0,
-  EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x1,
-};
-
-// Returns list of network interfaces except loopback interface. If an
-// interface has more than one address, a separate entry is added to
-// the list for each address.
-// Can be called only on a thread that allows IO.
-NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
-                               int policy);
-
-// Gets the SSID of the currently associated WiFi access point if there is one.
-// Otherwise, returns empty string.
-// Currently only implemented on Linux, ChromeOS and Android.
-NET_EXPORT std::string GetWifiSSID();
-
-// General category of the IEEE 802.11 (wifi) physical layer operating mode.
-enum WifiPHYLayerProtocol {
-  // No wifi support or no associated AP.
-  WIFI_PHY_LAYER_PROTOCOL_NONE,
-  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS.
-  WIFI_PHY_LAYER_PROTOCOL_ANCIENT,
-  // 802.11a, OFDM-based rates.
-  WIFI_PHY_LAYER_PROTOCOL_A,
-  // 802.11b, DSSS or HR DSSS.
-  WIFI_PHY_LAYER_PROTOCOL_B,
-  // 802.11g, same rates as 802.11a but compatible with 802.11b.
-  WIFI_PHY_LAYER_PROTOCOL_G,
-  // 802.11n, HT rates.
-  WIFI_PHY_LAYER_PROTOCOL_N,
-  // Unclassified mode or failure to identify.
-  WIFI_PHY_LAYER_PROTOCOL_UNKNOWN
-};
-
-// Characterize the PHY mode of the currently associated access point.
-// Currently only available on OS_WIN.
-NET_EXPORT WifiPHYLayerProtocol GetWifiPHYLayerProtocol();
-
-enum WifiOptions {
-  // Disables background SSID scans.
-  WIFI_OPTIONS_DISABLE_SCAN =  1 << 0,
-  // Enables media streaming mode.
-  WIFI_OPTIONS_MEDIA_STREAMING_MODE = 1 << 1
-};
-
-class NET_EXPORT ScopedWifiOptions {
- public:
-  ScopedWifiOptions() {}
-  virtual ~ScopedWifiOptions();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedWifiOptions);
-};
-
-// Set temporary options on all wifi interfaces.
-// |options| is an ORed bitfield of WifiOptions.
-// Options are automatically disabled when the scoped pointer
-// is freed. Currently only available on OS_WIN.
-NET_EXPORT scoped_ptr<ScopedWifiOptions> SetWifiOptions(int options);
-
-// Returns number of matching initial bits between the addresses |a1| and |a2|.
-unsigned CommonPrefixLength(const IPAddressNumber& a1,
-                            const IPAddressNumber& a2);
-
-// Computes the number of leading 1-bits in |mask|.
-unsigned MaskPrefixLength(const IPAddressNumber& mask);
 
 // Differentiated Services Code Point.
 // See http://tools.ietf.org/html/rfc2474 for details.

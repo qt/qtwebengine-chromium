@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
@@ -50,20 +49,10 @@ class MockFrameObserver : public VideoCaptureControllerEventHandler {
                        base::SharedMemoryHandle handle,
                        int length, int buffer_id) override {}
   void OnBufferDestroyed(VideoCaptureControllerID id, int buffer_id) override {}
-  void OnBufferReady(
-      VideoCaptureControllerID id,
-      int buffer_id,
-      const gfx::Size& coded_size,
-      const gfx::Rect& visible_rect,
-      const base::TimeTicks& timestamp,
-      scoped_ptr<base::DictionaryValue> metadata) override {}
-  void OnMailboxBufferReady(
-      VideoCaptureControllerID id,
-      int buffer_id,
-      const gpu::MailboxHolder& mailbox_holder,
-      const gfx::Size& packed_frame_size,
-      const base::TimeTicks& timestamp,
-      scoped_ptr<base::DictionaryValue> metadata) override {}
+  void OnBufferReady(VideoCaptureControllerID id,
+                     int buffer_id,
+                     const scoped_refptr<media::VideoFrame>& frame,
+                     const base::TimeTicks& timestamp) override {}
   void OnEnded(VideoCaptureControllerID id) override {}
 
   void OnGotControllerCallback(VideoCaptureControllerID) {}
@@ -88,7 +77,7 @@ class VideoCaptureManagerTest : public testing::Test {
             vcm_->video_capture_device_factory());
     const int32 kNumberOfFakeDevices = 2;
     video_capture_device_factory_->set_number_of_devices(kNumberOfFakeDevices);
-    vcm_->Register(listener_.get(), message_loop_->message_loop_proxy().get());
+    vcm_->Register(listener_.get(), message_loop_->task_runner().get());
     frame_observer_.reset(new MockFrameObserver());
   }
 

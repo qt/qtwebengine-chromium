@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_util.h"
@@ -412,12 +413,6 @@ void AVStreamToVideoDecoderConfig(
     coded_size = visible_rect.size();
   }
 
-  // YV12 frames may be in HD color space.
-  if (format == VideoFrame::YV12 &&
-      stream->codec->colorspace == AVCOL_SPC_BT709) {
-    format = VideoFrame::YV12HD;
-  }
-
   // Pad out |coded_size| for subsampled YUV formats.
   if (format != VideoFrame::YV24) {
     coded_size.set_width((coded_size.width() + 1) / 2 * 2);
@@ -439,6 +434,9 @@ void AVStreamToVideoDecoderConfig(
   config->Initialize(codec,
                      profile,
                      format,
+                     (stream->codec->colorspace == AVCOL_SPC_BT709)
+                         ? VideoFrame::COLOR_SPACE_HD_REC709
+                         : VideoFrame::COLOR_SPACE_UNSPECIFIED,
                      coded_size, visible_rect, natural_size,
                      stream->codec->extradata, stream->codec->extradata_size,
                      is_encrypted,
@@ -535,15 +533,18 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
 }
 
 VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
+  // The YUVJ alternatives are FFmpeg's (deprecated, but still in use) way to
+  // specify a pixel format and full range color combination
   switch (pixel_format) {
     case PIX_FMT_YUV422P:
+    case PIX_FMT_YUVJ422P:
       return VideoFrame::YV16;
     case PIX_FMT_YUV444P:
+    case PIX_FMT_YUVJ444P:
       return VideoFrame::YV24;
     case PIX_FMT_YUV420P:
-      return VideoFrame::YV12;
     case PIX_FMT_YUVJ420P:
-      return VideoFrame::YV12J;
+      return VideoFrame::YV12;
     case PIX_FMT_YUVA420P:
       return VideoFrame::YV12A;
     default:
@@ -557,10 +558,7 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
     case VideoFrame::YV16:
       return PIX_FMT_YUV422P;
     case VideoFrame::YV12:
-    case VideoFrame::YV12HD:
       return PIX_FMT_YUV420P;
-    case VideoFrame::YV12J:
-      return PIX_FMT_YUVJ420P;
     case VideoFrame::YV12A:
       return PIX_FMT_YUVA420P;
     case VideoFrame::YV24:
@@ -571,23 +569,30 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
   return PIX_FMT_NONE;
 }
 
-bool FFmpegUTCDateToTime(const char* date_utc,
-                         base::Time* out) {
+bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out) {
   DCHECK(date_utc);
   DCHECK(out);
 
-  std::vector<std::string> fields;
-  std::vector<std::string> date_fields;
-  std::vector<std::string> time_fields;
-  base::Time::Exploded exploded;
-  exploded.millisecond = 0;
+  std::vector<base::StringPiece> fields = base::SplitStringPiece(
+      date_utc, " ", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  if (fields.size() != 2)
+    return false;
+
+  std::vector<base::StringPiece> date_fields = base::SplitStringPiece(
+      fields[0], "-", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  if (date_fields.size() != 3)
+    return false;
 
   // TODO(acolwell): Update this parsing code when FFmpeg returns sub-second
   // information.
-  if ((Tokenize(date_utc, " ", &fields) == 2) &&
-      (Tokenize(fields[0], "-", &date_fields) == 3) &&
-      (Tokenize(fields[1], ":", &time_fields) == 3) &&
-      base::StringToInt(date_fields[0], &exploded.year) &&
+  std::vector<base::StringPiece> time_fields = base::SplitStringPiece(
+      fields[1], ":", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  if (time_fields.size() != 3)
+    return false;
+
+  base::Time::Exploded exploded;
+  exploded.millisecond = 0;
+  if (base::StringToInt(date_fields[0], &exploded.year) &&
       base::StringToInt(date_fields[1], &exploded.month) &&
       base::StringToInt(date_fields[2], &exploded.day_of_month) &&
       base::StringToInt(time_fields[0], &exploded.hour) &&

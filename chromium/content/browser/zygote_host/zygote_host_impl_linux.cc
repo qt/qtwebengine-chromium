@@ -64,7 +64,7 @@ bool ReceiveFixedMessage(int fd,
   char buf[expect_len + 1];
   ScopedVector<base::ScopedFD> fds_vec;
 
-  const ssize_t len = UnixDomainSocket::RecvMsgWithPid(
+  const ssize_t len = base::UnixDomainSocket::RecvMsgWithPid(
       fd, buf, sizeof(buf), &fds_vec, sender_pid);
   if (static_cast<size_t>(len) != expect_len)
     return false;
@@ -114,7 +114,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
 
   int fds[2];
   CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
-  CHECK(UnixDomainSocket::EnableReceiveProcessId(fds[0]));
+  CHECK(base::UnixDomainSocket::EnableReceiveProcessId(fds[0]));
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
@@ -221,7 +221,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   close(fds[1]);
   control_fd_ = fds[0];
 
-  Pickle pickle;
+  base::Pickle pickle;
   pickle.WriteInt(kZygoteCommandGetSandboxStatus);
   if (!SendMessage(pickle, NULL))
     LOG(FATAL) << "Cannot communicate with zygote";
@@ -275,20 +275,20 @@ void ZygoteHostImpl::ZygoteChildDied(pid_t process) {
   }
 }
 
-bool ZygoteHostImpl::SendMessage(const Pickle& data,
+bool ZygoteHostImpl::SendMessage(const base::Pickle& data,
                                  const std::vector<int>* fds) {
   DCHECK_NE(-1, control_fd_);
   CHECK(data.size() <= kZygoteMaxMessageLength)
       << "Trying to send too-large message to zygote (sending " << data.size()
       << " bytes, max is " << kZygoteMaxMessageLength << ")";
-  CHECK(!fds || fds->size() <= UnixDomainSocket::kMaxFileDescriptors)
+  CHECK(!fds || fds->size() <= base::UnixDomainSocket::kMaxFileDescriptors)
       << "Trying to send message with too many file descriptors to zygote "
       << "(sending " << fds->size() << ", max is "
-      << UnixDomainSocket::kMaxFileDescriptors << ")";
+      << base::UnixDomainSocket::kMaxFileDescriptors << ")";
 
-  return UnixDomainSocket::SendMsg(control_fd_,
-                                   data.data(), data.size(),
-                                   fds ? *fds : std::vector<int>());
+  return base::UnixDomainSocket::SendMsg(control_fd_,
+                                         data.data(), data.size(),
+                                         fds ? *fds : std::vector<int>());
 }
 
 ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
@@ -314,13 +314,13 @@ pid_t ZygoteHostImpl::ForkRequest(const std::vector<std::string>& argv,
                                   scoped_ptr<FileDescriptorInfo> mapping,
                                   const std::string& process_type) {
   DCHECK(init_);
-  Pickle pickle;
+  base::Pickle pickle;
 
   int raw_socks[2];
   PCHECK(0 == socketpair(AF_UNIX, SOCK_SEQPACKET, 0, raw_socks));
   base::ScopedFD my_sock(raw_socks[0]);
   base::ScopedFD peer_sock(raw_socks[1]);
-  CHECK(UnixDomainSocket::EnableReceiveProcessId(my_sock.get()));
+  CHECK(base::UnixDomainSocket::EnableReceiveProcessId(my_sock.get()));
 
   pickle.WriteInt(kZygoteCommandFork);
   pickle.WriteString(process_type);
@@ -363,7 +363,7 @@ pid_t ZygoteHostImpl::ForkRequest(const std::vector<std::string>& argv,
       ScopedVector<base::ScopedFD> recv_fds;
       base::ProcessId real_pid;
 
-      ssize_t n = UnixDomainSocket::RecvMsgWithPid(
+      ssize_t n = base::UnixDomainSocket::RecvMsgWithPid(
           my_sock.get(), buf, sizeof(buf), &recv_fds, &real_pid);
       if (n != sizeof(kZygoteChildPingMessage) ||
           0 != memcmp(buf,
@@ -378,7 +378,7 @@ pid_t ZygoteHostImpl::ForkRequest(const std::vector<std::string>& argv,
       my_sock.reset();
 
       // Always send PID back to zygote.
-      Pickle pid_pickle;
+      base::Pickle pid_pickle;
       pid_pickle.WriteInt(kZygoteCommandForkRealPID);
       pid_pickle.WriteInt(real_pid);
       if (!SendMessage(pid_pickle, NULL))
@@ -390,8 +390,8 @@ pid_t ZygoteHostImpl::ForkRequest(const std::vector<std::string>& argv,
     char buf[kMaxReplyLength];
     const ssize_t len = ReadReply(buf, sizeof(buf));
 
-    Pickle reply_pickle(buf, len);
-    PickleIterator iter(reply_pickle);
+    base::Pickle reply_pickle(buf, len);
+    base::PickleIterator iter(reply_pickle);
     if (len <= 0 || !iter.ReadInt(&pid))
       return base::kNullProcessHandle;
 
@@ -513,7 +513,7 @@ void ZygoteHostImpl::AdjustRendererOOMScore(base::ProcessHandle pid,
 
 void ZygoteHostImpl::EnsureProcessTerminated(pid_t process) {
   DCHECK(init_);
-  Pickle pickle;
+  base::Pickle pickle;
 
   pickle.WriteInt(kZygoteCommandReap);
   pickle.WriteInt(process);
@@ -527,7 +527,7 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
     bool known_dead,
     int* exit_code) {
   DCHECK(init_);
-  Pickle pickle;
+  base::Pickle pickle;
   pickle.WriteInt(kZygoteCommandGetTerminationStatus);
   pickle.WriteBool(known_dead);
   pickle.WriteInt(handle);
@@ -552,9 +552,9 @@ base::TerminationStatus ZygoteHostImpl::GetTerminationStatus(
   } else if (len == 0) {
     LOG(WARNING) << "Socket closed prematurely.";
   } else {
-    Pickle read_pickle(buf, len);
+    base::Pickle read_pickle(buf, len);
     int tmp_status, tmp_exit_code;
-    PickleIterator iter(read_pickle);
+    base::PickleIterator iter(read_pickle);
     if (!iter.ReadInt(&tmp_status) || !iter.ReadInt(&tmp_exit_code)) {
       LOG(WARNING)
           << "Error parsing GetTerminationStatus response from zygote.";

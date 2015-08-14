@@ -9,10 +9,6 @@
       'public/test/nested_message_pump_android.cc',
       'public/test/nested_message_pump_android.h',
       'test/layouttest_support.cc',
-      'test/test_media_stream_renderer_factory.cc',
-      'test/test_media_stream_renderer_factory.h',
-      'test/test_video_frame_provider.cc',
-      'test/test_video_frame_provider.h',
     ],
     'test_support_content_sources': [
       # TODO(phajdan.jr): All of those files should live in content/test (if
@@ -87,6 +83,8 @@
       'public/test/test_file_system_options.h',
       'public/test/test_launcher.cc',
       'public/test/test_launcher.h',
+      'public/test/test_mojo_app.cc',
+      'public/test/test_mojo_app.h',
       'public/test/test_navigation_observer.cc',
       'public/test/test_navigation_observer.h',
       'public/test/test_notification_tracker.cc',
@@ -98,6 +96,8 @@
       'public/test/test_utils.cc',
       'public/test/test_utils.h',
       'public/test/test_web_contents_factory.h',
+      'public/test/test_web_ui.cc',
+      'public/test/test_web_ui.h',
       'public/test/unittest_test_suite.cc',
       'public/test/unittest_test_suite.h',
       'public/test/web_contents_tester.cc',
@@ -153,6 +153,8 @@
       'test/test_navigation_url_loader.h',
       'test/test_navigation_url_loader_factory.cc',
       'test/test_navigation_url_loader_factory.h',
+      'test/test_render_frame.cc',
+      'test/test_render_frame.h',
       'test/test_render_frame_host.cc',
       'test/test_render_frame_host.h',
       'test/test_render_frame_host_factory.cc',
@@ -209,9 +211,11 @@
       'browser/download/save_package_browsertest.cc',
       'browser/fileapi/file_system_browsertest.cc',
       'browser/frame_host/frame_tree_browsertest.cc',
+      'browser/frame_host/interstitial_page_impl_browsertest.cc',
       'browser/frame_host/navigation_controller_impl_browsertest.cc',
       'browser/frame_host/render_frame_host_impl_browsertest.cc',
       'browser/frame_host/render_frame_host_manager_browsertest.cc',
+      'browser/frame_host/render_widget_host_view_child_frame_browsertest.cc',
       'browser/gpu/gpu_ipc_browsertests.cc',
       'browser/host_zoom_map_impl_browsertest.cc',
       'browser/indexed_db/indexed_db_browsertest.cc',
@@ -219,16 +223,18 @@
       'browser/indexed_db/mock_browsertest_indexed_db_class_factory.h',
       'browser/loader/resource_dispatcher_host_browsertest.cc',
       'browser/manifest/manifest_browsertest.cc',
+      'browser/media/android/media_session_browsertest.cc',
       'browser/media/encrypted_media_browsertest.cc',
       'browser/media/media_browsertest.cc',
       'browser/media/media_browsertest.h',
       'browser/media/media_canplaytype_browsertest.cc',
       'browser/media/media_source_browsertest.cc',
       'browser/message_port_provider_browsertest.cc',
+      'browser/mojo_shell_browsertest.cc',
       'browser/net_info_browsertest.cc',
-      'browser/plugin_browsertest.cc',
       'browser/renderer_host/input/touch_action_browsertest.cc',
       'browser/renderer_host/input/touch_input_browsertest.cc',
+      'browser/renderer_host/render_message_filter_browsertest.cc',
       'browser/renderer_host/render_process_host_browsertest.cc',
       'browser/renderer_host/render_view_host_browsertest.cc',
       'browser/renderer_host/render_widget_host_view_browsertest.cc',
@@ -239,8 +245,8 @@
       'browser/shared_worker/worker_browsertest.cc',
       'browser/site_per_process_browsertest.cc',
       'browser/site_per_process_browsertest.h',
+      'browser/tracing/background_tracing_manager_browsertest.cc',
       'browser/tracing/tracing_controller_browsertest.cc',
-      'browser/transition_browsertest.cc',
       'browser/web_contents/opened_by_dom_browsertest.cc',
       'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
       'browser/web_contents/web_contents_impl_browsertest.cc',
@@ -248,10 +254,11 @@
       'browser/webkit_browsertest.cc',
       'browser/webui/web_ui_mojo_browsertest.cc',
       'child/child_thread_impl_browsertest.cc',
-      'child/site_isolation_policy_browsertest.cc',
+      'child/site_isolation_stats_gatherer_browsertest.cc',
       'renderer/accessibility/renderer_accessibility_browsertest.cc',
       'renderer/devtools/v8_sampling_profiler_browsertest.cc',
       'renderer/gin_browsertest.cc',
+      'renderer/history_controller_browsertest.cc',
       'renderer/mouse_lock_dispatcher_browsertest.cc',
       'renderer/render_frame_impl_browsertest.cc',
       'renderer/render_thread_impl_browsertest.cc',
@@ -269,8 +276,6 @@
     'content_browsertests_android_sources': [
       'browser/accessibility/android_granularity_movement_browsertest.cc',
       'browser/accessibility/android_hit_testing_browsertest.cc',
-      'shell/android/browsertests_apk/content_browser_tests_android.cc',
-      'shell/android/browsertests_apk/content_browser_tests_android.h',
       'shell/android/browsertests_apk/content_browser_tests_jni_onload.cc',
     ],
     'content_browsertests_webrtc_sources': [
@@ -283,8 +288,6 @@
       'test/webrtc_content_browsertest_base.h',
     ],
     'content_browsertests_plugins_sources': [
-      'browser/plugin_data_remover_impl_browsertest.cc',
-      'browser/plugin_service_impl_browsertest.cc',
       'renderer/pepper/fake_pepper_plugin_instance.cc',
       'renderer/pepper/mock_renderer_ppapi_host.cc',
       'renderer/pepper/pepper_device_enumeration_host_helper_unittest.cc',
@@ -341,9 +344,13 @@
       'browser/appcache/mock_appcache_storage_unittest.cc',
       'browser/background_sync/background_sync_manager_unittest.cc',
       'browser/background_sync/background_sync_network_observer_unittest.cc',
+      'browser/background_sync/background_sync_power_observer_unittest.cc',
+      'browser/background_sync/background_sync_service_impl_unittest.cc',
+      'browser/browser_io_surface_manager_mac_unittest.cc',
       'browser/browser_thread_unittest.cc',
       'browser/browser_url_handler_impl_unittest.cc',
       'browser/byte_stream_unittest.cc',
+      'browser/cache_storage/cache_storage_blob_to_disk_cache_unittest.cc',
       'browser/cache_storage/cache_storage_cache_unittest.cc',
       'browser/cache_storage/cache_storage_manager_unittest.cc',
       'browser/cache_storage/cache_storage_scheduler_unittest.cc',
@@ -460,7 +467,7 @@
       'browser/indexed_db/mock_indexed_db_database_callbacks.h',
       'browser/indexed_db/mock_indexed_db_factory.cc',
       'browser/indexed_db/mock_indexed_db_factory.h',
-      'browser/loader/buffered_resource_handler_unittest.cc',
+      'browser/loader/mime_type_resource_handler_unittest.cc',
       'browser/loader/navigation_url_loader_unittest.cc',
       'browser/loader/resource_buffer_unittest.cc',
       'browser/loader/resource_dispatcher_host_unittest.cc',
@@ -470,21 +477,17 @@
       'browser/loader/upload_data_stream_builder_unittest.cc',
       'browser/mach_broker_mac_unittest.cc',
       'browser/media/audio_stream_monitor_unittest.cc',
-      'browser/media/capture/animated_content_sampler_unittest.cc',
       'browser/media/capture/audio_mirroring_manager_unittest.cc',
-      'browser/media/capture/capture_resolution_chooser_unittest.cc',
-      'browser/media/capture/feedback_signal_accumulator_unittest.cc',
-      'browser/media/capture/smooth_event_sampler_unittest.cc',
-      'browser/media/capture/video_capture_oracle_unittest.cc',
       'browser/media/capture/web_contents_audio_input_stream_unittest.cc',
       'browser/media/capture/web_contents_video_capture_device_unittest.cc',
       'browser/media/media_internals_unittest.cc',
       'browser/media/midi_host_unittest.cc',
       'browser/media/webrtc_identity_store_unittest.cc',
-      'browser/net/sqlite_persistent_cookie_store_unittest.cc',
+      'browser/net/quota_policy_cookie_store_unittest.cc',
       'browser/notification_service_impl_unittest.cc',
       'browser/notifications/notification_database_data_unittest.cc',
       'browser/notifications/notification_database_unittest.cc',
+      'browser/notifications/notification_id_generator_unittest.cc',
       'browser/notifications/platform_notification_context_unittest.cc',
       'browser/power_monitor_message_broadcaster_unittest.cc',
       'browser/power_profiler/power_profiler_service_unittest.cc',
@@ -548,6 +551,7 @@
       'browser/service_worker/service_worker_context_unittest.cc',
       'browser/service_worker/service_worker_controllee_request_handler_unittest.cc',
       'browser/service_worker/service_worker_database_unittest.cc',
+      'browser/service_worker/service_worker_disk_cache_migrator_unittest.cc',
       'browser/service_worker/service_worker_dispatcher_host_unittest.cc',
       'browser/service_worker/service_worker_handle_unittest.cc',
       'browser/service_worker/service_worker_job_unittest.cc',
@@ -570,13 +574,14 @@
       'browser/streams/stream_unittest.cc',
       'browser/streams/stream_url_request_job_unittest.cc',
       'browser/system_message_window_win_unittest.cc',
-      'browser/transition_request_manager_unittest.cc',
+      'browser/tracing/background_tracing_config_unittest.cc',
       'browser/web_contents/aura/overscroll_navigation_overlay_unittest.cc',
       'browser/web_contents/aura/overscroll_window_animation_unittest.cc',
       'browser/web_contents/aura/overscroll_window_delegate_unittest.cc',
       'browser/web_contents/web_contents_delegate_unittest.cc',
       'browser/web_contents/web_contents_impl_unittest.cc',
       'browser/web_contents/web_contents_user_data_unittest.cc',
+      'browser/web_contents/web_contents_view_aura_unittest.cc',
       'browser/web_contents/web_contents_view_mac_unittest.mm',
       'browser/web_contents/web_drag_dest_mac_unittest.mm',
       'browser/web_contents/web_drag_source_mac_unittest.mm',
@@ -585,6 +590,7 @@
       'browser/webui/web_ui_message_handler_unittest.cc',
       'child/background_sync/background_sync_type_converters_unittest.cc',
       'child/blink_platform_impl_unittest.cc',
+      'child/blob_storage/blob_consolidation_unittest.cc',
       'child/fileapi/webfilewriter_base_unittest.cc',
       'child/indexed_db/indexed_db_dispatcher_unittest.cc',
       'child/indexed_db/webidbcursor_impl_unittest.cc',
@@ -593,16 +599,20 @@
       'child/power_monitor_broadcast_source_unittest.cc',
       'child/resource_dispatcher_unittest.cc',
       'child/service_worker/service_worker_dispatcher_unittest.cc',
+      'child/shared_memory_data_consumer_handle_unittest.cc',
+      'child/shared_memory_received_data_factory_unittest.cc',
       'child/simple_webmimeregistry_impl_unittest.cc',
-      'child/site_isolation_policy_unittest.cc',
+      'child/site_isolation_stats_gatherer_unittest.cc',
       'child/v8_value_converter_impl_unittest.cc',
       'child/web_data_consumer_handle_impl_unittest.cc',
+      'child/web_process_memory_dump_impl_unittest.cc',
       'child/web_url_loader_impl_unittest.cc',
       'child/worker_task_runner_unittest.cc',
       'common/android/address_parser_unittest.cc',
       'common/android/gin_java_bridge_value_unittest.cc',
       'common/cc_messages_unittest.cc',
       'common/common_param_traits_unittest.cc',
+      'common/cross_site_document_classifier_unittest.cc',
       'common/cursors/webcursor_unittest.cc',
       'common/database_connections_unittest.cc',
       'common/database_identifier_unittest.cc',
@@ -624,8 +634,8 @@
       'common/inter_process_time_ticks_converter_unittest.cc',
       'common/mac/attributed_string_coder_unittest.mm',
       'common/mac/font_descriptor_unittest.mm',
-      'common/origin_util_unittest.cc',
       'common/one_writer_seqlock_unittest.cc',
+      'common/origin_util_unittest.cc',
       'common/page_state_serialization_unittest.cc',
       'common/page_zoom_unittest.cc',
       'common/plugin_list_unittest.cc',
@@ -729,6 +739,7 @@
       'renderer/media/webrtc/media_stream_remote_video_source_unittest.cc',
       'renderer/media/webrtc/media_stream_track_metrics_unittest.cc',
       'renderer/media/webrtc/peer_connection_dependency_factory_unittest.cc',
+      'renderer/media/webrtc/stun_field_trial_unittest.cc',
       'renderer/media/webrtc/webrtc_local_audio_track_adapter_unittest.cc',
       'renderer/media/webrtc/webrtc_media_stream_adapter_unittest.cc',
       'renderer/media/webrtc/webrtc_video_capturer_adapter_unittest.cc',
@@ -766,6 +777,7 @@
           'dependencies': [
             'content.gyp:content_renderer',
             'test_support_content',
+            '../components/test_runner/test_runner.gyp:test_runner',
             '../skia/skia.gyp:skia',
             '../ui/accessibility/accessibility.gyp:ax_gen',
             '../ui/base/ime/ui_base_ime.gyp:ui_base_ime',
@@ -784,6 +796,7 @@
       'target_name': 'test_support_content',
       'type': 'static_library',
       'dependencies': [
+        '../mojo/mojo_base.gyp:mojo_application_base',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
         '../net/net.gyp:net_test_support',
         '../skia/skia.gyp:skia',
@@ -791,6 +804,7 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
+        '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
         '../ui/accessibility/accessibility.gyp:ax_gen',
         '../ui/base/ime/ui_base_ime.gyp:ui_base_ime',
         '../ui/base/ui_base.gyp:ui_base',
@@ -858,6 +872,7 @@
             }],
           ],
           'dependencies': [
+            'content_test_mojo_bindings',
             'content.gyp:content_child',
             'content.gyp:content_common',
             'content.gyp:content_gpu',
@@ -870,11 +885,14 @@
             '../cc/cc.gyp:cc',
             '../cc/cc_tests.gyp:cc_test_support',
             '../components/scheduler/scheduler.gyp:scheduler',
+            '../components/scheduler/scheduler.gyp:scheduler_test_support',
             '../gpu/blink/gpu_blink.gyp:gpu_blink',
             '../ipc/mojo/ipc_mojo.gyp:*',
             '../media/blink/media_blink.gyp:media_blink',
             '../media/media.gyp:media',
             '../media/midi/midi.gyp:midi',
+            '../mojo/mojo_base.gyp:mojo_application_base',
+            '../mojo/mojo_base.gyp:mojo_environment_chromium',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
             '../ppapi/ppapi_internal.gyp:ppapi_proxy',
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
@@ -882,6 +900,7 @@
             '../storage/storage_browser.gyp:storage',
             '../storage/storage_common.gyp:storage_common',
             '../third_party/WebKit/public/blink.gyp:blink',
+            '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
             '../ui/compositor/compositor.gyp:compositor_test_support',
             '../ui/surface/surface.gyp:surface',
             '../v8/tools/gyp/v8.gyp:v8',
@@ -980,6 +999,7 @@
         '../device/battery/battery.gyp:device_battery',
         '../device/battery/battery.gyp:device_battery_mojo_bindings',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
+        '../net/net.gyp:net_extras',
         '../net/net.gyp:net_test_support',
         '../skia/skia.gyp:skia',
         '../sql/sql.gyp:sql',
@@ -1210,6 +1230,26 @@
             }],
           ],
         },
+        {
+          'target_name': 'telemetry_base',
+          'type': 'none',
+          'dependencies': [
+            '../tools/telemetry/telemetry.gyp:bitmaptools#host',
+          ],
+        },
+        {
+          'target_name': 'telemetry_gpu_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'telemetry_base',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'telemetry_gpu_unittests.isolate',
+          ],
+        },
       ],
       'conditions': [
         ['archive_gpu_tests==1', {
@@ -1254,7 +1294,6 @@
             '..',
           ],
           'sources': [
-            'browser/net/sqlite_persistent_cookie_store_perftest.cc',
             'browser/renderer_host/input/input_router_impl_perftest.cc',
             'common/cc_messages_perftest.cc',
             'common/discardable_shared_memory_heap_perftest.cc',
@@ -1309,6 +1348,15 @@
           ],
         },
         {
+          # GN version: //content/test:test_mojo_bindings
+          'target_name': 'content_test_mojo_bindings',
+          'type': 'static_library',
+          'sources': [
+            'public/test/test_mojo_service.mojom',
+          ],
+          'includes': [ '../third_party/mojo/mojom_bindings_generator.gypi' ],
+        },
+        {
           # GN version: //content/test:web_ui_test_mojo_bindings
           'target_name': 'web_ui_test_mojo_bindings',
           'type': 'static_library',
@@ -1347,7 +1395,9 @@
             '../ipc/ipc.gyp:test_support_ipc',
             '../media/media.gyp:media_test_support',
             '../media/media.gyp:shared_memory_support',
+            '../mojo/mojo_base.gyp:mojo_application_base',
             '../mojo/mojo_base.gyp:mojo_environment_chromium',
+            '../mojo/mojo_base.gyp:mojo_test_support',
             '../net/net.gyp:net_test_support',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
@@ -1363,6 +1413,7 @@
             '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
             '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
             '../third_party/mojo/mojo_public.gyp:mojo_js_bindings',
+            '../third_party/zlib/zlib.gyp:zlib',
             '../ui/accessibility/accessibility.gyp:accessibility',
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
@@ -1444,7 +1495,7 @@
               'dependencies': [
                 'content_shell_jni_headers',
                 'content_shell_lib',
-                '../testing/android/native_test.gyp:native_test_util',
+                '../testing/android/native_test.gyp:native_test_support',
               ],
             }],
             ['OS=="mac"', {
@@ -1455,11 +1506,6 @@
                 'renderer/external_popup_menu_browsertest.cc',
               ],
             }],
-            ['use_aura==1 and OS!="win"', {
-              'sources!': [
-                'browser/plugin_browsertest.cc',
-              ],
-            }],
             ['use_aura==1 or toolkit_views==1', {
               'dependencies': [
                 '../ui/events/events.gyp:events_test_support',
@@ -1468,13 +1514,6 @@
             ['use_aura!=1 and OS!="mac"', {
               'sources!' :[
                 'browser/compositor/image_transport_factory_browsertest.cc',
-              ],
-            }],
-            ['OS!="android" and OS!="ios" and OS!="linux"', {
-              # npapi test plugin doesn't build on android or ios
-              'dependencies': [
-                # Runtime dependencies
-                'copy_npapi_test_plugin',
               ],
             }],
             ['enable_webrtc==1', {
@@ -1767,6 +1806,7 @@
           ],
           'variables': {
             'test_suite_name': 'content_unittests',
+            'isolate_file': 'content_unittests.isolate',
             'conditions': [
               ['v8_use_external_startup_data==1', {
                 'asset_location': '<(PRODUCT_DIR)/content_unittests_apk/assets',
@@ -1782,6 +1822,21 @@
             ],
           },
           'includes': [ '../build/apk_test.gypi' ],
+        },
+        {
+          'target_name': 'content_shell_browsertests_java',
+          'type': 'none',
+          'dependencies': [
+            'content.gyp:content_java',
+            'content_shell_java',
+            '../base/base.gyp:base_java',
+            '../testing/android/native_test.gyp:native_test_java',
+            '../ui/android/ui_android.gyp:ui_java',
+          ],
+          'variables': {
+            'java_in_dir': 'shell/android/browsertests',
+          },
+          'includes': [ '../build/java.gypi' ],
         },
         {
           # TODO(GN)
@@ -1802,15 +1857,16 @@
             'content.gyp:content_java',
             'content.gyp:content_v8_external_data',
             'content_browsertests',
+            'content_shell_browsertests_java',
             'content_java_test_support',
             'content_shell_java',
           ],
           'variables': {
-            'apk_name': 'content_browsertests',
+            'test_suite_name': 'content_browsertests',
+            'isolate_file': 'content_browsertests.isolate',
             'java_in_dir': 'shell/android/browsertests_apk',
             'android_manifest_path': '<(SHARED_INTERMEDIATE_DIR)/content_browsertests_manifest/AndroidManifest.xml',
             'resource_dir': 'shell/android/browsertests_apk/res',
-            'native_lib_target': 'libcontent_browsertests',
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
             'conditions': [
@@ -1827,7 +1883,7 @@
               }],
             ],
           },
-          'includes': [ '../build/java_apk.gypi' ],
+          'includes': [ '../build/apk_browsertest.gypi' ],
         },
         {
           # TODO(GN)
@@ -1989,8 +2045,13 @@
             'resource_dir': 'shell/android/shell_apk/res',
             'additional_src_dirs': ['public/android/javatests/', ],
             'is_test_apk': 1,
+            'test_type': 'instrumentation',
+            'isolate_file': 'content_shell_test_apk.isolate',
           },
-          'includes': [ '../build/java_apk.gypi' ],
+          'includes': [
+            '../build/java_apk.gypi',
+            '../build/android/test_runner.gypi',
+          ],
         },
         {
           # GN: //content/public/android:content_junit_tests
@@ -2010,150 +2071,6 @@
           },
           'includes': [
             '../build/host_jar.gypi',
-          ],
-        },
-      ],
-    }],
-    ['OS!="android" and OS!="ios" and OS!="linux"', {
-      # npapi test plugin doesn't build on android or ios
-      'targets': [
-        {
-          'target_name': 'npapi_test_plugin',
-          'type': 'loadable_module',
-          'variables': {
-            'chromium_code': 1,
-          },
-          'mac_bundle': 1,
-          'dependencies': [
-            '<(DEPTH)/base/base.gyp:base',
-            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
-            '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
-          ],
-          'sources': [
-            'test/plugin/npapi_constants.cc',
-            'test/plugin/npapi_constants.h',
-            'test/plugin/npapi_test.cc',
-            'test/plugin/npapi_test.def',
-            'test/plugin/npapi_test.rc',
-            'test/plugin/plugin_arguments_test.cc',
-            'test/plugin/plugin_arguments_test.h',
-            'test/plugin/plugin_client.cc',
-            'test/plugin/plugin_client.h',
-            'test/plugin/plugin_create_instance_in_paint.cc',
-            'test/plugin/plugin_create_instance_in_paint.h',
-            'test/plugin/plugin_delete_plugin_in_deallocate_test.cc',
-            'test/plugin/plugin_delete_plugin_in_deallocate_test.h',
-            'test/plugin/plugin_delete_plugin_in_stream_test.cc',
-            'test/plugin/plugin_delete_plugin_in_stream_test.h',
-            'test/plugin/plugin_execute_stream_javascript.cc',
-            'test/plugin/plugin_execute_stream_javascript.h',
-            'test/plugin/plugin_get_javascript_url2_test.cc',
-            'test/plugin/plugin_get_javascript_url2_test.h',
-            'test/plugin/plugin_get_javascript_url_test.cc',
-            'test/plugin/plugin_get_javascript_url_test.h',
-            'test/plugin/plugin_geturl_test.cc',
-            'test/plugin/plugin_geturl_test.h',
-            'test/plugin/plugin_javascript_open_popup.cc',
-            'test/plugin/plugin_javascript_open_popup.h',
-            'test/plugin/plugin_new_fails_test.cc',
-            'test/plugin/plugin_new_fails_test.h',
-            'test/plugin/plugin_npobject_identity_test.cc',
-            'test/plugin/plugin_npobject_identity_test.h',
-            'test/plugin/plugin_npobject_lifetime_test.cc',
-            'test/plugin/plugin_npobject_lifetime_test.h',
-            'test/plugin/plugin_npobject_proxy_test.cc',
-            'test/plugin/plugin_npobject_proxy_test.h',
-            'test/plugin/plugin_private_test.cc',
-            'test/plugin/plugin_private_test.h',
-            'test/plugin/plugin_request_read_test.cc',
-            'test/plugin/plugin_request_read_test.h',
-            'test/plugin/plugin_schedule_timer_test.cc',
-            'test/plugin/plugin_schedule_timer_test.h',
-            'test/plugin/plugin_setup_test.cc',
-            'test/plugin/plugin_setup_test.h',
-            'test/plugin/plugin_test.cc',
-            'test/plugin/plugin_test.h',
-            'test/plugin/plugin_test_factory.cc',
-            'test/plugin/plugin_test_factory.h',
-            'test/plugin/plugin_thread_async_call_test.cc',
-            'test/plugin/plugin_thread_async_call_test.h',
-            'test/plugin/plugin_window_size_test.cc',
-            'test/plugin/plugin_window_size_test.h',
-            'test/plugin/plugin_windowed_test.cc',
-            'test/plugin/plugin_windowed_test.h',
-            'test/plugin/plugin_windowless_test.cc',
-            'test/plugin/plugin_windowless_test.h',
-            'test/plugin/resource.h',
-          ],
-          'include_dirs': [
-            '../..',
-          ],
-          'xcode_settings': {
-            'INFOPLIST_FILE': '<(DEPTH)/content/test/plugin/Info.plist',
-          },
-          'conditions': [
-            ['OS!="win"', {
-              'sources!': [
-                 # windows-specific resources
-                'test/plugin/npapi_test.def',
-                'test/plugin/npapi_test.rc',
-                 # Seems windows specific.
-                'test/plugin/plugin_create_instance_in_paint.cc',
-                'test/plugin/plugin_create_instance_in_paint.h',
-                # TODO(port):  Port these.
-                # plugin_npobject_lifetime_test.cc has win32-isms
-                #   (HWND, CALLBACK).
-                'test/plugin/plugin_npobject_lifetime_test.cc',
-                 # The window APIs are necessarily platform-specific.
-                'test/plugin/plugin_window_size_test.cc',
-                'test/plugin/plugin_windowed_test.cc',
-              ],
-            }],
-            ['OS=="mac"', {
-              'product_extension': 'plugin',
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
-                ],
-              },
-            }],
-            ['os_posix == 1 and OS != "mac" and (target_arch == "x64" or target_arch == "arm")', {
-              # Shared libraries need -fPIC on x86-64
-              'cflags': ['-fPIC']
-            }],
-          ],
-        },
-        {
-          'target_name': 'copy_npapi_test_plugin',
-          'type': 'none',
-          'dependencies': [
-            'npapi_test_plugin',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'copies': [
-                {
-                  'destination': '<(PRODUCT_DIR)/plugins',
-                  'files': ['<(PRODUCT_DIR)/npapi_test_plugin.dll'],
-                },
-              ],
-            }],
-            ['OS=="mac"', {
-              'copies': [
-                {
-                  'destination': '<(PRODUCT_DIR)/plugins/',
-                  'files': ['<(PRODUCT_DIR)/npapi_test_plugin.plugin'],
-                },
-              ]
-            }],
-            ['os_posix == 1 and OS != "mac"', {
-              'copies': [
-                {
-                  'destination': '<(PRODUCT_DIR)/plugins',
-                  'files': ['<(PRODUCT_DIR)/libnpapi_test_plugin.so'],
-                },
-              ],
-            }],
           ],
         },
       ],

@@ -36,10 +36,10 @@ TEST(PlatformHandleDispatcherTest, Basic) {
   EXPECT_FALSE(fp);
   ASSERT_TRUE(h.is_valid());
 
-  scoped_refptr<PlatformHandleDispatcher> dispatcher(
-      new PlatformHandleDispatcher(h.Pass()));
+  scoped_refptr<PlatformHandleDispatcher> dispatcher =
+      PlatformHandleDispatcher::Create(h.Pass());
   EXPECT_FALSE(h.is_valid());
-  EXPECT_EQ(Dispatcher::kTypePlatformHandle, dispatcher->GetType());
+  EXPECT_EQ(Dispatcher::Type::PLATFORM_HANDLE, dispatcher->GetType());
 
   h = dispatcher->PassPlatformHandle().Pass();
   EXPECT_TRUE(h.is_valid());
@@ -72,14 +72,14 @@ TEST(PlatformHandleDispatcherTest, CreateEquivalentDispatcherAndClose) {
       CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
   EXPECT_EQ(sizeof(kFooBar), fwrite(kFooBar, 1, sizeof(kFooBar), fp.get()));
 
-  scoped_refptr<PlatformHandleDispatcher> dispatcher(
-      new PlatformHandleDispatcher(
-          mojo::test::PlatformHandleFromFILE(fp.Pass())));
+  scoped_refptr<PlatformHandleDispatcher> dispatcher =
+      PlatformHandleDispatcher::Create(
+          mojo::test::PlatformHandleFromFILE(fp.Pass()));
 
   DispatcherTransport transport(
       test::DispatcherTryStartTransport(dispatcher.get()));
   EXPECT_TRUE(transport.is_valid());
-  EXPECT_EQ(Dispatcher::kTypePlatformHandle, transport.GetType());
+  EXPECT_EQ(Dispatcher::Type::PLATFORM_HANDLE, transport.GetType());
   EXPECT_FALSE(transport.IsBusy());
 
   scoped_refptr<Dispatcher> generic_dispatcher =
@@ -90,7 +90,7 @@ TEST(PlatformHandleDispatcherTest, CreateEquivalentDispatcherAndClose) {
   EXPECT_TRUE(dispatcher->HasOneRef());
   dispatcher = nullptr;
 
-  ASSERT_EQ(Dispatcher::kTypePlatformHandle, generic_dispatcher->GetType());
+  ASSERT_EQ(Dispatcher::Type::PLATFORM_HANDLE, generic_dispatcher->GetType());
   dispatcher = static_cast<PlatformHandleDispatcher*>(generic_dispatcher.get());
 
   fp = mojo::test::FILEFromPlatformHandle(dispatcher->PassPlatformHandle(),

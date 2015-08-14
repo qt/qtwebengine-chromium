@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="lt">
 <translation id="2774256287122201187">Galite tęsti. Jei tęsite veiksmus puslapyje, šis įspėjimas nebus vėl rodomas penkias minutes.</translation>
+<translation id="3963721102035795474">Skaitytojo režimas</translation>
 <translation id="7485870689360869515">Nerasta jokių duomenų.</translation>
 <translation id="3884278016824448484">Nesuderinamas įrenginio identifikatorius</translation>
 <translation id="5172758083709347301">Įrenginys</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">Privaloma</translation>
 <translation id="2958431318199492670">Tinklo konfigūracija neatitinka ONC standarto. Kai kurių konfigūracijos dalių neįmanoma importuoti.</translation>
 <translation id="3583757800736429874">&amp;Perkelti dar kartą</translation>
+<translation id="7887683347370398519">Patikrinkite kortelės saugos kodą (CVC) ir bandykite dar kartą</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">Trūksta įrenginio įrašo</translation>
 <translation id="1491151370853475546">Iš naujo įkelti šį puslapį</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">Visada versti <ph name="LANGUAGE"/></translation>
 <translation id="1227633850867390598">Slėpti vertę</translation>
 <translation id="6753269504797312559">Politikos vertė</translation>
+<translation id="3369366829301677151">Atnaujinkite ir patvirtinkite „<ph name="CREDIT_CARD"/>“</translation>
 <translation id="8834246243508017242">Įgalinti automatinį pildymą naudojant kontaktus…</translation>
 <translation id="7275334191706090484">Tvarkomos žymės</translation>
 <translation id="7400418766976504921">URL adresas</translation>
 <translation id="7378627244592794276">Ne</translation>
 <translation id="2704283930420550640">Vertė neatitinka formato.</translation>
 <translation id="1055184225775184556">&amp;Anuliuoti pridėjimą</translation>
+<translation id="7813600968533626083">Pašalinti formos pasiūlymą iš „Chrome“?</translation>
 <translation id="4850886885716139402">Žiūrėti</translation>
 <translation id="8091372947890762290">Laukiama aktyvinimo serveryje</translation>
 <translation id="6874604403660855544">&amp;Pridėti dar kartą</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">Sritis</translation>
 <translation id="1871208020102129563">Įgaliotasis serveris nustatytas naudoti fiksuotų įgaliotųjų serverių, o ne .pac scenarijaus URL.</translation>
+<translation id="8988760548304185580">Įveskite galiojimo pabaigos datą ir 3 skaitmenų kortelės saugos kodą (CVC), nurodytą kitoje kortelės pusėje</translation>
 <translation id="8940229512486821554">Paleisti „<ph name="EXTENSION_NAME"/>“ komandą: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">Nežinoma klaida</translation>
 <translation id="112840717907525620">Gera politikos talpykla</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">Tikrinimo klaida: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">Verčiant į <ph name="TARGET_LANGUAGE"/> įvyko klaida.</translation>
 <translation id="4103249731201008433">Netinkamas įrenginio serijos numeris</translation>
+<translation id="3219579145727097045">Įveskite galiojimo pabaigos datą ir 4 skaitmenų kortelės saugos kodą (CVC), nurodytą kortelės priekyje</translation>
 <translation id="59107663811261420">„Google Payments“ nepalaiko šio tipo kortelės naudojantis šio prekybininko paslaugomis. Pasirinkite kitą kortelę.</translation>
-<translation id="3667681724235208644">Peržiūrėti pradinį puslapį</translation>
 <translation id="4079302484614802869">Įgaliotojo serverio konfigūracijoje nustatyta naudoti .pac scenarijaus URL, o ne fiksuotus įgaliotuosius serverius.</translation>
 <translation id="5540224163453853">Nepavyko rasti straipsnio, dėl kurio pateikta užklausa.</translation>
 <translation id="8437238597147034694">&amp;Anuliuoti perkėlimą</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">Versti iš <ph name="ORIGINAL_LANGUAGE"/> į <ph name="TARGET_LANGUAGE"/>?</translation>
 <translation id="8218327578424803826">Priskirta vieta:</translation>
 <translation id="3542684924769048008">Slaptažodį naudoti:</translation>
+<translation id="2855922900409897335">Patvirtinkite „<ph name="CREDIT_CARD"/>“</translation>
 <translation id="7186367841673660872">Šis puslapis išverstas iš<ph name="ORIGINAL_LANGUAGE"/>į<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">Pašalinti adresą iš „Chrome“?</translation>
 <translation id="7139724024395191329">Emyratas</translation>
+<translation id="6646897916597483132">Įveskite 4 skaitmenų kortelės saugos kodą (CVC), nurodytą kortelės priekyje</translation>
 <translation id="5145883236150621069">Politikos atsakyme yra klaidos kodas</translation>
 <translation id="7983301409776629893">Visada versti iš <ph name="ORIGINAL_LANGUAGE"/> į <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="6970216967273061347">Rajonas</translation>
 <translation id="3427342743765426898">&amp;Redaguoti dar kartą</translation>
 <translation id="3010559122411665027">Sąrašo įrašas „<ph name="ENTRY_INDEX"/>“: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Pašalinti kredito kortelės informaciją iš „Chrome“?</translation>
 <translation id="6445051938772793705">Šalis</translation>
 <translation id="5031870354684148875">Apie „Google“ vertėją</translation>
 <translation id="1152921474424827756">Pasiekite <ph name="BEGIN_LINK"/>talpykloje saugomą <ph name="URL"/> kopiją<ph name="END_LINK"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436"><ph name="DOMAIN"/> žymės</translation>
 <translation id="4300246636397505754">Pasiūlymai tėvams</translation>
 <translation id="111844081046043029">Ar tikrai norite išeiti iš šio puslapio?</translation>
+<translation id="2495083838625180221">JSON analizavimo įrankis</translation>
 <translation id="1973335181906896915">Serijinio rengimo klaida</translation>
 <translation id="5989320800837274978">Nenurodyti nei fiksuoti įgaliotieji serveriai, nei .pac scenarijaus URL.</translation>
 <translation id="7805768142964895445">Būsena</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">Išsaugant politikos nustatymus įvyko klaida</translation>
 <translation id="5439770059721715174">Schemos patvirtinimo klaida „<ph name="ERROR_PATH"/>“: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">Žymių juosta</translation>
+<translation id="587701087903783706">Uždaryti mobiliesiems skirtą rodinį</translation>
 <translation id="7208899522964477531">Ieškoti <ph name="SITE_NAME"/> pagal <ph name="SEARCH_TERMS"/></translation>
 <translation id="7956713633345437162">Žymės mobiliesiems</translation>
 <translation id="5089810972385038852">Valstija</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">Netinkamas įgaliotojo serverio režimas.</translation>
 <translation id="3105172416063519923">Ištekliaus ID:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">Norint naudoti šią funkciją, reikia įgalinti „JavaScript“.</translation>
 <translation id="2587841377698384444">Katalogo API ID:</translation>
 <translation id="7752995774971033316">Netvarkoma</translation>
 <translation id="3712624925041724820">Licencijos baigėsi</translation>
 <translation id="4926049483395192435">Turi būti nurodyta.</translation>
+<translation id="1455235771979731432">Patvirtinant kortelę kilo problema. Patikrinkite interneto ryšį ir bandykite dar kartą.</translation>
 <translation id="7542995811387359312">Automatinis kredito kortelės informacijos pildymas neleidžiamas, nes šiai formai nenaudojamas saugus ryšys.</translation>
 <translation id="5179510805599951267">Ne <ph name="ORIGINAL_LANGUAGE"/> k.? Pranešti apie šią klaidą</translation>
 <translation id="8088680233425245692">Nepavyko peržiūrėti straipsnio.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">Aktyvus</translation>
 <translation id="7568593326407688803">Šis puslapis yra<ph name="ORIGINAL_LANGUAGE"/>Ar norėtumėte jį išversti?</translation>
 <translation id="8876793034577346603">Analizuojant tinklo konfigūraciją įvyko klaida.</translation>
+<translation id="4800132727771399293">Patikrinkite kortelės galiojimo pabaigos datą bei saugos kodą (CVC) ir bandykite dar kart</translation>
 <translation id="4171400957073367226">Netinkamas patvirtinimo parašas</translation>
+<translation id="9125941078353557812">Įveskite 3 skaitmenų kortelės saugos kodą (CVC), nurodytą kitoje kortelės pusėje</translation>
 <translation id="106701514854093668">Žymės staliniame kompiuteryje</translation>
 <translation id="6154808779448689242">Sugrąžintas politikos prieigos raktas neatitinka dabartinio prieigos rakto</translation>
 <translation id="7995512525968007366">Nenurodytas</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;Anuliuoti pertvarkymą</translation>
 <translation id="20817612488360358">Sistemos įgaliotojo serverio nustatymai nustatyti kaip naudotini, bet taip pat nurodyta tiksli įgaliotojo serverio konfigūracija.</translation>
 <translation id="2639739919103226564">Būsena:</translation>
+<translation id="8824019021993735287">Šiuo metu „Chrome“ negali patvirtinti jūsų kortelės. Bandykite dar kartą vėliau.</translation>
 <translation id="4968547170521245791">Negalima įgalioti</translation>
 <translation id="385051799172605136">Grįžti</translation>
 <translation id="4196861286325780578">&amp;Perkelti dar kartą</translation>

@@ -40,20 +40,17 @@ public:
 #if !ENABLE(OILPAN)
     virtual ~LifecycleObserver()
     {
-        dispose();
+        clearContext();
     }
 #endif
 
+    EAGERLY_FINALIZE_WILL_BE_REMOVED();
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_lifecycleContext);
     }
-    virtual void contextDestroyed() { }
 
-    void dispose()
-    {
-        setContext(nullptr);
-    }
+    virtual void contextDestroyed() { }
 
     Context* lifecycleContext() const { return m_lifecycleContext; }
     void clearLifecycleContext() { m_lifecycleContext = nullptr; }
@@ -66,6 +63,11 @@ protected:
     }
 
     void setContext(Context*);
+
+    void clearContext()
+    {
+        setContext(nullptr);
+    }
 
 private:
     RawPtrWillBeWeakMember<Context> m_lifecycleContext;

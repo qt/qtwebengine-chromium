@@ -35,26 +35,26 @@
 #include "platform/geometry/FloatPoint.h"
 #include "platform/scroll/ScrollAnimator.h"
 
-class ScrollAnimatorNoneTest;
-
 namespace blink {
+
+class ScrollAnimatorNoneTest;
 
 class PLATFORM_EXPORT ScrollAnimatorNone : public ScrollAnimator {
 public:
     explicit ScrollAnimatorNone(ScrollableArea*);
-    virtual ~ScrollAnimatorNone();
+    ~ScrollAnimatorNone() override;
 
-    virtual ScrollResultOneDimensional scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
-    virtual void scrollToOffsetWithoutAnimation(const FloatPoint&) override;
+    ScrollResultOneDimensional userScroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
+    void scrollToOffsetWithoutAnimation(const FloatPoint&) override;
 
-    virtual void cancelAnimations() override;
-    virtual void serviceScrollAnimations() override;
-    virtual bool hasRunningAnimation() const override;
+    void cancelAnimations() override;
+    void serviceScrollAnimations() override;
+    bool hasRunningAnimation() const override;
 
-    virtual void updateAfterLayout() override;
-    virtual void willEndLiveResize() override;
-    virtual void didAddVerticalScrollbar(Scrollbar*) override;
-    virtual void didAddHorizontalScrollbar(Scrollbar*) override;
+    void updateAfterLayout() override;
+    void willEndLiveResize() override;
+    void didAddVerticalScrollbar(Scrollbar*) override;
+    void didAddHorizontalScrollbar(Scrollbar*) override;
 
     enum Curve {
         Linear,
@@ -91,7 +91,7 @@ protected:
 
     Parameters parametersForScrollGranularity(ScrollGranularity) const;
 
-    friend class ::ScrollAnimatorNoneTest;
+    friend class ScrollAnimatorNoneTest;
 
     struct PLATFORM_EXPORT PerAxisData {
         PerAxisData(float* currentPos, int visibleLength);

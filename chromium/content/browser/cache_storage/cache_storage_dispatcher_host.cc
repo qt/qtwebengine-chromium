@@ -9,6 +9,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/cache_storage/cache_storage_cache.h"
 #include "content/browser/cache_storage/cache_storage_context_impl.h"
 #include "content/browser/cache_storage/cache_storage_manager.h"
@@ -87,7 +88,7 @@ bool CacheStorageDispatcherHost::OnMessageReceived(
   IPC_END_MESSAGE_MAP()
 
   if (!handled)
-    BadMessageReceived();
+    bad_message::ReceivedBadMessage(this, bad_message::CSDH_NOT_RECOGNIZED);
   return handled;
 }
 
@@ -231,13 +232,6 @@ void CacheStorageDispatcherHost::OnCacheBatch(
     int request_id,
     int cache_id,
     const std::vector<CacheStorageBatchOperation>& operations) {
-  if (operations.size() != 1u) {
-    Send(new CacheStorageMsg_CacheBatchError(
-        thread_id, request_id,
-        blink::WebServiceWorkerCacheErrorNotImplemented));
-    return;
-  }
-
   IDToCacheMap::iterator it = id_to_cache_map_.find(cache_id);
   if (it == id_to_cache_map_.end()) {
     Send(new CacheStorageMsg_CacheBatchError(

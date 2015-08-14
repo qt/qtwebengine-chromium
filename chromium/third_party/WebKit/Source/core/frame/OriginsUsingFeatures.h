@@ -5,16 +5,20 @@
 #ifndef OriginsUsingFeatures_h
 #define OriginsUsingFeatures_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
+#include "wtf/HashMap.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class Document;
+class EventTarget;
 class ScriptState;
 
-class OriginsUsingFeatures {
+class CORE_EXPORT OriginsUsingFeatures {
     DISALLOW_ALLOCATION();
 public:
     ~OriginsUsingFeatures();
@@ -22,16 +26,18 @@ public:
     enum class Feature {
         ElementCreateShadowRoot,
         DocumentRegisterElement,
+        EventPath,
 
         NumberOfFeatures // This must be the last item.
     };
 
     static void count(const ScriptState*, Document&, Feature);
+    static void countOriginOrIsolatedWorldHumanReadableName(const ScriptState*, EventTarget&, Feature);
 
     void documentDetached(Document&);
     void updateMeasurementsAndClear();
 
-    class Value {
+    class CORE_EXPORT Value {
     public:
         Value();
 
@@ -42,14 +48,23 @@ public:
         bool get(Feature feature) const { return m_countBits & (1 << static_cast<unsigned>(feature)); }
 
         void aggregate(Value);
-        void updateMeasurements(const String& origin);
+        void recordOriginToRappor(const String& origin);
+        void recordNameToRappor(const String& name);
 
     private:
         unsigned m_countBits : static_cast<unsigned>(Feature::NumberOfFeatures);
     };
 
+    void countName(Feature, const String&);
+    HashMap<String, Value>& valueByName() { return m_valueByName; }
+    void clear();
+
 private:
+    void recordOriginsToRappor();
+    void recordNamesToRappor();
+
     Vector<std::pair<String, OriginsUsingFeatures::Value>, 1> m_originAndValues;
+    HashMap<String, OriginsUsingFeatures::Value> m_valueByName;
 };
 
 } // namespace blink

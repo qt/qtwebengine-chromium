@@ -13,12 +13,10 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/completion_event.h"
 #include "cc/base/delayed_unique_notifier.h"
-#include "cc/resources/resource_update_controller.h"
 #include "cc/scheduler/commit_earlyout_reason.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
-#include "cc/trees/proxy_timing_history.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -30,15 +28,12 @@ class BeginFrameSource;
 class ContextProvider;
 class InputHandlerClient;
 class LayerTreeHost;
-class PrioritizedResourceManager;
-class ResourceUpdateQueue;
 class Scheduler;
 class ScopedThreadProxy;
 
 class CC_EXPORT ThreadProxy : public Proxy,
-                    NON_EXPORTED_BASE(LayerTreeHostImplClient),
-                    NON_EXPORTED_BASE(SchedulerClient),
-                    NON_EXPORTED_BASE(ResourceUpdateControllerClient) {
+                              NON_EXPORTED_BASE(LayerTreeHostImplClient),
+                              NON_EXPORTED_BASE(SchedulerClient) {
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
@@ -56,7 +51,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
     BeginFrameArgs begin_frame_args;
     scoped_ptr<ScrollAndScaleSet> scroll_info;
     size_t memory_allocation_limit_bytes;
-    int memory_allocation_priority_cutoff;
     bool evicted_ui_resources;
   };
 
@@ -88,8 +82,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
     explicit MainThreadOrBlockedMainThread(LayerTreeHost* host);
     ~MainThreadOrBlockedMainThread();
 
-    PrioritizedResourceManager* contents_texture_manager();
-
     LayerTreeHost* layer_tree_host;
     bool commit_waits_for_activation;
     bool main_thread_inside_commit;
@@ -105,10 +97,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     const int layer_tree_host_id;
 
-    // Copy of the main thread side contents texture manager for work
-    // that needs to be done on the compositor thread.
-    PrioritizedResourceManager* contents_texture_manager;
-
     scoped_ptr<Scheduler> scheduler;
 
     // Set when the main thread is waiting on a
@@ -120,8 +108,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     // Set when the main thread is waiting on a pending tree activation.
     CompletionEvent* completion_event_for_commit_held_on_tree_activation;
-
-    scoped_ptr<ResourceUpdateController> current_resource_update_controller;
 
     // Set when the next draw should post DidCommitAndDrawFrame to the main
     // thread.
@@ -139,9 +125,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     DelayedUniqueNotifier smoothness_priority_expiration_notifier;
 
-    ProxyTimingHistory timing_history;
-
     scoped_ptr<BeginFrameSource> external_begin_frame_source;
+
+    RenderingStatsInstrumentation* rendering_stats_instrumentation;
 
     // Values used to keep track of frame durations. Used only in frame timing.
     BeginFrameArgs last_begin_main_frame_args;
@@ -176,7 +162,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void MainThreadHasStoppedFlinging() override;
   void Start() override;
   void Stop() override;
-  size_t MaxPartialTextureUpdates() const override;
   void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
   void SetDebugState(const LayerTreeDebugState& debug_state) override;
@@ -207,16 +192,20 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetVideoNeedsBeginFrames(bool needs_begin_frames) override;
   void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> queue) override;
-  bool ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
-                                               int priority_cutoff) override;
   bool IsInsideDraw() override;
   void RenewTreePriority() override;
   void PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
                                             base::TimeDelta delay) override;
   void DidActivateSyncTree() override;
+  void WillPrepareTiles() override;
   void DidPrepareTiles() override;
   void DidCompletePageScaleAnimationOnImplThread() override;
   void OnDrawForOutputSurface() override;
+  // This should only be called by LayerTreeHostImpl::PostFrameTimingEvents.
+  void PostFrameTimingEventsOnImplThread(
+      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events)
+      override;
 
   // SchedulerClient implementation
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
@@ -230,15 +219,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ScheduledActionBeginOutputSurfaceCreation() override;
   void ScheduledActionPrepareTiles() override;
   void ScheduledActionInvalidateOutputSurface() override;
-  void DidAnticipatedDrawTimeChange(base::TimeTicks time) override;
-  base::TimeDelta DrawDurationEstimate() override;
-  base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
-  base::TimeDelta CommitToActivateDurationEstimate() override;
   void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
   void SendBeginMainFrameNotExpectedSoon() override;
-
-  // ResourceUpdateControllerClient implementation
-  void ReadyToFinalizeTextureUpdates() override;
 
  protected:
   ThreadProxy(
@@ -267,8 +249,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   // Called on impl thread.
   struct SchedulerStateRequest;
 
-  void StartCommitOnImplThread(CompletionEvent* completion,
-                               ResourceUpdateQueue* queue);
+  void StartCommitOnImplThread(CompletionEvent* completion);
   void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion);
@@ -292,6 +273,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
   void SetDebugStateOnImplThread(const LayerTreeDebugState& debug_state);
   void SetDeferCommitsOnImplThread(bool defer_commits) const;
+  void PostFrameTimingEvents(
+      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events);
 
   LayerTreeHost* layer_tree_host();
   const LayerTreeHost* layer_tree_host() const;

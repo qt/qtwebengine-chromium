@@ -20,12 +20,14 @@
 #include "content/common/content_export.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_replication_state.h"
+#include "content/common/image_downloader/image_downloader.mojom.h"
 #include "content/common/mojo/service_registry_impl.h"
 #include "content/common/navigation_params.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "net/http/http_response_headers.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/page_transition_types.h"
 
@@ -53,6 +55,7 @@ namespace content {
 
 class CrossProcessFrameConnector;
 class CrossSiteTransferringRequest;
+class FrameMojoShell;
 class FrameTree;
 class FrameTreeNode;
 class PermissionServiceContext;
@@ -70,7 +73,6 @@ struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
 struct ResourceResponse;
-struct TransitionLayerData;
 
 // Flag arguments for RenderFrameHost creation.
 enum CreateRenderFrameFlags {
@@ -132,6 +134,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   bool IsCrossProcessSubframe() override;
   GURL GetLastCommittedURL() override;
   gfx::NativeView GetNativeView() override;
+  void AddMessageToConsole(ConsoleMessageLevel level,
+                           const std::string& message) override;
   void ExecuteJavaScript(const base::string16& javascript) override;
   void ExecuteJavaScript(const base::string16& javascript,
                          const JavaScriptResultCallback& callback) override;
@@ -147,6 +151,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   blink::WebPageVisibilityState GetVisibilityState() override;
   void InsertVisualStateCallback(
       const VisualStateCallback& callback) override;
+  bool IsRenderFrameLive() override;
 
   // IPC::Sender
   bool Send(IPC::Message* msg) override;
@@ -157,11 +162,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // BrowserAccessibilityDelegate
   void AccessibilitySetFocus(int acc_obj_id) override;
   void AccessibilityDoDefaultAction(int acc_obj_id) override;
-  void AccessibilityShowMenu(const gfx::Point& global_point) override;
+  void AccessibilityShowContextMenu(int acc_obj_id) override;
   void AccessibilityScrollToMakeVisible(int acc_obj_id,
                                         const gfx::Rect& subfocus) override;
   void AccessibilityScrollToPoint(int acc_obj_id,
                                   const gfx::Point& point) override;
+  void AccessibilitySetScrollOffset(int acc_obj_id,
+                                    const gfx::Point& offset) override;
   void AccessibilitySetTextSelection(int acc_obj_id,
                                      int start_offset,
                                      int end_offset) override;
@@ -188,10 +195,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
                          int previous_sibling_routing_id,
                          int proxy_routing_id);
 
-  // Returns whether the RenderFrame in the renderer process has been created
-  // and still has a connection.  This is valid for all frames.
-  bool IsRenderFrameLive();
-
   // Tracks whether the RenderFrame for this RenderFrameHost has been created in
   // the renderer process.  This is currently only used for subframes.
   // TODO(creis): Use this for main frames as well when RVH goes away.
@@ -203,8 +206,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   int routing_id() const { return routing_id_; }
   void OnCreateChildFrame(int new_routing_id,
+                          blink::WebTreeScopeType scope,
                           const std::string& frame_name,
-                          SandboxFlags sandbox_flags);
+                          blink::WebSandboxFlags sandbox_flags);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
@@ -258,12 +262,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
       ui::PageTransition page_transition,
       bool should_replace_current_entry);
 
-  // Called on the current RenderFrameHost when the network response is first
-  // receieved.
-  void OnDeferredAfterResponseStarted(
-      const GlobalRequestID& global_request_id,
-      const TransitionLayerData& transition_data);
-
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler and move to
   // a blank document.  If |proxy| is not null, it should also create a
@@ -277,7 +275,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RenderFrame. Currently this only happens in cross-site navigations.
   // PlzNavigate: this happens in every browser-initiated navigation that is not
   // same-page.
-  bool IsWaitingForBeforeUnloadACK() const;
+  bool is_waiting_for_beforeunload_ack() const {
+    return is_waiting_for_beforeunload_ack_;
+  }
 
   // Whether the RFH is waiting for an unload ACK from the renderer.
   bool IsWaitingForUnloadACK() const;
@@ -349,6 +349,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // PlzNavigate: this call happens on all browser-initiated navigations.
   void DispatchBeforeUnload(bool for_navigation);
 
+  // Returns true if a call to DispatchBeforeUnload will actually send the
+  // BeforeUnload IPC. This is the case if the current renderer is live and this
+  // frame is the main frame.
+  bool ShouldDispatchBeforeUnload();
+
   // Set the frame's opener to null in the renderer process in response to an
   // action in another renderer process.
   void DisownOpener();
@@ -364,16 +369,15 @@ class CONTENT_EXPORT RenderFrameHostImpl
                               const base::string16& user_input,
                               bool dialog_was_suppressed);
 
-  // Clears any outstanding transition request. This is called when we hear the
-  // response or commit.
-  void ClearPendingTransitionRequestData();
-
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
 
   // Request a one-time snapshot of the accessibility tree without changing
   // the accessibility mode.
   void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
+
+  // Resets the accessibility serializer in the renderer.
+  void AccessibilityReset();
 
   // Turn on accessibility testing. The given callback will be run
   // every time an accessibility notification is received from the
@@ -445,6 +449,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // addition, its associated RenderWidgetHost has to be focused.
   bool IsFocused();
 
+  // Returns the Mojo ImageDownloader service.
+  const image_downloader::ImageDownloaderPtr& GetMojoImageDownloader();
+
  protected:
   friend class RenderFrameHostFactory;
 
@@ -478,14 +485,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDocumentOnLoadCompleted(
       FrameMsg_UILoadMetricsReportType::Value report_type,
       base::TimeTicks ui_timestamp);
-  void OnDidStartProvisionalLoadForFrame(const GURL& url,
-                                         bool is_transition_navigation);
+  void OnDidStartProvisionalLoadForFrame(const GURL& url);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
       const GURL& url,
       int error_code,
-      const base::string16& error_description);
+      const base::string16& error_description,
+      bool was_ignored_by_handler);
   void OnDidCommitProvisionalLoad(const IPC::Message& msg);
   void OnDidDropNavigation();
   void OnBeforeUnloadACK(
@@ -513,7 +520,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidDisownOpener();
   void OnDidChangeName(const std::string& name);
   void OnDidAssignPageId(int32 page_id);
-  void OnDidChangeSandboxFlags(int32 frame_routing_id, SandboxFlags flags);
+  void OnDidChangeSandboxFlags(int32 frame_routing_id,
+                               blink::WebSandboxFlags flags);
   void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
@@ -730,6 +738,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   // Context shared for each PermissionService instance created for this RFH.
   scoped_ptr<PermissionServiceContext> permission_service_context_;
+
+  // The frame's Mojo Shell service.
+  scoped_ptr<FrameMojoShell> frame_mojo_shell_;
+
+  // Holder of Mojo connection with ImageDownloader service in RenderFrame.
+  image_downloader::ImageDownloaderPtr mojo_image_downloader_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

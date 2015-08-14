@@ -41,10 +41,9 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-class Canvas2DLayerBridgeTest;
-
 namespace blink {
 
+class Canvas2DLayerBridgeTest;
 class ImageBuffer;
 class WebGraphicsContext3D;
 class WebGraphicsContext3DProvider;
@@ -54,17 +53,17 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public WebExternalTextureLayerClient
 public:
     static PassRefPtr<Canvas2DLayerBridge> create(const IntSize&, OpacityMode, int msaaSampleCount);
 
-    virtual ~Canvas2DLayerBridge();
+    ~Canvas2DLayerBridge() override;
 
     // WebExternalTextureLayerClient implementation.
-    virtual bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap*) override;
-    virtual void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) override;
+    bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap*) override;
+    void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) override;
 
     // SkDeferredCanvas::NotificationClient implementation
-    virtual void prepareForDraw() override;
-    virtual void storageAllocatedForRecordingChanged(size_t) override;
-    virtual void flushedDrawCommands() override;
-    virtual void skippedPendingDrawCommands() override;
+    void prepareForDraw() override;
+    void storageAllocatedForRecordingChanged(size_t) override;
+    void flushedDrawCommands() override;
+    void skippedPendingDrawCommands() override;
 
     // ImageBufferSurface implementation
     void finalizeFrame(const FloatRect &dirtyRect);
@@ -73,7 +72,6 @@ public:
     bool checkSurfaceValid();
     bool restoreSurface();
     WebLayer* layer() const;
-    Platform3DObject getBackingTexture();
     bool isAccelerated() const { return true; }
     void setFilterQuality(SkFilterQuality);
     void setIsHidden(bool);
@@ -116,7 +114,7 @@ protected:
     bool m_isHidden;
 
     friend class WTF::DoublyLinkedListNode<Canvas2DLayerBridge>;
-    friend class ::Canvas2DLayerBridgeTest;
+    friend class Canvas2DLayerBridgeTest;
     Canvas2DLayerBridge* m_next;
     Canvas2DLayerBridge* m_prev;
 

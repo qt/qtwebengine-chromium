@@ -49,6 +49,18 @@ class QuicClient : public EpollCallbackInterface,
                                     const std::string& response_body) = 0;
   };
 
+  // A packet writer factory that always returns the same writer.
+  class DummyPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+   public:
+    explicit DummyPacketWriterFactory(QuicPacketWriter* writer);
+    ~DummyPacketWriterFactory() override;
+
+    QuicPacketWriter* Create(QuicConnection* connection) const override;
+
+   private:
+    QuicPacketWriter* writer_;
+  };
+
   // Create a quic client, which will have events managed by an externally owned
   // EpollServer.
   QuicClient(IPEndPoint server_address,
@@ -199,6 +211,12 @@ class QuicClient : public EpollCallbackInterface,
                          IPEndPoint* server_address,
                          IPAddressNumber* client_ip);
 
+  virtual QuicClientSession* CreateQuicClientSession(
+      const QuicConfig& config,
+      QuicConnection* connection,
+      const QuicServerId& server_id,
+      QuicCryptoClientConfig* crypto_config);
+
   EpollServer* epoll_server() { return epoll_server_; }
 
   // If the socket has been created, then unregister and close() the FD.
@@ -207,21 +225,12 @@ class QuicClient : public EpollCallbackInterface,
  private:
   friend class net::tools::test::QuicClientPeer;
 
-  // A packet writer factory that always returns the same writer
-  class DummyPacketWriterFactory : public QuicConnection::PacketWriterFactory {
-   public:
-    explicit DummyPacketWriterFactory(QuicPacketWriter* writer);
-    ~DummyPacketWriterFactory() override;
-
-    QuicPacketWriter* Create(QuicConnection* connection) const override;
-
-   private:
-    QuicPacketWriter* writer_;
-  };
-
   // Used during initialization: creates the UDP socket FD, sets socket options,
   // and binds the socket to our address.
   bool CreateUDPSocket();
+
+  // Actually clean up the socket.
+  void CleanUpUDPSocketImpl();
 
   // Read a UDP packet and hand it to the framer.
   bool ReadAndProcessPacket();

@@ -54,7 +54,7 @@ LayoutPart::LayoutPart(Element* element)
 void LayoutPart::deref()
 {
     if (--m_refCount <= 0)
-        postDestroy();
+        delete this;
 }
 
 void LayoutPart::willBeDestroyed()
@@ -76,6 +76,15 @@ void LayoutPart::willBeDestroyed()
 void LayoutPart::destroy()
 {
     willBeDestroyed();
+    // We call clearNode here because LayoutPart is ref counted. This call to destroy
+    // may not actually destroy the layout object. We can keep it around because of
+    // references from the FrameView class. (The actual destruction of the class happens
+    // in postDestroy() which is called from deref()).
+    //
+    // But, we've told the system we've destroyed the layoutObject, which happens when
+    // the DOM node is destroyed. So there is a good change the DOM node this object
+    // points too is invalid, so we have to clear the node so we make sure we don't
+    // access it in the future.
     clearNode();
     deref();
 }
@@ -93,7 +102,7 @@ Widget* LayoutPart::widget() const
     if (element && element->isFrameOwnerElement())
         return toHTMLFrameOwnerElement(element)->ownedWidget();
 
-    return 0;
+    return nullptr;
 }
 
 DeprecatedPaintLayerType LayoutPart::layerTypeRequired() const
@@ -161,12 +170,18 @@ bool LayoutPart::nodeAtPoint(HitTestResult& result, const HitTestLocation& locat
         HitTestRequest newHitTestRequest(result.hitTestRequest().type() | HitTestRequest::ChildFrameHitTest);
         HitTestResult childFrameResult(newHitTestRequest, newHitTestLocation);
 
-        bool isInsideChildFrame = childRoot->hitTest(newHitTestRequest, newHitTestLocation, childFrameResult);
+        // The frame's layout and style must be up-to-date if we reach here.
+        bool isInsideChildFrame = childRoot->hitTestNoLifecycleUpdate(childFrameResult);
 
-        if (result.hitTestRequest().listBased())
+        if (result.hitTestRequest().listBased()) {
             result.append(childFrameResult);
-        else if (isInsideChildFrame)
+        } else if (isInsideChildFrame) {
+            // Force the result not to be cacheable because the parent
+            // frame should not cache this result; as it won't be notified of
+            // changes in the child.
+            childFrameResult.setCacheable(false);
             result = childFrameResult;
+        }
 
         if (isInsideChildFrame)
             return true;
@@ -310,10 +325,21 @@ bool LayoutPart::setWidgetGeometry(const LayoutRect& frame)
     if (widget->frameRect() == newFrame)
         return false;
 
-    RefPtrWillBeRawPtr<LayoutPart> protector(this);
+    RefPtr<LayoutPart> protector(this);
     RefPtrWillBeRawPtr<Node> protectedNode(node());
     widget->setFrameRect(newFrame);
     return widget->frameRect().size() != newFrame.size();
+}
+
+void LayoutPart::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& paintInvalidationState)
+{
+    if (widget() && widget()->isFrameView()) {
+        FrameView* childFrameView = toFrameView(widget());
+        PaintInvalidationState childViewPaintInvalidationState(*childFrameView->layoutView(), paintInvalidationState);
+        toFrameView(widget())->invalidateTreeIfNeeded(childViewPaintInvalidationState);
+    }
+
+    LayoutReplaced::invalidatePaintOfSubtreesIfNeeded(paintInvalidationState);
 }
 
 }

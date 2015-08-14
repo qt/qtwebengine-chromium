@@ -39,6 +39,7 @@ bool OmniboxImpl::ConfigureIncomingConnection(
     mojo::ApplicationConnection* connection) {
   connection->AddService<Omnibox>(this);
   connection->AddService(view_manager_client_factory_.get());
+  connection->ConnectToService(&view_embedder_);
   return true;
 }
 
@@ -50,11 +51,9 @@ bool OmniboxImpl::ConfigureOutgoingConnection(
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxImpl, mojo::ViewManagerDelegate implementation:
 
-void OmniboxImpl::OnEmbed(mojo::View* root,
-    mojo::InterfaceRequest<mojo::ServiceProvider> services,
-    mojo::ServiceProviderPtr exposed_services) {
+void OmniboxImpl::OnEmbed(mojo::View* root) {
   if (!aura_init_.get()) {
-    aura_init_.reset(new AuraInit);
+    aura_init_.reset(new AuraInit(root, app_impl_->shell()));
     edit_ = new views::Textfield;
     edit_->set_controller(this);
   }
@@ -87,7 +86,8 @@ void OmniboxImpl::OnEmbed(mojo::View* root,
   edit_->RequestFocus();
 }
 
-void OmniboxImpl::OnViewManagerDisconnected(mojo::ViewManager* view_manager) {}
+void OmniboxImpl::OnViewManagerDestroyed(mojo::ViewManager* view_manager) {
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // OmniboxImpl, views::LayoutManager implementation:
@@ -134,7 +134,9 @@ void OmniboxImpl::SetClient(OmniboxClientPtr client) {
 
 void OmniboxImpl::ShowForURL(const mojo::String& url) {
   url_ = url;
-  // TODO: get embedding working.
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From("mojo:omnibox");
+  view_embedder_->Embed(request.Pass());
 }
 
 }  // namespace mandoline

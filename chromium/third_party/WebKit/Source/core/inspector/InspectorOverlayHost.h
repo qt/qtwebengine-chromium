@@ -30,12 +30,13 @@
 #define InspectorOverlayHost_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 
-class InspectorOverlayHost final : public RefCountedWillBeGarbageCollectedFinalized<InspectorOverlayHost>, public ScriptWrappable {
+class CORE_EXPORT InspectorOverlayHost final : public RefCountedWillBeGarbageCollectedFinalized<InspectorOverlayHost>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<InspectorOverlayHost> create()
@@ -47,19 +48,33 @@ public:
 
     void resume();
     void stepOver();
+    void startPropertyChange(const String&);
+    void changeProperty(float delta);
+    void endPropertyChange();
 
-    class Listener : public WillBeGarbageCollectedMixin {
+    class DebuggerListener : public WillBeGarbageCollectedMixin {
     public:
-        virtual ~Listener() { }
+        virtual ~DebuggerListener() { }
         virtual void overlayResumed() = 0;
         virtual void overlaySteppedOver() = 0;
     };
-    void setListener(Listener* listener) { m_listener = listener; }
+    void setDebuggerListener(DebuggerListener* listener) { m_debuggerListener = listener; }
+
+    class CORE_EXPORT LayoutEditorListener : public WillBeGarbageCollectedMixin {
+    public:
+        virtual ~LayoutEditorListener() { }
+        virtual void overlayStartedPropertyChange(const String&) = 0;
+        virtual void overlayPropertyChanged(float cssDelta) = 0;
+        virtual void overlayEndedPropertyChange() = 0;
+    };
+    void setLayoutEditorListener(LayoutEditorListener* listener) { m_layoutEditorListener = listener; }
 
 private:
     InspectorOverlayHost();
 
-    RawPtrWillBeMember<Listener> m_listener;
+    RawPtrWillBeMember<DebuggerListener> m_debuggerListener;
+    RawPtrWillBeMember<LayoutEditorListener> m_layoutEditorListener;
+
 };
 
 } // namespace blink

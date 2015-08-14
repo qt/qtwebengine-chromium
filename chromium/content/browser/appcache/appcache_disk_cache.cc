@@ -198,8 +198,12 @@ class AppCacheDiskCache::ActiveCall
 };
 
 AppCacheDiskCache::AppCacheDiskCache()
-    : is_disabled_(false),
-      weak_factory_(this) {
+#if defined(APPCACHE_USE_SIMPLE_CACHE)
+    : AppCacheDiskCache(true)
+#else
+    : AppCacheDiskCache(false)
+#endif
+{
 }
 
 AppCacheDiskCache::~AppCacheDiskCache() {
@@ -256,7 +260,7 @@ int AppCacheDiskCache::CreateEntry(int64 key, Entry** entry,
   if (is_disabled_)
     return net::ERR_ABORTED;
 
-  if (is_initializing()) {
+  if (is_initializing_or_waiting_to_initialize()) {
     pending_calls_.push_back(PendingCall(CREATE, key, entry, callback));
     return net::ERR_IO_PENDING;
   }
@@ -275,7 +279,7 @@ int AppCacheDiskCache::OpenEntry(int64 key, Entry** entry,
   if (is_disabled_)
     return net::ERR_ABORTED;
 
-  if (is_initializing()) {
+  if (is_initializing_or_waiting_to_initialize()) {
     pending_calls_.push_back(PendingCall(OPEN, key, entry, callback));
     return net::ERR_IO_PENDING;
   }
@@ -293,7 +297,7 @@ int AppCacheDiskCache::DoomEntry(int64 key,
   if (is_disabled_)
     return net::ERR_ABORTED;
 
-  if (is_initializing()) {
+  if (is_initializing_or_waiting_to_initialize()) {
     pending_calls_.push_back(PendingCall(DOOM, key, NULL, callback));
     return net::ERR_IO_PENDING;
   }
@@ -302,6 +306,13 @@ int AppCacheDiskCache::DoomEntry(int64 key,
     return net::ERR_FAILED;
 
   return ActiveCall::DoomEntry(weak_factory_.GetWeakPtr(), key, callback);
+}
+
+AppCacheDiskCache::AppCacheDiskCache(bool use_simple_cache)
+    : use_simple_cache_(use_simple_cache),
+      is_disabled_(false),
+      is_waiting_to_initialize_(false),
+      weak_factory_(this) {
 }
 
 AppCacheDiskCache::PendingCall::PendingCall()
@@ -329,18 +340,14 @@ int AppCacheDiskCache::Init(
     bool force,
     const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
     const net::CompletionCallback& callback) {
-  DCHECK(!is_initializing() && !disk_cache_.get());
+  DCHECK(!is_initializing_or_waiting_to_initialize() && !disk_cache_.get());
   is_disabled_ = false;
   create_backend_callback_ = new CreateBackendCallbackShim(this);
 
-#if defined(APPCACHE_USE_SIMPLE_CACHE)
-  const net::BackendType backend_type = net::CACHE_BACKEND_SIMPLE;
-#else
-  const net::BackendType backend_type = net::CACHE_BACKEND_DEFAULT;
-#endif
   int rv = disk_cache::CreateCacheBackend(
       cache_type,
-      backend_type,
+      use_simple_cache_ ? net::CACHE_BACKEND_SIMPLE
+                        : net::CACHE_BACKEND_DEFAULT,
       cache_directory,
       cache_size,
       force,

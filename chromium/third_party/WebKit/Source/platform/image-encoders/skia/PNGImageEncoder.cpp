@@ -50,10 +50,11 @@ static void writeOutput(png_structp png, png_bytep data, png_size_t size)
 static void preMultipliedBGRAtoRGBA(const void* pixels, int pixelCount, unsigned char* output)
 {
     static const SkUnPreMultiply::Scale* scale = SkUnPreMultiply::GetScaleTable();
+
     const SkPMColor* input = static_cast<const SkPMColor*>(pixels);
 
     for (; pixelCount-- > 0; ++input) {
-        const unsigned alpha = SkGetPackedA32(*input);
+        unsigned char alpha = SkGetPackedA32(*input);
         if ((alpha != 0) && (alpha != 255)) {
             *output++ = SkUnPreMultiply::ApplyScale(scale[alpha], SkGetPackedR32(*input));
             *output++ = SkUnPreMultiply::ApplyScale(scale[alpha], SkGetPackedG32(*input));
@@ -70,7 +71,9 @@ static void preMultipliedBGRAtoRGBA(const void* pixels, int pixelCount, unsigned
 
 static bool encodePixels(IntSize imageSize, const unsigned char* inputPixels, bool premultiplied, Vector<unsigned char>* output)
 {
-    imageSize.clampNegativeToZero();
+    if (imageSize.width() <= 0 || imageSize.height() <= 0)
+        return false;
+
     Vector<unsigned char> row;
 
     png_struct* png = png_create_write_struct(PNG_LIBPNG_VER_STRING, 0, 0, 0);

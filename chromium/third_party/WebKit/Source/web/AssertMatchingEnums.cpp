@@ -41,6 +41,7 @@
 #include "core/editing/SelectionType.h"
 #include "core/editing/TextAffinity.h"
 #include "core/fileapi/FileError.h"
+#include "core/frame/Frame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
@@ -116,6 +117,7 @@
 #include "public/web/WebFontDescription.h"
 #include "public/web/WebFormElement.h"
 #include "public/web/WebFrameClient.h"
+#include "public/web/WebFrameLoadType.h"
 #include "public/web/WebGeolocationError.h"
 #include "public/web/WebGeolocationPosition.h"
 #include "public/web/WebHistoryCommitType.h"
@@ -125,6 +127,7 @@
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebNavigationPolicy.h"
 #include "public/web/WebNavigatorContentUtilsClient.h"
+#include "public/web/WebRemoteFrameClient.h"
 #include "public/web/WebSandboxFlags.h"
 #include "public/web/WebSecurityPolicy.h"
 #include "public/web/WebSelection.h"
@@ -224,6 +227,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXRoleImageMapLink, ImageMapLinkRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleImageMap, ImageMapRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleImage, ImageRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleInlineTextBox, InlineTextBoxRole);
+STATIC_ASSERT_MATCHING_ENUM(WebAXRoleInputTime, InputTimeRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleLabel, LabelRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleLegend, LegendRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleLink, LinkRole);
@@ -234,6 +238,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXRoleListMarker, ListMarkerRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleList, ListRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleLog, LogRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleMain, MainRole);
+STATIC_ASSERT_MATCHING_ENUM(WebAXRoleMark, MarkRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleMarquee, MarqueeRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleMath, MathRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleMenuBar, MenuBarRole);
@@ -333,10 +338,6 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXSortDirectionOther, SortDirectionOther);
 STATIC_ASSERT_MATCHING_ENUM(WebAXExpandedUndefined, ExpandedUndefined);
 STATIC_ASSERT_MATCHING_ENUM(WebAXExpandedCollapsed, ExpandedCollapsed);
 STATIC_ASSERT_MATCHING_ENUM(WebAXExpandedExpanded, ExpandedExpanded);
-
-STATIC_ASSERT_MATCHING_ENUM(WebAXOptionalBoolUndefined, OptionalBoolUndefined);
-STATIC_ASSERT_MATCHING_ENUM(WebAXOptionalBoolTrue, OptionalBoolTrue);
-STATIC_ASSERT_MATCHING_ENUM(WebAXOptionalBoolFalse, OptionalBoolFalse);
 
 STATIC_ASSERT_MATCHING_ENUM(WebAXOrientationUndefined, AccessibilityOrientationUndefined);
 STATIC_ASSERT_MATCHING_ENUM(WebAXOrientationVertical, AccessibilityOrientationVertical);
@@ -676,19 +677,9 @@ STATIC_ASSERT_MATCHING_ENUM(WebSettings::ImageAnimationPolicyAnimateOnce, ImageA
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::ImageAnimationPolicyNoAnimation, ImageAnimationPolicyNoAnimation);
 
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsDefault, V8CacheOptionsDefault);
+STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsNone, V8CacheOptionsNone);
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsParse, V8CacheOptionsParse);
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsCode, V8CacheOptionsCode);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsCodeCompressed, V8CacheOptionsCodeCompressed);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsNone, V8CacheOptionsNone);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsParseMemory, V8CacheOptionsParseMemory);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristics, V8CacheOptionsHeuristics);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristicsMobile, V8CacheOptionsHeuristicsMobile);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristics, V8CacheOptionsHeuristics);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristicsMobile, V8CacheOptionsHeuristicsMobile);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristicsDefault, V8CacheOptionsHeuristicsDefault);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsHeuristicsDefaultMobile, V8CacheOptionsHeuristicsDefaultMobile);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsRecent, V8CacheOptionsRecent);
-STATIC_ASSERT_MATCHING_ENUM(WebSettings::V8CacheOptionsRecentSmall, V8CacheOptionsRecentSmall);
 
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::PointerTypeNone, PointerTypeNone);
 STATIC_ASSERT_MATCHING_ENUM(WebSettings::PointerTypeCoarse, PointerTypeCoarse);
@@ -716,7 +707,23 @@ STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::AutomaticFeatures, SandboxAutomatic
 STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::PointerLock, SandboxPointerLock);
 STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::DocumentDomain, SandboxDocumentDomain);
 STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::OrientationLock, SandboxOrientationLock);
+STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::PropagatesToAuxiliaryBrowsingContexts, SandboxPropagatesToAuxiliaryBrowsingContexts);
+STATIC_ASSERT_MATCHING_ENUM(WebSandboxFlags::Modals, SandboxModals);
 
 STATIC_ASSERT_MATCHING_ENUM(FrameLoaderClient::BeforeUnloadHandler, WebFrameClient::BeforeUnloadHandler);
 STATIC_ASSERT_MATCHING_ENUM(FrameLoaderClient::UnloadHandler, WebFrameClient::UnloadHandler);
+
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Standard, FrameLoadTypeStandard);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::BackForward, FrameLoadTypeBackForward);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Reload, FrameLoadTypeReload);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::Same, FrameLoadTypeSame);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::RedirectWithLockedBackForwardList, FrameLoadTypeRedirectWithLockedBackForwardList);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::InitialInChildFrame, FrameLoadTypeInitialInChildFrame);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::InitialHistoryLoad, FrameLoadTypeInitialHistoryLoad);
+STATIC_ASSERT_MATCHING_ENUM(WebFrameLoadType::ReloadFromOrigin, FrameLoadTypeReloadFromOrigin);
+
+STATIC_ASSERT_MATCHING_ENUM(FrameDetachType::Remove, WebFrameClient::DetachType::Remove);
+STATIC_ASSERT_MATCHING_ENUM(FrameDetachType::Swap, WebFrameClient::DetachType::Swap);
+STATIC_ASSERT_MATCHING_ENUM(FrameDetachType::Remove, WebRemoteFrameClient::DetachType::Remove);
+STATIC_ASSERT_MATCHING_ENUM(FrameDetachType::Swap, WebRemoteFrameClient::DetachType::Swap);
 } // namespace blink

@@ -37,10 +37,9 @@
 #include "core/frame/Settings.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/layout/LayoutDetailsMarker.h"
-#include "core/page/Chrome.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/LayoutTestSupport.h"
-#include "wtf/TemporaryChange.h"
 
 using namespace WTF::Unicode;
 
@@ -51,7 +50,6 @@ using namespace HTMLNames;
 inline PickerIndicatorElement::PickerIndicatorElement(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
     : HTMLDivElement(document)
     , m_pickerIndicatorOwner(&pickerIndicatorOwner)
-    , m_isInOpenPopup(false)
 {
 }
 
@@ -124,12 +122,6 @@ void PickerIndicatorElement::didEndChooser()
 
 void PickerIndicatorElement::openPopup()
 {
-    // The m_isInOpenPopup flag is unnecessary in production.
-    // MockPagePopupDriver allows to execute JavaScript code in
-    // DateTimeChooserImpl constructor. It might create another DateTimeChooser.
-    if (m_isInOpenPopup)
-        return;
-    TemporaryChange<bool> reentrancyProtector(m_isInOpenPopup, true);
     if (m_chooser)
         return;
     if (!document().page())
@@ -139,7 +131,7 @@ void PickerIndicatorElement::openPopup()
     DateTimeChooserParameters parameters;
     if (!m_pickerIndicatorOwner->setupDateTimeChooserParameters(parameters))
         return;
-    m_chooser = document().page()->chrome().openDateTimeChooser(this, parameters);
+    m_chooser = document().page()->chromeClient().openDateTimeChooser(this, parameters);
 }
 
 Element& PickerIndicatorElement::ownerElement() const

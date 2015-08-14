@@ -124,48 +124,61 @@ static bool isInterestingStatusCode(int statusCode)
     return statusCode >= 400;
 }
 
+static String buildAccessControlFailureMessage(const String& detail, SecurityOrigin* securityOrigin)
+{
+    return detail + " Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+}
+
 bool passesAccessControlCheck(const ResourceResponse& response, StoredCredentials includeCredentials, SecurityOrigin* securityOrigin, String& errorDescription)
 {
-    AtomicallyInitializedStaticReference(AtomicString, accessControlAllowOrigin, (new AtomicString("access-control-allow-origin", AtomicString::ConstructFromLiteral)));
-    AtomicallyInitializedStaticReference(AtomicString, accessControlAllowCredentials, (new AtomicString("access-control-allow-credentials", AtomicString::ConstructFromLiteral)));
+    AtomicallyInitializedStaticReference(AtomicString, allowOriginHeaderName, (new AtomicString("access-control-allow-origin", AtomicString::ConstructFromLiteral)));
+    AtomicallyInitializedStaticReference(AtomicString, allowCredentialsHeaderName, (new AtomicString("access-control-allow-credentials", AtomicString::ConstructFromLiteral)));
 
-    if (!response.httpStatusCode()) {
-        errorDescription = "Received an invalid response. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+    int statusCode = response.httpStatusCode();
+
+    if (!statusCode) {
+        errorDescription = buildAccessControlFailureMessage("Invalid response.", securityOrigin);
         return false;
     }
 
-    const AtomicString& accessControlOriginString = response.httpHeaderField(accessControlAllowOrigin);
-    if (accessControlOriginString == starAtom) {
+    const AtomicString& allowOriginHeaderValue = response.httpHeaderField(allowOriginHeaderName);
+    if (allowOriginHeaderValue == starAtom) {
         // A wildcard Access-Control-Allow-Origin can not be used if credentials are to be sent,
         // even with Access-Control-Allow-Credentials set to true.
         if (includeCredentials == DoNotAllowStoredCredentials)
             return true;
         if (response.isHTTP()) {
-            errorDescription = "A wildcard '*' cannot be used in the 'Access-Control-Allow-Origin' header when the credentials flag is true. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+            errorDescription = buildAccessControlFailureMessage("A wildcard '*' cannot be used in the 'Access-Control-Allow-Origin' header when the credentials flag is true.", securityOrigin);
             return false;
         }
-    } else if (accessControlOriginString != securityOrigin->toAtomicString()) {
-        if (accessControlOriginString.isNull()) {
-            errorDescription = "No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+    } else if (allowOriginHeaderValue != securityOrigin->toAtomicString()) {
+        if (allowOriginHeaderValue.isNull()) {
+            errorDescription = buildAccessControlFailureMessage("No 'Access-Control-Allow-Origin' header is present on the requested resource.", securityOrigin);
 
-            if (isInterestingStatusCode(response.httpStatusCode()))
-                errorDescription.append(" The response had HTTP status code " + String::number(response.httpStatusCode()) + ".");
-        } else if (accessControlOriginString.string().find(isOriginSeparator, 0) != kNotFound) {
-            errorDescription = "The 'Access-Control-Allow-Origin' header contains multiple values '" + accessControlOriginString + "', but only one is allowed. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
-        } else {
-            KURL headerOrigin(KURL(), accessControlOriginString);
-            if (!headerOrigin.isValid())
-                errorDescription = "The 'Access-Control-Allow-Origin' header contains the invalid value '" + accessControlOriginString + "'. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
-            else
-                errorDescription = "The 'Access-Control-Allow-Origin' header has a value '" + accessControlOriginString + "' that is not equal to the supplied origin. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+            if (isInterestingStatusCode(statusCode))
+                errorDescription.append(" The response had HTTP status code " + String::number(statusCode) + ".");
+
+            return false;
         }
+
+        String detail;
+        if (allowOriginHeaderValue.string().find(isOriginSeparator, 0) != kNotFound) {
+            detail = "The 'Access-Control-Allow-Origin' header contains multiple values '" + allowOriginHeaderValue + "', but only one is allowed.";
+        } else {
+            KURL headerOrigin(KURL(), allowOriginHeaderValue);
+            if (!headerOrigin.isValid())
+                detail = "The 'Access-Control-Allow-Origin' header contains the invalid value '" + allowOriginHeaderValue + "'.";
+            else
+                detail = "The 'Access-Control-Allow-Origin' header has a value '" + allowOriginHeaderValue + "' that is not equal to the supplied origin.";
+        }
+        errorDescription = buildAccessControlFailureMessage(detail, securityOrigin);
         return false;
     }
 
     if (includeCredentials == AllowStoredCredentials) {
-        const AtomicString& accessControlCredentialsString = response.httpHeaderField(accessControlAllowCredentials);
-        if (accessControlCredentialsString != "true") {
-            errorDescription = "Credentials flag is 'true', but the 'Access-Control-Allow-Credentials' header is '" + accessControlCredentialsString + "'. It must be 'true' to allow credentials.";
+        const AtomicString& allowCredentialsHeaderValue = response.httpHeaderField(allowCredentialsHeaderName);
+        if (allowCredentialsHeaderValue != "true") {
+            errorDescription = buildAccessControlFailureMessage("Credentials flag is 'true', but the 'Access-Control-Allow-Credentials' header is '" + allowCredentialsHeaderValue + "'. It must be 'true' to allow credentials.", securityOrigin);
             return false;
         }
     }
@@ -182,7 +195,7 @@ bool passesPreflightStatusCheck(const ResourceResponse& response, String& errorD
     //   http://www.w3.org/TR/cors/#cross-origin-request-with-preflight-0
     // https://crbug.com/452394
     if (response.httpStatusCode() < 200 || response.httpStatusCode() >= 300) {
-        errorDescription = "Invalid HTTP status code " + String::number(response.httpStatusCode());
+        errorDescription = "Response for preflight has invalid HTTP status code " + String::number(response.httpStatusCode());
         return false;
     }
 
@@ -216,13 +229,13 @@ bool CrossOriginAccessControl::isLegalRedirectLocation(const KURL& requestURL, S
     return true;
 }
 
-bool CrossOriginAccessControl::handleRedirect(SecurityOrigin* securityOrigin, ResourceRequest& request, const ResourceResponse& redirectResponse, StoredCredentials withCredentials, ResourceLoaderOptions& options, String& errorMessage)
+bool CrossOriginAccessControl::handleRedirect(SecurityOrigin* securityOrigin, ResourceRequest& newRequest, const ResourceResponse& redirectResponse, StoredCredentials withCredentials, ResourceLoaderOptions& options, String& errorMessage)
 {
     // http://www.w3.org/TR/cors/#redirect-steps terminology:
     const KURL& originalURL = redirectResponse.url();
-    const KURL& requestURL = request.url();
+    const KURL& newURL = newRequest.url();
 
-    bool redirectCrossOrigin = !securityOrigin->canRequest(requestURL);
+    bool redirectCrossOrigin = !securityOrigin->canRequest(newURL);
 
     // Same-origin request URLs that redirect are allowed without checking access.
     if (!securityOrigin->canRequest(originalURL)) {
@@ -230,7 +243,7 @@ bool CrossOriginAccessControl::handleRedirect(SecurityOrigin* securityOrigin, Re
         String errorDescription;
 
         // Steps 3 & 4 - check if scheme and other URL restrictions hold.
-        bool allowRedirect = isLegalRedirectLocation(requestURL, errorDescription);
+        bool allowRedirect = isLegalRedirectLocation(newURL, errorDescription);
         if (allowRedirect) {
             // Step 5: perform resource sharing access check.
             allowRedirect = passesAccessControlCheck(redirectResponse, withCredentials, securityOrigin, errorDescription);
@@ -238,7 +251,7 @@ bool CrossOriginAccessControl::handleRedirect(SecurityOrigin* securityOrigin, Re
                 RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::create(originalURL);
                 // Step 6: if the request URL origin is not same origin as the original URL's,
                 // set the source origin to a globally unique identifier.
-                if (!originalOrigin->canRequest(requestURL)) {
+                if (!originalOrigin->canRequest(newURL)) {
                     options.securityOrigin = SecurityOrigin::createUnique();
                     securityOrigin = options.securityOrigin.get();
                 }
@@ -252,8 +265,8 @@ bool CrossOriginAccessControl::handleRedirect(SecurityOrigin* securityOrigin, Re
     }
     if (redirectCrossOrigin) {
         // If now to a different origin, update/set Origin:.
-        request.clearHTTPOrigin();
-        request.setHTTPOrigin(securityOrigin->toAtomicString());
+        newRequest.clearHTTPOrigin();
+        newRequest.setHTTPOrigin(securityOrigin->toAtomicString());
         // If the user didn't request credentials in the first place, update our
         // state so we neither request them nor expect they must be allowed.
         if (options.credentialsRequested == ClientDidNotRequestCredentials)

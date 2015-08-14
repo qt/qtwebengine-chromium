@@ -21,17 +21,17 @@
 #ifndef SVGUseElement_h
 #define SVGUseElement_h
 
-#include "core/SVGNames.h"
+#include "core/events/EventSender.h"
 #include "core/fetch/DocumentResource.h"
-#include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
+#include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-class DocumentResource;
+typedef EventSender<SVGUseElement> SVGUseEventSender;
 
 class SVGUseElement final : public SVGGraphicsElement,
                             public SVGURIReference,
@@ -40,45 +40,49 @@ class SVGUseElement final : public SVGGraphicsElement,
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGUseElement);
 public:
     static PassRefPtrWillBeRawPtr<SVGUseElement> create(Document&);
-    virtual ~SVGUseElement();
+    ~SVGUseElement() override;
 
     void invalidateShadowTree();
 
-    LayoutObject* layoutObjectClipChild() const;
+    // Return the element that should be used for clipping,
+    // or null if a valid clip element is not directly referenced.
+    SVGGraphicsElement* targetGraphicsElementForClipping() const;
 
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
     SVGAnimatedLength* width() const { return m_width.get(); }
     SVGAnimatedLength* height() const { return m_height.get(); }
 
-    virtual void buildPendingResource() override;
+    void buildPendingResource() override;
+
+    void dispatchPendingEvent(SVGUseEventSender*);
+    void toClipPath(Path&) const;
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGUseElement(Document&);
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
-    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
 
-    virtual bool isStructurallyExternal() const override { return !hrefString().isNull() && isExternalURIReference(hrefString(), document()); }
+    bool isStructurallyExternal() const override { return !hrefString().isNull() && isExternalURIReference(hrefString(), document()); }
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
-    virtual void removedFrom(ContainerNode*) override;
+    InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    void removedFrom(ContainerNode*) override;
 
-    virtual void svgAttributeChanged(const QualifiedName&) override;
+    void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
-    virtual void toClipPath(Path&) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     void clearResourceReferences();
     void buildShadowAndInstanceTree(SVGElement* target);
 
     void scheduleShadowTreeRecreation();
-    virtual bool haveLoadedRequiredResources() override { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
+    bool haveLoadedRequiredResources() override { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
 
-    virtual bool selfHasRelativeLengths() const override;
+    bool selfHasRelativeLengths() const override;
 
     // Instance tree handling
     bool buildShadowTree(SVGElement* target, SVGElement* targetInstance, bool foundUse);
@@ -93,11 +97,9 @@ private:
     bool resourceIsStillLoading();
     Document* externalDocument() const;
     bool instanceTreeIsLoading(SVGElement*);
-    virtual void notifyFinished(Resource*) override;
+    void notifyFinished(Resource*) override;
     TreeScope* referencedScope() const;
     void setDocumentResource(ResourcePtr<DocumentResource>);
-
-    virtual Timer<SVGElement>* svgLoadEventTimer() override { return &m_svgLoadEventTimer; }
 
     RefPtrWillBeMember<SVGAnimatedLength> m_x;
     RefPtrWillBeMember<SVGAnimatedLength> m_y;
@@ -108,7 +110,6 @@ private:
     bool m_needsShadowTreeRecreation;
     RefPtrWillBeMember<SVGElement> m_targetElementInstance;
     ResourcePtr<DocumentResource> m_resource;
-    Timer<SVGElement> m_svgLoadEventTimer;
 };
 
 } // namespace blink

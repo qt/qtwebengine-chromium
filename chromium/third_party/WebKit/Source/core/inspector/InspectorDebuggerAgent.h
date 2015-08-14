@@ -32,9 +32,8 @@
 
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/ScriptValue.h"
+#include "core/CoreExport.h"
 #include "core/InspectorFrontend.h"
-#include "core/frame/ConsoleTypes.h"
-#include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/PromiseTracker.h"
 #include "core/inspector/ScriptBreakpoint.h"
@@ -51,21 +50,19 @@ namespace blink {
 
 class AsyncCallChain;
 class AsyncCallStack;
-class ConsoleMessage;
 class DevToolsFunctionInfo;
 class InjectedScript;
 class InjectedScriptManager;
 class JavaScriptCallFrame;
 class JSONObject;
 class ScriptAsyncCallStack;
-class ScriptDebugServer;
 class ScriptRegexp;
-class ScriptSourceCode;
 class V8AsyncCallTracker;
+class V8Debugger;
 
 typedef String ErrorString;
 
-class InspectorDebuggerAgent
+class CORE_EXPORT InspectorDebuggerAgent
     : public InspectorBaseAgent<InspectorDebuggerAgent, InspectorFrontend::Debugger>
     , public ScriptDebugListener
     , public InspectorBackendDispatcher::DebuggerCommandHandler
@@ -86,12 +83,11 @@ public:
 
     void canSetScriptSource(ErrorString*, bool* result) final { *result = true; }
 
-    void init() override final;
-    void restore() override final;
-    void disable(ErrorString*) override final;
+    void init() final;
+    void restore() override;
+    void disable(ErrorString*) final;
 
     bool isPaused();
-    void addMessageToConsole(ConsoleMessage*);
 
     // Part of the protocol.
     void enable(ErrorString*) override;
@@ -153,7 +149,7 @@ public:
     void didEvaluateScript();
     bool getEditedScript(const String& url, String* content);
 
-    class Listener : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT Listener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~Listener() { }
         virtual void debuggerWasEnabled() = 0;
@@ -167,7 +163,7 @@ public:
 
     bool enabled();
 
-    virtual ScriptDebugServer& scriptDebugServer() = 0;
+    virtual V8Debugger& debugger() = 0;
 
     void setBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource, const String& condition = String());
     void removeBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource);
@@ -181,7 +177,7 @@ public:
     void traceAsyncOperationCompleted(int operationId);
     bool trackingAsyncCalls() const { return m_maxAsyncCallStackDepth; }
 
-    class AsyncCallTrackingListener : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT AsyncCallTrackingListener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~AsyncCallTrackingListener() { }
         DEFINE_INLINE_VIRTUAL_TRACE() { }
@@ -197,8 +193,8 @@ public:
 protected:
     InspectorDebuggerAgent(InjectedScriptManager*, v8::Isolate*);
 
-    virtual void startListeningScriptDebugServer() = 0;
-    virtual void stopListeningScriptDebugServer() = 0;
+    virtual void startListeningV8Debugger() = 0;
+    virtual void stopListeningV8Debugger() = 0;
     virtual void muteConsole() = 0;
     virtual void unmuteConsole() = 0;
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
@@ -219,7 +215,6 @@ private:
 
     void schedulePauseOnNextStatementIfSteppingInto();
     void cancelPauseOnNextStatement();
-    void addMessageToConsole(MessageSource, MessageType);
 
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();
     PassRefPtr<TypeBuilder::Debugger::StackTrace> currentAsyncStackTrace();
@@ -229,7 +224,7 @@ private:
 
     void changeJavaScriptRecursionLevel(int step);
 
-    void didParseSource(const String& scriptId, const Script&, CompileResult) final;
+    void didParseSource(const ParsedScript&) final;
     bool v8AsyncTaskEventsEnabled() const final;
     void didReceiveV8AsyncTaskEvent(ScriptState*, const String& eventType, const String& eventName, int id) final;
     bool v8PromiseEventsEnabled() const final;
@@ -248,7 +243,7 @@ private:
 
     bool isCallStackEmptyOrBlackboxed();
     bool isTopCallFrameBlackboxed();
-    bool isCallFrameWithUnknownScriptOrBlackboxed(PassRefPtrWillBeRawPtr<JavaScriptCallFrame>);
+    bool isCallFrameWithUnknownScriptOrBlackboxed(PassRefPtr<JavaScriptCallFrame>);
     PromiseTracker& promiseTracker() const { return *m_promiseTracker; }
 
     void internalSetAsyncCallStackDepth(int);
@@ -256,8 +251,8 @@ private:
     PassRefPtr<TypeBuilder::Debugger::ExceptionDetails> createExceptionDetails(v8::Isolate*, v8::Local<v8::Message>);
 
     typedef HashMap<String, Script> ScriptsMap;
-    typedef HashMap<String, Vector<String> > BreakpointIdToDebugServerBreakpointIdsMap;
-    typedef HashMap<String, std::pair<String, BreakpointSource> > DebugServerBreakpointToBreakpointIdAndSourceMap;
+    typedef HashMap<String, Vector<String>> BreakpointIdToDebuggerBreakpointIdsMap;
+    typedef HashMap<String, std::pair<String, BreakpointSource>> DebugServerBreakpointToBreakpointIdAndSourceMap;
 
     enum DebuggerStep {
         NoStep = 0,
@@ -270,7 +265,7 @@ private:
     RefPtr<ScriptState> m_pausedScriptState;
     ScriptValue m_currentCallStack;
     ScriptsMap m_scripts;
-    BreakpointIdToDebugServerBreakpointIdsMap m_breakpointIdToDebugServerBreakpointIds;
+    BreakpointIdToDebuggerBreakpointIdsMap m_breakpointIdToDebuggerBreakpointIds;
     DebugServerBreakpointToBreakpointIdAndSourceMap m_serverBreakpoints;
     String m_continueToLocationBreakpointId;
     InspectorFrontend::Debugger::Reason::Enum m_breakReason;
@@ -290,6 +285,8 @@ private:
     bool m_skipContentScripts;
     OwnPtr<ScriptRegexp> m_cachedSkipStackRegExp;
     unsigned m_cachedSkipStackGeneration;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<AsyncCallTrackingListener>> m_asyncCallTrackingListeners;
+    // This field must be destroyed before the listeners set above.
     OwnPtrWillBeMember<V8AsyncCallTracker> m_v8AsyncCallTracker;
     OwnPtrWillBeMember<PromiseTracker> m_promiseTracker;
     HashMap<String, String> m_editedScripts;
@@ -306,7 +303,6 @@ private:
     int m_currentAsyncOperationId;
     bool m_pendingTraceAsyncOperationCompleted;
     bool m_startingStepIntoAsync;
-    WillBeHeapVector<RawPtrWillBeMember<AsyncCallTrackingListener>> m_asyncCallTrackingListeners;
     V8GlobalValueMap<String, v8::Script, v8::kNotWeak> m_compiledScripts;
 };
 

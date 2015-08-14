@@ -17,7 +17,6 @@ class GURL;
 
 namespace base {
 class MessageLoop;
-class MessageLoopProxy;
 class WaitableEvent;
 }
 
@@ -54,7 +53,8 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   virtual IPC::SyncChannel* GetChannel() = 0;
   virtual std::string GetLocale() = 0;
   virtual IPC::SyncMessageFilter* GetSyncMessageFilter() = 0;
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+  GetIOMessageLoopProxy() = 0;
 
   // Called to add or remove a listener for a particular message routing ID.
   // These methods normally get delegated to a MessageRouter.

@@ -37,10 +37,10 @@ class LevelEstimator;
 class NoiseSuppression;
 class VoiceDetection;
 
-// Use to enable the delay correction feature. This now engages an extended
-// filter mode in the AEC, along with robustness measures around the reported
-// system delays. It comes with a significant increase in AEC complexity, but is
-// much more robust to unreliable reported delays.
+// Use to enable the extended filter mode in the AEC, along with robustness
+// measures around the reported system delays. It comes with a significant
+// increase in AEC complexity, but is much more robust to unreliable reported
+// delays.
 //
 // Detailed changes to the algorithm:
 // - The filter length is changed from 48 to 128 ms. This comes with tuning of
@@ -54,21 +54,20 @@ class VoiceDetection;
 //   the delay difference more heavily, and back off from the difference more.
 //   Adjustments force a readaptation of the filter, so they should be avoided
 //   except when really necessary.
-struct DelayCorrection {
-  DelayCorrection() : enabled(false) {}
-  explicit DelayCorrection(bool enabled) : enabled(enabled) {}
+struct ExtendedFilter {
+  ExtendedFilter() : enabled(false) {}
+  explicit ExtendedFilter(bool enabled) : enabled(enabled) {}
   bool enabled;
 };
 
-// Use to disable the reported system delays. By disabling the reported system
-// delays the echo cancellation algorithm assumes the process and reverse
-// streams to be aligned. This configuration only applies to EchoCancellation
-// and not EchoControlMobile and is set with AudioProcessing::SetExtraOptions().
-// Note that by disabling reported system delays the EchoCancellation may
-// regress in performance.
-struct ReportedDelay {
-  ReportedDelay() : enabled(true) {}
-  explicit ReportedDelay(bool enabled) : enabled(enabled) {}
+// Enables delay-agnostic echo cancellation. This feature relies on internally
+// estimated delays between the process and reverse streams, thus not relying
+// on reported system delays. This configuration only applies to
+// EchoCancellation and not EchoControlMobile. It can be set in the constructor
+// or using AudioProcessing::SetExtraOptions().
+struct DelayAgnostic {
+  DelayAgnostic() : enabled(false) {}
+  explicit DelayAgnostic(bool enabled) : enabled(enabled) {}
   bool enabled;
 };
 
@@ -104,7 +103,9 @@ struct ExperimentalNs {
 // Use to enable beamforming. Must be provided through the constructor. It will
 // have no impact if used with AudioProcessing::SetExtraOptions().
 struct Beamforming {
-  Beamforming() : enabled(false) {}
+  Beamforming()
+      : enabled(false),
+        array_geometry() {}
   Beamforming(bool enabled, const std::vector<Point>& array_geometry)
       : enabled(enabled),
         array_geometry(array_geometry) {}
@@ -116,7 +117,7 @@ struct Beamforming {
 // constructor. It will have no impact if used with
 // AudioProcessing::SetExtraOptions().
 struct AudioProcessing48kHzSupport {
-  AudioProcessing48kHzSupport() : enabled(false) {}
+  AudioProcessing48kHzSupport() : enabled(true) {}
   explicit AudioProcessing48kHzSupport(bool enabled) : enabled(enabled) {}
   bool enabled;
 };
@@ -376,6 +377,10 @@ class AudioProcessing {
   // Stops recording debugging information, and closes the file. Recording
   // cannot be resumed in the same file (without overwriting it).
   virtual int StopDebugRecording() = 0;
+
+  // Use to send UMA histograms at end of a call. Note that all histogram
+  // specific member variables are reset.
+  virtual void UpdateHistogramsOnCallEnd() = 0;
 
   // These provide access to the component interfaces and should never return
   // NULL. The pointers will be valid for the lifetime of the APM instance.

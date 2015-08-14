@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_PRESENTATION_PRESENTATION_DISPATCHER_H_
 
 #include "base/compiler_specific.h"
+#include "base/id_map.h"
 #include "base/memory/linked_ptr.h"
 #include "content/common/content_export.h"
 #include "content/common/presentation/presentation_service.mojom.h"
@@ -13,6 +14,7 @@
 #include "third_party/WebKit/public/platform/modules/presentation/WebPresentationClient.h"
 
 namespace blink {
+class WebPresentationAvailabilityObserver;
 class WebString;
 }  // namespace blink
 
@@ -35,7 +37,6 @@ class CONTENT_EXPORT PresentationDispatcher
   virtual void updateAvailableChangeWatched(bool watched);
   virtual void startSession(
       const blink::WebString& presentationUrl,
-      const blink::WebString& presentationId,
       blink::WebPresentationSessionClientCallbacks* callback);
   virtual void joinSession(
       const blink::WebString& presentationUrl,
@@ -50,9 +51,19 @@ class CONTENT_EXPORT PresentationDispatcher
       const blink::WebString& presentationId,
       const uint8* data,
       size_t length);
+  virtual void sendBlobData(
+      const blink::WebString& presentationUrl,
+      const blink::WebString& presentationId,
+      const uint8* data,
+      size_t length);
   virtual void closeSession(
       const blink::WebString& presentationUrl,
       const blink::WebString& presentationId);
+  virtual void getAvailability(
+      const blink::WebString& presentationUrl,
+      blink::WebPresentationAvailabilityCallbacks* callbacks);
+  virtual void startListening(blink::WebPresentationAvailabilityObserver*);
+  virtual void stopListening(blink::WebPresentationAvailabilityObserver*);
 
   // RenderFrameObserver implementation.
   void DidChangeDefaultPresentation() override;
@@ -62,6 +73,10 @@ class CONTENT_EXPORT PresentationDispatcher
 
   // presentation::PresentationServiceClient
   void OnScreenAvailabilityUpdated(bool available) override;
+  void OnSessionStateChanged(
+      presentation::PresentationSessionInfoPtr session_info,
+      presentation::PresentationSessionState new_state) override;
+  void OnScreenAvailabilityNotSupported() override;
 
   void OnSessionCreated(
       blink::WebPresentationSessionClientCallbacks* callback,
@@ -69,15 +84,16 @@ class CONTENT_EXPORT PresentationDispatcher
       presentation::PresentationErrorPtr error);
   void OnDefaultSessionStarted(
       presentation::PresentationSessionInfoPtr session_info);
-  void OnSessionStateChange(
-      presentation::PresentationSessionInfoPtr session_info,
-      presentation::PresentationSessionState session_state);
   void OnSessionMessagesReceived(
       mojo::Array<presentation::SessionMessagePtr> messages);
   void DoSendMessage(const presentation::SessionMessage& session_message);
   void HandleSendMessageRequests(bool success);
 
   void ConnectToPresentationServiceIfNeeded();
+
+  void UpdateListeningState();
+
+  void StartListenForMessages();
 
   // Used as a weak reference. Can be null since lifetime is bound to the frame.
   blink::WebPresentationController* controller_;
@@ -89,6 +105,25 @@ class CONTENT_EXPORT PresentationDispatcher
   using MessageRequestQueue =
       std::queue<linked_ptr<presentation::SessionMessage>>;
   MessageRequestQueue message_request_queue_;
+
+  enum class ListeningState {
+    Inactive,
+    Waiting,
+    Active,
+  };
+
+  ListeningState listening_state_;
+  bool last_known_availability_;
+
+  using AvailabilityCallbacksMap =
+      IDMap<blink::WebPresentationAvailabilityCallbacks, IDMapOwnPointer>;
+  AvailabilityCallbacksMap availability_callbacks_;
+
+  using AvailabilityObserversSet =
+      std::set<blink::WebPresentationAvailabilityObserver*>;
+  AvailabilityObserversSet availability_observers_;
+
+  bool listening_for_messages_;
 
   DISALLOW_COPY_AND_ASSIGN(PresentationDispatcher);
 };

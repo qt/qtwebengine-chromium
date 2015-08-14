@@ -9,26 +9,32 @@
 #include <shlobj.h>
 #endif
 
+#include <stdint.h>
+
 #include <algorithm>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/histogram_tester.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
@@ -37,6 +43,8 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_module.h"
 #include "net/base/net_util.h"
+#include "net/base/network_quality.h"
+#include "net/base/network_quality_estimator.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_data_directory.h"
 #include "net/base/upload_bytes_element_reader.h"
@@ -50,7 +58,6 @@
 #include "net/cookies/cookie_store_test_helpers.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/dns/mock_host_resolver.h"
-#include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
@@ -87,7 +94,8 @@
 #include "net/url_request/url_request_file_dir_job.h"
 #endif
 
-#if !defined(DISABLE_FTP_SUPPORT)
+#if !defined(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
+#include "net/ftp/ftp_network_layer.h"
 #include "net/url_request/ftp_protocol_handler.h"
 #endif
 
@@ -108,6 +116,14 @@ namespace {
 const base::string16 kChrome(ASCIIToUTF16("chrome"));
 const base::string16 kSecret(ASCIIToUTF16("secret"));
 const base::string16 kUser(ASCIIToUTF16("user"));
+
+const base::FilePath::CharType kTestFilePath[] =
+    FILE_PATH_LITERAL("net/data/url_request_unittest");
+
+#if !defined(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
+// Test file used in most FTP tests.
+const char kFtpTestFile[] = "BullRunSpeech.txt";
+#endif
 
 // Tests load timing information in the case a fresh connection was used, with
 // no proxy.
@@ -218,7 +234,7 @@ void TestLoadTimingCacheHitNoNetwork(
   EXPECT_TRUE(load_timing_info.proxy_resolve_end.is_null());
 }
 
-#if !defined(DISABLE_FTP_SUPPORT)
+#if !defined(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
 // Tests load timing in the case that there is no HTTP response.  This can be
 // used to test in the case of errors or non-HTTP requests.
 void TestLoadTimingNoHttpResponse(
@@ -536,7 +552,7 @@ NetworkDelegate::AuthRequiredResponse BlockingNetworkDelegate::OnAuthRequired(
       return auth_retval_;
 
     case AUTO_CALLBACK:
-      base::MessageLoop::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::Bind(&BlockingNetworkDelegate::RunAuthCallback,
                      weak_factory_.GetWeakPtr(), auth_retval_, callback));
@@ -545,8 +561,8 @@ NetworkDelegate::AuthRequiredResponse BlockingNetworkDelegate::OnAuthRequired(
     case USER_CALLBACK:
       auth_callback_ = callback;
       stage_blocked_for_callback_ = ON_AUTH_REQUIRED;
-      base::MessageLoop::current()->PostTask(FROM_HERE,
-                                             base::MessageLoop::QuitClosure());
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::MessageLoop::QuitClosure());
       return AUTH_REQUIRED_RESPONSE_IO_PENDING;
   }
   NOTREACHED();
@@ -576,17 +592,16 @@ int BlockingNetworkDelegate::MaybeBlockStage(
       return retval_;
 
     case AUTO_CALLBACK:
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&BlockingNetworkDelegate::RunCallback,
-                     weak_factory_.GetWeakPtr(), retval_, callback));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&BlockingNetworkDelegate::RunCallback,
+                                weak_factory_.GetWeakPtr(), retval_, callback));
       return ERR_IO_PENDING;
 
     case USER_CALLBACK:
       callback_ = callback;
       stage_blocked_for_callback_ = stage;
-      base::MessageLoop::current()->PostTask(FROM_HERE,
-                                             base::MessageLoop::QuitClosure());
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::MessageLoop::QuitClosure());
       return ERR_IO_PENDING;
   }
   NOTREACHED();
@@ -634,7 +649,7 @@ class URLRequestTest : public PlatformTest {
     job_factory_impl_->SetProtocolHandler("data", new DataProtocolHandler);
 #if !defined(DISABLE_FILE_SUPPORT)
     job_factory_impl_->SetProtocolHandler(
-        "file", new FileProtocolHandler(base::MessageLoopProxy::current()));
+        "file", new FileProtocolHandler(base::ThreadTaskRunnerHandle::Get()));
 #endif
   }
 
@@ -969,9 +984,7 @@ TEST_F(URLRequestTest, FileDirOutputSanity) {
 
   base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
-  path = path.Append(FILE_PATH_LITERAL("net"));
-  path = path.Append(FILE_PATH_LITERAL("data"));
-  path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+  path = path.Append(kTestFilePath);
 
   TestDelegate d;
   scoped_ptr<URLRequest> req(default_context_.CreateRequest(
@@ -1006,9 +1019,7 @@ TEST_F(URLRequestTest, FileDirRedirectNoCrash) {
 
   base::FilePath path;
   PathService::Get(base::DIR_SOURCE_ROOT, &path);
-  path = path.Append(FILE_PATH_LITERAL("net"));
-  path = path.Append(FILE_PATH_LITERAL("data"));
-  path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+  path = path.Append(kTestFilePath);
 
   TestDelegate d;
   scoped_ptr<URLRequest> req(default_context_.CreateRequest(
@@ -1071,9 +1082,7 @@ TEST_F(URLRequestTest, InvalidReferrerTest) {
 TEST_F(URLRequestTest, ResolveShortcutTest) {
   base::FilePath app_path;
   PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("net");
-  app_path = app_path.AppendASCII("data");
-  app_path = app_path.AppendASCII("url_request_unittest");
+  app_path = app_path.Append(kTestFilePath);
   app_path = app_path.AppendASCII("with-headers.html");
 
   std::wstring lnk_path = app_path.value() + L".lnk";
@@ -2814,10 +2823,7 @@ TEST_F(URLRequestTest, DoNotOverrideReferrer) {
 
 class URLRequestTestHTTP : public URLRequestTest {
  public:
-  URLRequestTestHTTP()
-      : test_server_(base::FilePath(FILE_PATH_LITERAL(
-                                  "net/data/url_request_unittest"))) {
-  }
+  URLRequestTestHTTP() : test_server_(base::FilePath(kTestFilePath)) {}
 
  protected:
   // Requests |redirect_url|, which must return a HTTP 3xx redirect.
@@ -2840,7 +2846,7 @@ class URLRequestTestHTTP : public URLRequestTest {
       req->set_upload(CreateSimpleUploadData(kData));
       HttpRequestHeaders headers;
       headers.SetHeader(HttpRequestHeaders::kContentLength,
-                        base::UintToString(arraysize(kData) - 1));
+                        base::SizeTToString(arraysize(kData) - 1));
       req->SetExtraRequestHeaders(headers);
     }
     req->Start();
@@ -3341,7 +3347,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     r->set_upload(CreateSimpleUploadData(kData));
     HttpRequestHeaders headers;
     headers.SetHeader(HttpRequestHeaders::kContentLength,
-                      base::UintToString(arraysize(kData) - 1));
+                      base::SizeTToString(arraysize(kData) - 1));
     r->SetExtraRequestHeaders(headers);
 
     // Quit after hitting the redirect, so can check the headers.
@@ -4068,6 +4074,46 @@ TEST_F(URLRequestTestHTTP, GetZippedTest) {
   }
 }
 
+TEST_F(URLRequestTestHTTP, NetworkQualityEstimator) {
+  ASSERT_TRUE(test_server_.Start());
+  // Enable requests to local host to be used for network quality estimation.
+  std::map<std::string, std::string> variation_params;
+  NetworkQualityEstimator estimator(variation_params, true, true);
+
+  TestDelegate d;
+  TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
+  TestURLRequestContext context(true);
+  context.set_network_quality_estimator(&estimator);
+  context.set_network_delegate(&network_delegate);
+  context.Init();
+
+  std::string url = "echo.html";
+
+  scoped_ptr<URLRequest> r(
+      context.CreateRequest(test_server_.GetURL(url), DEFAULT_PRIORITY, &d));
+  r->Start();
+
+  base::RunLoop().Run();
+
+  NetworkQuality network_quality =
+      context.network_quality_estimator()->GetPeakEstimate();
+  EXPECT_GE(network_quality.rtt(), base::TimeDelta());
+  EXPECT_LT(network_quality.rtt(), base::TimeDelta::Max());
+  EXPECT_GT(network_quality.downstream_throughput_kbps(), 0);
+
+  // Verify that histograms are not populated. They should populate only when
+  // there is a change in ConnectionType.
+  base::HistogramTester histogram_tester;
+  histogram_tester.ExpectTotalCount("NQE.PeakKbps.Unknown", 0);
+  histogram_tester.ExpectTotalCount("NQE.FastestRTT.Unknown", 0);
+
+  NetworkChangeNotifier::NotifyObserversOfConnectionTypeChangeForTests(
+      NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
+  base::MessageLoop::current()->RunUntilIdle();
+  histogram_tester.ExpectTotalCount("NQE.PeakKbps.Unknown", 1);
+  histogram_tester.ExpectTotalCount("NQE.FastestRTT.Unknown", 1);
+}
+
 TEST_F(URLRequestTestHTTP, RedirectLoadTiming) {
   ASSERT_TRUE(test_server_.Start());
 
@@ -4234,9 +4280,8 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
     LoadStateWithParam load_state = url_request_->GetLoadState();
     EXPECT_EQ(expected_first_load_state_, load_state.state);
     EXPECT_NE(ASCIIToUTF16(kFirstDelegateInfo), load_state.param);
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&AsyncDelegateLogger::LogSecondDelegate, this));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&AsyncDelegateLogger::LogSecondDelegate, this));
   }
 
   void LogSecondDelegate() {
@@ -4248,9 +4293,8 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
     } else {
       EXPECT_NE(ASCIIToUTF16(kSecondDelegateInfo), load_state.param);
     }
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&AsyncDelegateLogger::LogComplete, this));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&AsyncDelegateLogger::LogComplete, this));
   }
 
   void LogComplete() {
@@ -5105,16 +5149,11 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
 
     base::FilePath path;
     PathService::Get(base::DIR_SOURCE_ROOT, &path);
-    path = path.Append(FILE_PATH_LITERAL("net"));
-    path = path.Append(FILE_PATH_LITERAL("data"));
-    path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+    path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
     element_readers.push_back(
-        new UploadFileElementReader(base::MessageLoopProxy::current().get(),
-                                    path,
-                                    0,
-                                    kuint64max,
-                                    base::Time()));
+        new UploadFileElementReader(base::ThreadTaskRunnerHandle::Get().get(),
+                                    path, 0, kuint64max, base::Time()));
     r->set_upload(make_scoped_ptr<UploadDataStream>(
         new ElementsUploadDataStream(element_readers.Pass(), 0)));
 
@@ -5154,12 +5193,10 @@ TEST_F(URLRequestTestHTTP, PostUnreadableFileTest) {
     ScopedVector<UploadElementReader> element_readers;
 
     element_readers.push_back(new UploadFileElementReader(
-        base::MessageLoopProxy::current().get(),
+        base::ThreadTaskRunnerHandle::Get().get(),
         base::FilePath(FILE_PATH_LITERAL(
             "c:\\path\\to\\non\\existant\\file.randomness.12345")),
-        0,
-        kuint64max,
-        base::Time()));
+        0, kuint64max, base::Time()));
     r->set_upload(make_scoped_ptr<UploadDataStream>(
         new ElementsUploadDataStream(element_readers.Pass(), 0)));
 
@@ -5265,10 +5302,9 @@ TEST_F(URLRequestTestHTTP, ResponseHeadersTest) {
 TEST_F(URLRequestTestHTTP, ProcessSTS) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
 
   std::string test_server_hostname = https_test_server.GetURL("").host();
@@ -5282,24 +5318,27 @@ TEST_F(URLRequestTestHTTP, ProcessSTS) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                    &domain_state));
-  EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.sts.upgrade_mode);
-  EXPECT_TRUE(domain_state.sts.include_subdomains);
-  EXPECT_FALSE(domain_state.pkp.include_subdomains);
+  TransportSecurityState::STSState sts_state;
+  TransportSecurityState::PKPState pkp_state;
+  EXPECT_TRUE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
+  EXPECT_FALSE(
+      security_state->GetDynamicPKPState(test_server_hostname, &pkp_state));
+  EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
+            sts_state.upgrade_mode);
+  EXPECT_TRUE(sts_state.include_subdomains);
+  EXPECT_FALSE(pkp_state.include_subdomains);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
-  EXPECT_FALSE(domain_state.HasPublicKeyPins());
+  EXPECT_FALSE(pkp_state.HasPublicKeyPins());
 #endif
 }
 
 TEST_F(URLRequestTestHTTP, STSNotProcessedOnIP) {
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS, SpawnedTestServer::SSLOptions(),
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      SpawnedTestServer::SSLOptions(),
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
   // Make sure this test fails if the test server is changed to not
   // listen on an IP by default.
@@ -5315,14 +5354,14 @@ TEST_F(URLRequestTestHTTP, STSNotProcessedOnIP) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_FALSE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                     &domain_state));
+  TransportSecurityState::STSState sts_state;
+  EXPECT_FALSE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
 }
 
 // Android's CertVerifyProc does not (yet) handle pins. Therefore, it will
 // reject HPKP headers, and a test setting only HPKP headers will fail (no
-// DomainState present because header rejected).
+// PKPState present because header rejected).
 #if defined(OS_ANDROID)
 #define MAYBE_ProcessPKP DISABLED_ProcessPKP
 #else
@@ -5334,10 +5373,9 @@ TEST_F(URLRequestTestHTTP, STSNotProcessedOnIP) {
 TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
 
   std::string test_server_hostname = https_test_server.GetURL("").host();
@@ -5351,21 +5389,24 @@ TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                    &domain_state));
-  EXPECT_EQ(TransportSecurityState::DomainState::MODE_DEFAULT,
-            domain_state.sts.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts.include_subdomains);
-  EXPECT_FALSE(domain_state.pkp.include_subdomains);
-  EXPECT_TRUE(domain_state.HasPublicKeyPins());
-  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
+  TransportSecurityState::STSState sts_state;
+  TransportSecurityState::PKPState pkp_state;
+  EXPECT_FALSE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
+  EXPECT_TRUE(
+      security_state->GetDynamicPKPState(test_server_hostname, &pkp_state));
+  EXPECT_EQ(TransportSecurityState::STSState::MODE_DEFAULT,
+            sts_state.upgrade_mode);
+  EXPECT_FALSE(sts_state.include_subdomains);
+  EXPECT_FALSE(pkp_state.include_subdomains);
+  EXPECT_TRUE(pkp_state.HasPublicKeyPins());
+  EXPECT_NE(sts_state.expiry, pkp_state.expiry);
 }
 
 TEST_F(URLRequestTestHTTP, PKPNotProcessedOnIP) {
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS, SpawnedTestServer::SSLOptions(),
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      SpawnedTestServer::SSLOptions(),
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
   // Make sure this test fails if the test server is changed to not
   // listen on an IP by default.
@@ -5381,18 +5422,17 @@ TEST_F(URLRequestTestHTTP, PKPNotProcessedOnIP) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_FALSE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                     &domain_state));
+  TransportSecurityState::PKPState pkp_state;
+  EXPECT_FALSE(
+      security_state->GetDynamicPKPState(test_server_hostname, &pkp_state));
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
 
   std::string test_server_hostname = https_test_server.GetURL("").host();
@@ -5407,22 +5447,21 @@ TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                    &domain_state));
-  EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.sts.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts.include_subdomains);
-  EXPECT_FALSE(domain_state.pkp.include_subdomains);
+  TransportSecurityState::STSState sts_state;
+  EXPECT_TRUE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
+  EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
+            sts_state.upgrade_mode);
+  EXPECT_FALSE(sts_state.include_subdomains);
+  EXPECT_FALSE(sts_state.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
 
   std::string test_server_hostname = https_test_server.GetURL("").host();
@@ -5437,23 +5476,26 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                    &domain_state));
-  EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.sts.upgrade_mode);
+  TransportSecurityState::STSState sts_state;
+  TransportSecurityState::PKPState pkp_state;
+  EXPECT_TRUE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
+  EXPECT_TRUE(
+      security_state->GetDynamicPKPState(test_server_hostname, &pkp_state));
+  EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
+            sts_state.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
-  EXPECT_TRUE(domain_state.HasPublicKeyPins());
+  EXPECT_TRUE(pkp_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
+  EXPECT_NE(sts_state.expiry, pkp_state.expiry);
 
   // Even though there is an HSTS header asserting includeSubdomains, it is
   // the *second* such header, and we MUST process only the first.
-  EXPECT_FALSE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(sts_state.include_subdomains);
   // includeSubdomains does not occur in the test HPKP header.
-  EXPECT_FALSE(domain_state.pkp.include_subdomains);
+  EXPECT_FALSE(pkp_state.include_subdomains);
 }
 
 // Tests that when multiple HPKP headers are present, asserting different
@@ -5461,10 +5503,9 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
 TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP2) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_COMMON_NAME_IS_DOMAIN);
-  SpawnedTestServer https_test_server(
-      SpawnedTestServer::TYPE_HTTPS,
-      ssl_options,
-      base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest")));
+  SpawnedTestServer https_test_server(SpawnedTestServer::TYPE_HTTPS,
+                                      ssl_options,
+                                      base::FilePath(kTestFilePath));
   ASSERT_TRUE(https_test_server.Start());
 
   std::string test_server_hostname = https_test_server.GetURL("").host();
@@ -5478,20 +5519,23 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP2) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDynamicDomainState(test_server_hostname,
-                                                    &domain_state));
-  EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.sts.upgrade_mode);
+  TransportSecurityState::STSState sts_state;
+  TransportSecurityState::PKPState pkp_state;
+  EXPECT_TRUE(
+      security_state->GetDynamicSTSState(test_server_hostname, &sts_state));
+  EXPECT_TRUE(
+      security_state->GetDynamicPKPState(test_server_hostname, &pkp_state));
+  EXPECT_EQ(TransportSecurityState::STSState::MODE_FORCE_HTTPS,
+            sts_state.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
-  EXPECT_TRUE(domain_state.HasPublicKeyPins());
+  EXPECT_TRUE(pkp_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
+  EXPECT_NE(sts_state.expiry, pkp_state.expiry);
 
-  EXPECT_TRUE(domain_state.sts.include_subdomains);
-  EXPECT_FALSE(domain_state.pkp.include_subdomains);
+  EXPECT_TRUE(sts_state.include_subdomains);
+  EXPECT_FALSE(pkp_state.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
@@ -5528,7 +5572,8 @@ TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictDataRedirects) {
 TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictFileRedirects) {
   // Test URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget().
   GURL file_url("file:///foo.txt");
-  FileProtocolHandler file_protocol_handler(base::MessageLoopProxy::current());
+  FileProtocolHandler file_protocol_handler(
+      base::ThreadTaskRunnerHandle::Get());
   EXPECT_FALSE(file_protocol_handler.IsSafeRedirectTarget(file_url));
 
   // Test URLRequestJobFactoryImpl::IsSafeRedirectTarget().
@@ -5985,9 +6030,7 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect) {
 
     base::FilePath path;
     PathService::Get(base::DIR_SOURCE_ROOT, &path);
-    path = path.Append(FILE_PATH_LITERAL("net"));
-    path = path.Append(FILE_PATH_LITERAL("data"));
-    path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+    path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
 
     std::string contents;
@@ -6028,9 +6071,7 @@ TEST_F(URLRequestTestHTTP, DeferredRedirect_GetFullRequestHeaders) {
 
     base::FilePath path;
     PathService::Get(base::DIR_SOURCE_ROOT, &path);
-    path = path.Append(FILE_PATH_LITERAL("net"));
-    path = path.Append(FILE_PATH_LITERAL("data"));
-    path = path.Append(FILE_PATH_LITERAL("url_request_unittest"));
+    path = path.Append(kTestFilePath);
     path = path.Append(FILE_PATH_LITERAL("with-headers.html"));
 
     std::string contents;
@@ -6520,7 +6561,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
   req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
-                    base::UintToString(arraysize(kData) - 1));
+                    base::SizeTToString(arraysize(kData) - 1));
   req->SetExtraRequestHeaders(headers);
 
   URLRequestRedirectJob* job = new URLRequestRedirectJob(
@@ -6545,7 +6586,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost307RedirectPost) {
   req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
-                    base::UintToString(arraysize(kData) - 1));
+                    base::SizeTToString(arraysize(kData) - 1));
   req->SetExtraRequestHeaders(headers);
 
   URLRequestRedirectJob* job = new URLRequestRedirectJob(
@@ -7001,8 +7042,7 @@ class URLRequestTestReferrerPolicy : public URLRequestTest {
         origin_type, SpawnedTestServer::kLocalhost,
         origin_type == SpawnedTestServer::TYPE_HTTPS
             ? base::FilePath(FILE_PATH_LITERAL("net/data/ssl"))
-            : base::FilePath(
-                  FILE_PATH_LITERAL("net/data/url_request_unittest"))));
+            : base::FilePath(kTestFilePath)));
     ASSERT_TRUE(origin_server_->Start());
   }
 
@@ -7012,16 +7052,14 @@ class URLRequestTestReferrerPolicy : public URLRequestTest {
         origin_type, SpawnedTestServer::kLocalhost,
         origin_type == SpawnedTestServer::TYPE_HTTPS
             ? base::FilePath(FILE_PATH_LITERAL("net/data/ssl"))
-            : base::FilePath(
-                  FILE_PATH_LITERAL("net/data/url_request_unittest"))));
+            : base::FilePath(kTestFilePath)));
     ASSERT_TRUE(origin_server_->Start());
 
     destination_server_.reset(new SpawnedTestServer(
         destination_type, SpawnedTestServer::kLocalhost,
         destination_type == SpawnedTestServer::TYPE_HTTPS
             ? base::FilePath(FILE_PATH_LITERAL("net/data/ssl"))
-            : base::FilePath(
-                  FILE_PATH_LITERAL("net/data/url_request_unittest"))));
+            : base::FilePath(kTestFilePath)));
     ASSERT_TRUE(destination_server_->Start());
   }
 
@@ -7429,15 +7467,19 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   context.set_host_resolver(&host_resolver);
   TransportSecurityState transport_security_state;
 
-  TransportSecurityState::DomainState static_domain_state;
+  TransportSecurityState::STSState static_sts_state;
+  TransportSecurityState::PKPState static_pkp_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", &static_domain_state));
+      "www.google.com", &static_sts_state, &static_pkp_state));
   context.set_transport_security_state(&transport_security_state);
   context.Init();
 
-  TransportSecurityState::DomainState dynamic_domain_state;
-  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
-      "www.google.com", &dynamic_domain_state));
+  TransportSecurityState::STSState dynamic_sts_state;
+  TransportSecurityState::PKPState dynamic_pkp_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicSTSState("www.google.com",
+                                                           &dynamic_sts_state));
+  EXPECT_FALSE(transport_security_state.GetDynamicPKPState("www.google.com",
+                                                           &dynamic_pkp_state));
 
   TestDelegate d;
   scoped_ptr<URLRequest> r(context.CreateRequest(
@@ -7456,23 +7498,26 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   EXPECT_TRUE(d.certificate_errors_are_fatal());
 
   // Get a fresh copy of the states, and check that they haven't changed.
-  TransportSecurityState::DomainState new_static_domain_state;
+  TransportSecurityState::STSState new_static_sts_state;
+  TransportSecurityState::PKPState new_static_pkp_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", &new_static_domain_state));
-  TransportSecurityState::DomainState new_dynamic_domain_state;
-  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
-      "www.google.com", &new_dynamic_domain_state));
+      "www.google.com", &new_static_sts_state, &new_static_pkp_state));
+  TransportSecurityState::STSState new_dynamic_sts_state;
+  TransportSecurityState::PKPState new_dynamic_pkp_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicSTSState(
+      "www.google.com", &new_dynamic_sts_state));
+  EXPECT_FALSE(transport_security_state.GetDynamicPKPState(
+      "www.google.com", &new_dynamic_pkp_state));
 
-  EXPECT_EQ(new_static_domain_state.sts.upgrade_mode,
-            static_domain_state.sts.upgrade_mode);
-  EXPECT_EQ(new_static_domain_state.sts.include_subdomains,
-            static_domain_state.sts.include_subdomains);
-  EXPECT_EQ(new_static_domain_state.pkp.include_subdomains,
-            static_domain_state.pkp.include_subdomains);
-  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.spki_hashes,
-                                static_domain_state.pkp.spki_hashes));
-  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.bad_spki_hashes,
-                                static_domain_state.pkp.bad_spki_hashes));
+  EXPECT_EQ(new_static_sts_state.upgrade_mode, static_sts_state.upgrade_mode);
+  EXPECT_EQ(new_static_sts_state.include_subdomains,
+            static_sts_state.include_subdomains);
+  EXPECT_EQ(new_static_pkp_state.include_subdomains,
+            static_pkp_state.include_subdomains);
+  EXPECT_TRUE(FingerprintsEqual(new_static_pkp_state.spki_hashes,
+                                static_pkp_state.spki_hashes));
+  EXPECT_TRUE(FingerprintsEqual(new_static_pkp_state.bad_spki_hashes,
+                                static_pkp_state.bad_spki_hashes));
 }
 
 // Make sure HSTS preserves a POST request's method and body.
@@ -7731,15 +7776,15 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
     // four lines.
 
     EXPECT_EQ(1, d.response_started_count());
-    std::vector<std::string> lines;
-    base::SplitString(d.data_received(), '\n', &lines);
+    std::vector<std::string> lines = base::SplitString(
+        d.data_received(), "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     ASSERT_EQ(4u, lines.size()) << d.data_received();
 
     std::string session_id;
 
     for (size_t i = 0; i < 2; i++) {
-      std::vector<std::string> parts;
-      base::SplitString(lines[i], '\t', &parts);
+      std::vector<std::string> parts = base::SplitString(
+          lines[i], "\t", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
       ASSERT_EQ(2u, parts.size());
       if (i == 0) {
         EXPECT_EQ("insert", parts[0]);
@@ -7756,14 +7801,14 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
 // the result of fetching "ssl-session-cache" from the test server, indicates
 // that exactly two different sessions were inserted, with no lookups etc.
 static void AssertTwoDistinctSessionsInserted(const string& session_info) {
-  std::vector<std::string> lines;
-  base::SplitString(session_info, '\n', &lines);
+  std::vector<std::string> lines = base::SplitString(
+      session_info, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   ASSERT_EQ(3u, lines.size()) << session_info;
 
   std::string session_id;
   for (size_t i = 0; i < 2; i++) {
-    std::vector<std::string> parts;
-    base::SplitString(lines[i], '\t', &parts);
+    std::vector<std::string> parts = base::SplitString(
+        lines[i], "\t", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     ASSERT_EQ(2u, parts.size());
     EXPECT_EQ("insert", parts[0]);
     if (i == 0) {
@@ -7879,8 +7924,8 @@ TEST_F(HTTPSRequestTest, DisableECDSAOnXP) {
   base::RunLoop().Run();
 
   EXPECT_EQ(1, d.response_started_count());
-  std::vector<std::string> lines;
-  base::SplitString(d.data_received(), '\n', &lines);
+  std::vector<std::string> lines = base::SplitString(
+      d.data_received(), "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   for (size_t i = 0; i < lines.size(); i++) {
     int cipher_suite;
@@ -8004,32 +8049,70 @@ class HTTPSFallbackTest : public testing::Test {
   scoped_ptr<URLRequest> request_;
 };
 
-// Tests TLSv1.1 -> TLSv1 fallback. Verifies that we don't fall back more
-// than necessary.
-TEST_F(HTTPSFallbackTest, TLSv1Fallback) {
+// Tests the TLS 1.0 fallback doesn't happen.
+TEST_F(HTTPSFallbackTest, TLSv1NoFallback) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
   ssl_options.tls_intolerant =
       SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_1;
 
   ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
-  ExpectConnection(SSL_CONNECTION_VERSION_TLS1);
+  ExpectFailure(ERR_SSL_FALLBACK_BEYOND_MINIMUM_VERSION);
+}
+
+// Tests the TLS 1.1 fallback.
+TEST_F(HTTPSFallbackTest, TLSv1_1Fallback) {
+  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
+      SSL_PROTOCOL_VERSION_TLS1_2) {
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_OK);
+  ssl_options.tls_intolerant =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_2;
+
+  ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
+  ExpectConnection(SSL_CONNECTION_VERSION_TLS1_1);
+}
+
+// Tests that the TLS 1.1 fallback triggers on closed connections.
+TEST_F(HTTPSFallbackTest, TLSv1_1FallbackClosed) {
+  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
+      SSL_PROTOCOL_VERSION_TLS1_2) {
+    return;
+  }
+
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_OK);
+  ssl_options.tls_intolerant =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_2;
+  ssl_options.tls_intolerance_type =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE;
+
+  ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
+  ExpectConnection(SSL_CONNECTION_VERSION_TLS1_1);
 }
 
 // This test is disabled on Android because the remote test server doesn't cause
 // a TCP reset.
 #if !defined(OS_ANDROID)
-// Tests fallback to TLS 1.0 on connection reset.
-TEST_F(HTTPSFallbackTest, TLSv1FallbackReset) {
+// Tests fallback to TLS 1.1 on connection reset.
+TEST_F(HTTPSFallbackTest, TLSv1_1FallbackReset) {
+  if (SSLClientSocket::GetMaxSupportedSSLVersion() <
+      SSL_PROTOCOL_VERSION_TLS1_2) {
+    return;
+  }
+
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
   ssl_options.tls_intolerant =
-      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_1;
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_2;
   ssl_options.tls_intolerance_type =
       SpawnedTestServer::SSLOptions::TLS_INTOLERANCE_RESET;
 
   ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
-  ExpectConnection(SSL_CONNECTION_VERSION_TLS1);
+  ExpectConnection(SSL_CONNECTION_VERSION_TLS1_1);
 }
 #endif  // !OS_ANDROID
 
@@ -8074,30 +8157,6 @@ TEST_F(HTTPSFallbackTest, FallbackSCSVClosed) {
 
   // The original error should be replayed on rejected fallback.
   ExpectFailure(ERR_CONNECTION_CLOSED);
-}
-
-// Tests that the SSLv3 fallback doesn't happen.
-TEST_F(HTTPSFallbackTest, SSLv3Fallback) {
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_OK);
-  ssl_options.tls_intolerant =
-      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_ALL;
-
-  ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
-  ExpectFailure(ERR_SSL_VERSION_OR_CIPHER_MISMATCH);
-}
-
-// Tests that the TLSv1 fallback triggers on closed connections.
-TEST_F(HTTPSFallbackTest, SSLv3FallbackClosed) {
-  SpawnedTestServer::SSLOptions ssl_options(
-      SpawnedTestServer::SSLOptions::CERT_OK);
-  ssl_options.tls_intolerant =
-      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_TLS1_1;
-  ssl_options.tls_intolerance_type =
-      SpawnedTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE;
-
-  ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
-  ExpectConnection(SSL_CONNECTION_VERSION_TLS1);
 }
 
 // Test that fallback probe connections don't cause sessions to be cached.
@@ -8792,30 +8851,49 @@ TEST_F(HTTPSCRLSetTest, CRLSetRevoked) {
 }
 #endif  // !defined(OS_IOS)
 
-#if !defined(DISABLE_FTP_SUPPORT)
+#if !defined(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
+// These tests aren't passing on Android.  Either the RemoteTestServer isn't
+// starting up successfully, or it can't access the test files.
+// TODO(mmenke):  Fix this.  See http://crbug.com/495220
 class URLRequestTestFTP : public URLRequestTest {
  public:
   URLRequestTestFTP()
-      : test_server_(SpawnedTestServer::TYPE_FTP, SpawnedTestServer::kLocalhost,
-                     base::FilePath()) {
+      : ftp_transaction_factory_(&host_resolver_),
+        test_server_(SpawnedTestServer::TYPE_FTP,
+                     SpawnedTestServer::kLocalhost,
+                     base::FilePath(kTestFilePath)) {
+    // Can't use |default_context_|'s HostResolver to set up the
+    // FTPTransactionFactory because it hasn't been created yet.
+    default_context_.set_host_resolver(&host_resolver_);
+  }
+
+  // URLRequestTest interface:
+  void SetUpFactory() override {
+    // Add FTP support to the default URLRequestContext.
+    job_factory_impl_->SetProtocolHandler(
+        "ftp", new FtpProtocolHandler(&ftp_transaction_factory_));
+  }
+
+  std::string GetTestFileContents() {
+    base::FilePath path;
+    EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &path));
+    path = path.Append(kTestFilePath);
+    path = path.AppendASCII(kFtpTestFile);
+    std::string contents;
+    EXPECT_TRUE(base::ReadFileToString(path, &contents));
+    return contents;
   }
 
  protected:
+  MockHostResolver host_resolver_;
+  FtpNetworkLayer ftp_transaction_factory_;
+
   SpawnedTestServer test_server_;
 };
 
 // Make sure an FTP request using an unsafe ports fails.
 TEST_F(URLRequestTestFTP, UnsafePort) {
-  ASSERT_TRUE(test_server_.Start());
-
-  URLRequestJobFactoryImpl job_factory;
-  FtpNetworkLayer ftp_transaction_factory(default_context_.host_resolver());
-
   GURL url("ftp://127.0.0.1:7");
-  job_factory.SetProtocolHandler(
-      "ftp",
-      new FtpProtocolHandler(&ftp_transaction_factory));
-  default_context_.set_job_factory(&job_factory);
 
   TestDelegate d;
   {
@@ -8832,8 +8910,7 @@ TEST_F(URLRequestTestFTP, UnsafePort) {
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPDirectoryListing) {
+TEST_F(URLRequestTestFTP, FTPDirectoryListing) {
   ASSERT_TRUE(test_server_.Start());
 
   TestDelegate d;
@@ -8856,29 +8933,22 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPDirectoryListing) {
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPGetTestAnonymous) {
+TEST_F(URLRequestTestFTP, FTPGetTestAnonymous) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   {
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURL("/LICENSE"), DEFAULT_PRIORITY, &d));
+        test_server_.GetURL(kFtpTestFile), DEFAULT_PRIORITY, &d));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d.data_received());
     EXPECT_EQ(test_server_.host_port_pair().host(),
               r->GetSocketAddress().host());
     EXPECT_EQ(test_server_.host_port_pair().port(),
@@ -8886,34 +8956,28 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPGetTestAnonymous) {
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPGetTest) {
+TEST_F(URLRequestTestFTP, FTPGetTest) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   {
-    scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURLWithUserAndPassword("/LICENSE", "chrome", "chrome"),
-        DEFAULT_PRIORITY, &d));
+    scoped_ptr<URLRequest> r(
+        default_context_.CreateRequest(test_server_.GetURLWithUserAndPassword(
+                                           kFtpTestFile, "chrome", "chrome"),
+                                       DEFAULT_PRIORITY, &d));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
+    EXPECT_EQ(1, d.response_started_count());
+    EXPECT_FALSE(d.received_data_before_response());
+    EXPECT_EQ(GetTestFileContents(), d.data_received());
     EXPECT_EQ(test_server_.host_port_pair().host(),
               r->GetSocketAddress().host());
     EXPECT_EQ(test_server_.host_port_pair().port(),
               r->GetSocketAddress().port());
-    EXPECT_EQ(1, d.response_started_count());
-    EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
 
     LoadTimingInfo load_timing_info;
     r->GetLoadTimingInfo(&load_timing_info);
@@ -8921,26 +8985,19 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPGetTest) {
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPassword) {
+TEST_F(URLRequestTestFTP, FTPCheckWrongPassword) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   {
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURLWithUserAndPassword("/LICENSE", "chrome",
+        test_server_.GetURLWithUserAndPassword(kFtpTestFile, "chrome",
                                                "wrong_password"),
         DEFAULT_PRIORITY, &d));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
-
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
 
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
@@ -8949,20 +9006,16 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPassword) {
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPasswordRestart) {
+TEST_F(URLRequestTestFTP, FTPCheckWrongPasswordRestart) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   // Set correct login credentials. The delegate will be asked for them when
   // the initial login with wrong credentials will fail.
   d.set_credentials(AuthCredentials(kChrome, kChrome));
   {
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURLWithUserAndPassword("/LICENSE", "chrome",
+        test_server_.GetURLWithUserAndPassword(kFtpTestFile, "chrome",
                                                "wrong_password"),
         DEFAULT_PRIORITY, &d));
     r->Start();
@@ -8970,130 +9023,98 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongPasswordRestart) {
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d.data_received());
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongUser) {
+TEST_F(URLRequestTestFTP, FTPCheckWrongUser) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   {
-    scoped_ptr<URLRequest> r(
-        default_context_.CreateRequest(test_server_.GetURLWithUserAndPassword(
-                                           "/LICENSE", "wrong_user", "chrome"),
-                                       DEFAULT_PRIORITY, &d));
+    scoped_ptr<URLRequest> r(default_context_.CreateRequest(
+        test_server_.GetURLWithUserAndPassword(kFtpTestFile, "wrong_user",
+                                               "chrome"),
+        DEFAULT_PRIORITY, &d));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), 0);
+    EXPECT_EQ(0, d.bytes_received());
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCheckWrongUserRestart) {
+TEST_F(URLRequestTestFTP, FTPCheckWrongUserRestart) {
   ASSERT_TRUE(test_server_.Start());
 
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
   TestDelegate d;
   // Set correct login credentials. The delegate will be asked for them when
   // the initial login with wrong credentials will fail.
   d.set_credentials(AuthCredentials(kChrome, kChrome));
   {
-    scoped_ptr<URLRequest> r(
-        default_context_.CreateRequest(test_server_.GetURLWithUserAndPassword(
-                                           "/LICENSE", "wrong_user", "chrome"),
-                                       DEFAULT_PRIORITY, &d));
+    scoped_ptr<URLRequest> r(default_context_.CreateRequest(
+        test_server_.GetURLWithUserAndPassword(kFtpTestFile, "wrong_user",
+                                               "chrome"),
+        DEFAULT_PRIORITY, &d));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d.data_received());
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCacheURLCredentials) {
+TEST_F(URLRequestTestFTP, FTPCacheURLCredentials) {
   ASSERT_TRUE(test_server_.Start());
-
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
 
   scoped_ptr<TestDelegate> d(new TestDelegate);
   {
     // Pass correct login identity in the URL.
-    scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURLWithUserAndPassword("/LICENSE", "chrome", "chrome"),
-        DEFAULT_PRIORITY, d.get()));
+    scoped_ptr<URLRequest> r(
+        default_context_.CreateRequest(test_server_.GetURLWithUserAndPassword(
+                                           kFtpTestFile, "chrome", "chrome"),
+                                       DEFAULT_PRIORITY, d.get()));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d->response_started_count());
     EXPECT_FALSE(d->received_data_before_response());
-    EXPECT_EQ(d->bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d->data_received());
   }
 
   d.reset(new TestDelegate);
   {
     // This request should use cached identity from previous request.
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURL("/LICENSE"), DEFAULT_PRIORITY, d.get()));
+        test_server_.GetURL(kFtpTestFile), DEFAULT_PRIORITY, d.get()));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d->response_started_count());
     EXPECT_FALSE(d->received_data_before_response());
-    EXPECT_EQ(d->bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d->data_received());
   }
 }
 
-// Flaky, see http://crbug.com/25045.
-TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
+TEST_F(URLRequestTestFTP, FTPCacheLoginBoxCredentials) {
   ASSERT_TRUE(test_server_.Start());
-
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("LICENSE");
 
   scoped_ptr<TestDelegate> d(new TestDelegate);
   // Set correct login credentials. The delegate will be asked for them when
@@ -9101,7 +9122,7 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
   d->set_credentials(AuthCredentials(kChrome, kChrome));
   {
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURLWithUserAndPassword("/LICENSE", "chrome",
+        test_server_.GetURLWithUserAndPassword(kFtpTestFile, "chrome",
                                                "wrong_password"),
         DEFAULT_PRIORITY, d.get()));
     r->Start();
@@ -9109,13 +9130,10 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d->response_started_count());
     EXPECT_FALSE(d->received_data_before_response());
-    EXPECT_EQ(d->bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d->data_received());
   }
 
   // Use a new delegate without explicit credentials. The cached ones should be
@@ -9125,19 +9143,16 @@ TEST_F(URLRequestTestFTP, DISABLED_FTPCacheLoginBoxCredentials) {
     // Don't pass wrong credentials in the URL, they would override valid cached
     // ones.
     scoped_ptr<URLRequest> r(default_context_.CreateRequest(
-        test_server_.GetURL("/LICENSE"), DEFAULT_PRIORITY, d.get()));
+        test_server_.GetURL(kFtpTestFile), DEFAULT_PRIORITY, d.get()));
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64 file_size = 0;
-    base::GetFileSize(app_path, &file_size);
-
     EXPECT_FALSE(r->is_pending());
     EXPECT_EQ(1, d->response_started_count());
     EXPECT_FALSE(d->received_data_before_response());
-    EXPECT_EQ(d->bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(GetTestFileContents(), d->data_received());
   }
 }
 #endif  // !defined(DISABLE_FTP_SUPPORT)

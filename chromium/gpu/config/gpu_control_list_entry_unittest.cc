@@ -30,10 +30,9 @@ class GpuControlListEntryTest : public testing::Test {
 
   static ScopedEntry GetEntryFromString(
       const std::string& json, bool supports_feature_type_all) {
-    scoped_ptr<base::Value> root;
-    root.reset(base::JSONReader::Read(json));
+    scoped_ptr<base::Value> root = base::JSONReader::Read(json);
     base::DictionaryValue* value = NULL;
-    if (root.get() == NULL || !root->GetAsDictionary(&value))
+    if (!root || !root->GetAsDictionary(&value))
       return NULL;
 
     GpuControlList::FeatureMap feature_map;
@@ -108,7 +107,7 @@ TEST_F(GpuControlListEntryTest, DetailedEntry) {
   EXPECT_EQ(1950, entry->webkit_bugs()[0]);
   EXPECT_EQ(1u, entry->features().size());
   EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_0));
-  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info()));
+  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info(), true));
   EXPECT_TRUE(entry->Contains(
       GpuControlList::kOsMacosx, "10.6.4", gpu_info()));
   EXPECT_STREQ("test_extension1", entry->disabled_extensions()[0].c_str());
@@ -763,10 +762,10 @@ TEST_F(GpuControlListEntryTest, NeedsMoreInfoEntry) {
 
   GPUInfo gpu_info;
   gpu_info.gpu.vendor_id = 0x8086;
-  EXPECT_TRUE(entry->NeedsMoreInfo(gpu_info));
+  EXPECT_TRUE(entry->NeedsMoreInfo(gpu_info, true));
 
   gpu_info.driver_version = "10.6";
-  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info));
+  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info, true));
 }
 
 TEST_F(GpuControlListEntryTest, NeedsMoreInfoForExceptionsEntry) {
@@ -789,10 +788,11 @@ TEST_F(GpuControlListEntryTest, NeedsMoreInfoForExceptionsEntry) {
 
   GPUInfo gpu_info;
   gpu_info.gpu.vendor_id = 0x8086;
-  EXPECT_TRUE(entry->NeedsMoreInfo(gpu_info));
+  EXPECT_TRUE(entry->NeedsMoreInfo(gpu_info, true));
+  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info, false));
 
   gpu_info.gl_renderer = "mesa";
-  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info));
+  EXPECT_FALSE(entry->NeedsMoreInfo(gpu_info, true));
 }
 
 TEST_F(GpuControlListEntryTest, FeatureTypeAllEntry) {

@@ -170,10 +170,10 @@ void ProcessingInstruction::process(const String& href, const String& charset)
     FetchRequest request(ResourceRequest(document().completeURL(href)), FetchInitiatorTypeNames::processinginstruction);
     if (m_isXSL) {
         if (RuntimeEnabledFeatures::xsltEnabled())
-            resource = document().fetcher()->fetchXSLStyleSheet(request);
+            resource = XSLStyleSheetResource::fetch(request, document().fetcher());
     } else {
         request.setCharset(charset.isEmpty() ? document().charset() : charset);
-        resource = document().fetcher()->fetchCSSStyleSheet(request);
+        resource = CSSStyleSheetResource::fetch(request, document().fetcher());
     }
 
     if (resource) {
@@ -256,15 +256,6 @@ void ProcessingInstruction::parseStyleSheet(const String& sheet)
         toCSSStyleSheet(m_sheet.get())->contents()->checkLoaded();
     else if (m_isXSL)
         toXSLStyleSheet(m_sheet.get())->checkLoaded();
-}
-
-void ProcessingInstruction::setCSSStyleSheet(PassRefPtrWillBeRawPtr<CSSStyleSheet> sheet)
-{
-    ASSERT(!resource());
-    ASSERT(!m_loading);
-    m_sheet = sheet;
-    sheet->setTitle(m_title);
-    sheet->setDisabled(m_alternate);
 }
 
 Node::InsertionNotificationRequest ProcessingInstruction::insertedInto(ContainerNode* insertionPoint)

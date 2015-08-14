@@ -71,7 +71,7 @@ const char* ConnectionTypeToString(
 std::string ProxyConfigToString(const net::ProxyConfig& config) {
   scoped_ptr<base::Value> config_value(config.ToValue());
   std::string str;
-  base::JSONWriter::Write(config_value.get(), &str);
+  base::JSONWriter::Write(*config_value, &str);
   return str;
 }
 
@@ -170,9 +170,9 @@ int main(int argc, char* argv[]) {
       command_line->GetSwitchValueASCII(kIgnoreNetifFlag);
   base::hash_set<std::string> ignored_interfaces;
   if (!ignored_netifs_str.empty()) {
-    std::vector<std::string> ignored_netifs;
-    base::SplitString(ignored_netifs_str, ',', &ignored_netifs);
-    for (const std::string& ignored_netif : ignored_netifs) {
+    for (const std::string& ignored_netif :
+         base::SplitString(ignored_netifs_str, ",", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_ALL)) {
       LOG(INFO) << "Ignoring: " << ignored_netif;
       ignored_interfaces.insert(ignored_netif);
     }
@@ -187,8 +187,7 @@ int main(int argc, char* argv[]) {
   // Use the network loop as the file loop also.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
       net::ProxyService::CreateSystemProxyConfigService(
-          network_loop.message_loop_proxy(),
-          network_loop.message_loop_proxy()));
+          network_loop.task_runner(), network_loop.task_runner()));
 
   // Uses |network_change_notifier|.
   net::NetworkChangeNotifier::AddIPAddressObserver(&net_watcher);

@@ -18,6 +18,10 @@
 #include "components/crash/browser/crash_dump_manager_android.h"
 #endif  // defined(OS_ANDROID)
 
+#if defined(USE_AURA)
+#include "chromecast/graphics/cast_screen.h"
+#endif  // defined(USE_AURA)
+
 namespace chromecast {
 namespace shell {
 
@@ -31,7 +35,8 @@ CastBrowserProcess* CastBrowserProcess::GetInstance() {
   return g_instance;
 }
 
-CastBrowserProcess::CastBrowserProcess() {
+CastBrowserProcess::CastBrowserProcess()
+    : net_log_(nullptr) {
   DCHECK(!g_instance);
   g_instance = this;
 }
@@ -53,6 +58,13 @@ void CastBrowserProcess::SetCastService(scoped_ptr<CastService> cast_service) {
   DCHECK(!cast_service_);
   cast_service_.swap(cast_service);
 }
+
+#if defined(USE_AURA)
+void CastBrowserProcess::SetCastScreen(scoped_ptr<CastScreen> cast_screen) {
+  DCHECK(!cast_screen_);
+  cast_screen_ = cast_screen.Pass();
+}
+#endif  // defined(USE_AURA)
 
 void CastBrowserProcess::SetMetricsHelper(
     scoped_ptr<metrics::CastMetricsHelper> metrics_helper) {
@@ -95,6 +107,11 @@ void CastBrowserProcess::SetConnectivityChecker(
     scoped_refptr<ConnectivityChecker> connectivity_checker) {
   DCHECK(!connectivity_checker_);
   connectivity_checker_.swap(connectivity_checker);
+}
+
+void CastBrowserProcess::SetNetLog(net::NetLog* net_log) {
+  DCHECK(!net_log_);
+  net_log_ = net_log;
 }
 
 }  // namespace shell

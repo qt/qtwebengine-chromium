@@ -8,9 +8,11 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -27,6 +29,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
+#include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -232,15 +235,18 @@ void InterstitialPageImpl::Show() {
   (*g_web_contents_to_interstitial_page)[web_contents_] = this;
 
   if (new_navigation_) {
-    NavigationEntryImpl* entry = new NavigationEntryImpl;
+    scoped_ptr<NavigationEntryImpl> entry =
+        make_scoped_ptr(new NavigationEntryImpl);
     entry->SetURL(url_);
     entry->SetVirtualURL(url_);
     entry->set_page_type(PAGE_TYPE_INTERSTITIAL);
 
     // Give delegates a chance to set some states on the navigation entry.
-    delegate_->OverrideEntry(entry);
+    delegate_->OverrideEntry(entry.get());
 
-    controller_->SetTransientEntry(entry);
+    controller_->SetTransientEntry(entry.Pass());
+
+    static_cast<WebContentsImpl*>(web_contents_)->DidChangeVisibleSSLState();
   }
 
   DCHECK(!render_view_host_);
@@ -250,6 +256,8 @@ void InterstitialPageImpl::Show() {
   std::string data_url = "data:text/html;charset=utf-8," +
                          net::EscapePath(delegate_->GetHTMLContents());
   frame_tree_.root()->current_frame_host()->NavigateToURL(GURL(data_url));
+  frame_tree_.root()->current_frame_host()->SetAccessibilityMode(
+      GetAccessibilityMode());
 
   notification_registrar_.Add(this, NOTIFICATION_NAV_ENTRY_PENDING,
       Source<NavigationController>(controller_));
@@ -289,10 +297,9 @@ void InterstitialPageImpl::Hide() {
   // Delete this and call Shutdown on the RVH asynchronously, as we may have
   // been called from a RVH delegate method, and we can't delete the RVH out
   // from under itself.
-  base::MessageLoop::current()->PostNonNestableTask(
-      FROM_HERE,
-      base::Bind(&InterstitialPageImpl::Shutdown,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostNonNestableTask(
+      FROM_HERE, base::Bind(&InterstitialPageImpl::Shutdown,
+                            weak_ptr_factory_.GetWeakPtr()));
   render_view_host_ = NULL;
   frame_tree_.root()->ResetForNewProcess();
   controller_->delegate()->DetachInterstitialPage();
@@ -420,6 +427,46 @@ AccessibilityMode InterstitialPageImpl::GetAccessibilityMode() const {
     return static_cast<WebContentsImpl*>(web_contents_)->GetAccessibilityMode();
   else
     return AccessibilityModeOff;
+}
+
+void InterstitialPageImpl::Cut() {
+  FrameTreeNode* focused_node = frame_tree_.GetFocusedFrame();
+  if (!focused_node)
+    return;
+
+  focused_node->current_frame_host()->Send(
+      new InputMsg_Cut(focused_node->current_frame_host()->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Cut"));
+}
+
+void InterstitialPageImpl::Copy() {
+  FrameTreeNode* focused_node = frame_tree_.GetFocusedFrame();
+  if (!focused_node)
+    return;
+
+  focused_node->current_frame_host()->Send(
+      new InputMsg_Copy(focused_node->current_frame_host()->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Copy"));
+}
+
+void InterstitialPageImpl::Paste() {
+  FrameTreeNode* focused_node = frame_tree_.GetFocusedFrame();
+  if (!focused_node)
+    return;
+
+  focused_node->current_frame_host()->Send(
+      new InputMsg_Paste(focused_node->current_frame_host()->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("Paste"));
+}
+
+void InterstitialPageImpl::SelectAll() {
+  FrameTreeNode* focused_node = frame_tree_.GetFocusedFrame();
+  if (!focused_node)
+    return;
+
+  focused_node->current_frame_host()->Send(new InputMsg_SelectAll(
+      focused_node->current_frame_host()->GetRoutingID()));
+  RecordAction(base::UserMetricsAction("SelectAll"));
 }
 
 RenderViewHostDelegateView* InterstitialPageImpl::GetDelegateView() {
@@ -561,10 +608,10 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
 
   int32 max_page_id = web_contents()->
       GetMaxPageIDForSiteInstance(render_view_host_->GetSiteInstance());
-  render_view_host_->CreateRenderView(base::string16(),
-                                      MSG_ROUTING_NONE,
+  render_view_host_->CreateRenderView(MSG_ROUTING_NONE,
                                       MSG_ROUTING_NONE,
                                       max_page_id,
+                                      FrameReplicationState(),
                                       false);
   controller_->delegate()->RenderFrameForInterstitialPageCreated(
       frame_tree_.root()->current_frame_host());

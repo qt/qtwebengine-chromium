@@ -14,8 +14,10 @@
 #include <stdio.h>
 
 #include "./vp9_rtcd.h"
+#include "./vpx_dsp_rtcd.h"
 
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/mem.h"
 
 #include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_common.h"
@@ -23,6 +25,7 @@
 #include "vp9/common/vp9_pred_common.h"
 #include "vp9/common/vp9_reconinter.h"
 #include "vp9/common/vp9_reconintra.h"
+#include "vp9/common/vp9_scan.h"
 
 #include "vp9/encoder/vp9_cost.h"
 #include "vp9/encoder/vp9_encoder.h"
@@ -214,7 +217,7 @@ static void block_variance(const uint8_t *src, int src_stride,
 
   for (i = 0; i < h; i += block_size) {
     for (j = 0; j < w; j += block_size) {
-      vp9_get8x8var(src + src_stride * i + j, src_stride,
+      vpx_get8x8var(src + src_stride * i + j, src_stride,
                     ref + ref_stride * i + j, ref_stride,
                     &sse8x8[k], &sum8x8[k]);
       *sse += sse8x8[k];
@@ -294,13 +297,11 @@ static void model_rd_for_sb_y_large(VP9_COMP *cpi, BLOCK_SIZE bsize,
     else
       tx_size = TX_8X8;
 
-    if (cpi->sf.partition_search_type == VAR_BASED_PARTITION) {
-      if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
-          cyclic_refresh_segment_id_boosted(xd->mi[0]->mbmi.segment_id))
-        tx_size = TX_8X8;
-      else if (tx_size > TX_16X16)
-        tx_size = TX_16X16;
-    }
+    if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
+        cyclic_refresh_segment_id_boosted(xd->mi[0]->mbmi.segment_id))
+      tx_size = TX_8X8;
+    else if (tx_size > TX_16X16)
+      tx_size = TX_16X16;
   } else {
     tx_size = MIN(max_txsize_lookup[bsize],
                   tx_mode_to_biggest_tx_size[cpi->common.tx_mode]);
@@ -478,13 +479,11 @@ static void model_rd_for_sb_y(VP9_COMP *cpi, BLOCK_SIZE bsize,
     else
       xd->mi[0]->mbmi.tx_size = TX_8X8;
 
-    if (cpi->sf.partition_search_type == VAR_BASED_PARTITION) {
-      if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
-          cyclic_refresh_segment_id_boosted(xd->mi[0]->mbmi.segment_id))
-        xd->mi[0]->mbmi.tx_size = TX_8X8;
-      else if (xd->mi[0]->mbmi.tx_size > TX_16X16)
-        xd->mi[0]->mbmi.tx_size = TX_16X16;
-    }
+    if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
+        cyclic_refresh_segment_id_boosted(xd->mi[0]->mbmi.segment_id))
+      xd->mi[0]->mbmi.tx_size = TX_8X8;
+    else if (xd->mi[0]->mbmi.tx_size > TX_16X16)
+      xd->mi[0]->mbmi.tx_size = TX_16X16;
   } else {
     xd->mi[0]->mbmi.tx_size =
         MIN(max_txsize_lookup[bsize],
@@ -659,7 +658,8 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, int *rate, int64_t *dist,
   block = 0;
   *rate = 0;
   *dist = 0;
-  *sse = (*sse << 6) >> shift;
+  if (*sse < INT64_MAX)
+    *sse = (*sse << 6) >> shift;
   for (r = 0; r < max_blocks_high; r += block_step) {
     for (c = 0; c < num_4x4_w; c += block_step) {
       if (c < max_blocks_wide) {
@@ -1059,6 +1059,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
                          int mi_row, int mi_col, RD_COST *rd_cost,
                          BLOCK_SIZE bsize, PICK_MODE_CONTEXT *ctx) {
   VP9_COMMON *const cm = &cpi->common;
+  SPEED_FEATURES *const sf = &cpi->sf;
   TileInfo *const tile_info = &tile_data->tile_info;
   MACROBLOCKD *const xd = &x->e_mbd;
   MB_MODE_INFO *const mbmi = &xd->mi[0]->mbmi;
@@ -1078,9 +1079,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
   unsigned int var_y = UINT_MAX;
   unsigned int sse_y = UINT_MAX;
   // Reduce the intra cost penalty for small blocks (<=16x16).
-  const int reduction_fac =
-      (cpi->sf.partition_search_type == VAR_BASED_PARTITION &&
-       bsize <= BLOCK_16X16) ? ((bsize <= BLOCK_8X8) ? 4 : 2) : 0;
+  const int reduction_fac = (bsize <= BLOCK_16X16) ?
+      ((bsize <= BLOCK_8X8) ? 4 : 2) : 0;
   const int intra_cost_penalty = vp9_get_intra_cost_penalty(
       cm->base_qindex, cm->y_dc_delta_q, cm->bit_depth) >> reduction_fac;
   const int64_t inter_mode_thresh = RDCOST(x->rdmult, x->rddiv,
@@ -1180,7 +1180,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
 
       if (cm->use_prev_frame_mvs)
         vp9_find_mv_refs(cm, xd, tile_info, xd->mi[0], ref_frame,
-                         candidates, mi_row, mi_col, NULL, NULL);
+                         candidates, mi_row, mi_col, NULL, NULL,
+                         xd->mi[0]->mbmi.mode_context);
       else
         const_motion[ref_frame] = mv_refs_rt(cm, xd, tile_info,
                                              xd->mi[0],
@@ -1219,7 +1220,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
       continue;
 
     i = (ref_frame == LAST_FRAME) ? GOLDEN_FRAME : LAST_FRAME;
-    if (cpi->ref_frame_flags & flag_list[i])
+    if ((cpi->ref_frame_flags & flag_list[i]) && sf->reference_masking)
       if (x->pred_mv_sad[ref_frame] > (x->pred_mv_sad[i] << 1))
         ref_frame_skip_mask |= (1 << ref_frame);
     if (ref_frame_skip_mask & (1 << ref_frame))
@@ -1247,7 +1248,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
         if (bsize < BLOCK_16X16)
           continue;
 
-        tmp_sad = vp9_int_pro_motion_estimation(cpi, x, bsize);
+        tmp_sad = vp9_int_pro_motion_estimation(cpi, x, bsize, mi_row, mi_col);
 
         if (tmp_sad > x->pred_mv_sad[LAST_FRAME])
           continue;
@@ -1594,7 +1595,6 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
 
   if (cpi->sf.adaptive_rd_thresh) {
     THR_MODES best_mode_idx = mode_idx[best_ref_frame][mode_offset(mbmi->mode)];
-    PREDICTION_MODE this_mode;
 
     if (best_ref_frame == INTRA_FRAME) {
       // Only consider the modes that are included in the intra_mode_list.
@@ -1604,12 +1604,12 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
       // TODO(yunqingwang): Check intra mode mask and only update freq_fact
       // for those valid modes.
       for (i = 0; i < intra_modes; i++) {
-        PREDICTION_MODE this_mode = intra_mode_list[i];
         update_thresh_freq_fact(cpi, tile_data, bsize, INTRA_FRAME,
-                                best_mode_idx, this_mode);
+                                best_mode_idx, intra_mode_list[i]);
       }
     } else {
       for (ref_frame = LAST_FRAME; ref_frame <= GOLDEN_FRAME; ++ref_frame) {
+        PREDICTION_MODE this_mode;
         if (best_ref_frame != ref_frame) continue;
         for (this_mode = NEARESTMV; this_mode <= NEWMV; ++this_mode) {
           update_thresh_freq_fact(cpi, tile_data, bsize, ref_frame,
@@ -1660,7 +1660,8 @@ void vp9_pick_inter_mode_sub8x8(VP9_COMP *cpi, MACROBLOCK *x,
       vp9_setup_pred_block(xd, yv12_mb[ref_frame], yv12, mi_row, mi_col,
                            sf, sf);
       vp9_find_mv_refs(cm, xd, tile_info, xd->mi[0], ref_frame,
-                       candidates, mi_row, mi_col, NULL, NULL);
+                       candidates, mi_row, mi_col, NULL, NULL,
+                       xd->mi[0]->mbmi.mode_context);
 
       vp9_find_best_ref_mvs(xd, cm->allow_high_precision_mv, candidates,
                             &dummy_mv[0], &dummy_mv[1]);
@@ -1692,8 +1693,8 @@ void vp9_pick_inter_mode_sub8x8(VP9_COMP *cpi, MACROBLOCK *x,
 
     // If the segment reference frame feature is enabled....
     // then do nothing if the current ref frame is not allowed..
-    if (vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
-        vp9_get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame)
+    if (segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME) &&
+        get_segdata(seg, segment_id, SEG_LVL_REF_FRAME) != (int)ref_frame)
       continue;
 
     mbmi->ref_frame[0] = ref_frame;
@@ -1734,7 +1735,8 @@ void vp9_pick_inter_mode_sub8x8(VP9_COMP *cpi, MACROBLOCK *x,
         b_mv[NEWMV].as_int = INVALID_MV;
         vp9_append_sub8x8_mvs_for_idx(cm, xd, tile_info, i, 0, mi_row, mi_col,
                                       &b_mv[NEARESTMV],
-                                      &b_mv[NEARMV]);
+                                      &b_mv[NEARMV],
+                                      xd->mi[0]->mbmi.mode_context);
 
         for (this_mode = NEARESTMV; this_mode <= NEWMV; ++this_mode) {
           int b_rate = 0;

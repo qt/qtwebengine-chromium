@@ -17,8 +17,8 @@ namespace rx
 
 SwapChain9::SwapChain9(Renderer9 *renderer, NativeWindow nativeWindow, HANDLE shareHandle,
                        GLenum backBufferFormat, GLenum depthBufferFormat)
-    : mRenderer(renderer),
-      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+    : SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+      mRenderer(renderer),
       mColorRenderTarget(this, false),
       mDepthStencilRenderTarget(this, true)
 {
@@ -104,7 +104,7 @@ EGLint SwapChain9::reset(int backbufferWidth, int backbufferHeight, EGLint swapI
         pShareHandle = &mShareHandle;
     }
 
-    const d3d9::TextureFormat &backBufferd3dFormatInfo = d3d9::GetTextureFormatInfo(mBackBufferFormat);
+    const d3d9::TextureFormat &backBufferd3dFormatInfo = d3d9::GetTextureFormatInfo(mOffscreenRenderTargetFormat);
     result = device->CreateTexture(backbufferWidth, backbufferHeight, 1, D3DUSAGE_RENDERTARGET,
                                    backBufferd3dFormatInfo.texFormat, D3DPOOL_DEFAULT, &mOffscreenTexture,
                                    pShareHandle);
@@ -312,8 +312,8 @@ EGLint SwapChain9::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
 
     RECT rect =
     {
-        x, mHeight - y - height,
-        x + width, mHeight - y
+        static_cast<LONG>(x), static_cast<LONG>(mHeight - y - height),
+        static_cast<LONG>(x + width), static_cast<LONG>(mHeight - y)
     };
 
     HRESULT result = mSwapChain->Present(&rect, &rect, NULL, NULL, 0);

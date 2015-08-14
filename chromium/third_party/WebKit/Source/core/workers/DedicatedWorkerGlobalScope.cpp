@@ -46,7 +46,7 @@ PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::c
     // Note: startupData is finalized on return. After the relevant parts has been
     // passed along to the created 'context'.
     RefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> context = adoptRefWillBeNoop(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_starterOrigin, startupData->m_workerClients.release()));
-    context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
+    context->applyContentSecurityPolicyFromVector(*startupData->m_contentSecurityPolicyHeaders);
     return context.release();
 }
 
@@ -64,10 +64,10 @@ const AtomicString& DedicatedWorkerGlobalScope::interfaceName() const
     return EventTargetNames::DedicatedWorkerGlobalScope;
 }
 
-void DedicatedWorkerGlobalScope::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void DedicatedWorkerGlobalScope::postMessage(ExecutionContext* context, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(context, ports, exceptionState);
     if (exceptionState.hadException())
         return;
     thread()->workerObjectProxy().postMessageToWorkerObject(message, channels.release());

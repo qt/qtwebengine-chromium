@@ -43,7 +43,9 @@ ProxyDecryptor::ProxyDecryptor(MediaPermission* media_permission,
                                const KeyErrorCB& key_error_cb,
                                const KeyMessageCB& key_message_cb)
     : is_creating_cdm_(false),
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
       media_permission_(media_permission),
+#endif
       use_hw_secure_codecs_(use_hw_secure_codecs),
       key_added_cb_(key_added_cb),
       key_error_cb_(key_error_cb),
@@ -131,13 +133,14 @@ void ProxyDecryptor::GenerateKeyRequest(EmeInitDataType init_data_type,
 
 // Returns true if |data| is prefixed with |header| and has data after the
 // |header|.
-bool HasHeader(const std::vector<uint8>& data, const std::string& header) {
+static bool HasHeader(const std::vector<uint8>& data,
+                      const std::string& header) {
   return data.size() > header.size() &&
          std::equal(header.begin(), header.end(), data.begin());
 }
 
 // Removes the first |length| items from |data|.
-void StripHeader(std::vector<uint8>& data, size_t length) {
+static void StripHeader(std::vector<uint8>& data, size_t length) {
   data.erase(data.begin(), data.begin() + length);
 }
 
@@ -389,6 +392,14 @@ void ProxyDecryptor::OnLegacySessionError(const std::string& session_id,
 
 void ProxyDecryptor::SetSessionId(SessionCreationType session_type,
                                   const std::string& session_id) {
+  // LoadSession() returns empty |session_id| if the session is not found, so
+  // convert this into an error.
+  if (session_type == LoadSession && session_id.empty()) {
+    OnLegacySessionError(session_id, MediaKeys::INVALID_ACCESS_ERROR, 0,
+                         "Incorrect session id specified for LoadSession().");
+    return;
+  }
+
   // Loaded sessions are considered persistent.
   bool is_persistent =
       session_type == PersistentSession || session_type == LoadSession;

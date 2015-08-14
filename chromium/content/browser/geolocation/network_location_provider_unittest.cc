@@ -191,7 +191,7 @@ class GeolocationNetworkProviderTest : public testing::Test {
   static std::string PrettyJson(const base::Value& value) {
     std::string pretty;
     base::JSONWriter::WriteWithOptions(
-        &value, base::JSONWriter::OPTIONS_PRETTY_PRINT, &pretty);
+        value, base::JSONWriter::OPTIONS_PRETTY_PRINT, &pretty);
     return pretty;
   }
 
@@ -259,11 +259,8 @@ class GeolocationNetworkProviderTest : public testing::Test {
     ASSERT_FALSE(upload_data.empty());
     std::string json_parse_error_msg;
     scoped_ptr<base::Value> parsed_json(
-        base::JSONReader::ReadAndReturnError(
-            upload_data,
-            base::JSON_PARSE_RFC,
-            NULL,
-            &json_parse_error_msg));
+        base::JSONReader::DeprecatedReadAndReturnError(
+            upload_data, base::JSON_PARSE_RFC, NULL, &json_parse_error_msg));
     EXPECT_TRUE(json_parse_error_msg.empty());
     ASSERT_TRUE(parsed_json.get() != NULL);
 

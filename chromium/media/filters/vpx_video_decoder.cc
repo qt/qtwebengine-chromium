@@ -209,15 +209,17 @@ std::string VpxVideoDecoder::GetDisplayName() const {
 
 void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                  bool low_delay,
-                                 const PipelineStatusCB& status_cb,
+                                 const InitCB& init_cb,
                                  const OutputCB& output_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(config.IsValidConfig());
   DCHECK(!config.is_encrypted());
   DCHECK(decode_cb_.is_null());
 
+  InitCB bound_init_cb = BindToCurrentLoop(init_cb);
+
   if (!ConfigureDecoder(config)) {
-    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
+    bound_init_cb.Run(false);
     return;
   }
 
@@ -225,7 +227,7 @@ void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
   config_ = config;
   state_ = kNormal;
   output_cb_ = BindToCurrentLoop(output_cb);
-  status_cb.Run(PIPELINE_OK);
+  bound_init_cb.Run(true);
 }
 
 static vpx_codec_ctx* InitializeVpxContext(vpx_codec_ctx* context,
@@ -460,18 +462,16 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
   VideoFrame::Format codec_format = VideoFrame::YV12;
   int uv_rows = (vpx_image->d_h + 1) / 2;
 
+  VideoFrame::ColorSpace color_space = VideoFrame::COLOR_SPACE_UNSPECIFIED;
   if (vpx_image->fmt == VPX_IMG_FMT_I444) {
     CHECK(!vpx_codec_alpha_);
     codec_format = VideoFrame::YV24;
     uv_rows = vpx_image->d_h;
   } else if (vpx_codec_alpha_) {
-    // TODO(watk): A limitation of conflating color space with pixel format is
-    // that it's not possible to have BT709 with alpha.
-    // Until color space is separated from format, prefer YV12A over YV12HD.
     codec_format = VideoFrame::YV12A;
-  } else if (vpx_image->cs == VPX_CS_BT_709) {
-    codec_format = VideoFrame::YV12HD;
   }
+  if (vpx_image->cs == VPX_CS_BT_709)
+    color_space = VideoFrame::COLOR_SPACE_HD_REC709;
 
   // The mixed |w|/|d_h| in |coded_size| is intentional. Setting the correct
   // coded width is necessary to allow coalesced memory access, which may avoid
@@ -490,8 +490,11 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
         vpx_image->planes[VPX_PLANE_Y],
         vpx_image->planes[VPX_PLANE_U],
         vpx_image->planes[VPX_PLANE_V],
-        kNoTimestamp(),
+        kNoTimestamp());
+    video_frame->get()->AddDestructionObserver(
         memory_pool_->CreateFrameCallback(vpx_image->fb_priv));
+    video_frame->get()->metadata()->SetInteger(VideoFrameMetadata::COLOR_SPACE,
+                                               color_space);
     return;
   }
 
@@ -501,6 +504,8 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
       gfx::Rect(visible_size),
       config_.natural_size(),
       kNoTimestamp());
+  video_frame->get()->metadata()->SetInteger(VideoFrameMetadata::COLOR_SPACE,
+                                             color_space);
 
   CopyYPlane(vpx_image->planes[VPX_PLANE_Y],
              vpx_image->stride[VPX_PLANE_Y],

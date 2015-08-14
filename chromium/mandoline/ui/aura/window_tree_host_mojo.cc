@@ -52,11 +52,11 @@ gfx::AcceleratedWidget WindowTreeHostMojo::GetAcceleratedWidget() {
   return gfx::kNullAcceleratedWidget;
 }
 
-void WindowTreeHostMojo::Show() {
+void WindowTreeHostMojo::ShowImpl() {
   window()->Show();
 }
 
-void WindowTreeHostMojo::Hide() {
+void WindowTreeHostMojo::HideImpl() {
 }
 
 gfx::Rect WindowTreeHostMojo::GetBounds() const {
@@ -89,13 +89,6 @@ void WindowTreeHostMojo::MoveCursorToNative(const gfx::Point& location) {
 
 void WindowTreeHostMojo::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// WindowTreeHostMojo, ui::EventSource implementation:
-
-ui::EventProcessor* WindowTreeHostMojo::GetEventProcessor() {
-  return dispatcher();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

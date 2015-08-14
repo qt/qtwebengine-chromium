@@ -39,6 +39,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
+#include "ui/gl/gl_image_shared_memory.h"
 #include "ui/gl/gl_share_group.h"
 
 #if defined(OS_ANDROID)
@@ -195,27 +196,7 @@ base::LazyInstance<SyncPointManagerWrapper> g_sync_point_manager =
 
 base::SharedMemoryHandle ShareToGpuThread(
     base::SharedMemoryHandle source_handle) {
-#if defined(OS_WIN)
-  // Windows needs to explicitly duplicate the handle to current process.
-  base::SharedMemoryHandle target_handle;
-  if (!DuplicateHandle(GetCurrentProcess(),
-                       source_handle,
-                       GetCurrentProcess(),
-                       &target_handle,
-                       FILE_GENERIC_READ | FILE_GENERIC_WRITE,
-                       FALSE,
-                       0)) {
-    return base::SharedMemory::NULLHandle();
-  }
-
-  return target_handle;
-#else
-  int duped_handle = HANDLE_EINTR(dup(source_handle.fd));
-  if (duped_handle < 0)
-    return base::SharedMemory::NULLHandle();
-
-  return base::FileDescriptor(duped_handle, true);
-#endif
+  return base::SharedMemory::DuplicateHandle(source_handle);
 }
 
 gfx::GpuMemoryBufferHandle ShareGpuMemoryBufferToGpuThread(
@@ -238,6 +219,21 @@ gfx::GpuMemoryBufferHandle ShareGpuMemoryBufferToGpuThread(
       NOTREACHED();
       return gfx::GpuMemoryBufferHandle();
   }
+}
+
+scoped_refptr<InProcessCommandBuffer::Service> GetInitialService(
+    const scoped_refptr<InProcessCommandBuffer::Service>& service) {
+  if (service)
+    return service;
+
+  // Call base::ThreadTaskRunnerHandle::IsSet() to ensure that it is
+  // instantiated before we create the GPU thread, otherwise shutdown order will
+  // delete the ThreadTaskRunnerHandle before the GPU thread's message loop,
+  // and when the message loop is shutdown, it will recreate
+  // ThreadTaskRunnerHandle, which will re-add a new task to the, AtExitManager,
+  // which causes a deadlock because it's already locked.
+  base::ThreadTaskRunnerHandle::IsSet();
+  return g_default_service.Get().gpu_thread;
 }
 
 }  // anonyous namespace
@@ -290,7 +286,7 @@ InProcessCommandBuffer::InProcessCommandBuffer(
       last_put_offset_(-1),
       gpu_memory_buffer_manager_(nullptr),
       flush_event_(false, false),
-      service_(service.get() ? service : g_default_service.Get().gpu_thread),
+      service_(GetInitialService(service)),
       gpu_thread_weak_ptr_factory_(this) {
   DCHECK(service_.get());
   next_image_id_.GetNext();
@@ -395,7 +391,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
   DCHECK(params.size.width() >= 0 && params.size.height() >= 0);
 
   TransferBufferManager* manager = new TransferBufferManager();
-  transfer_buffer_manager_.reset(manager);
+  transfer_buffer_manager_ = manager;
   manager->Initialize();
 
   scoped_ptr<CommandBufferService> command_buffer(
@@ -511,7 +507,6 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
                  base::Unretained(this)));
 
   image_factory_ = params.image_factory;
-  params.capabilities->image = params.capabilities->image && image_factory_;
 
   return true;
 }
@@ -665,15 +660,26 @@ void InProcessCommandBuffer::SetGetBuffer(int32 shm_id) {
   if (last_state_.error != gpu::error::kNoError)
     return;
 
-  {
-    base::AutoLock lock(command_buffer_lock_);
-    command_buffer_->SetGetBuffer(shm_id);
-    last_put_offset_ = 0;
-  }
+  base::WaitableEvent completion(true, false);
+  base::Closure task =
+      base::Bind(&InProcessCommandBuffer::SetGetBufferOnGpuThread,
+                 base::Unretained(this), shm_id, &completion);
+  QueueTask(task);
+  completion.Wait();
+
   {
     base::AutoLock lock(state_after_last_flush_lock_);
     state_after_last_flush_ = command_buffer_->GetLastState();
   }
+}
+
+void InProcessCommandBuffer::SetGetBufferOnGpuThread(
+    int32 shm_id,
+    base::WaitableEvent* completion) {
+  base::AutoLock lock(command_buffer_lock_);
+  command_buffer_->SetGetBuffer(shm_id);
+  last_put_offset_ = 0;
+  completion->Signal();
 }
 
 scoped_refptr<Buffer> InProcessCommandBuffer::CreateTransferBuffer(size_t size,
@@ -760,17 +766,39 @@ void InProcessCommandBuffer::CreateImageOnGpuThread(
     return;
   }
 
-  // Note: this assumes that client ID is always 0.
-  const int kClientId = 0;
+  switch (handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER: {
+      scoped_refptr<gfx::GLImageSharedMemory> image(
+          new gfx::GLImageSharedMemory(size, internalformat));
+      if (!image->Initialize(handle, format)) {
+        LOG(ERROR) << "Failed to initialize image.";
+        return;
+      }
 
-  DCHECK(image_factory_);
-  scoped_refptr<gfx::GLImage> image =
-      image_factory_->CreateImageForGpuMemoryBuffer(
-          handle, size, format, internalformat, kClientId);
-  if (!image.get())
-    return;
+      image_manager->AddImage(image.get(), id);
+      break;
+    }
+    default: {
+      if (!image_factory_) {
+        LOG(ERROR) << "Image factory missing but required by buffer type.";
+        return;
+      }
 
-  image_manager->AddImage(image.get(), id);
+      // Note: this assumes that client ID is always 0.
+      const int kClientId = 0;
+
+      scoped_refptr<gfx::GLImage> image =
+          image_factory_->CreateImageForGpuMemoryBuffer(
+              handle, size, format, internalformat, kClientId);
+      if (!image.get()) {
+        LOG(ERROR) << "Failed to create image for buffer.";
+        return;
+      }
+
+      image_manager->AddImage(image.get(), id);
+      break;
+    }
+  }
 }
 
 void InProcessCommandBuffer::DestroyImage(int32 id) {
@@ -908,6 +936,12 @@ uint32 InProcessCommandBuffer::CreateStreamTexture(uint32 texture_id) {
 }
 
 void InProcessCommandBuffer::SetLock(base::Lock*) {
+}
+
+bool InProcessCommandBuffer::IsGpuChannelLost() {
+  // There is no such channel to lose for in-process contexts. This only
+  // makes sense for out-of-process command buffers.
+  return false;
 }
 
 uint32 InProcessCommandBuffer::CreateStreamTextureOnGpuThread(

@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_info.h"
@@ -144,6 +145,14 @@ bool QuicSimpleClient::Connect() {
   return session_->connection()->connected();
 }
 
+QuicClientSession* QuicSimpleClient::CreateQuicClientSession(
+    const QuicConfig& config,
+    QuicConnection* connection,
+    const QuicServerId& server_id,
+    QuicCryptoClientConfig* crypto_config) {
+  return new QuicClientSession(config, connection, server_id_, &crypto_config_);
+}
+
 void QuicSimpleClient::StartConnect() {
   DCHECK(initialized_);
   DCHECK(!connected());
@@ -157,8 +166,9 @@ void QuicSimpleClient::StartConnect() {
                                    Perspective::IS_CLIENT,
                                    server_id_.is_https(),
                                    supported_versions_);
-  session_.reset(new QuicClientSession(config_, connection_));
-  session_->InitializeSession(server_id_, &crypto_config_);
+  session_.reset(CreateQuicClientSession(config_, connection_, server_id_,
+                                         &crypto_config_));
+  session_->Initialize();
   session_->CryptoConnect();
 }
 
@@ -222,7 +232,7 @@ QuicSpdyClientStream* QuicSimpleClient::CreateReliableClientStream() {
     return nullptr;
   }
 
-  return session_->CreateOutgoingDataStream();
+  return session_->CreateOutgoingDynamicStream();
 }
 
 void QuicSimpleClient::WaitForStreamToClose(QuicStreamId id) {
@@ -297,10 +307,8 @@ QuicConnectionId QuicSimpleClient::GenerateConnectionId() {
 }
 
 QuicConnectionHelper* QuicSimpleClient::CreateQuicConnectionHelper() {
-  return new QuicConnectionHelper(
-      base::MessageLoop::current()->message_loop_proxy().get(),
-      &clock_,
-      QuicRandom::GetInstance());
+  return new QuicConnectionHelper(base::ThreadTaskRunnerHandle::Get().get(),
+                                  &clock_, QuicRandom::GetInstance());
 }
 
 QuicPacketWriter* QuicSimpleClient::CreateQuicPacketWriter() {

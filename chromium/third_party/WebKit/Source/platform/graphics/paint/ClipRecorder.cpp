@@ -12,7 +12,7 @@
 
 namespace blink {
 
-ClipRecorder::ClipRecorder(GraphicsContext& context, const DisplayItemClientWrapper& client, DisplayItem::Type type, const LayoutRect& clipRect, SkRegion::Op operation)
+ClipRecorder::ClipRecorder(GraphicsContext& context, const DisplayItemClientWrapper& client, DisplayItem::Type type, const LayoutRect& clipRect)
     : m_client(client)
     , m_context(context)
     , m_type(type)
@@ -21,23 +21,25 @@ ClipRecorder::ClipRecorder(GraphicsContext& context, const DisplayItemClientWrap
         ASSERT(m_context.displayItemList());
         if (m_context.displayItemList()->displayItemConstructionIsDisabled())
             return;
-        m_context.displayItemList()->add(ClipDisplayItem::create(m_client, type, pixelSnappedIntRect(clipRect), operation));
+        m_context.displayItemList()->createAndAppend<ClipDisplayItem>(m_client, type, pixelSnappedIntRect(clipRect));
     } else {
-        ClipDisplayItem clipDisplayItem(m_client, type, pixelSnappedIntRect(clipRect), operation);
+        ClipDisplayItem clipDisplayItem(m_client, type, pixelSnappedIntRect(clipRect));
         clipDisplayItem.replay(m_context);
     }
 }
 
 ClipRecorder::~ClipRecorder()
 {
-    DisplayItem::Type endType = DisplayItem::clipTypeToEndClipType(m_type);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(m_context.displayItemList());
-        if (m_context.displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        m_context.displayItemList()->add(EndClipDisplayItem::create(m_client, endType));
+        if (!m_context.displayItemList()->displayItemConstructionIsDisabled()) {
+            if (m_context.displayItemList()->lastDisplayItemIsNoopBegin())
+                m_context.displayItemList()->removeLastDisplayItem();
+            else
+                m_context.displayItemList()->createAndAppend<EndClipDisplayItem>(m_client, DisplayItem::clipTypeToEndClipType(m_type));
+        }
     } else {
-        EndClipDisplayItem endClipDisplayItem(m_client, endType);
+        EndClipDisplayItem endClipDisplayItem(m_client, DisplayItem::clipTypeToEndClipType(m_type));
         endClipDisplayItem.replay(m_context);
     }
 }

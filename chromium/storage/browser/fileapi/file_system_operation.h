@@ -120,6 +120,13 @@ class FileSystemOperation {
            const scoped_refptr<storage::ShareableFileReference>& file_ref)>
       SnapshotFileCallback;
 
+  // Used to specify how recursive operation delegate behaves for errors.
+  // With ERROR_BEHAVIOR_ABORT, it stops following operation when it fails an
+  // operation.
+  // With ERROR_BEHAVIOR_SKIP, it continues following operation even when it
+  // fails some of the operations.
+  enum ErrorBehavior { ERROR_BEHAVIOR_ABORT, ERROR_BEHAVIOR_SKIP };
+
   // Used for progress update callback for Copy().
   //
   // BEGIN_COPY_ENTRY is fired for each copy creation beginning (for both
@@ -193,6 +200,7 @@ class FileSystemOperation {
     BEGIN_COPY_ENTRY,
     END_COPY_ENTRY,
     PROGRESS,
+    ERROR_COPY_ENTRY
   };
   typedef base::Callback<void(CopyProgressType type,
                               const FileSystemURL& source_url,
@@ -245,6 +253,8 @@ class FileSystemOperation {
   // |dest_path| as needed.
   // |option| specifies the minor behavior of Copy(). See CopyOrMoveOption's
   // comment for details.
+  // |error_behavior| specifies whether this continues operation after it
+  // failed an operation or not.
   // |progress_callback| is periodically called to report the progress
   // update. See also the comment of CopyProgressCallback. This callback is
   // optional.
@@ -260,6 +270,7 @@ class FileSystemOperation {
   virtual void Copy(const FileSystemURL& src_path,
                     const FileSystemURL& dest_path,
                     CopyOrMoveOption option,
+                    ErrorBehavior error_behavior,
                     const CopyProgressCallback& progress_callback,
                     const StatusCallback& callback) = 0;
 

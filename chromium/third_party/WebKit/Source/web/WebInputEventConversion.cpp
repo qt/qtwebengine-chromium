@@ -42,6 +42,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/PinchViewport.h"
 #include "core/layout/LayoutObject.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/Widget.h"
@@ -79,7 +80,7 @@ static FloatPoint convertHitPointToWindow(const Widget* widget, FloatPoint point
             scale = rootView->inputEventsScaleFactor();
             offset = rootView->inputEventsOffsetForEmulation();
             pinchViewport = flooredIntPoint(rootView->page()->frameHost().pinchViewport().visibleRect().location());
-            overscrollOffset = rootView->elasticOverscroll();
+            overscrollOffset = rootView->page()->frameHost().chromeClient().elasticOverscroll();
         }
     }
     return FloatPoint(
@@ -662,7 +663,7 @@ static WebTouchPoint toWebTouchPoint(const Touch* touch, const LayoutObject* lay
     point.position = convertAbsoluteLocationForLayoutObjectFloat(touch->absoluteLocation(), *layoutObject);
     point.radiusX = touch->radiusX();
     point.radiusY = touch->radiusY();
-    point.rotationAngle = touch->webkitRotationAngle();
+    point.rotationAngle = touch->rotationAngle();
     point.force = touch->force();
     point.state = state;
     return point;

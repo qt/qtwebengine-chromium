@@ -10,91 +10,24 @@
 
 #include <arm_neon.h>
 #include "./vp9_rtcd.h"
+#include "./vpx_dsp_rtcd.h"
 #include "./vpx_config.h"
 
 #include "vpx_ports/mem.h"
 #include "vpx/vpx_integer.h"
 
-#include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_filter.h"
 
-#include "vp9/encoder/vp9_variance.h"
-
-static INLINE int horizontal_add_s16x8(const int16x8_t v_16x8) {
-  const int32x4_t a = vpaddlq_s16(v_16x8);
-  const int64x2_t b = vpaddlq_s32(a);
-  const int32x2_t c = vadd_s32(vreinterpret_s32_s64(vget_low_s64(b)),
-                               vreinterpret_s32_s64(vget_high_s64(b)));
-  return vget_lane_s32(c, 0);
-}
-
-static INLINE int horizontal_add_s32x4(const int32x4_t v_32x4) {
-  const int64x2_t b = vpaddlq_s32(v_32x4);
-  const int32x2_t c = vadd_s32(vreinterpret_s32_s64(vget_low_s64(b)),
-                               vreinterpret_s32_s64(vget_high_s64(b)));
-  return vget_lane_s32(c, 0);
-}
-
-// w * h must be less than 2048 or local variable v_sum may overflow.
-static void variance_neon_w8(const uint8_t *a, int a_stride,
-                             const uint8_t *b, int b_stride,
-                             int w, int h, uint32_t *sse, int *sum) {
-  int i, j;
-  int16x8_t v_sum = vdupq_n_s16(0);
-  int32x4_t v_sse_lo = vdupq_n_s32(0);
-  int32x4_t v_sse_hi = vdupq_n_s32(0);
-
-  for (i = 0; i < h; ++i) {
-    for (j = 0; j < w; j += 8) {
-      const uint8x8_t v_a = vld1_u8(&a[j]);
-      const uint8x8_t v_b = vld1_u8(&b[j]);
-      const uint16x8_t v_diff = vsubl_u8(v_a, v_b);
-      const int16x8_t sv_diff = vreinterpretq_s16_u16(v_diff);
-      v_sum = vaddq_s16(v_sum, sv_diff);
-      v_sse_lo = vmlal_s16(v_sse_lo,
-                           vget_low_s16(sv_diff),
-                           vget_low_s16(sv_diff));
-      v_sse_hi = vmlal_s16(v_sse_hi,
-                           vget_high_s16(sv_diff),
-                           vget_high_s16(sv_diff));
-    }
-    a += a_stride;
-    b += b_stride;
-  }
-
-  *sum = horizontal_add_s16x8(v_sum);
-  *sse = (unsigned int)horizontal_add_s32x4(vaddq_s32(v_sse_lo, v_sse_hi));
-}
-
-void vp9_get8x8var_neon(const uint8_t *src_ptr, int source_stride,
-                        const uint8_t *ref_ptr, int ref_stride,
-                        unsigned int *sse, int *sum) {
-  variance_neon_w8(src_ptr, source_stride, ref_ptr, ref_stride, 8,
-                   8, sse, sum);
-}
-
-unsigned int vp9_variance8x8_neon(const uint8_t *a, int a_stride,
-                                  const uint8_t *b, int b_stride,
-                                  unsigned int *sse) {
-  int sum;
-  variance_neon_w8(a, a_stride, b, b_stride, 8, 8, sse, &sum);
-  return *sse - (((int64_t)sum * sum) >> 6);  //  >> 6 = / 8 * 8
-}
-
-void vp9_get16x16var_neon(const uint8_t *src_ptr, int source_stride,
-                          const uint8_t *ref_ptr, int ref_stride,
-                          unsigned int *sse, int *sum) {
-  variance_neon_w8(src_ptr, source_stride, ref_ptr, ref_stride, 16,
-                   16, sse, sum);
-}
-
-unsigned int vp9_variance16x16_neon(const uint8_t *a, int a_stride,
-                                    const uint8_t *b, int b_stride,
-                                    unsigned int *sse) {
-  int sum;
-  variance_neon_w8(a, a_stride, b, b_stride, 16, 16, sse, &sum);
-  return *sse - (((int64_t)sum * sum) >> 8);  //  >> 8 = / 16 * 16
-}
+static uint8_t bilinear_filters[8][2] = {
+  { 128,   0, },
+  { 112,  16, },
+  {  96,  32, },
+  {  80,  48, },
+  {  64,  64, },
+  {  48,  80, },
+  {  32,  96, },
+  {  16, 112, },
+};
 
 static void var_filter_block2d_bil_w8(const uint8_t *src_ptr,
                                       uint8_t *output_ptr,
@@ -102,9 +35,9 @@ static void var_filter_block2d_bil_w8(const uint8_t *src_ptr,
                                       int pixel_step,
                                       unsigned int output_height,
                                       unsigned int output_width,
-                                      const int16_t *vp9_filter) {
-  const uint8x8_t f0 = vmov_n_u8((uint8_t)vp9_filter[0]);
-  const uint8x8_t f1 = vmov_n_u8((uint8_t)vp9_filter[1]);
+                                      const uint8_t *vp9_filter) {
+  const uint8x8_t f0 = vmov_n_u8(vp9_filter[0]);
+  const uint8x8_t f1 = vmov_n_u8(vp9_filter[1]);
   unsigned int i;
   for (i = 0; i < output_height; ++i) {
     const uint8x8_t src_0 = vld1_u8(&src_ptr[0]);
@@ -125,9 +58,9 @@ static void var_filter_block2d_bil_w16(const uint8_t *src_ptr,
                                        int pixel_step,
                                        unsigned int output_height,
                                        unsigned int output_width,
-                                       const int16_t *vp9_filter) {
-  const uint8x8_t f0 = vmov_n_u8((uint8_t)vp9_filter[0]);
-  const uint8x8_t f1 = vmov_n_u8((uint8_t)vp9_filter[1]);
+                                       const uint8_t *vp9_filter) {
+  const uint8x8_t f0 = vmov_n_u8(vp9_filter[0]);
+  const uint8x8_t f1 = vmov_n_u8(vp9_filter[1]);
   unsigned int i, j;
   for (i = 0; i < output_height; ++i) {
     for (j = 0; j < output_width; j += 16) {
@@ -159,10 +92,10 @@ unsigned int vp9_sub_pixel_variance8x8_neon(const uint8_t *src,
 
   var_filter_block2d_bil_w8(src, fdata3, src_stride, 1,
                             9, 8,
-                            BILINEAR_FILTERS_2TAP(xoffset));
+                            bilinear_filters[xoffset]);
   var_filter_block2d_bil_w8(fdata3, temp2, 8, 8, 8,
-                            8, BILINEAR_FILTERS_2TAP(yoffset));
-  return vp9_variance8x8_neon(temp2, 8, dst, dst_stride, sse);
+                            8, bilinear_filters[yoffset]);
+  return vpx_variance8x8_neon(temp2, 8, dst, dst_stride, sse);
 }
 
 unsigned int vp9_sub_pixel_variance16x16_neon(const uint8_t *src,
@@ -177,80 +110,10 @@ unsigned int vp9_sub_pixel_variance16x16_neon(const uint8_t *src,
 
   var_filter_block2d_bil_w16(src, fdata3, src_stride, 1,
                              17, 16,
-                             BILINEAR_FILTERS_2TAP(xoffset));
+                             bilinear_filters[xoffset]);
   var_filter_block2d_bil_w16(fdata3, temp2, 16, 16, 16,
-                             16, BILINEAR_FILTERS_2TAP(yoffset));
-  return vp9_variance16x16_neon(temp2, 16, dst, dst_stride, sse);
-}
-
-void vp9_get32x32var_neon(const uint8_t *src_ptr, int source_stride,
-                          const uint8_t *ref_ptr, int ref_stride,
-                          unsigned int *sse, int *sum) {
-  variance_neon_w8(src_ptr, source_stride, ref_ptr, ref_stride, 32,
-                   32, sse, sum);
-}
-
-unsigned int vp9_variance32x32_neon(const uint8_t *a, int a_stride,
-                                    const uint8_t *b, int b_stride,
-                                    unsigned int *sse) {
-  int sum;
-  variance_neon_w8(a, a_stride, b, b_stride, 32, 32, sse, &sum);
-  return *sse - (((int64_t)sum * sum) >> 10);  // >> 10 = / 32 * 32
-}
-
-unsigned int vp9_variance32x64_neon(const uint8_t *a, int a_stride,
-                                    const uint8_t *b, int b_stride,
-                                    unsigned int *sse) {
-  int sum1, sum2;
-  uint32_t sse1, sse2;
-  variance_neon_w8(a, a_stride, b, b_stride, 32, 32, &sse1, &sum1);
-  variance_neon_w8(a + (32 * a_stride), a_stride,
-                   b + (32 * b_stride), b_stride, 32, 32,
-                   &sse2, &sum2);
-  *sse = sse1 + sse2;
-  sum1 += sum2;
-  return *sse - (((int64_t)sum1 * sum1) >> 11);  // >> 11 = / 32 * 64
-}
-
-unsigned int vp9_variance64x32_neon(const uint8_t *a, int a_stride,
-                                    const uint8_t *b, int b_stride,
-                                    unsigned int *sse) {
-  int sum1, sum2;
-  uint32_t sse1, sse2;
-  variance_neon_w8(a, a_stride, b, b_stride, 64, 16, &sse1, &sum1);
-  variance_neon_w8(a + (16 * a_stride), a_stride,
-                   b + (16 * b_stride), b_stride, 64, 16,
-                   &sse2, &sum2);
-  *sse = sse1 + sse2;
-  sum1 += sum2;
-  return *sse - (((int64_t)sum1 * sum1) >> 11);  // >> 11 = / 32 * 64
-}
-
-unsigned int vp9_variance64x64_neon(const uint8_t *a, int a_stride,
-                                    const uint8_t *b, int b_stride,
-                                    unsigned int *sse) {
-  int sum1, sum2;
-  uint32_t sse1, sse2;
-
-  variance_neon_w8(a, a_stride, b, b_stride, 64, 16, &sse1, &sum1);
-  variance_neon_w8(a + (16 * a_stride), a_stride,
-                   b + (16 * b_stride), b_stride, 64, 16,
-                   &sse2, &sum2);
-  sse1 += sse2;
-  sum1 += sum2;
-
-  variance_neon_w8(a + (16 * 2 * a_stride), a_stride,
-                   b + (16 * 2 * b_stride), b_stride,
-                   64, 16, &sse2, &sum2);
-  sse1 += sse2;
-  sum1 += sum2;
-
-  variance_neon_w8(a + (16 * 3 * a_stride), a_stride,
-                   b + (16 * 3 * b_stride), b_stride,
-                   64, 16, &sse2, &sum2);
-  *sse = sse1 + sse2;
-  sum1 += sum2;
-  return *sse - (((int64_t)sum1 * sum1) >> 12);  // >> 12 = / 64 * 64
+                             16, bilinear_filters[yoffset]);
+  return vpx_variance16x16_neon(temp2, 16, dst, dst_stride, sse);
 }
 
 unsigned int vp9_sub_pixel_variance32x32_neon(const uint8_t *src,
@@ -265,10 +128,10 @@ unsigned int vp9_sub_pixel_variance32x32_neon(const uint8_t *src,
 
   var_filter_block2d_bil_w16(src, fdata3, src_stride, 1,
                              33, 32,
-                             BILINEAR_FILTERS_2TAP(xoffset));
+                             bilinear_filters[xoffset]);
   var_filter_block2d_bil_w16(fdata3, temp2, 32, 32, 32,
-                             32, BILINEAR_FILTERS_2TAP(yoffset));
-  return vp9_variance32x32_neon(temp2, 32, dst, dst_stride, sse);
+                             32, bilinear_filters[yoffset]);
+  return vpx_variance32x32_neon(temp2, 32, dst, dst_stride, sse);
 }
 
 unsigned int vp9_sub_pixel_variance64x64_neon(const uint8_t *src,
@@ -283,8 +146,8 @@ unsigned int vp9_sub_pixel_variance64x64_neon(const uint8_t *src,
 
   var_filter_block2d_bil_w16(src, fdata3, src_stride, 1,
                              65, 64,
-                             BILINEAR_FILTERS_2TAP(xoffset));
+                             bilinear_filters[xoffset]);
   var_filter_block2d_bil_w16(fdata3, temp2, 64, 64, 64,
-                             64, BILINEAR_FILTERS_2TAP(yoffset));
-  return vp9_variance64x64_neon(temp2, 64, dst, dst_stride, sse);
+                             64, bilinear_filters[yoffset]);
+  return vpx_variance64x64_neon(temp2, 64, dst, dst_stride, sse);
 }

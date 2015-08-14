@@ -38,13 +38,13 @@
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/PluginDocument.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutEmbeddedObject.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginPlaceholder.h"
@@ -501,7 +501,7 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
     if (protocolIsJavaScript(url))
         return false;
 
-    KURL completedURL = document().completeURL(url);
+    KURL completedURL = url.isEmpty() ? KURL() : document().completeURL(url);
     if (!pluginIsLoadable(completedURL, mimeType))
         return false;
 
@@ -653,7 +653,7 @@ void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot&)
     userAgentShadowRoot()->appendChild(HTMLContentElement::create(document()));
 }
 
-void HTMLPlugInElement::willAddFirstOpenShadowRoot()
+void HTMLPlugInElement::willAddFirstAuthorShadowRoot()
 {
     lazyReattachIfAttached();
 }

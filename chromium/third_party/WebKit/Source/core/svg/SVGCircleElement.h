@@ -34,6 +34,8 @@ class SVGCircleElement final : public SVGGeometryElement {
 public:
     DECLARE_NODE_FACTORY(SVGCircleElement);
 
+    Path asPath() const override;
+
     SVGAnimatedLength* cx() const { return m_cx.get(); }
     SVGAnimatedLength* cy() const { return m_cy.get(); }
     SVGAnimatedLength* r() const { return m_r.get(); }
@@ -43,15 +45,15 @@ public:
 private:
     explicit SVGCircleElement(Document&);
 
-    virtual void svgAttributeChanged(const QualifiedName&) override;
+    void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual bool selfHasRelativeLengths() const override;
+    bool selfHasRelativeLengths() const override;
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_cx;
     RefPtrWillBeMember<SVGAnimatedLength> m_cy;

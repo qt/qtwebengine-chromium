@@ -96,6 +96,10 @@ AutomationNodeImpl.prototype = {
                           endIndex: endIndex });
   },
 
+  showContextMenu: function() {
+    this.performAction_('showContextMenu');
+  },
+
   domQuerySelector: function(selector, callback) {
     automationInternal.querySelector(
       { treeID: this.rootImpl.treeID,
@@ -352,7 +356,7 @@ var AutomationAttributeTypes = [
 /**
  * Maps an attribute name to another attribute who's value is an id or an array
  * of ids referencing an AutomationNode.
- * @param {!Object<string, string>}
+ * @param {!Object<string>}
  * @const
  */
 var ATTRIBUTE_NAME_TO_ID_ATTRIBUTE = {
@@ -366,7 +370,7 @@ var ATTRIBUTE_NAME_TO_ID_ATTRIBUTE = {
 
 /**
  * A set of attributes ignored in the automation API.
- * @param {!Object<string, boolean>}
+ * @param {!Object<boolean>}
  * @const
  */
 var ATTRIBUTE_BLACKLIST = {'activedescendantId': true,
@@ -379,8 +383,7 @@ var ATTRIBUTE_BLACKLIST = {'activedescendantId': true,
 };
 
 function defaultStringAttribute(opt_defaultVal) {
-  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : '';
-  return { default: defaultVal, reflectFrom: 'stringAttributes' };
+  return { default: undefined, reflectFrom: 'stringAttributes' };
 }
 
 function defaultIntAttribute(opt_defaultVal) {
@@ -431,11 +434,15 @@ var DefaultMixinAttributes = {
   help: defaultStringAttribute(),
   name: defaultStringAttribute(),
   value: defaultStringAttribute(),
+  htmlTag: defaultStringAttribute(),
+  hierarchicalLevel: defaultIntAttribute(),
   controls: defaultNodeRefListAttribute('controlsIds'),
   describedby: defaultNodeRefListAttribute('describedbyIds'),
   flowto: defaultNodeRefListAttribute('flowtoIds'),
   labelledby: defaultNodeRefListAttribute('labelledbyIds'),
-  owns: defaultNodeRefListAttribute('ownsIds')
+  owns: defaultNodeRefListAttribute('ownsIds'),
+  wordStarts: defaultIntListAttribute(),
+  wordEnds: defaultIntListAttribute()
 };
 
 var ActiveDescendantMixinAttribute = {
@@ -464,7 +471,8 @@ var ScrollableMixinAttributes = {
 
 var EditableTextMixinAttributes = {
   textSelStart: defaultIntAttribute(-1),
-  textSelEnd: defaultIntAttribute(-1)
+  textSelEnd: defaultIntAttribute(-1),
+  type: defaultHtmlAttribute()
 };
 
 var RangeMixinAttributes = {
@@ -771,7 +779,8 @@ AutomationRootNodeImpl.prototype = {
     var nodeImpl = privates(node).impl;
 
     // TODO(dtseng): Make into set listing all hosting node roles.
-    if (nodeData.role == schema.RoleType.webView) {
+    if (nodeData.role == schema.RoleType.webView ||
+        nodeData.role == schema.RoleType.embeddedObject) {
       if (nodeImpl.childTreeID !== nodeData.intAttributes.childTreeId)
         nodeImpl.pendingChildFrame = true;
 
@@ -826,7 +835,8 @@ AutomationRootNodeImpl.prototype = {
     }
 
     // If this is an editable text area, set editable text attributes.
-    if (nodeData.role == schema.RoleType.textField) {
+    if (nodeData.role == schema.RoleType.textField ||
+        nodeData.role == schema.RoleType.spinButton) {
       this.mixinAttributes_(nodeImpl, EditableTextMixinAttributes, nodeData);
     }
 
@@ -1018,6 +1028,7 @@ var AutomationNode = utils.expose('AutomationNode',
                                                 'makeVisible',
                                                 'matches',
                                                 'setSelection',
+                                                'showContextMenu',
                                                 'addEventListener',
                                                 'removeEventListener',
                                                 'domQuerySelector',

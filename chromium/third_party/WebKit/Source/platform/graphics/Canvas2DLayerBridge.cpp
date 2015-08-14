@@ -119,7 +119,8 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(PassOwnPtr<WebGraphicsContext3DProvider
 Canvas2DLayerBridge::~Canvas2DLayerBridge()
 {
     ASSERT(m_destructionInProgress);
-    ASSERT(!Canvas2DLayerManager::get().isInList(this));
+    // TODO(junov): This can go back to a regular ASSERT once crbug.com/466793 is resolved.
+    RELEASE_ASSERT(!Canvas2DLayerManager::get().isInList(this));
     if (m_canvas)
         m_canvas->setNotificationClient(nullptr);
     m_layer.clear();
@@ -330,7 +331,8 @@ bool Canvas2DLayerBridge::restoreSurface()
         sharedContext = m_contextProvider->context3d();
 
     if (sharedContext && !sharedContext->isContextLost()) {
-        IntSize size(m_canvas->getTopDevice()->width(), m_canvas->getTopDevice()->height());
+        SkISize skSize = m_canvas->getBaseLayerSize();
+        IntSize size(skSize.width(), skSize.height());
         RefPtr<SkSurface> surface(createSkSurface(m_contextProvider->grContext(), size, m_msaaSampleCount, m_opacityMode));
         if (surface.get()) {
             m_surface = surface.release();
@@ -512,22 +514,10 @@ void Canvas2DLayerBridge::finalizeFrame(const FloatRect &dirtyRect)
     m_didRecordDrawCommand = true;
 }
 
-Platform3DObject Canvas2DLayerBridge::getBackingTexture()
-{
-    ASSERT(!m_destructionInProgress);
-    if (!checkSurfaceValid())
-        return 0;
-    m_canvas->flush();
-    context()->flush();
-    GrRenderTarget* renderTarget = m_canvas->getTopDevice()->accessRenderTarget();
-    if (renderTarget) {
-        return renderTarget->asTexture()->getTextureHandle();
-    }
-    return 0;
-}
-
 PassRefPtr<SkImage> Canvas2DLayerBridge::newImageSnapshot()
 {
+    if (!checkSurfaceValid())
+        return nullptr;
     return adoptRef(m_canvas->newImageSnapshot());
 }
 

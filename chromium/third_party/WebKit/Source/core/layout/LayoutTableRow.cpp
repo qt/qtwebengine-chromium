@@ -32,8 +32,8 @@
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/SubtreeLayoutScope.h"
-#include "core/style/StyleInheritedData.h"
 #include "core/paint/TableRowPainter.h"
+#include "core/style/StyleInheritedData.h"
 
 namespace blink {
 
@@ -167,10 +167,8 @@ void LayoutTableRow::layout()
         SubtreeLayoutScope layouter(*cell);
         if (!cell->needsLayout())
             cell->markForPaginationRelayoutIfNeeded(layouter);
-        if (cell->needsLayout()) {
-            cell->computeAndSetBlockDirectionMargins(table());
+        if (cell->needsLayout())
             cell->layout();
-        }
     }
 
     m_overflow.clear();
@@ -227,7 +225,7 @@ void LayoutTableRow::imageChanged(WrappedImagePtr, const IntRect*)
 
 LayoutTableRow* LayoutTableRow::createAnonymous(Document* document)
 {
-    LayoutTableRow* layoutObject = new LayoutTableRow(0);
+    LayoutTableRow* layoutObject = new LayoutTableRow(nullptr);
     layoutObject->setDocumentForAnonymous(document);
     return layoutObject;
 }

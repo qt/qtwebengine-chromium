@@ -27,7 +27,6 @@
 #define LayoutTreeBuilder_h
 
 #include "core/dom/Document.h"
-#include "core/dom/FirstLetterPseudoElement.h"
 #include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/Node.h"
 #include "core/dom/Text.h"
@@ -36,7 +35,6 @@
 
 namespace blink {
 
-class LayoutObject;
 class ComputedStyle;
 
 template <typename NodeType>
@@ -50,15 +48,8 @@ protected:
         ASSERT(!node.layoutObject());
         ASSERT(node.needsAttach());
         ASSERT(node.document().inStyleRecalc());
-
-        // FIXME: We should be able to ASSERT(node->inActiveDocument()) but childrenChanged is called
-        // before ChildNodeInsertionNotifier in ContainerNode's methods and some implementations
-        // will trigger a layout inside childrenChanged.
-        // Mainly HTMLTextAreaElement::childrenChanged calls HTMLTextFormControlElement::setSelectionRange
-        // which does an updateLayoutIgnorePendingStylesheets.
+        ASSERT(node.inActiveDocument());
     }
-
-    LayoutObject* parentLayoutObject() const { return m_layoutObjectParent; }
 
     LayoutObject* nextLayoutObject() const
     {
@@ -72,7 +63,7 @@ protected:
     }
 
     RawPtrWillBeMember<NodeType> m_node;
-    RawPtrWillBeMember<LayoutObject> m_layoutObjectParent;
+    LayoutObject* m_layoutObjectParent;
 };
 
 class LayoutTreeBuilderForElement : public LayoutTreeBuilder<Element> {

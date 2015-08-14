@@ -52,17 +52,18 @@ public:
         STACK_ALLOCATED();
     public:
         // Initial selector constructor
-        SelectorCheckingContext(const CSSSelector& selector, Element* element, VisitedMatchType visitedMatchType)
-            : selector(&selector)
+        SelectorCheckingContext(Element* element, VisitedMatchType visitedMatchType)
+            : selector(0)
             , element(element)
             , previousElement(nullptr)
             , scope(nullptr)
             , visitedMatchType(visitedMatchType)
             , pseudoId(NOPSEUDO)
-            , elementStyle(0)
+            , elementStyle(nullptr)
             , scrollbar(nullptr)
             , scrollbarPart(NoPart)
             , isSubSelector(false)
+            , inRightmostCompound(true)
             , hasScrollbarPseudo(false)
             , hasSelectionPseudo(false)
             , isUARule(false)
@@ -81,6 +82,7 @@ public:
         RawPtrWillBeMember<LayoutScrollbar> scrollbar;
         ScrollbarPart scrollbarPart;
         bool isSubSelector;
+        bool inRightmostCompound;
         bool hasScrollbarPseudo;
         bool hasSelectionPseudo;
         bool isUARule;
@@ -97,23 +99,26 @@ public:
         unsigned specificity;
     };
 
-    bool match(const SelectorCheckingContext&, MatchResult* = 0) const;
+    bool match(const SelectorCheckingContext&, MatchResult&) const;
+    bool match(const SelectorCheckingContext&) const;
 
     static bool matchesFocusPseudoClass(const Element&);
 
 private:
-    bool checkOne(const SelectorCheckingContext&, unsigned* specificity = 0) const;
+    bool checkOne(const SelectorCheckingContext&, MatchResult&) const;
 
     enum Match { SelectorMatches, SelectorFailsLocally, SelectorFailsAllSiblings, SelectorFailsCompletely };
-    Match matchSelector(const SelectorCheckingContext&, MatchResult* = 0) const;
-    Match matchForSubSelector(const SelectorCheckingContext&, MatchResult*) const;
-    Match matchForRelation(const SelectorCheckingContext&, MatchResult*) const;
-    Match matchForShadowDistributed(const SelectorCheckingContext&, const Element&, MatchResult*) const;
-    Match matchForPseudoShadow(const SelectorCheckingContext&, const ContainerNode*, MatchResult*) const;
-    bool checkPseudoClass(const SelectorCheckingContext&, unsigned* specificity) const;
-    bool checkPseudoElement(const SelectorCheckingContext&) const;
-    bool checkScrollbarPseudoClass(const SelectorCheckingContext&) const;
-    bool checkPseudoHost(const SelectorCheckingContext&, unsigned*) const;
+
+    Match matchSelector(const SelectorCheckingContext&, MatchResult&) const;
+    Match matchForSubSelector(const SelectorCheckingContext&, MatchResult&) const;
+    Match matchForRelation(const SelectorCheckingContext&, MatchResult&) const;
+    Match matchForShadowDistributed(const SelectorCheckingContext&, const Element&, MatchResult&) const;
+    Match matchForPseudoShadow(const SelectorCheckingContext&, const ContainerNode*, MatchResult&) const;
+    bool checkPseudoClass(const SelectorCheckingContext&, MatchResult&) const;
+    bool checkPseudoElement(const SelectorCheckingContext&, MatchResult&) const;
+    bool checkScrollbarPseudoClass(const SelectorCheckingContext&, MatchResult&) const;
+    bool checkPseudoHost(const SelectorCheckingContext&, MatchResult&) const;
+    bool checkPseudoNot(const SelectorCheckingContext&, MatchResult&) const;
 
     Mode m_mode;
 };

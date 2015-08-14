@@ -40,7 +40,6 @@
 #include "WebFileChooserCompletion.h"
 #include "WebFileChooserParams.h"
 #include "WebFrame.h"
-#include "WebNavigatorContentUtilsClient.h"
 #include "WebPopupType.h"
 #include "WebTextAffinity.h"
 #include "WebTextDirection.h"
@@ -91,9 +90,8 @@ public:
         return 0;
     }
 
-    // Create a new WebPopupMenu.
+    // Create a new popup WebWidget.
     virtual WebWidget* createPopupMenu(WebPopupType) { return 0; }
-    virtual WebWidget* createPopupMenu(const WebPopupMenuInfo&) { return 0; }
 
     // Create a session storage namespace object associated with this WebView.
     virtual WebStorageNamespace* createSessionStorageNamespace() { return 0; }
@@ -218,12 +216,6 @@ public:
     virtual int historyForwardListCount() { return 0; }
 
 
-    // Accessibility -------------------------------------------------------
-
-    // Notifies embedder about an accessibility event.
-    virtual void postAccessibilityEvent(const WebAXObject&, WebAXEvent) { }
-
-
     // Developer tools -----------------------------------------------------
 
     // Called to notify the client that the inspector's settings were
@@ -251,22 +243,6 @@ public:
 
     // Informs the browser that the page scale has changed.
     virtual void pageScaleFactorChanged() { }
-
-    // Navigator Content Utils  --------------------------------------------
-
-    // Registers a new URL handler for the given protocol.
-    virtual void registerProtocolHandler(const WebString& scheme,
-        const WebURL& url,
-        const WebString& title) { }
-
-    // Unregisters a given URL handler for the given protocol.
-    virtual void unregisterProtocolHandler(const WebString& scheme, const WebURL& url) { }
-
-    // Check if a given URL handler is registered for the given protocol.
-    virtual WebCustomHandlersState isProtocolHandlerRegistered(const WebString& scheme, const WebURL& url)
-    {
-        return WebCustomHandlersNew;
-    }
 
 
     // Visibility -----------------------------------------------------------

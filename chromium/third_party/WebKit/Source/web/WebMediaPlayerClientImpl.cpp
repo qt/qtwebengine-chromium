@@ -34,14 +34,6 @@
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
 
-#if OS(ANDROID)
-#include "GrContext.h"
-#include "GrTypes.h"
-#include "SkCanvas.h"
-#include "SkGrPixelRef.h"
-#endif
-
-
 #include "wtf/Assertions.h"
 #include "wtf/text/CString.h"
 
@@ -175,11 +167,6 @@ void WebMediaPlayerClientImpl::mediaSourceOpened(WebMediaSource* webMediaSource)
     m_client->mediaPlayerMediaSourceOpened(webMediaSource);
 }
 
-void WebMediaPlayerClientImpl::requestFullscreen()
-{
-    m_client->mediaPlayerRequestFullscreen();
-}
-
 void WebMediaPlayerClientImpl::requestSeek(double time)
 {
     m_client->mediaPlayerRequestSeek(time);
@@ -214,6 +201,9 @@ void WebMediaPlayerClientImpl::load(WebMediaPlayer::LoadType loadType, const WTF
     m_webMediaPlayer = createWebMediaPlayer(this, kurl, frame, HTMLMediaElementEncryptedMedia::contentDecryptionModule(mediaElement()));
     if (!m_webMediaPlayer)
         return;
+
+    if (mediaElement().layoutObject())
+        mediaElement().layoutObject()->setShouldDoFullPaintInvalidation();
 
 #if ENABLE(WEB_AUDIO)
     // Make sure if we create/re-create the WebMediaPlayer that we update our wrapper.

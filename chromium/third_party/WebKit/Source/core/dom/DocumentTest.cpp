@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/dom/Document.h"
 
+#include "core/dom/DocumentVisibilityObserver.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLLinkElement.h"
@@ -40,16 +41,14 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class DocumentTest : public ::testing::Test {
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
 
 #if ENABLE(OILPAN)
-    virtual void TearDown() override
+    void TearDown() override
     {
         Heap::collectAllGarbage();
     }
@@ -72,7 +71,7 @@ void DocumentTest::SetUp()
 void DocumentTest::setHtmlInnerHTML(const char* htmlContent)
 {
     document().documentElement()->setInnerHTML(String::fromUTF8(htmlContent), ASSERT_NO_EXCEPTION);
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 }
 
 class MockDocumentVisibilityObserver
@@ -85,7 +84,10 @@ public:
         return adoptPtrWillBeNoop(new MockDocumentVisibilityObserver(document));
     }
 
-    DEFINE_INLINE_VIRTUAL_TRACE() { }
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        DocumentVisibilityObserver::trace(visitor);
+    }
 
     MOCK_METHOD1(didChangeVisibilityState, void(PageVisibilityState));
 
@@ -354,4 +356,4 @@ TEST_F(DocumentTest, referrerPolicyParsing)
     }
 }
 
-} // unnamed namespace
+} // namespace blink

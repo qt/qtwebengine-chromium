@@ -93,7 +93,7 @@ static void write_selected_tx_size(const VP9_COMMON *cm,
 
 static int write_skip(const VP9_COMMON *cm, const MACROBLOCKD *xd,
                       int segment_id, const MODE_INFO *mi, vp9_writer *w) {
-  if (vp9_segfeature_active(&cm->seg, segment_id, SEG_LVL_SKIP)) {
+  if (segfeature_active(&cm->seg, segment_id, SEG_LVL_SKIP)) {
     return 1;
   } else {
     const int skip = mi->mbmi.skip;
@@ -207,10 +207,10 @@ static void write_ref_frames(const VP9_COMMON *cm, const MACROBLOCKD *xd,
 
   // If segment level coding of this signal is disabled...
   // or the segment allows multiple reference frame options
-  if (vp9_segfeature_active(&cm->seg, segment_id, SEG_LVL_REF_FRAME)) {
+  if (segfeature_active(&cm->seg, segment_id, SEG_LVL_REF_FRAME)) {
     assert(!is_compound);
     assert(mbmi->ref_frame[0] ==
-               vp9_get_segdata(&cm->seg, segment_id, SEG_LVL_REF_FRAME));
+               get_segdata(&cm->seg, segment_id, SEG_LVL_REF_FRAME));
   } else {
     // does the feature use compound prediction or not
     // (if not specified at the frame/segment level)
@@ -264,7 +264,7 @@ static void pack_inter_mode_mvs(VP9_COMP *cpi, const MODE_INFO *mi,
 
   skip = write_skip(cm, xd, segment_id, mi, w);
 
-  if (!vp9_segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
+  if (!segfeature_active(seg, segment_id, SEG_LVL_REF_FRAME))
     vp9_write(w, is_inter, vp9_get_intra_inter_prob(cm, xd));
 
   if (bsize >= BLOCK_8X8 && cm->tx_mode == TX_MODE_SELECT &&
@@ -293,7 +293,7 @@ static void pack_inter_mode_mvs(VP9_COMP *cpi, const MODE_INFO *mi,
     write_ref_frames(cm, xd, w);
 
     // If segment skip is not enabled code the mode.
-    if (!vp9_segfeature_active(seg, segment_id, SEG_LVL_SKIP)) {
+    if (!segfeature_active(seg, segment_id, SEG_LVL_SKIP)) {
       if (bsize >= BLOCK_8X8) {
         write_inter_mode(w, mode, inter_probs);
       }
@@ -403,7 +403,7 @@ static void write_partition(const VP9_COMMON *const cm,
                             int hbs, int mi_row, int mi_col,
                             PARTITION_TYPE p, BLOCK_SIZE bsize, vp9_writer *w) {
   const int ctx = partition_plane_context(xd, mi_row, mi_col, bsize);
-  const vp9_prob *const probs = get_partition_probs(cm, ctx);
+  const vp9_prob *const probs = xd->partition_probs[ctx];
   const int has_rows = (mi_row + hbs) < cm->mi_rows;
   const int has_cols = (mi_col + hbs) < cm->mi_cols;
 
@@ -481,8 +481,11 @@ static void write_modes_sb(VP9_COMP *cpi,
 static void write_modes(VP9_COMP *cpi,
                         const TileInfo *const tile, vp9_writer *w,
                         TOKENEXTRA **tok, const TOKENEXTRA *const tok_end) {
+  const VP9_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &cpi->td.mb.e_mbd;
   int mi_row, mi_col;
+
+  set_partition_probs(cm, xd);
 
   for (mi_row = tile->mi_row_start; mi_row < tile->mi_row_end;
        mi_row += MI_BLOCK_SIZE) {
@@ -787,10 +790,10 @@ static void encode_segmentation(VP9_COMMON *cm, MACROBLOCKD *xd,
 
     for (i = 0; i < MAX_SEGMENTS; i++) {
       for (j = 0; j < SEG_LVL_MAX; j++) {
-        const int active = vp9_segfeature_active(seg, i, j);
+        const int active = segfeature_active(seg, i, j);
         vp9_wb_write_bit(wb, active);
         if (active) {
-          const int data = vp9_get_segdata(seg, i, j);
+          const int data = get_segdata(seg, i, j);
           const int data_max = vp9_seg_feature_data_max(j);
 
           if (vp9_is_segfeature_signed(j)) {

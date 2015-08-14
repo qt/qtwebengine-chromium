@@ -24,7 +24,7 @@
 struct PP_BrowserFont_Trusted_Description;
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 class WaitableEvent;
 }  // namespace base
 
@@ -46,18 +46,21 @@ class PpapiDispatcher : public proxy::PluginDispatcher::PluginDelegate,
                         public IPC::Listener,
                         public IPC::Sender {
  public:
-  PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop,
+  PpapiDispatcher(scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
                   base::WaitableEvent* shutdown_event,
                   int browser_ipc_fd,
                   int renderer_ipc_fd);
 
   // PluginDispatcher::PluginDelegate implementation.
-  base::MessageLoopProxy* GetIPCMessageLoop() override;
+  base::SingleThreadTaskRunner* GetIPCTaskRunner() override;
   base::WaitableEvent* GetShutdownEvent() override;
   IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
       base::ProcessId peer_pid,
       bool should_close_source) override;
+  base::SharedMemoryHandle ShareSharedMemoryHandleWithRemote(
+      const base::SharedMemoryHandle& handle,
+      base::ProcessId remote_pid) override;
   std::set<PP_Instance>* GetGloballySeenInstanceIDSet() override;
   uint32 Register(proxy::PluginDispatcher* plugin_dispatcher) override;
   void Unregister(uint32 plugin_dispatcher_id) override;
@@ -65,7 +68,7 @@ class PpapiDispatcher : public proxy::PluginDispatcher::PluginDelegate,
   // PluginProxyDelegate implementation.
   IPC::Sender* GetBrowserSender() override;
   std::string GetUILanguage() override;
-  void PreCacheFont(const void* logfontw) override;
+  void PreCacheFontForFlash(const void* logfontw) override;
   void SetActiveURL(const std::string& url) override;
   PP_Resource CreateBrowserFont(proxy::Connection connection,
                                 PP_Instance instance,
@@ -87,7 +90,7 @@ class PpapiDispatcher : public proxy::PluginDispatcher::PluginDelegate,
   std::map<uint32, proxy::PluginDispatcher*> plugin_dispatchers_;
   uint32 next_plugin_dispatcher_id_;
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::WaitableEvent* shutdown_event_;
   int renderer_ipc_fd_;
   scoped_ptr<IPC::SyncChannel> channel_;

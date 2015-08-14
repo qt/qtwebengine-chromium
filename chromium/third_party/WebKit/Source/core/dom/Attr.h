@@ -25,23 +25,18 @@
 #ifndef Attr_h
 #define Attr_h
 
-#include "core/dom/ContainerNode.h"
+#include "core/CoreExport.h"
+#include "core/dom/Node.h"
 #include "core/dom/QualifiedName.h"
 
 namespace blink {
 
-// Attr can have Text children
-// therefore it has to be a fullblown Node. The plan
-// is to dynamically allocate a textchild and store the
-// resulting nodevalue in the attribute upon
-// destruction. however, this is not yet implemented.
-
-class Attr final : public ContainerNode {
+class CORE_EXPORT Attr final : public Node {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<Attr> create(Element&, const QualifiedName&);
     static PassRefPtrWillBeRawPtr<Attr> create(Document&, const QualifiedName&, const AtomicString& value);
-    virtual ~Attr();
+    ~Attr() override;
 
     String name() const { return m_name.toString(); }
     bool specified() const { return true; }
@@ -58,8 +53,8 @@ public:
     void attachToElement(Element*, const AtomicString&);
     void detachFromElementWithValue(const AtomicString&);
 
-    virtual const AtomicString& localName() const override { return m_name.localName(); }
-    virtual const AtomicString& namespaceURI() const override { return m_name.namespaceURI(); }
+    const AtomicString& localName() const override { return m_name.localName(); }
+    const AtomicString& namespaceURI() const override { return m_name.namespaceURI(); }
     const AtomicString& prefix() const { return m_name.prefix(); }
 
     DECLARE_VIRTUAL_TRACE();
@@ -70,23 +65,14 @@ private:
 
     bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
 
-    void createTextChild();
+    String nodeName() const override { return name(); }
+    NodeType nodeType() const override { return ATTRIBUTE_NODE; }
 
-    void setValueInternal(const AtomicString&);
+    String nodeValue() const override { return value(); }
+    void setNodeValue(const String&) override;
+    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
 
-    virtual String nodeName() const override { return name(); }
-    virtual NodeType nodeType() const override { return ATTRIBUTE_NODE; }
-
-    virtual String nodeValue() const override { return value(); }
-    virtual void setNodeValue(const String&) override;
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
-
-    virtual bool isAttributeNode() const override { return true; }
-    virtual bool childTypeAllowed(NodeType) const override;
-
-    virtual void childrenChanged(const ChildrenChange&) override;
-
-    void updateElementAttribute(const AtomicString&);
+    bool isAttributeNode() const override { return true; }
 
     // Attr wraps either an element/name, or a name/value pair (when it's a standalone Node.)
     // Note that m_name is always set, but m_element/m_standaloneValue may be null.
@@ -97,7 +83,6 @@ private:
     // differ from m_name's local name. As these two modes are non-overlapping,
     // use a single field.
     AtomicString m_standaloneValueOrAttachedLocalName;
-    unsigned m_ignoreChildrenChanged;
 };
 
 DEFINE_NODE_TYPE_CASTS(Attr, isAttributeNode());

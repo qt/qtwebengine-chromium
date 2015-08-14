@@ -29,7 +29,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
 
 namespace blink {
 
@@ -48,7 +48,7 @@ public:
     unsigned advance(unsigned to, GlyphBuffer* = 0);
     bool advanceOneCharacter(float& width);
 
-    const TextRun& run() const { return m_run; }
+    const TextRun& run() const { return m_textRun; }
     float runWidthSoFar() const { return m_runWidthSoFar; }
     unsigned currentOffset() { return m_currentCharacter; }
 

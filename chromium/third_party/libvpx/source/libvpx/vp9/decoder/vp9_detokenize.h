@@ -19,8 +19,8 @@
 extern "C" {
 #endif
 
-int vp9_decode_block_tokens(VP9_COMMON *cm, MACROBLOCKD *xd,
-                            FRAME_COUNTS *counts, int plane, int block,
+int vp9_decode_block_tokens(MACROBLOCKD *xd,
+                            int plane, int block,
                             BLOCK_SIZE plane_bsize, int x, int y,
                             TX_SIZE tx_size, vp9_reader *r,
                             int seg_id);

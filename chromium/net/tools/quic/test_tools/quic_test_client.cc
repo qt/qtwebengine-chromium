@@ -12,7 +12,7 @@
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
-#include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/tools/balsa/balsa_headers.h"
@@ -27,7 +27,7 @@
 using base::StringPiece;
 using net::QuicServerId;
 using net::test::QuicConnectionPeer;
-using net::test::QuicSessionPeer;
+using net::test::QuicSpdySessionPeer;
 using net::test::ReliableQuicStreamPeer;
 using std::string;
 using std::vector;
@@ -235,6 +235,16 @@ ssize_t QuicTestClient::SendRequest(const string& uri) {
   return SendMessage(message);
 }
 
+void QuicTestClient::SendRequestsAndWaitForResponses(
+    const vector<string>& url_list) {
+  for (const string& url : url_list) {
+    SendRequest(url);
+  }
+  while (client()->WaitForEvents()) {
+  }
+  return;
+}
+
 ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
   stream_ = nullptr;  // Always force creation of a stream for SendMessage.
 
@@ -316,9 +326,12 @@ string QuicTestClient::SendCustomSynchronousRequest(
 string QuicTestClient::SendSynchronousRequest(const string& uri) {
   if (SendRequest(uri) == 0) {
     DLOG(ERROR) << "Failed the request for uri:" << uri;
-    return "";
+    // Set the response_ explicitly.  Otherwise response_ will contain the
+    // response from the previously successful request.
+    response_ = "";
+  } else {
+    WaitForResponse();
   }
-  WaitForResponse();
   return response_;
 }
 
@@ -486,6 +499,11 @@ size_t QuicTestClient::bytes_written() const {
 }
 
 void QuicTestClient::OnClose(QuicDataStream* stream) {
+  if (stream != nullptr) {
+    // Always close the stream, regardless of whether it was the last stream
+    // written.
+    client()->OnClose(stream);
+  }
   if (stream_ != stream) {
     return;
   }
@@ -558,7 +576,7 @@ void QuicTestClient::SetFecPolicy(FecPolicy fec_policy) {
   fec_policy_ = fec_policy;
   // Set policy for headers and crypto streams.
   ReliableQuicStreamPeer::SetFecPolicy(
-      QuicSessionPeer::GetHeadersStream(client()->session()), fec_policy);
+      QuicSpdySessionPeer::GetHeadersStream(client()->session()), fec_policy);
   ReliableQuicStreamPeer::SetFecPolicy(client()->session()->GetCryptoStream(),
                                        fec_policy);
 }

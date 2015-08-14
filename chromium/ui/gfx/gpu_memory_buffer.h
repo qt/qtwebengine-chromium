@@ -30,9 +30,6 @@ struct GFX_EXPORT GpuMemoryBufferHandle {
   GpuMemoryBufferType type;
   GpuMemoryBufferId id;
   base::SharedMemoryHandle handle;
-#if defined(OS_MACOSX)
-  uint32 io_surface_id;
-#endif
 };
 
 // This interface typically correspond to a type of shared memory that is also
@@ -49,6 +46,7 @@ class GFX_EXPORT GpuMemoryBuffer {
     DXT5,
     ETC1,
     R_8,
+    RGBA_4444,
     RGBA_8888,
     RGBX_8888,
     BGRA_8888,
@@ -59,7 +57,10 @@ class GFX_EXPORT GpuMemoryBuffer {
 
   // The usage mode affects how a buffer can be used. Only buffers created with
   // MAP can be mapped into the client's address space and accessed by the CPU.
-  enum Usage { MAP, SCANOUT, USAGE_LAST = SCANOUT };
+  // PERSISTENT_MAP adds the additional condition that successive Map() calls
+  // (with Unmap() calls between) will return a pointer to the same memory
+  // contents.
+  enum Usage { MAP, PERSISTENT_MAP, SCANOUT, USAGE_LAST = SCANOUT };
 
   virtual ~GpuMemoryBuffer() {}
 

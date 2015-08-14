@@ -18,12 +18,16 @@
       'SQLITE_ENABLE_MEMORY_MANAGEMENT',
       'SQLITE_SECURE_DELETE',
       # Custom flag to tweak pcache pools.
-      # TODO(shess): This shouldn't use faux-SQLite naming.      
+      # TODO(shess): This shouldn't use faux-SQLite naming.
       'SQLITE_SEPARATE_CACHE_POOLS',
       # TODO(shess): SQLite adds mutexes to protect structures which cross
       # threads.  In theory Chromium should be able to turn this off for a
       # slight speed boost.
       'THREADSAFE',
+      # SQLite can spawn threads to sort in parallel if configured
+      # appropriately.  Chromium doesn't configure SQLite for that, and would
+      # prefer to control distribution to worker threads.
+      'SQLITE_MAX_WORKER_THREADS=0',
       # TODO(shess): Figure out why this is here.  Nobody references it
       # directly.
       '_HAS_EXCEPTIONS=0',
@@ -81,9 +85,11 @@
                 'sqlite_regexp',
               ],
               'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/usr/lib/libsqlite3.dylib',
-                ],
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-lsqlite3',
+                  ],
+                },
               },
             }],
             ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {

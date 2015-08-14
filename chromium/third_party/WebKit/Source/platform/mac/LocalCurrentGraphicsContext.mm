@@ -18,6 +18,7 @@
  */
 
 #include "config.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/mac/LocalCurrentGraphicsContext.h"
 #include "platform/mac/ThemeMac.h"
 
@@ -27,14 +28,34 @@
 
 namespace blink {
 
-LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, IntRect dirtyRect)
-    : m_didSetGraphicsContext(false)
-    , m_skiaBitLocker(graphicsContext->canvas(),
-                      ThemeMac::inflateRectForAA(dirtyRect),
-                      graphicsContext->deviceScaleFactor())
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, const IntRect& dirtyRect)
+    : LocalCurrentGraphicsContext(graphicsContext->canvas(), graphicsContext->deviceScaleFactor(), nullptr, dirtyRect)
 {
-    m_savedGraphicsContext = graphicsContext;
-    graphicsContext->save();
+}
+
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, const IntRect* interestRect,
+                                                         const IntRect& dirtyRect)
+    : LocalCurrentGraphicsContext(graphicsContext->canvas(), graphicsContext->deviceScaleFactor(), interestRect, dirtyRect)
+{
+}
+
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(SkCanvas* canvas, float deviceScaleFactor, const IntRect* interestRect,
+                                                         const IntRect& dirtyRect)
+    : m_didSetGraphicsContext(false)
+    , m_inflatedDirtyRect(ThemeMac::inflateRectForAA(dirtyRect))
+    , m_skiaBitLocker(canvas,
+                      m_inflatedDirtyRect,
+                      deviceScaleFactor)
+{
+    m_savedCanvas = canvas;
+    canvas->save();
+
+    bool clipToInterest = interestRect && RuntimeEnabledFeatures::slimmingPaintEnabled() && !interestRect->contains(m_inflatedDirtyRect);
+    if (clipToInterest) {
+        IntRect clippedBounds(m_inflatedDirtyRect);
+        clippedBounds.intersect(*interestRect);
+        canvas->clipRect(clippedBounds, SkRegion::kIntersect_Op);
+    }
 
     CGContextRef cgContext = this->cgContext();
     if (cgContext == [[NSGraphicsContext currentContext] graphicsPort]) {
@@ -55,7 +76,7 @@ LocalCurrentGraphicsContext::~LocalCurrentGraphicsContext()
         [m_savedNSGraphicsContext release];
     }
 
-    m_savedGraphicsContext->restore();
+    m_savedCanvas->restore();
 }
 
 CGContextRef LocalCurrentGraphicsContext::cgContext()

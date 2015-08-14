@@ -28,7 +28,78 @@
 
 namespace blink {
 
+namespace {
+
+const char* fontWeightToString(FontWeight weight)
+{
+    switch (weight) {
+    case FontWeight100:
+        return "100";
+    case FontWeight200:
+        return "200";
+    case FontWeight300:
+        return "300";
+    case FontWeight400:
+        return "400";
+    case FontWeight500:
+        return "500";
+    case FontWeight600:
+        return "600";
+    case FontWeight700:
+        return "700";
+    case FontWeight800:
+        return "800";
+    case FontWeight900:
+        return "900";
+    }
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
+const char* fontVariantToString(FontVariant variant)
+{
+    switch (variant) {
+    case FontVariantNormal:
+        return "normal";
+    case FontVariantSmallCaps:
+        return "small-caps";
+    }
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
+const char* fontStyleToString(FontStyle style)
+{
+    switch (style) {
+    case FontStyleNormal:
+        return "normal";
+    case FontStyleItalic:
+        return "italic";
+    }
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
+const char* textTransformToString(ETextTransform transform)
+{
+    switch (transform) {
+    case CAPITALIZE:
+        return "capitalize";
+    case UPPERCASE:
+        return "uppercase";
+    case LOWERCASE:
+        return "lowercase";
+    case TTNONE:
+        return "none";
+    }
+    ASSERT_NOT_REACHED();
+    return "";
+}
+
+} // anonymous namespace
+
 class PopupMenuCSSFontSelector : public CSSFontSelector, private CSSFontSelectorClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PopupMenuCSSFontSelector);
 public:
     static PassRefPtrWillBeRawPtr<PopupMenuCSSFontSelector> create(Document* document, CSSFontSelector* ownerFontSelector)
     {
@@ -39,14 +110,14 @@ public:
 
     // We don't override willUseFontData() for now because the old PopupListBox
     // only worked with fonts loaded when opening the popup.
-    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) override;
+    PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) override;
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     PopupMenuCSSFontSelector(Document*, CSSFontSelector*);
 
-    virtual void fontsNeedUpdate(CSSFontSelector*) override;
+    void fontsNeedUpdate(CSSFontSelector*) override;
 
     RefPtrWillBeMember<CSSFontSelector> m_ownerFontSelector;
 };
@@ -82,6 +153,68 @@ DEFINE_TRACE(PopupMenuCSSFontSelector)
     CSSFontSelectorClient::trace(visitor);
 }
 
+// ----------------------------------------------------------------
+
+class PopupMenuImpl::ItemIterationContext {
+    STACK_ALLOCATED();
+public:
+    ItemIterationContext(const ComputedStyle& style, SharedBuffer* buffer)
+        : m_direction(style.direction())
+        , m_foregroundColor(style.visitedDependentColor(CSSPropertyColor))
+        , m_backgroundColor(style.visitedDependentColor(CSSPropertyBackgroundColor))
+        , m_textTransform(style.textTransform())
+        , m_fontDescription(style.fontDescription())
+        , m_listIndex(0)
+        , m_buffer(buffer)
+    {
+        ASSERT(m_buffer);
+#if OS(LINUX)
+        // On other platforms, the <option> background color is the same as the
+        // <select> background color. On Linux, that makes the <option>
+        // background color very dark, so by default, try to use a lighter
+        // background color for <option>s.
+        if (LayoutTheme::theme().systemColor(CSSValueButtonface) == m_backgroundColor)
+            m_backgroundColor = LayoutTheme::theme().systemColor(CSSValueMenu);
+#endif
+    }
+
+    void serializeBaseStyle()
+    {
+        PagePopupClient::addString("baseStyle: {", m_buffer);
+        addProperty("backgroundColor", m_backgroundColor.serialized(), m_buffer);
+        addProperty("color", m_foregroundColor.serialized(), m_buffer);
+        addProperty("textTransform", String(textTransformToString(m_textTransform)), m_buffer);
+        addProperty("fontSize", fontSize(), m_buffer);
+        addProperty("fontStyle", String(fontStyleToString(fontStyle())), m_buffer);
+        addProperty("fontVariant", String(fontVariantToString(fontVariant())), m_buffer);
+
+        PagePopupClient::addString("fontFamily: [", m_buffer);
+        for (const FontFamily* f = &fontFamily(); f; f = f->next()) {
+            addJavaScriptString(f->family().string(), m_buffer);
+            if (f->next())
+                PagePopupClient::addString(",", m_buffer);
+        }
+        PagePopupClient::addString("]", m_buffer);
+        PagePopupClient::addString("},\n", m_buffer);
+    }
+
+    int fontSize() const { return m_fontDescription.computedPixelSize(); }
+    FontStyle fontStyle() const { return m_fontDescription.style(); }
+    FontVariant fontVariant() const { return m_fontDescription.variant(); }
+    const FontFamily& fontFamily() const { return m_fontDescription.family(); }
+
+    TextDirection m_direction;
+    Color m_foregroundColor;
+    Color m_backgroundColor;
+    ETextTransform m_textTransform;
+    const FontDescription& m_fontDescription;
+
+    int m_listIndex;
+    SharedBuffer* m_buffer;
+};
+
+// ----------------------------------------------------------------
+
 PassRefPtrWillBeRawPtr<PopupMenuImpl> PopupMenuImpl::create(ChromeClientImpl* chromeClient, PopupMenuClient* client)
 {
     return adoptRefWillBeNoop(new PopupMenuImpl(chromeClient, client));
@@ -105,19 +238,6 @@ IntSize PopupMenuImpl::contentSize()
     return IntSize();
 }
 
-// We don't make child style information if the popup will have a lot of items
-// because of a performance problem.
-// TODO(tkent): This is a workaround.  We should do a performance optimization.
-bool PopupMenuImpl::hasTooManyItemsForStyling()
-{
-    // 300 is enough for world-wide countries.
-    const unsigned styledChildrenLimit = 300;
-
-    if (!isHTMLSelectElement(ownerElement()))
-        return false;
-    return toHTMLSelectElement(ownerElement()).listItems().size() > styledChildrenLimit;
-}
-
 void PopupMenuImpl::writeDocument(SharedBuffer* data)
 {
     IntRect anchorRectInScreen = m_chromeClient->viewportToScreen(m_client->elementRectRelativeToViewport());
@@ -128,29 +248,21 @@ void PopupMenuImpl::writeDocument(SharedBuffer* data)
     PagePopupClient::addString("</style></head><body><div id=main>Loading...</div><script>\n"
         "window.dialogArguments = {\n", data);
     addProperty("selectedIndex", m_client->selectedIndex(), data);
+    const ComputedStyle* ownerStyle = ownerElement().computedStyle();
+    ItemIterationContext context(*ownerStyle, data);
+    context.serializeBaseStyle();
     PagePopupClient::addString("children: [\n", data);
-    bool enableExtraStyling = !hasTooManyItemsForStyling();
     for (HTMLElement& child : Traversal<HTMLElement>::childrenOf(ownerElement())) {
         if (isHTMLOptionElement(child))
-            addOption(toHTMLOptionElement(child), enableExtraStyling, data);
+            addOption(context, toHTMLOptionElement(child));
         if (isHTMLOptGroupElement(child))
-            addOptGroup(toHTMLOptGroupElement(child), enableExtraStyling, data);
+            addOptGroup(context, toHTMLOptGroupElement(child));
         if (isHTMLHRElement(child))
-            addSeparator(toHTMLHRElement(child), enableExtraStyling, data);
+            addSeparator(context, toHTMLHRElement(child));
     }
     PagePopupClient::addString("],\n", data);
+
     addProperty("anchorRectInScreen", anchorRectInScreen, data);
-    const ComputedStyle* ownerStyle = ownerElement().computedStyle();
-    Color backgroundColor = ownerStyle->visitedDependentColor(CSSPropertyBackgroundColor);
-#if OS(LINUX)
-    // On other platforms, the <option> background color is the same as the
-    // <select> background color. On Linux, that makes the <option>
-    // background color very dark, so by default, try to use a lighter
-    // background color for <option>s.
-    if (LayoutTheme::theme().systemColor(CSSValueButtonface) == backgroundColor)
-        backgroundColor = LayoutTheme::theme().systemColor(CSSValueMenu);
-#endif
-    addProperty("backgroundColor", backgroundColor.serialized(), data);
     bool isRTL = !ownerStyle->isLeftToRightDirection();
     addProperty("isRTL", isRTL, data);
     addProperty("paddingStart", isRTL ? m_client->clientPaddingRight().toDouble() : m_client->clientPaddingLeft().toDouble(), data);
@@ -160,93 +272,35 @@ void PopupMenuImpl::writeDocument(SharedBuffer* data)
     PagePopupClient::addString("</script></body>\n", data);
 }
 
-const char* fontWeightToString(FontWeight weight)
-{
-    switch (weight) {
-    case FontWeight100:
-        return "100";
-    case FontWeight200:
-        return "200";
-    case FontWeight300:
-        return "300";
-    case FontWeight400:
-        return "400";
-    case FontWeight500:
-        return "500";
-    case FontWeight600:
-        return "600";
-    case FontWeight700:
-        return "700";
-    case FontWeight800:
-        return "800";
-    case FontWeight900:
-        return "900";
-    default:
-        ASSERT_NOT_REACHED();
-        break;
-    }
-    return 0;
-}
-
-const char* fontVariantToString(FontVariant variant)
-{
-    switch (variant) {
-    case FontVariantNormal:
-        return "normal";
-    case FontVariantSmallCaps:
-        return "small-caps";
-    default:
-        ASSERT_NOT_REACHED();
-        break;
-    }
-    return 0;
-}
-
-const char* fontStyleToString(FontStyle style)
-{
-    switch (style) {
-    case FontStyleNormal:
-        return "normal";
-    case FontStyleItalic:
-        return "italic";
-    default:
-        ASSERT_NOT_REACHED();
-        break;
-    }
-    return 0;
-}
-
-static const char* textTransformToString(ETextTransform transform)
-{
-    switch (transform) {
-    case CAPITALIZE:
-        return "capitalize";
-    case UPPERCASE:
-        return "uppercase";
-    case LOWERCASE:
-        return "lowercase";
-    case TTNONE:
-        return "none";
-    }
-    ASSERT_NOT_REACHED();
-    return "";
-}
-
-void PopupMenuImpl::addElementStyle(HTMLElement& element, bool enableExtraStyling, SharedBuffer* data)
+void PopupMenuImpl::addElementStyle(ItemIterationContext& context, HTMLElement& element)
 {
     const ComputedStyle* style = m_client->computedStyleForItem(element);
     ASSERT(style);
+    SharedBuffer* data = context.m_buffer;
+    // TODO(tkent): We generate unnecessary "style: {\n},\n" even if no
+    // additional style.
     PagePopupClient::addString("style: {\n", data);
-    addProperty("visibility", String(style->visibility() == HIDDEN ? "hidden" : ""), data);
-    addProperty("display", String(style->display() == NONE ? "none" : ""), data);
-    addProperty("direction", String(style->direction() == RTL ? "rtl" : "ltr"), data);
-    addProperty("unicodeBidi", String(isOverride(style->unicodeBidi()) ? "bidi-override" : "normal"), data);
-    if (enableExtraStyling) {
-        addProperty("color", style->visitedDependentColor(CSSPropertyColor).serialized(), data);
-        addProperty("backgroundColor", style->visitedDependentColor(CSSPropertyBackgroundColor).serialized(), data);
-        const FontDescription& fontDescription = style->font().fontDescription();
+    if (style->visibility() == HIDDEN)
+        addProperty("visibility", String("hidden"), data);
+    if (style->display() == NONE)
+        addProperty("display", String("none"), data);
+    if (context.m_direction != style->direction())
+        addProperty("direction", String(style->direction() == RTL ? "rtl" : "ltr"), data);
+    if (isOverride(style->unicodeBidi()))
+        addProperty("unicodeBidi", String("bidi-override"), data);
+    Color foregroundColor = style->visitedDependentColor(CSSPropertyColor);
+    if (context.m_foregroundColor != foregroundColor)
+        addProperty("color", foregroundColor.serialized(), data);
+    Color backgroundColor = style->visitedDependentColor(CSSPropertyBackgroundColor);
+    if (context.m_backgroundColor != backgroundColor && backgroundColor != Color::transparent)
+        addProperty("backgroundColor", backgroundColor.serialized(), data);
+    const FontDescription& fontDescription = style->font().fontDescription();
+    if (context.fontSize() != fontDescription.computedPixelSize())
         addProperty("fontSize", fontDescription.computedPixelSize(), data);
+    // Our UA stylesheet has font-weight:normal for OPTION.
+    if (FontWeightNormal != fontDescription.weight())
         addProperty("fontWeight", String(fontWeightToString(fontDescription.weight())), data);
+    if (context.fontFamily() != fontDescription.family()) {
         PagePopupClient::addString("fontFamily: [\n", data);
         for (const FontFamily* f = &fontDescription.family(); f; f = f->next()) {
             addJavaScriptString(f->family().string(), data);
@@ -254,56 +308,70 @@ void PopupMenuImpl::addElementStyle(HTMLElement& element, bool enableExtraStylin
                 PagePopupClient::addString(",\n", data);
         }
         PagePopupClient::addString("],\n", data);
-        addProperty("fontStyle", String(fontStyleToString(fontDescription.style())), data);
-        addProperty("fontVariant", String(fontVariantToString(fontDescription.variant())), data);
-        addProperty("textTransform", String(textTransformToString(style->textTransform())), data);
     }
+    if (context.fontStyle() != fontDescription.style())
+        addProperty("fontStyle", String(fontStyleToString(fontDescription.style())), data);
+    if (context.fontVariant() != fontDescription.variant())
+        addProperty("fontVariant", String(fontVariantToString(fontDescription.variant())), data);
+    if (context.m_textTransform != style->textTransform())
+        addProperty("textTransform", String(textTransformToString(style->textTransform())), data);
+
     PagePopupClient::addString("},\n", data);
 }
 
-void PopupMenuImpl::addOption(HTMLOptionElement& element, bool enableExtraStyling, SharedBuffer* data)
+void PopupMenuImpl::addOption(ItemIterationContext& context, HTMLOptionElement& element)
 {
-    PagePopupClient::addString("{\n", data);
-    PagePopupClient::addString("type: \"option\",\n", data);
+    SharedBuffer* data = context.m_buffer;
+    PagePopupClient::addString("{", data);
     addProperty("label", element.text(), data);
-    addProperty("title", element.title(), data);
-    addProperty("value", element.listIndex(), data);
-    addProperty("ariaLabel", element.fastGetAttribute(HTMLNames::aria_labelAttr), data);
-    addProperty("disabled", element.isDisabledFormControl(), data);
-    addElementStyle(element, enableExtraStyling, data);
-    PagePopupClient::addString("},\n", data);
+    ASSERT(context.m_listIndex == element.listIndex());
+    addProperty("value", context.m_listIndex++, data);
+    if (!element.title().isEmpty())
+        addProperty("title", element.title(), data);
+    const AtomicString& ariaLabel = element.fastGetAttribute(HTMLNames::aria_labelAttr);
+    if (!ariaLabel.isEmpty())
+        addProperty("ariaLabel", ariaLabel, data);
+    if (element.isDisabledFormControl())
+        addProperty("disabled", true, data);
+    addElementStyle(context, element);
+    PagePopupClient::addString("},", data);
 }
 
-void PopupMenuImpl::addOptGroup(HTMLOptGroupElement& element, bool enableExtraStyling, SharedBuffer* data)
+void PopupMenuImpl::addOptGroup(ItemIterationContext& context, HTMLOptGroupElement& element)
 {
+    SharedBuffer* data = context.m_buffer;
+    ++context.m_listIndex;
     PagePopupClient::addString("{\n", data);
     PagePopupClient::addString("type: \"optgroup\",\n", data);
     addProperty("label", element.groupLabelText(), data);
     addProperty("title", element.title(), data);
     addProperty("ariaLabel", element.fastGetAttribute(HTMLNames::aria_labelAttr), data);
     addProperty("disabled", element.isDisabledFormControl(), data);
-    addElementStyle(element, enableExtraStyling, data);
+    addElementStyle(context, element);
     PagePopupClient::addString("children: [", data);
     for (HTMLElement& child : Traversal<HTMLElement>::childrenOf(element)) {
         if (isHTMLOptionElement(child))
-            addOption(toHTMLOptionElement(child), enableExtraStyling, data);
+            addOption(context, toHTMLOptionElement(child));
+        // TODO(tkent): Ignore nested OPTGROUP. crbug.com/502101.
         if (isHTMLOptGroupElement(child))
-            addOptGroup(toHTMLOptGroupElement(child), enableExtraStyling, data);
+            addOptGroup(context, toHTMLOptGroupElement(child));
         if (isHTMLHRElement(child))
-            addSeparator(toHTMLHRElement(child), enableExtraStyling, data);
+            addSeparator(context, toHTMLHRElement(child));
     }
     PagePopupClient::addString("],\n", data);
     PagePopupClient::addString("},\n", data);
 }
 
-void PopupMenuImpl::addSeparator(HTMLHRElement& element, bool enableExtraStyling, SharedBuffer* data)
+void PopupMenuImpl::addSeparator(ItemIterationContext& context, HTMLHRElement& element)
 {
+    SharedBuffer* data = context.m_buffer;
+    ++context.m_listIndex;
     PagePopupClient::addString("{\n", data);
     PagePopupClient::addString("type: \"separator\",\n", data);
     addProperty("title", element.title(), data);
     addProperty("ariaLabel", element.fastGetAttribute(HTMLNames::aria_labelAttr), data);
     addProperty("disabled", element.isDisabledFormControl(), data);
-    addElementStyle(element, enableExtraStyling, data);
+    addElementStyle(context, element);
     PagePopupClient::addString("},\n", data);
 }
 
@@ -408,15 +476,16 @@ void PopupMenuImpl::update()
     RefPtr<SharedBuffer> data = SharedBuffer::create();
     PagePopupClient::addString("window.updateData = {\n", data.get());
     PagePopupClient::addString("type: \"update\",\n", data.get());
+    ItemIterationContext context(*ownerElement().computedStyle(), data.get());
+    context.serializeBaseStyle();
     PagePopupClient::addString("children: [", data.get());
-    bool enableExtraStyling = !hasTooManyItemsForStyling();
     for (HTMLElement& child : Traversal<HTMLElement>::childrenOf(ownerElement())) {
         if (isHTMLOptionElement(child))
-            addOption(toHTMLOptionElement(child), enableExtraStyling, data.get());
+            addOption(context, toHTMLOptionElement(child));
         if (isHTMLOptGroupElement(child))
-            addOptGroup(toHTMLOptGroupElement(child), enableExtraStyling, data.get());
+            addOptGroup(context, toHTMLOptGroupElement(child));
         if (isHTMLHRElement(child))
-            addSeparator(toHTMLHRElement(child), enableExtraStyling, data.get());
+            addSeparator(context, toHTMLHRElement(child));
     }
     PagePopupClient::addString("],\n", data.get());
     PagePopupClient::addString("}\n", data.get());

@@ -34,8 +34,8 @@
  */
 WebInspector.ProgressIndicator = function()
 {
-    this.element = createElementWithClass("div", "progress-indicator")
-    this._shadowRoot = this.element.createShadowRoot();
+    this.element = createElementWithClass("div", "progress-indicator");
+    this._shadowRoot = WebInspector.createShadowRootWithCoreStyles(this.element);
     this._shadowRoot.appendChild(WebInspector.Widget.createStyleElement("ui/progressIndicator.css"));
     this._contentElement = this._shadowRoot.createChild("div", "progress-indicator-shadow-container");
 
@@ -121,10 +121,5 @@ WebInspector.ProgressIndicator.prototype = {
     worked: function(worked)
     {
         this.setWorked(this._worked + (worked || 1));
-    },
-
-    hideStopButton: function()
-    {
-        this._stopButton.classList.add("hidden");
     }
 }

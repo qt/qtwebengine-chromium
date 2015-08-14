@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
-#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
@@ -205,14 +204,14 @@ gfx::AcceleratedWidget RemoteWindowTreeHostWin::GetAcceleratedWidget() {
   return ::GetDesktopWindow();
 }
 
-void RemoteWindowTreeHostWin::Show() {
+void RemoteWindowTreeHostWin::ShowImpl() {
   ui::RemoteInputMethodPrivateWin* remote_input_method_private =
       GetRemoteInputMethodPrivate();
   if (remote_input_method_private)
     remote_input_method_private->SetRemoteDelegate(this);
 }
 
-void RemoteWindowTreeHostWin::Hide() {
+void RemoteWindowTreeHostWin::HideImpl() {
   NOTIMPLEMENTED();
 }
 
@@ -269,10 +268,6 @@ void RemoteWindowTreeHostWin::MoveCursorToNative(const gfx::Point& location) {
 
 void RemoteWindowTreeHostWin::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
-}
-
-ui::EventProcessor* RemoteWindowTreeHostWin::GetEventProcessor() {
-  return dispatcher();
 }
 
 void RemoteWindowTreeHostWin::CancelComposition() {
@@ -433,9 +428,7 @@ void RemoteWindowTreeHostWin::OnSetCursorPosAck() {
 
 ui::RemoteInputMethodPrivateWin*
 RemoteWindowTreeHostWin::GetRemoteInputMethodPrivate() {
-  ui::InputMethod* input_method = GetAshWindow()->GetProperty(
-      aura::client::kRootWindowInputMethodKey);
-  return ui::RemoteInputMethodPrivateWin::Get(input_method);
+  return ui::RemoteInputMethodPrivateWin::Get(GetInputMethod());
 }
 
 void RemoteWindowTreeHostWin::OnImeCandidatePopupChanged(bool visible) {

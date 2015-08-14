@@ -6,6 +6,8 @@
 #define CONTENT_PUBLIC_BROWSER_TRACE_UPLOADER_H_
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/values.h"
 
 namespace content {
 
@@ -23,8 +25,12 @@ class TraceUploader {
 
   virtual ~TraceUploader() {}
 
+  enum UploadMode { COMPRESSED_UPLOAD, UNCOMPRESSED_UPLOAD };
+
   // Compresses and uploads the given file contents.
   virtual void DoUpload(const std::string& file_contents,
+                        UploadMode upload_mode,
+                        scoped_ptr<base::DictionaryValue> metadata,
                         const UploadProgressCallback& progress_callback,
                         const UploadDoneCallback& done_callback) = 0;
 };

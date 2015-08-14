@@ -18,17 +18,12 @@
  */
 class SK_API SkNulCanvas : public SkCanvas {
 public:
-    SK_DECLARE_INST_COUNT(SkNulCanvas);
-
     SkNulCanvas() {}
     explicit SkNulCanvas(SkBaseDevice* device) : SkCanvas(device) {}
 
     explicit SkNulCanvas(const SkBitmap& bitmap) : SkCanvas(bitmap) {}
     virtual ~SkNulCanvas() {}
 
-    void beginCommentGroup(const char* description) override {}
-    void addComment(const char* kywd, const char* value) override {}
-    void endCommentGroup() override {}
     SkDrawFilter* setDrawFilter(SkDrawFilter* filter) override {return NULL;}
 
     bool isClipEmpty() const override { return false; }
@@ -101,7 +96,7 @@ protected:
                         const uint16_t indices[], int indexCount,
                         const SkPaint& paint) override {}
 
-    
+
 private:
     typedef SkCanvas INHERITED;
 };

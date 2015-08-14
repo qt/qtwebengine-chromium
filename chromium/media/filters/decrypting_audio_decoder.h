@@ -23,6 +23,7 @@ namespace media {
 class AudioTimestampHelper;
 class DecoderBuffer;
 class Decryptor;
+class MediaLog;
 
 // Decryptor-based AudioDecoder implementation that can decrypt and decode
 // encrypted audio buffers and return decrypted and decompressed audio frames.
@@ -32,6 +33,7 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
  public:
   DecryptingAudioDecoder(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      const scoped_refptr<MediaLog>& media_log,
       const SetDecryptorReadyCB& set_decryptor_ready_cb,
       const base::Closure& waiting_for_decryption_key_cb);
   ~DecryptingAudioDecoder() override;
@@ -39,7 +41,7 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // AudioDecoder implementation.
   std::string GetDisplayName() const override;
   void Initialize(const AudioDecoderConfig& config,
-                  const PipelineStatusCB& status_cb,
+                  const InitCB& init_cb,
                   const OutputCB& output_cb) override;
   void Decode(const scoped_refptr<DecoderBuffer>& buffer,
               const DecodeCB& decode_cb) override;
@@ -91,9 +93,11 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
+  scoped_refptr<MediaLog> media_log_;
+
   State state_;
 
-  PipelineStatusCB init_cb_;
+  InitCB init_cb_;
   OutputCB output_cb_;
   DecodeCB decode_cb_;
   base::Closure reset_cb_;

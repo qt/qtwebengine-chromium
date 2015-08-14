@@ -53,7 +53,7 @@ ScriptPromise SyncManager::registerFunction(ScriptState* scriptState, const Sync
         WebSyncRegistration::PeriodicityOneShot,
         options.tag(),
         0 /* minPeriod */,
-        WebSyncRegistration::NetworkStateAny /* networkState */,
+        WebSyncRegistration::NetworkStateOnline /* networkState */,
         WebSyncRegistration::PowerStateAuto /* powerState */
     );
     backgroundSyncProvider()->registerBackgroundSync(webSyncRegistration, m_registration->webRegistration(), new SyncRegistrationCallbacks(resolver, m_registration));
@@ -94,7 +94,9 @@ ScriptPromise SyncManager::permissionState(ScriptState* scriptState)
 
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    resolver->resolve(String::fromUTF8("granted"));
+
+    backgroundSyncProvider()->getPermissionStatus(WebSyncRegistration::PeriodicityOneShot, m_registration->webRegistration(), new SyncGetPermissionStatusCallbacks(resolver, m_registration));
+
     return promise;
 }
 

@@ -2,55 +2,86 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-.cast-mode {
-  -webkit-padding-start: 5px;
-  cursor: pointer;
-  font-size: 1.0em;
+.active-sink {
+  color: rgb(33, 150, 243);
 }
 
-.cast-mode:hover {
-  background-color: rgb(187, 206, 236);
-  border: 0;
+#container-header.cast-mode {
+  /* TODO(kdresner): Update this when we get a real color. */
+  background-color: rgb(244, 67, 54);
 }
 
-#cast-mode-list {
-  -webkit-user-select: none;
-  color: rgb(44, 44, 44);
-  margin: 0;
+#container-header.filter {
+  background-color: rgb(57, 73, 171);
 }
 
-#container-header {
-  background-color: rgb(214, 214, 214);
+#container-header.route-details {
+  display: none;
 }
 
-.route {
-  color: rgb(119, 119, 119);
+#container-header.sink-list {
+  background-color: rgb(33, 150, 243);
+}
+
+#device-missing {
+  align-items: center;
+  color: rgb(33, 150, 243);
+  display: flex;
+  height: 150px;
+  justify-content: center;
 }
 
 #header-text {
-  -webkit-padding-start: 20px;
+  -webkit-padding-start: 5px;
   flex-grow: 1;
-  font-size: 1.25em;
+  font-size: 1.4em;
   margin: 0;
 }
 
-.sink {
-  -webkit-user-select: none;
-  cursor: pointer;
-  font-size: 1.0em;
+.route {
+  color: rgb(150, 150, 150);
 }
 
-.sink:hover {
-  background-color: rgb(187, 206, 236);
+paper-item {
+  cursor: pointer;
+  font-size: 1.0em;
+  line-height: 0;
+  min-height: 0;
+  padding: 14px 0;
+}
+
+paper-item:hover {
+  background-color: rgb(238, 238, 238);
   border: 0;
 }
 
-.sink-icon {
-  -webkit-padding-end: 10px;
+paper-item iron-icon {
+  -webkit-padding-end: 16px;
+  -webkit-padding-start: 20px;
+  height: 16px;
+  width: 16px;
+}
+
+paper-menu {
+  -webkit-user-select: none;
+  color: rgb(0, 0, 0);
+  padding: 0;
+}
+
+.sink-content {
+  display: flex;
+  flex-direction: row;
 }
 
 #sink-list {
-  margin: 0;
   max-height: 275px;
   overflow-y: scroll;
+}
+
+.sink-text {
+  line-height: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 250px;
 }

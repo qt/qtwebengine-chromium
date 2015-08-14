@@ -24,16 +24,18 @@ LayerClipRecorder::LayerClipRecorder(GraphicsContext& graphicsContext, const Lay
     , m_clipType(clipType)
 {
     IntRect snappedClipRect = pixelSnappedIntRect(clipRect.rect());
-    OwnPtr<ClipDisplayItem> clipDisplayItem = ClipDisplayItem::create(layoutObject, clipType, snappedClipRect);
-    if (localPaintingInfo && clipRect.hasRadius())
-        collectRoundedRectClips(*layoutObject.layer(), *localPaintingInfo, graphicsContext, fragmentOffset, paintFlags, rule, clipDisplayItem->roundedRectClips());
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        clipDisplayItem->replay(graphicsContext);
-    } else {
-        ASSERT(m_graphicsContext.displayItemList());
+    Vector<FloatRoundedRect> roundedRects;
+    if (localPaintingInfo && clipRect.hasRadius()) {
+        collectRoundedRectClips(*layoutObject.layer(), *localPaintingInfo, graphicsContext, fragmentOffset, paintFlags, rule, roundedRects);
+    }
+
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         if (m_graphicsContext.displayItemList()->displayItemConstructionIsDisabled())
             return;
-        m_graphicsContext.displayItemList()->add(clipDisplayItem.release());
+        m_graphicsContext.displayItemList()->createAndAppend<ClipDisplayItem>(layoutObject, m_clipType, snappedClipRect, roundedRects);
+    } else {
+        ClipDisplayItem clipDisplayItem(layoutObject, m_clipType, snappedClipRect, roundedRects);
+        clipDisplayItem.replay(graphicsContext);
     }
 }
 
@@ -80,11 +82,12 @@ LayerClipRecorder::~LayerClipRecorder()
 {
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(m_graphicsContext.displayItemList());
-        if (m_graphicsContext.displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        DisplayItem::Type endType = DisplayItem::clipTypeToEndClipType(m_clipType);
-        OwnPtr<EndClipDisplayItem> endClip = EndClipDisplayItem::create(m_layoutObject, endType);
-        m_graphicsContext.displayItemList()->add(endClip.release());
+        if (!m_graphicsContext.displayItemList()->displayItemConstructionIsDisabled()) {
+            if (m_graphicsContext.displayItemList()->lastDisplayItemIsNoopBegin())
+                m_graphicsContext.displayItemList()->removeLastDisplayItem();
+            else
+                m_graphicsContext.displayItemList()->createAndAppend<EndClipDisplayItem>(m_layoutObject, DisplayItem::clipTypeToEndClipType(m_clipType));
+        }
     } else {
         m_graphicsContext.restore();
     }

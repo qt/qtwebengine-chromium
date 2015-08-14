@@ -26,8 +26,6 @@
 #ifndef WebCompositorSupport_h
 #define WebCompositorSupport_h
 
-#define WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP 1
-
 #include "WebCommon.h"
 #include "WebCompositorAnimation.h"
 #include "WebCompositorAnimationCurve.h"
@@ -63,47 +61,49 @@ class WebTransformOperations;
 class WebCompositorSupport {
 public:
     // Creates an output surface for the compositor backed by a 3d context.
-    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebGraphicsContext3D*) { return 0; }
+    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebGraphicsContext3D*) { return nullptr; }
 
     // Creates an output surface for the compositor backed by a software device.
-    virtual WebCompositorOutputSurface* createOutputSurfaceForSoftware() { return 0; }
+    virtual WebCompositorOutputSurface* createOutputSurfaceForSoftware() { return nullptr; }
 
     // Layers -------------------------------------------------------
 
-    virtual WebLayer* createLayer() { return 0; }
+    virtual WebLayer* createLayer() { return nullptr; }
 
-    virtual WebContentLayer* createContentLayer(WebContentLayerClient*) { return 0; }
+    virtual WebContentLayer* createContentLayer(WebContentLayerClient*) { return nullptr; }
 
-    virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient*) { return 0; }
+    virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient*) { return nullptr; }
 
-    virtual WebImageLayer* createImageLayer() { return 0; }
+    virtual WebImageLayer* createImageLayer() { return nullptr; }
 
-    virtual WebNinePatchLayer* createNinePatchLayer() { return 0; }
+    virtual WebNinePatchLayer* createNinePatchLayer() { return nullptr; }
 
     // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
-    virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
+    virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return nullptr; }
 
-    virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar) { return 0; }
+    virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar) { return nullptr; }
 
     // Animation ----------------------------------------------------
 
-    virtual WebCompositorAnimation* createAnimation(const WebCompositorAnimationCurve&, WebCompositorAnimation::TargetProperty, int groupId = 0, int animationId = 0) { return 0; }
+    virtual WebCompositorAnimation* createAnimation(const WebCompositorAnimationCurve&, WebCompositorAnimation::TargetProperty, int groupId = 0, int animationId = 0) { return nullptr; }
 
-    virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return 0; }
+    virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return nullptr; }
 
-    virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
+    virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return nullptr; }
 
-    virtual WebScrollOffsetAnimationCurve* createScrollOffsetAnimationCurve(WebFloatPoint targetValue, WebCompositorAnimationCurve::TimingFunctionType) { return 0; }
+    virtual WebScrollOffsetAnimationCurve* createScrollOffsetAnimationCurve(WebFloatPoint targetValue, WebCompositorAnimationCurve::TimingFunctionType) { return nullptr; }
 
-    virtual WebTransformAnimationCurve* createTransformAnimationCurve() { return 0; }
+    virtual WebTransformAnimationCurve* createTransformAnimationCurve() { return nullptr; }
 
-    virtual WebTransformOperations* createTransformOperations() { return 0; }
+    virtual WebTransformOperations* createTransformOperations() { return nullptr; }
 
-    virtual WebFilterOperations* createFilterOperations() { return 0; }
+    virtual WebFilterOperations* createFilterOperations() { return nullptr; }
 
-    virtual WebCompositorAnimationPlayer* createAnimationPlayer() { return 0; }
+    virtual WebCompositorAnimationPlayer* createAnimationPlayer() { return nullptr; }
 
-    virtual WebCompositorAnimationTimeline* createAnimationTimeline() { return 0; }
+    virtual WebCompositorAnimationTimeline* createAnimationTimeline() { return nullptr; }
+
+    virtual WebDisplayItemList* createDisplayItemList() { return nullptr; }
 
 protected:
     virtual ~WebCompositorSupport() { }

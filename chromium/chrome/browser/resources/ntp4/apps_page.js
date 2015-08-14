@@ -20,8 +20,8 @@ cr.define('ntp', function() {
   var DRAG_SOURCE = {
     SAME_APPS_PANE: 0,
     OTHER_APPS_PANE: 1,
-    MOST_VISITED_PANE: 2,
-    BOOKMARKS_PANE: 3,
+    MOST_VISITED_PANE: 2,  // Deprecated.
+    BOOKMARKS_PANE: 3,  // Deprecated.
     OUTSIDE_NTP: 4
   };
   var DRAG_SOURCE_LIMIT = DRAG_SOURCE.OUTSIDE_NTP + 1;
@@ -278,8 +278,11 @@ cr.define('ntp', function() {
       this.appContents_.__defineGetter__('contextMenu', function() {
         return self.contextMenu;
       });
-      this.appContents_.addEventListener('contextmenu',
-                                         cr.ui.contextMenuHandler);
+
+      if (!this.appData_.kioskMode) {
+        this.appContents_.addEventListener('contextmenu',
+                                           cr.ui.contextMenuHandler);
+      }
 
       this.addEventListener('mousedown', this.onMousedown_, true);
       this.addEventListener('keydown', this.onKeydown_);
@@ -683,9 +686,6 @@ cr.define('ntp', function() {
             originalPage.fireRemovedEvent(currentlyDraggingTile, index, true);
             this.fireAddedEvent(currentlyDraggingTile, index, true);
           }
-        } else if (currentlyDraggingTile.querySelector('.most-visited')) {
-          this.generateAppForLink(tileContents.data);
-          sourceId = DRAG_SOURCE.MOST_VISITED_PANE;
         }
       } else {
         this.addOutsideData_(dataTransfer);

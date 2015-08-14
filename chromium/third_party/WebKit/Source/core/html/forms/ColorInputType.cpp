@@ -47,7 +47,8 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
-#include "core/page/Chrome.h"
+#include "core/page/ChromeClient.h"
+#include "platform/JSONValues.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/Color.h"
@@ -164,9 +165,9 @@ void ColorInputType::handleDOMActivateEvent(Event* event)
     if (!UserGestureIndicator::processingUserGesture())
         return;
 
-    Chrome* chrome = this->chrome();
-    if (chrome && !m_chooser)
-        m_chooser = chrome->createColorChooser(element().document().frame(), this, valueAsColor());
+    ChromeClient* chromeClient = this->chromeClient();
+    if (chromeClient && !m_chooser)
+        m_chooser = chromeClient->openColorChooser(element().document().frame(), this, valueAsColor());
 
     event->setDefaultHandled();
 }
@@ -190,7 +191,7 @@ void ColorInputType::warnIfValueIsInvalid(const String& value) const
 {
     if (!equalIgnoringCase(value, element().sanitizeValue(value))) {
         element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
-            String::format("The specified value '%s' does not conform to the required format.  The format is '#rrggbb' where rr, gg, bb are two-digit hexadecimal numbers.", value.utf8().data())));
+            String::format("The specified value %s does not conform to the required format.  The format is \"#rrggbb\" where rr, gg, bb are two-digit hexadecimal numbers.", JSONValue::quoteString(value).utf8().data())));
     }
 }
 

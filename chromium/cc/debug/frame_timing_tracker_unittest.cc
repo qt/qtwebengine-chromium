@@ -9,6 +9,10 @@
 #include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/debug/frame_timing_tracker.h"
+#include "cc/test/fake_impl_proxy.h"
+#include "cc/test/fake_layer_tree_host_impl.h"
+#include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -70,7 +74,14 @@ std::string MainFrameToString(
 }
 
 TEST(FrameTimingTrackerTest, DefaultTrackerIsEmpty) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   EXPECT_EQ("{\"values\":[]}",
             CompositeToString(tracker->GroupCompositeCountsByRectId()));
   EXPECT_EQ("{\"values\":[]}",
@@ -78,7 +89,14 @@ TEST(FrameTimingTrackerTest, DefaultTrackerIsEmpty) {
 }
 
 TEST(FrameTimingTrackerTest, NoFrameIdsIsEmpty) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   std::vector<std::pair<int, int64_t>> ids;
   tracker->SaveTimeStamps(base::TimeTicks::FromInternalValue(100), ids);
   EXPECT_EQ("{\"values\":[]}",
@@ -86,7 +104,14 @@ TEST(FrameTimingTrackerTest, NoFrameIdsIsEmpty) {
 }
 
 TEST(FrameTimingTrackerTest, NoRectIdsYieldsNoMainFrameEvents) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   tracker->SaveMainFrameTimeStamps(std::vector<int64_t>(),
                                    base::TimeTicks::FromInternalValue(100),
                                    base::TimeTicks::FromInternalValue(110), 1);
@@ -95,7 +120,14 @@ TEST(FrameTimingTrackerTest, NoRectIdsYieldsNoMainFrameEvents) {
 }
 
 TEST(FrameTimingTrackerTest, OneFrameId) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   std::vector<std::pair<int, int64_t>> ids;
   ids.push_back(std::make_pair(1, 2));
   tracker->SaveTimeStamps(base::TimeTicks::FromInternalValue(100), ids);
@@ -106,7 +138,14 @@ TEST(FrameTimingTrackerTest, OneFrameId) {
 }
 
 TEST(FrameTimingTrackerTest, OneMainFrameRect) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   std::vector<int64_t> rect_ids;
   rect_ids.push_back(1);
   tracker->SaveMainFrameTimeStamps(rect_ids,
@@ -119,7 +158,14 @@ TEST(FrameTimingTrackerTest, OneMainFrameRect) {
 }
 
 TEST(FrameTimingTrackerTest, UnsortedTimestampsIds) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   std::vector<std::pair<int, int64_t>> ids;
   ids.push_back(std::make_pair(1, 2));
   tracker->SaveTimeStamps(base::TimeTicks::FromInternalValue(200), ids);
@@ -134,7 +180,14 @@ TEST(FrameTimingTrackerTest, UnsortedTimestampsIds) {
 }
 
 TEST(FrameTimingTrackerTest, MainFrameUnsortedTimestamps) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
   std::vector<int64_t> rect_ids;
   rect_ids.push_back(2);
   tracker->SaveMainFrameTimeStamps(rect_ids,
@@ -155,7 +208,14 @@ TEST(FrameTimingTrackerTest, MainFrameUnsortedTimestamps) {
 }
 
 TEST(FrameTimingTrackerTest, MultipleFrameIds) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
 
   std::vector<std::pair<int, int64_t>> ids200;
   ids200.push_back(std::make_pair(1, 2));
@@ -187,7 +247,14 @@ TEST(FrameTimingTrackerTest, MultipleFrameIds) {
 }
 
 TEST(FrameTimingTrackerTest, MultipleMainFrameEvents) {
-  scoped_ptr<FrameTimingTracker> tracker(FrameTimingTracker::Create());
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
+
+  scoped_ptr<FrameTimingTracker> tracker(
+      FrameTimingTracker::Create(&host_impl));
 
   std::vector<int64_t> rect_ids200;
   rect_ids200.push_back(2);

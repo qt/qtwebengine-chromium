@@ -176,7 +176,7 @@ void ConsoleBase::timeEnd(ScriptState* scriptState, const String& title)
 
 void ConsoleBase::timeStamp(const String& title)
 {
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TimeStamp", TRACE_EVENT_SCOPE_THREAD, "data", InspectorTimeStampEvent::data(context(), title));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "TimeStamp", TRACE_EVENT_SCOPE_THREAD, "data", InspectorTimeStampEvent::data(context(), title));
 }
 
 static String formatTimelineTitle(const String& title)
@@ -215,10 +215,12 @@ void ConsoleBase::internalAddMessage(MessageType type, MessageLevel level, Scrip
     if (!acceptNoArguments && (!arguments || !arguments->argumentCount()))
         return;
 
+    if (scriptState && !scriptState->contextIsValid())
+        arguments.clear();
     String message;
-    bool gotStringMessage = arguments ? arguments->getFirstArgumentAsString(message) : false;
-
-    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(ConsoleAPIMessageSource, level, gotStringMessage? message : String());
+    if (arguments)
+        arguments->getFirstArgumentAsString(message);
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(ConsoleAPIMessageSource, level, message);
     consoleMessage->setType(type);
     consoleMessage->setScriptState(scriptState);
     consoleMessage->setScriptArguments(arguments);

@@ -23,6 +23,7 @@ struct EVENTS_OZONE_EVDEV_EXPORT KeyEventParams {
   KeyEventParams(int device_id,
                  unsigned int code,
                  bool down,
+                 bool suppress_auto_repeat,
                  base::TimeDelta timestamp);
   KeyEventParams(const KeyEventParams& other);
   ~KeyEventParams();
@@ -30,6 +31,7 @@ struct EVENTS_OZONE_EVDEV_EXPORT KeyEventParams {
   int device_id;
   unsigned int code;
   bool down;
+  bool suppress_auto_repeat;
   base::TimeDelta timestamp;
 };
 
@@ -141,6 +143,7 @@ class EVENTS_OZONE_EVDEV_EXPORT DeviceEventDispatcherEvdev {
       const std::vector<InputDevice>& devices) = 0;
   virtual void DispatchTouchpadDevicesUpdated(
       const std::vector<InputDevice>& devices) = 0;
+  virtual void DispatchDeviceListsComplete() = 0;
 };
 
 }  // namespace ui

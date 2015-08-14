@@ -5,7 +5,9 @@
 #include "content/renderer/gpu/compositor_output_surface.h"
 
 #include "base/command_line.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/managed_memory_policy.h"
@@ -20,12 +22,6 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "ipc/ipc_sync_channel.h"
-
-namespace {
-// There are several compositor surfaces in a process, but they share the same
-// compositor thread, so we use a simple int here to track prefer-smoothness.
-int g_prefer_smoothness_count = 0;
-} // namespace
 
 namespace content {
 
@@ -46,22 +42,18 @@ CompositorOutputSurface::CompositorOutputSurface(
           RenderThreadImpl::current()->compositor_message_filter()),
       frame_swap_message_queue_(swap_frame_message_queue),
       routing_id_(routing_id),
+#if defined(OS_ANDROID)
       prefers_smoothness_(false),
-#if defined(OS_WIN)
-      // TODO(epenner): Implement PlatformThread::CurrentHandle() on windows.
-      main_thread_handle_(base::PlatformThreadHandle()),
-#else
-      main_thread_handle_(base::PlatformThread::CurrentHandle()),
+      main_thread_runner_(base::MessageLoop::current()->task_runner()),
 #endif
       layout_test_mode_(RenderThreadImpl::current()->layout_test_mode()),
       weak_ptrs_(this) {
   DCHECK(output_surface_filter_.get());
   DCHECK(frame_swap_message_queue_.get());
   DetachFromThread();
+  capabilities_.max_frames_pending = 1;
   message_sender_ = RenderThreadImpl::current()->sync_message_filter();
   DCHECK(message_sender_.get());
-  if (OutputSurface::software_device())
-    capabilities_.max_frames_pending = 1;
 }
 
 CompositorOutputSurface::~CompositorOutputSurface() {
@@ -146,7 +138,7 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
       context_provider()->ContextSupport()->SignalSyncPoint(sync_point,
                                                             closure);
     } else {
-      base::MessageLoopProxy::current()->PostTask(FROM_HERE, closure);
+      base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
     }
     client_->DidSwapBuffers();
     return;
@@ -212,45 +204,33 @@ bool CompositorOutputSurface::Send(IPC::Message* message) {
   return message_sender_->Send(message);
 }
 
-namespace {
 #if defined(OS_ANDROID)
-  void SetThreadPriorityToIdle(base::PlatformThreadHandle handle) {
-    base::PlatformThread::SetThreadPriority(handle,
-                                            base::ThreadPriority::BACKGROUND);
-  }
-  void SetThreadPriorityToDefault(base::PlatformThreadHandle handle) {
-    base::PlatformThread::SetThreadPriority(handle,
-                                            base::ThreadPriority::NORMAL);
-  }
-#else
-  void SetThreadPriorityToIdle(base::PlatformThreadHandle handle) {}
-  void SetThreadPriorityToDefault(base::PlatformThreadHandle handle) {}
-#endif
+namespace {
+void SetThreadPriorityToIdle() {
+  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
+                                          base::ThreadPriority::BACKGROUND);
 }
+void SetThreadPriorityToDefault() {
+  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
+                                          base::ThreadPriority::NORMAL);
+}
+}  // namespace
+#endif
 
 void CompositorOutputSurface::UpdateSmoothnessTakesPriority(
     bool prefers_smoothness) {
-#ifndef NDEBUG
-  // If we use different compositor threads, we need to
-  // use an atomic int to track prefer smoothness count.
-  base::PlatformThreadId g_last_thread = base::PlatformThread::CurrentId();
-  DCHECK_EQ(g_last_thread, base::PlatformThread::CurrentId());
-#endif
+#if defined(OS_ANDROID)
   if (prefers_smoothness_ == prefers_smoothness)
     return;
-  // If this is the first surface to start preferring smoothness,
-  // Throttle the main thread's priority.
-  if (prefers_smoothness_ == false &&
-      ++g_prefer_smoothness_count == 1) {
-    SetThreadPriorityToIdle(main_thread_handle_);
-  }
-  // If this is the last surface to stop preferring smoothness,
-  // Reset the main thread's priority to the default.
-  if (prefers_smoothness_ == true &&
-      --g_prefer_smoothness_count == 0) {
-    SetThreadPriorityToDefault(main_thread_handle_);
-  }
   prefers_smoothness_ = prefers_smoothness;
+  if (prefers_smoothness) {
+    main_thread_runner_->PostTask(FROM_HERE,
+                                  base::Bind(&SetThreadPriorityToIdle));
+  } else {
+    main_thread_runner_->PostTask(FROM_HERE,
+                                  base::Bind(&SetThreadPriorityToDefault));
+  }
+#endif
 }
 
 }  // namespace content

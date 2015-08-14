@@ -9,7 +9,7 @@
 
 #include "base/strings/nullable_string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
+#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
@@ -116,11 +116,6 @@ struct CONTENT_EXPORT Manifest {
   // is okay to use this entry.
   // Null if parsing failed or the field was not present.
   base::NullableString16 gcm_sender_id;
-
-  // This is a proprietary extension of the web Manifest, double-check that it
-  // is okay to use this entry.
-  // False if parsing failed or the field was not present.
-  bool gcm_user_visible_only;
 
   // Maximum length for all the strings inside the Manifest when it is sent over
   // IPC. The renderer process should truncate the strings before sending the

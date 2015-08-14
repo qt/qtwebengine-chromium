@@ -42,6 +42,7 @@
 #include "public/platform/WebReferrerPolicy.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/web/WebTreeScopeType.h"
 
 struct NPObject;
 
@@ -100,7 +101,8 @@ public:
     enum LayoutAsTextControl {
         LayoutAsTextNormal = 0,
         LayoutAsTextDebug = 1 << 0,
-        LayoutAsTextPrinting = 1 << 1
+        LayoutAsTextPrinting = 1 << 1,
+        LayoutAsTextWithLineTrees = 1 << 2
     };
     typedef unsigned LayoutAsTextControls;
 
@@ -344,6 +346,12 @@ public:
     // the "main world" or an "isolated world" is, then you probably shouldn't
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
+
+
+    // Returns true if the WebFrame currently executing JavaScript has access
+    // to the given WebFrame, or false otherwise.
+    BLINK_EXPORT static bool scriptCanAccess(WebFrame*);
+
 
     // Navigation ----------------------------------------------------------
 
@@ -675,8 +683,15 @@ public:
     // text form. This is used only by layout tests.
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
+    // Returns the frame inside a given frame or iframe element. Returns 0 if
+    // the given element is not a frame, iframe or if the frame is empty.
+    BLINK_EXPORT static WebFrame* fromFrameOwnerElement(const WebElement&);
+
 #if BLINK_IMPLEMENTATION
     static WebFrame* fromFrame(Frame*);
+
+    bool inShadowTree() const { return m_scope == WebTreeScopeType::Shadow; }
+
 #if ENABLE(OILPAN)
     static void traceFrames(Visitor*, WebFrame*);
     static void traceFrames(InlinedGlobalMarkingVisitor, WebFrame*);
@@ -686,7 +701,7 @@ public:
 #endif
 
 protected:
-    WebFrame();
+    explicit WebFrame(WebTreeScopeType);
     virtual ~WebFrame();
 
     // Sets the parent WITHOUT fulling adding it to the frame tree.
@@ -702,8 +717,7 @@ private:
 #if ENABLE(OILPAN)
     static void traceFrame(Visitor*, WebFrame*);
     static void traceFrame(InlinedGlobalMarkingVisitor, WebFrame*);
-    static bool isFrameAlive(Visitor*, const WebFrame*);
-    static bool isFrameAlive(InlinedGlobalMarkingVisitor, const WebFrame*);
+    static bool isFrameAlive(const WebFrame*);
 
     template <typename VisitorDispatcher>
     static void traceFramesImpl(VisitorDispatcher, WebFrame*);
@@ -711,10 +725,10 @@ private:
     void clearWeakFramesImpl(VisitorDispatcher);
     template <typename VisitorDispatcher>
     static void traceFrameImpl(VisitorDispatcher, WebFrame*);
-    template <typename VisitorDispatcher>
-    static bool isFrameAliveImpl(VisitorDispatcher, const WebFrame*);
 #endif
 #endif
+
+    const WebTreeScopeType m_scope;
 
     WebFrame* m_parent;
     WebFrame* m_previousSibling;

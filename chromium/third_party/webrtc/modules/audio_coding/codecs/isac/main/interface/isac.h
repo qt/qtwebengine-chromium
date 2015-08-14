@@ -11,9 +11,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_INTERFACE_ISAC_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_INTERFACE_ISAC_H_
 
-/*
- * Define the fixed-point numeric formats
- */
+#include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
 #include "webrtc/typedefs.h"
 
 typedef struct WebRtcISACStruct    ISACStruct;
@@ -144,7 +142,7 @@ extern "C" {
    *                            : -1 - Error
    */
 
-  int16_t WebRtcIsac_Encode(
+  int WebRtcIsac_Encode(
       ISACStruct*        ISAC_main_inst,
       const int16_t* speechIn,
       uint8_t* encoded);
@@ -214,7 +212,7 @@ extern "C" {
    *                              -1 - Error.
    */
 
-  int16_t WebRtcIsac_Decode(
+  int WebRtcIsac_Decode(
       ISACStruct*           ISAC_main_inst,
       const uint8_t* encoded,
       int16_t         len,
@@ -269,7 +267,7 @@ extern "C" {
   int16_t WebRtcIsac_Control(
       ISACStruct*   ISAC_main_inst,
       int32_t rate,
-      int16_t framesize);
+      int framesize);
 
 
   /******************************************************************************
@@ -300,7 +298,7 @@ extern "C" {
   int16_t WebRtcIsac_ControlBwe(
       ISACStruct* ISAC_main_inst,
       int32_t rateBPS,
-      int16_t frameSizeMs,
+      int frameSizeMs,
       int16_t enforceFrameSize);
 
 
@@ -701,13 +699,19 @@ extern "C" {
    * Return value              : >0 - number of samples in decoded vector
    *                             -1 - Error
    */
-  int16_t WebRtcIsac_DecodeRcu(
+  int WebRtcIsac_DecodeRcu(
       ISACStruct*           ISAC_main_inst,
       const uint8_t* encoded,
       int16_t         len,
       int16_t*        decoded,
       int16_t*        speechType);
 
+  /* Fills in an IsacBandwidthInfo struct. */
+  void WebRtcIsac_GetBandwidthInfo(ISACStruct* inst, IsacBandwidthInfo* bwinfo);
+
+  /* Uses the values from an IsacBandwidthInfo struct. */
+  void WebRtcIsac_SetBandwidthInfo(ISACStruct* inst,
+                                   const IsacBandwidthInfo* bwinfo);
 
 #if defined(__cplusplus)
 }

@@ -193,11 +193,13 @@ bool WaitForExitWithTimeoutImpl(base::ProcessHandle handle,
   if (!WaitpidWithTimeout(handle, &status, timeout))
     return false;
   if (WIFSIGNALED(status)) {
-    *exit_code = -1;
+    if (exit_code)
+      *exit_code = -1;
     return true;
   }
   if (WIFEXITED(status)) {
-    *exit_code = WEXITSTATUS(status);
+    if (exit_code)
+      *exit_code = WEXITSTATUS(status);
     return true;
   }
   return false;
@@ -293,9 +295,10 @@ void Process::Close() {
 
 #if !defined(OS_NACL_NONSFI)
 bool Process::Terminate(int exit_code, bool wait) const {
-  // result_code isn't supportable.
+  // exit_code isn't supportable.
   DCHECK(IsValid());
-  DCHECK_GT(process_, 1);
+  CHECK_GT(process_, 0);
+
   bool result = kill(process_, SIGTERM) == 0;
   if (result && wait) {
     int tries = 60;

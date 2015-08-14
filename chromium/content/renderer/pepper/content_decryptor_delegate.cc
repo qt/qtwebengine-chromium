@@ -5,7 +5,6 @@
 #include "content/renderer/pepper/content_decryptor_delegate.h"
 
 #include "base/callback_helpers.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
@@ -1044,13 +1043,14 @@ void ContentDecryptorDelegate::DeliverFrame(
           frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_U],
           frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_V],
           base::TimeDelta::FromMicroseconds(
-              frame_info->tracking_info.timestamp),
-          media::BindToCurrentLoop(
-              base::Bind(&BufferNoLongerNeeded,
-                         ppb_buffer,
-                         base::Bind(&ContentDecryptorDelegate::FreeBuffer,
-                                    weak_this_,
-                                    frame_info->tracking_info.buffer_id))));
+              frame_info->tracking_info.timestamp));
+  decoded_frame->AddDestructionObserver(
+      media::BindToCurrentLoop(
+          base::Bind(&BufferNoLongerNeeded,
+                     ppb_buffer,
+                     base::Bind(&ContentDecryptorDelegate::FreeBuffer,
+                                weak_this_,
+                                frame_info->tracking_info.buffer_id))));
 
   video_decode_cb.Run(Decryptor::kSuccess, decoded_frame);
 }

@@ -486,7 +486,7 @@ namespace WTF {
         typedef std::pair<ValueType*, bool> LookupType;
         typedef std::pair<LookupType, unsigned> FullLookupType;
 
-        LookupType lookupForWriting(const Key& key) { return lookupForWriting<IdentityTranslatorType>(key); };
+        LookupType lookupForWriting(const Key& key) { return lookupForWriting<IdentityTranslatorType>(key); }
         template<typename HashTranslator, typename T> FullLookupType fullLookupForWriting(const T&);
         template<typename HashTranslator, typename T> LookupType lookupForWriting(const T&);
 
@@ -1226,34 +1226,29 @@ template<typename Key, typename Value, typename Extractor, typename HashFunction
         {
             typedef HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> HashTableType;
             HashTableType* table = reinterpret_cast<HashTableType*>(closure);
-            if (table->m_table) {
-                // This is run as part of weak processing after full
-                // marking. The backing store is therefore marked if
-                // we get here.
-                ASSERT(visitor->isHeapObjectAlive(table->m_table));
-                // Now perform weak processing (this is a no-op if the backing
-                // was accessible through an iterator and was already marked
-                // strongly).
-                typedef typename HashTableType::ValueType ValueType;
-                for (ValueType* element = table->m_table + table->m_tableSize - 1; element >= table->m_table; element--) {
-                    if (!HashTableType::isEmptyOrDeletedBucket(*element)) {
-                        // At this stage calling trace can make no difference
-                        // (everything is already traced), but we use the
-                        // return value to remove things from the collection.
+            ASSERT(table->m_table);
+            // Now perform weak processing (this is a no-op if the backing
+            // was accessible through an iterator and was already marked
+            // strongly).
+            typedef typename HashTableType::ValueType ValueType;
+            for (ValueType* element = table->m_table + table->m_tableSize - 1; element >= table->m_table; element--) {
+                if (!HashTableType::isEmptyOrDeletedBucket(*element)) {
+                    // At this stage calling trace can make no difference
+                    // (everything is already traced), but we use the
+                    // return value to remove things from the collection.
 
-                        // FIXME: This should be rewritten so that this can check
-                        // if the element is dead without calling trace,
-                        // which is semantically not correct to be called in
-                        // weak processing stage.
-                        if (TraceInCollectionTrait<WeakHandlingInCollections, WeakPointersActWeak, ValueType, Traits>::trace(visitor, *element)) {
-                            table->registerModification();
-                            HashTableType::deleteBucket(*element); // Also calls the destructor.
-                            table->m_deletedCount++;
-                            table->m_keyCount--;
-                            // We don't rehash the backing until the next add
-                            // or delete, because that would cause allocation
-                            // during GC.
-                        }
+                    // FIXME: This should be rewritten so that this can check
+                    // if the element is dead without calling trace,
+                    // which is semantically not correct to be called in
+                    // weak processing stage.
+                    if (TraceInCollectionTrait<WeakHandlingInCollections, WeakPointersActWeak, ValueType, Traits>::trace(visitor, *element)) {
+                        table->registerModification();
+                        HashTableType::deleteBucket(*element); // Also calls the destructor.
+                        table->m_deletedCount++;
+                        table->m_keyCount--;
+                        // We don't rehash the backing until the next add
+                        // or delete, because that would cause allocation
+                        // during GC.
                     }
                 }
             }
@@ -1264,15 +1259,14 @@ template<typename Key, typename Value, typename Extractor, typename HashFunction
         {
             typedef HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator> HashTableType;
             HashTableType* table = reinterpret_cast<HashTableType*>(closure);
-            if (table->m_table) {
-                // Check the hash table for elements that we now know will not
-                // be removed by weak processing. Those elements need to have
-                // their strong pointers traced.
-                typedef typename HashTableType::ValueType ValueType;
-                for (ValueType* element = table->m_table + table->m_tableSize - 1; element >= table->m_table; element--) {
-                    if (!HashTableType::isEmptyOrDeletedBucket(*element))
-                        TraceInCollectionTrait<WeakHandlingInCollections, WeakPointersActWeak, ValueType, Traits>::trace(visitor, *element);
-                }
+            ASSERT(table->m_table);
+            // Check the hash table for elements that we now know will not
+            // be removed by weak processing. Those elements need to have
+            // their strong pointers traced.
+            typedef typename HashTableType::ValueType ValueType;
+            for (ValueType* element = table->m_table + table->m_tableSize - 1; element >= table->m_table; element--) {
+                if (!HashTableType::isEmptyOrDeletedBucket(*element))
+                    TraceInCollectionTrait<WeakHandlingInCollections, WeakPointersActWeak, ValueType, Traits>::trace(visitor, *element);
             }
         }
 
@@ -1295,7 +1289,7 @@ template<typename Key, typename Value, typename Extractor, typename HashFunction
         // and/or weak callback then we are done. This optimization does not
         // happen for ListHashSet since its iterator does not point at the
         // backing.
-        if (!m_table || visitor->isHeapObjectAlive(m_table))
+        if (!m_table || Allocator::isHeapObjectAlive(m_table))
             return;
         // Normally, we mark the backing store without performing trace. This
         // means it is marked live, but the pointers inside it are not marked.
@@ -1314,6 +1308,9 @@ template<typename Key, typename Value, typename Extractor, typename HashFunction
             Allocator::markNoTracing(visitor, m_table);
         } else {
             Allocator::registerDelayedMarkNoTracing(visitor, m_table);
+            // Since we're delaying marking this HashTable, it is possible
+            // that the registerWeakMembers is called multiple times (in rare
+            // cases). However, it shouldn't cause any issue.
             Allocator::registerWeakMembers(visitor, this, m_table, WeakProcessingHashTableHelper<Traits::weakHandlingFlag, Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::process);
         }
         if (ShouldBeTraced<Traits>::value) {

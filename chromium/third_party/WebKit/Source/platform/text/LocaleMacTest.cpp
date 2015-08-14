@@ -35,7 +35,7 @@
 #include "wtf/text/CString.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
+namespace blink {
 
 class LocalePlatformSupport : public TestingPlatformSupport {
 public:
@@ -368,7 +368,7 @@ TEST_F(LocaleMacTest, invalidLocale)
 
 static void testNumberIsReversible(const AtomicString& localeString, const char* original, const char* shouldHave = 0)
 {
-    OwnPtr<Locale> locale = Locale::create(localeString);
+    OwnPtr<LocaleMac> locale = LocaleMac::create(localeString);
     String localized = locale->convertToLocalizedNumber(original);
     if (shouldHave)
         EXPECT_TRUE(localized.contains(shouldHave));
@@ -399,3 +399,5 @@ TEST_F(LocaleMacTest, localizedNumberRoundTrip)
     testNumbers("zh_HK");
     testNumbers("zh_TW");
 }
+
+} // namespace blink

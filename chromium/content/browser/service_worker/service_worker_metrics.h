@@ -7,6 +7,7 @@
 
 #include "base/macros.h"
 #include "content/browser/service_worker/service_worker_database.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerResponseError.h"
 
 class GURL;
 
@@ -26,6 +27,14 @@ class ServiceWorkerMetrics {
     WRITE_HEADERS_ERROR,
     WRITE_DATA_ERROR,
     NUM_WRITE_RESPONSE_RESULT_TYPES,
+  };
+
+  enum DiskCacheMigrationResult {
+    MIGRATION_OK,
+    MIGRATION_NOT_NECESSARY,
+    MIGRATION_ERROR_MIGRATION_FAILED,
+    MIGRATION_ERROR_UPDATE_DATABASE,
+    NUM_MIGRATION_RESULT_TYPES,
   };
 
   enum DeleteAndStartOverResult {
@@ -66,6 +75,13 @@ class ServiceWorkerMetrics {
     NUM_STOP_STATUS_TYPES
   };
 
+  enum EventType {
+    EVENT_TYPE_FETCH,
+    // Add new events to record here.
+
+    NUM_EVENT_TYPES
+  };
+
   // Used for ServiceWorkerDiskCache.
   static void CountInitDiskCacheResult(bool result);
   static void CountReadResponseResult(ReadResponseResult result);
@@ -79,6 +95,7 @@ class ServiceWorkerMetrics {
 
   // Used for ServiceWorkerStorage.
   static void RecordDeleteAndStartOverResult(DeleteAndStartOverResult result);
+  static void RecordDiskCacheMigrationResult(DiskCacheMigrationResult result);
 
   // Counts the number of page loads controlled by a Service Worker.
   static void CountControlledPageLoad(const GURL& url);
@@ -102,9 +119,12 @@ class ServiceWorkerMetrics {
   static void RecordActivateEventStatus(ServiceWorkerStatusCode status);
   static void RecordInstallEventStatus(ServiceWorkerStatusCode status);
 
-  // Records the ratio of unhandled events to the all events fired during
-  // the lifetime of ServiceWorker.
-  static void RecordEventStatus(size_t fired_events, size_t handled_events);
+  // Records how much of dispatched events are handled while a Service
+  // Worker is awake (i.e. after it is woken up until it gets stopped).
+  static void RecordEventHandledRatio(const GURL& scope,
+                                      EventType event,
+                                      size_t handled_events,
+                                      size_t fired_events);
 
   // Records the result of dispatching a fetch event to a service worker.
   static void RecordFetchEventStatus(bool is_main_resource,
@@ -115,6 +135,11 @@ class ServiceWorkerMetrics {
   static void RecordURLRequestJobResult(bool is_main_resource,
                                         URLRequestJobResult result);
 
+  // Records the error code provided when the renderer returns a response with
+  // status zero to a fetch request.
+  static void RecordStatusZeroResponseError(
+      bool is_main_resource,
+      blink::WebServiceWorkerResponseError error);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ServiceWorkerMetrics);

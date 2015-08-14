@@ -51,7 +51,8 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
         matchBrackets: true,
         smartIndent: false,
         styleSelectedText: true,
-        electricChars: false
+        electricChars: false,
+        styleActiveLine: true
     });
     this._codeMirrorElement = this.element.lastElementChild;
 
@@ -853,10 +854,10 @@ WebInspector.CodeMirrorTextEditor.prototype = {
      * @param {string} mimeType
      * @return {string}
      */
-    _whitespaceOverlayMode: function(mimeType)
+    _allWhitespaceOverlayMode: function(mimeType)
     {
         var modeName = CodeMirror.mimeModes[mimeType] ? (CodeMirror.mimeModes[mimeType].name || CodeMirror.mimeModes[mimeType]) : CodeMirror.mimeModes["text/plain"];
-        modeName += "+whitespaces";
+        modeName += "+all-whitespaces";
         if (CodeMirror.modes[modeName])
             return modeName;
 
@@ -885,6 +886,38 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         return modeName;
     },
 
+    /**
+     * @param {string} mimeType
+     * @return {string}
+     */
+    _trailingWhitespaceOverlayMode: function(mimeType)
+    {
+        var modeName = CodeMirror.mimeModes[mimeType] ? (CodeMirror.mimeModes[mimeType].name || CodeMirror.mimeModes[mimeType]) : CodeMirror.mimeModes["text/plain"];
+        modeName += "+trailing-whitespaces";
+        if (CodeMirror.modes[modeName])
+            return modeName;
+
+        function modeConstructor(config, parserConfig)
+        {
+            function nextToken(stream)
+            {
+                var pos = stream.pos;
+                if (stream.match(/^\s+$/, true))
+                    return true ? "trailing-whitespace" : null;
+                do {
+                    stream.next();
+                } while (!stream.eol() && stream.peek() !== " ");
+                return null;
+            }
+            var whitespaceMode = {
+                token: nextToken
+            };
+            return CodeMirror.overlayMode(CodeMirror.getMode(config, mimeType), whitespaceMode, false);
+        }
+        CodeMirror.defineMode(modeName, modeConstructor);
+        return modeName;
+    },
+
     _enableLongLinesMode: function()
     {
         this._codeMirror.setOption("styleSelectedText", false);
@@ -898,10 +931,21 @@ WebInspector.CodeMirrorTextEditor.prototype = {
     _updateCodeMirrorMode: function()
     {
         this._setupWhitespaceHighlight();
-        var showWhitespaces = WebInspector.moduleSetting("showWhitespacesInEditor").get();
-        this.element.classList.toggle("show-whitespaces", showWhitespaces);
-        this._codeMirror.setOption("mode", showWhitespaces ? this._whitespaceOverlayMode(this._mimeType) : this._mimeType);
-        WebInspector.CodeMirrorTextEditor._loadMimeTypeModes(this._mimeType, this._updateCodeMirrorMode.bind(this));
+        var whitespaceMode = WebInspector.moduleSetting("showWhitespacesInEditor").get();
+        this.element.classList.toggle("show-whitespaces", whitespaceMode === "all");
+        var mimeType = this._mimeType;
+        if (whitespaceMode === "all")
+            mimeType = this._allWhitespaceOverlayMode(this._mimeType);
+        else if (whitespaceMode === "trailing")
+            mimeType = this._trailingWhitespaceOverlayMode(this._mimeType);
+        this._codeMirror.setOption("mode", mimeType);
+        WebInspector.CodeMirrorTextEditor._loadMimeTypeModes(this._mimeType, this._mimeTypeModesLoaded.bind(this));
+    },
+
+    _mimeTypeModesLoaded: function()
+    {
+        // Do not remove, this function is sniffed in tests.
+        this._updateCodeMirrorMode();
     },
 
     /**
@@ -1023,8 +1067,10 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         var target = event.target.enclosingNodeOrSelfWithClass("CodeMirror-gutter-elt");
         if (target)
             this._delegate.populateLineGutterContextMenu(contextMenu, parseInt(target.textContent, 10) - 1);
-        else
-            this._delegate.populateTextAreaContextMenu(contextMenu, 0);
+        else {
+            var textSelection = this.selection();
+            this._delegate.populateTextAreaContextMenu(contextMenu, textSelection.startLine, textSelection.startColumn);
+        }
         contextMenu.appendApplicableItems(this);
         contextMenu.show();
     },
@@ -2130,8 +2176,9 @@ WebInspector.TextEditorDelegate.prototype = {
     /**
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {number} lineNumber
+     * @param {number} columnNumber
      */
-    populateTextAreaContextMenu: function(contextMenu, lineNumber) { },
+    populateTextAreaContextMenu: function(contextMenu, lineNumber, columnNumber) { },
 
     /**
      * @param {?WebInspector.TextRange} from

@@ -47,6 +47,7 @@
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBox.h"
 #include "core/paint/DeprecatedPaintLayerFragment.h"
+#include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollableArea.h"
 
 namespace blink {
@@ -61,14 +62,20 @@ class LayoutBox;
 class DeprecatedPaintLayer;
 class LayoutScrollbarPart;
 
-class CORE_EXPORT DeprecatedPaintLayerScrollableArea final : public ScrollableArea {
+class CORE_EXPORT DeprecatedPaintLayerScrollableArea final : public NoBaseWillBeGarbageCollectedFinalized<DeprecatedPaintLayerScrollableArea>, public ScrollableArea {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeprecatedPaintLayerScrollableArea);
     friend class Internals;
 
 public:
     // FIXME: We should pass in the LayoutBox but this opens a window
     // for crashers during DeprecatedPaintLayer setup (see crbug.com/368062).
-    DeprecatedPaintLayerScrollableArea(DeprecatedPaintLayer&);
+    static PassOwnPtrWillBeRawPtr<DeprecatedPaintLayerScrollableArea> create(DeprecatedPaintLayer& layer)
+    {
+        return adoptPtrWillBeNoop(new DeprecatedPaintLayerScrollableArea(layer));
+    }
+
     virtual ~DeprecatedPaintLayerScrollableArea();
+    void dispose();
 
     bool hasHorizontalScrollbar() const { return horizontalScrollbar(); }
     bool hasVerticalScrollbar() const { return verticalScrollbar(); }
@@ -94,8 +101,6 @@ public:
     virtual IntPoint convertFromScrollbarToContainingView(const Scrollbar*, const IntPoint&) const override;
     virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const override;
     virtual int scrollSize(ScrollbarOrientation) const override;
-    virtual void setScrollOffset(const IntPoint&) override;
-    virtual void setScrollOffset(const DoublePoint&) override;
     virtual IntPoint scrollPosition() const override;
     virtual DoublePoint scrollPositionDouble() const override;
     virtual IntPoint minimumScrollPosition() const override;
@@ -114,6 +119,7 @@ public:
     virtual bool userInputScrollable(ScrollbarOrientation) const override;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const override;
     virtual int pageStep(ScrollbarOrientation) const override;
+    virtual ScrollBehavior scrollBehaviorStyle() const override;
 
     double scrollXOffset() const { return m_scrollOffset.width() + scrollOrigin().x(); }
     double scrollYOffset() const { return m_scrollOffset.height() + scrollOrigin().y(); }
@@ -135,7 +141,7 @@ public:
         scrollToOffset(DoubleSize(scrollXOffset(), y), clamp, scrollBehavior);
     }
 
-    virtual void setScrollPosition(const DoublePoint& position, ScrollBehavior scrollBehavior = ScrollBehaviorInstant) override
+    virtual void setScrollPosition(const DoublePoint& position, ScrollType scrollType, ScrollBehavior scrollBehavior = ScrollBehaviorInstant) override
     {
         scrollToOffset(toDoubleSize(position), ScrollOffsetClamped, scrollBehavior);
     }
@@ -216,10 +222,11 @@ public:
     IntRect rectForHorizontalScrollbar(const IntRect& borderBoxRect) const;
     IntRect rectForVerticalScrollbar(const IntRect& borderBoxRect) const;
 
-protected:
-    virtual ScrollBehavior scrollBehaviorStyle() const override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
+    explicit DeprecatedPaintLayerScrollableArea(DeprecatedPaintLayer&);
+
     bool hasHorizontalOverflow() const;
     bool hasVerticalOverflow() const;
     bool hasScrollableHorizontalOverflow() const;
@@ -227,8 +234,12 @@ private:
 
     void computeScrollDimensions();
 
+    // TODO(bokan): This method hides the base class version and is subtly different.
+    // Should be unified.
     DoubleSize clampScrollOffset(const DoubleSize&) const;
 
+    virtual void setScrollOffset(const IntPoint&, ScrollType) override;
+    virtual void setScrollOffset(const DoublePoint&, ScrollType) override;
 
     LayoutUnit verticalScrollbarStart(int minX, int maxX) const;
     LayoutUnit horizontalScrollbarStart(int minX) const;
@@ -276,14 +287,18 @@ private:
     IntPoint m_cachedOverlayScrollbarOffset;
 
     // For areas with overflow, we have a pair of scrollbars.
-    RefPtrWillBePersistent<Scrollbar> m_hBar;
-    RefPtrWillBePersistent<Scrollbar> m_vBar;
+    RefPtrWillBeMember<Scrollbar> m_hBar;
+    RefPtrWillBeMember<Scrollbar> m_vBar;
 
     // LayoutObject to hold our custom scroll corner.
     LayoutScrollbarPart* m_scrollCorner;
 
     // LayoutObject to hold our custom resizer.
     LayoutScrollbarPart* m_resizer;
+
+#if ENABLE(ASSERT)
+    bool m_hasBeenDisposed;
+#endif
 };
 
 } // namespace blink

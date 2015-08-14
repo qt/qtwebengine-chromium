@@ -137,7 +137,7 @@ TEST(BusTest, RemoveObjectProxy) {
 
   // Create the bus.
   Bus::Options options;
-  options.dbus_task_runner = dbus_thread.message_loop_proxy();
+  options.dbus_task_runner = dbus_thread.task_runner();
   scoped_refptr<Bus> bus = new Bus(options);
   ASSERT_FALSE(bus->shutdown_completed());
 
@@ -217,7 +217,7 @@ TEST(BusTest, UnregisterExportedObject) {
 
   // Create the bus.
   Bus::Options options;
-  options.dbus_task_runner = dbus_thread.message_loop_proxy();
+  options.dbus_task_runner = dbus_thread.task_runner();
   scoped_refptr<Bus> bus = new Bus(options);
   ASSERT_FALSE(bus->shutdown_completed());
 
@@ -267,7 +267,7 @@ TEST(BusTest, ShutdownAndBlockWithDBusThread) {
 
   // Create the bus.
   Bus::Options options;
-  options.dbus_task_runner = dbus_thread.message_loop_proxy();
+  options.dbus_task_runner = dbus_thread.task_runner();
   scoped_refptr<Bus> bus = new Bus(options);
   ASSERT_FALSE(bus->shutdown_completed());
 
@@ -388,6 +388,26 @@ TEST(BusTest, ListenForServiceOwnerChange) {
   bus->UnlistenForServiceOwnerChange("org.chromium.TestService", callback1);
   bus->UnlistenForServiceOwnerChange("org.chromium.TestService", callback2);
   base::RunLoop().RunUntilIdle();
+
+  // Shut down synchronously.
+  bus->ShutdownAndBlock();
+  EXPECT_TRUE(bus->shutdown_completed());
+}
+
+TEST(BusTest, GetConnectionName) {
+  Bus::Options options;
+  scoped_refptr<Bus> bus = new Bus(options);
+
+  // Connection name is empty since bus is not connected.
+  EXPECT_FALSE(bus->is_connected());
+  EXPECT_TRUE(bus->GetConnectionName().empty());
+
+  // Connect bus to D-Bus.
+  bus->Connect();
+
+  // Connection name is not empty after connection is established.
+  EXPECT_TRUE(bus->is_connected());
+  EXPECT_FALSE(bus->GetConnectionName().empty());
 
   // Shut down synchronously.
   bus->ShutdownAndBlock();

@@ -7,135 +7,158 @@
    * The possible states of media-router-container. Used to determine which
    * components of media-router-container to show.
    *
-   * @enum {number}
+   * @enum {string}
    */
   var MediaRouterContainerView = {
-    BLOCKING_ISSUE: 0,
-    ROUTE_DETAILS: 1,
-    SINK_PICKER: 2,
+    CAST_MODE_LIST: 'cast-mode-list',
+    FILTER: 'filter',
+    ROUTE_DETAILS: 'route-details',
+    SINK_LIST: 'sink-list',
   };
 
 // This Polymer element contains the entire media router interface. It handles
 // hiding and showing specific components.
-Polymer('media-router-container', {
-  publish: {
+Polymer({
+  is: 'media-router-container',
+
+  properties: {
     /**
      * The list of CastModes to show.
-     *
-     * @attribute castModeList
-     * @type {?Array<!media_router.CastMode>}
-     * @default null
+     * @type {!Array<!media_router.CastMode>}
      */
-    castModeList: null,
+    castModeList: {
+      type: Array,
+      value: function() {
+        return [];
+      },
+    },
+
+    /**
+     * The current route.
+     * @private {?media_router.Route}
+     */
+    currentRoute_: {
+      type: Object,
+      value: null,
+    },
+
+    /**
+     * The current view to be shown.
+     * @private {!MediaRouterContainerView}
+     */
+    currentView_: {
+      type: String,
+      value: MediaRouterContainerView.SINK_LIST,
+    },
+
+    /**
+     * The text for when there are no devices.
+     * @private {string}
+     */
+    deviceMissingText_: {
+      type: String,
+      value: loadTimeData.getString('deviceMissing'),
+    },
 
     /**
      * The header text.
-     *
-     * @attribute headerText
-     * @type {?string}
-     * @default null
+     * @type {string}
      */
-    headerText: null,
+    headerText: {
+      type: String,
+      value: '',
+    },
 
     /**
      * The issue to show.
-     *
-     * @attribute issue
      * @type {?media_router.Issue}
-     * @default null
      */
-    issue: null,
+    issue: {
+      type: Object,
+      value: null,
+    },
 
     /**
-     * List of current routes.
-     *
-     * @attribute routeList
-     * @type {?Array<!media_router.Route>}
-     * @default null
+     * The list of current routes.
+     * @type {!Array<!media_router.Route>}
      */
-    routeList: null,
+    routeList: {
+      type: Array,
+      value: function() {
+        return [];
+      },
+      observer: 'rebuildRouteMaps_',
+    },
 
     /**
-     * List of discovered sinks.
-     *
-     * @attribute sinkList
-     * @type {?Array<!media_router.Sink>}
-     * @default null
+     * Maps media_router.Route.id to corresponding media_router.Route.
+     * @private {!Object<!string, !media_router.Route>}
      */
-    sinkList: null,
+    routeMap_: {
+      type: Object,
+      value: function() {
+        return {};
+      },
+    },
+
+    /**
+     * The header text when the cast mode list is shown.
+     * @private {string}
+     */
+    selectCastModeHeaderText_: {
+      type: String,
+      value: loadTimeData.getString('selectCastModeHeader'),
+    },
+
+    /**
+     * The value of the selected cast mode in |castModeList|, or -1 if the
+     * user has not explicitly selected a cast mode.
+     * @private {number}
+     */
+    selectedCastModeValue_: {
+      type: Number,
+      value: -1,
+      observer: 'showSinkList_',
+    },
+
+    /**
+     * The list of available sinks.
+     * @type {!Array<!media_router.Sink>}
+     */
+    sinkList: {
+      type: Array,
+      value: function() {
+        return [];
+      },
+      observer: 'rebuildSinkMap_',
+    },
+
+    /**
+     * Maps media_router.Sink.id to corresponding media_router.Sink.
+     * @private {!Object<!string, !media_router.Sink>}
+     */
+    sinkMap_: {
+      type: Object,
+      value: function() {
+        return {};
+      },
+    },
+
+    /**
+     * Maps media_router.Sink.id to corresponding media_router.Route.
+     * @private {!Object<!string, ?media_router.Route>}
+     */
+    sinkToRouteMap_: {
+      type: Object,
+      value: function() {
+        return {};
+      },
+    },
   },
 
-  observe: {
-    routeList: 'rebuildRouteMaps',
-    selectedCastModeValue_: 'hideCastMode',
-    sinkList: 'rebuildSinkMap',
+  ready: function() {
+    this.addEventListener('close-route-click', this.removeRoute);
   },
-
-  created: function() {
-    this.castModeList = [];
-    this.routeList = [];
-    this.routeMap_ = {};
-    this.sinkList = [];
-    this.sinkMap_ = {};
-    this.sinkToRouteMap_ = {};
-  },
-
-  /**
-   * Whether or not the cast-mode-picker is currently hidden.
-   * @private {boolean}
-   * @default true
-   */
-  castModeHidden_: true,
-
-  /**
-   * The current route.
-   * @private {?media_router.Route}
-   * @default null
-   */
-  currentRoute_: null,
-
-  /**
-   * The current view to be shown.
-   * @private {!MediaRouterContainerView}
-   * @default MediaRouterContainerView.SINK_PICKER
-   */
-  currentView_: MediaRouterContainerView.SINK_PICKER,
-
-  /**
-   * The previous view that was shown.
-   * @private {!MediaRouterContainerView}
-   * @default MediaRouterContainerView.SINK_PICKER
-   */
-  previousView_: MediaRouterContainerView.SINK_PICKER,
-
-  /**
-   * Maps media_router.Route.id to corresponding media_router.Route.
-   * @private {?Object<!string, !media_router.Route>}
-   * @default null
-   */
-  routeMap_: null,
-
-  /**
-   * The value of the selected cast mode in |castModeList|, or -1 if the
-   * user has not explicitly selected a mode.
-   * @private {number}
-   * @default -1
-   */
-  selectedCastModeValue_: -1,
-
-  /**
-   * Maps media_router.Sink.id to corresponding media_router.Sink.
-   * @private {?Object<!string, !media_router.Sink>}
-   * @default null
-   */
-  sinkMap_: null,
-
-  /**
-   * Maps media_router.Sink.id to corresponding media_router.Route.
-   * @private {?Object<!string, ?media_router.Route>}
-   * @default null
-   */
-  sinkToRouteMap_: null,
 
   /**
    * Adds |route| to |routeList|.
@@ -155,84 +178,128 @@ Polymer('media-router-container', {
   },
 
   /**
-   * Filter that returns whether or not the cast modes should be hidden.
-   *
-   * @param {{castModeHidden: boolean}} value The parameters passed into this
-   *     filter.
-   * Parameters in |value|:
-   *   castModeHidden - Whether or not the cast modes are currently hidden.
+   * @param {!MediaRouterContainerView} view The current view.
+   * @return {string} The current arrow-drop-* icon to use.
+   * @private
    */
-  isCastModeHidden: function(value) {
-    return value['castModeHidden'];
+  computeArrowDropIcon_: function(view) {
+    return view == MediaRouterContainerView.CAST_MODE_LIST ?
+        'arrow-drop-up' : 'arrow-drop-down';
   },
 
   /**
-   * Filter that returns whether or not the header should be hidden.
-   *
-   * @param {{state: !MediaRouterContainerView, castModeHidden: boolean}} value
-   *     The parameters passed into this filter.
-   * Parameters in |value|:
-   *   state - The current state of media-router-container.
-   *   castModeHidden - Whether or not the cast modes are currently hidden.
+   * @param {!MediaRouterContainerView} view The current view.
+   * @return {boolean} Whether or not to hide the cast mode list.
+   * @private
    */
-  isHeaderHidden: function(value) {
-    return value['state'] != MediaRouterContainerView.SINK_PICKER &&
-        value['castModeHidden'];
+  computeCastModeHidden_: function(view) {
+    return view != MediaRouterContainerView.CAST_MODE_LIST;
   },
 
   /**
-   * Filter that returns whether or not the issue banner should be hidden.
-   *
-   * @param {{state: !MediaRouterContainerView,
-   *          issue: !media_router.Issue,
-   *          castModeHidden: boolean}}
-   *     value The parameters passed into this filter.
-   * Parameters in |value|:
-   *   state - The current state of media-router-container.
-   *   issue - The current value of |issue|.
-   *   castModeHidden - Whether or not the cast modes are currently hidden.
+   * @param {!MediaRouterContainerView} view The current view.
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {boolean} Whether or not to hide the header.
+   * @private
    */
-  isIssueBannerHidden: function(value) {
-    return (!value['issue'] &&
-        value['state'] != MediaRouterContainerView.BLOCKING_ISSUE) ||
-        !value['castModeHidden'];
+  computeHeaderHidden_: function(view, issue) {
+    return view == MediaRouterContainerView.ROUTE_DETAILS ||
+        (view == MediaRouterContainerView.SINK_LIST &&
+         issue && issue.isBlocking);
   },
 
   /**
-   * Filter that returns whether or not the route details should be hidden.
-   *
-   * @param {{state: !MediaRouterContainerView}} value The parameters passed
-   *     into this filter.
-   * Parameters in |value|:
-   *   state - The current state of media-router-container.
+   * @param {!MediaRouterContainerView} view The current view.
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {boolean} Whether or not to hide the issue banner.
+   * @private
    */
-  isRouteDetailsHidden: function(value) {
-    return value['state'] != MediaRouterContainerView.ROUTE_DETAILS;
+  computeIssueBannerHidden_: function(view, issue) {
+    return !issue || view == MediaRouterContainerView.CAST_MODE_LIST;
   },
 
   /**
-   * Filter that returns whether or not the sink picker should be hidden.
-   *
-   * @param {{state: !MediaRouterContainerView, castModeHidden: boolean}} value
-   *     The parameters passed into this filter.
-   * Parameters in |value|:
-   *   state - The current state of media-router-container.
-   *   castModeHidden - Whether or not the cast modes are currently hidden.
+   * @param {!MediaRouterContainerView} view The current view.
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {boolean} Whether or not to hide the route details.
+   * @private
    */
-  isSinkPickerHidden: function(value) {
-    return value['state'] != MediaRouterContainerView.SINK_PICKER ||
-        !value['castModeHidden'];
+  computeRouteDetailsHidden_: function(view, issue) {
+    return view != MediaRouterContainerView.ROUTE_DETAILS ||
+        (issue && issue.isBlocking);
   },
 
   /**
-   * Creates a new route if |route| is null.
+   * @param {!string} sinkId A sink ID.
+   * @return {boolean} Whether or not to hide the route info in the sink list
+   *     that is associated with |sinkId|.
+   * @private
+   */
+  computeRouteInSinkListHidden_: function(sinkId, sinkToRouteMap) {
+    return !sinkToRouteMap[sinkId];
+  },
+
+  /**
+   * @param {!string} sinkId A sink ID.
+   * @return {string} The title value of the route associated with |sinkId|.
+   * @private
+   */
+  computeRouteInSinkListValue_: function(sinkId, sinkToRouteMap) {
+    var route = sinkToRouteMap[sinkId];
+    return route ? route.title : '';
+  },
+
+  /**
+   * @param {?media_router.Route} route The current route.
+   * @return {?media_router.Sink} The sink associated with |route|.
+   * @private
+   */
+  computeSinkForCurrentRoute_: function(route) {
+    return route ? this.sinkMap_[route.sinkId] : null;
+  },
+
+  /**
+   * @param {!string} sinkId A sink ID.
+   * @param {!Object<!string, ?media_router.Route>} sinkToRouteMap
+   *     Maps media_router.Sink.id to corresponding media_router.Route.
+   * @return {string} The class for the sink icon.
+   * @private
+   */
+  computeSinkIconClass_: function(sinkId, sinkToRouteMap) {
+    return sinkToRouteMap[sinkId] ? 'active-sink' : '';
+  },
+
+  /**
+   * @param {!Array<!media_router.Sink>} The list of sinks.
+   * @return {boolean} Whether or not to hide the sink list.
+   * @private
+   */
+  computeSinkListHidden_: function(sinkList) {
+    return sinkList.length == 0;
+  },
+
+  /**
+   * @param {!MediaRouterContainerView} view The current view.
+   * @param {?media_router.Issue} issue The current issue.
+   * @return {boolean} Whether or not to hide entire the sink list view.
+   * @private
+   */
+  computeSinkListViewHidden_: function(view, issue) {
+    return view != MediaRouterContainerView.SINK_LIST ||
+        (issue && issue.isBlocking);
+  },
+
+  /**
+   * Creates a new route if |route| is null. Otherwise, shows the route
+   * details.
    *
    * @param {!media_router.Sink} sink The sink to use.
-   * @param {!media_router.Route} route The current route tied to |sink|.
+   * @param {?media_router.Route} route The current route tied to |sink|.
+   * @private
    */
-  maybeCreateRoute: function(sink, route) {
+  showOrCreateRoute_: function(sink, route) {
     if (route) {
-      this.showRouteDetailsView();
+      this.showRouteDetails_();
     } else {
       this.fire('create-route', {
         sinkId: sink.id,
@@ -242,129 +309,110 @@ Polymer('media-router-container', {
   },
 
   /**
-   * Filter that returns the arrow-drop-* icon to show.
-   *
-   * @param {{castModeHidden: boolean}} value The parameters passed into this
-   *   filter.
-   * Parameters in |value|:
-   *   castModeHidden - Whether or not the cast mode is currently hidden.
-   */
-  getDropDownIcon: function(value) {
-    return value['castModeHidden'] ? 'arrow-drop-down' : 'arrow-drop-up';
-  },
-
-  /**
-   * Hides cast-mode-picker.
-   */
-  hideCastMode: function() {
-    this.castModeHidden_ = true;
-  },
-
-  /**
-   * Called when |issue| has changed. Shows issue-banner if there exists an
-   * issue to show. If |newValue| is null, then show the previous view.
-   *
-   * @param {?media_router.Issue} oldValue The previous value for |issue|.
-   * @param {?media_router.Issue} newValue The new value for |issue|.
-   */
-  issueChanged: function(oldValue, newValue) {
-    if (newValue) {
-      // Checks that |newValue| is blocking. Also checks that previous issue
-      // either did not exist or was not a blocking issue.
-      if (newValue.isBlocking && (!oldValue || !oldValue.isBlocking)) {
-        this.previousView_ = this.currentView_;
-        this.currentView_ = MediaRouterContainerView.BLOCKING_ISSUE;
-      }
-    } else {
-      // Return to the previous view.
-      this.currentView_ = this.previousView_;
-    }
-  },
-
-  /**
-   * Fires a close-button-click event. Called when the close button is clicked.
-   */
-  closeButtonClicked: function() {
-    this.fire('close-button-click');
-  },
-
-  /**
-   * Updates |headerText| and |selectedCastModeValue_|. This is called when one
-   * of the cast modes has been selected.
+   * Handles a cast mode selection. Updates |headerText| and
+   * |selectedCastModeValue_|.
    *
    * @param {!Event} event The event object.
-   * @param {!Object} detail The details of the event.
-   * @param {!Element} sender Reference to clicked node.
+   * @private
    */
-  onCastModeSelected: function(event, detail, sender) {
-    var clickedMode = event.target.templateInstance.model.mode;
+  onCastModeClick_: function(event) {
+    var clickedMode = this.$.castModeList.itemForElement(event.target);
     this.headerText = clickedMode.title;
     this.selectedCastModeValue_ = clickedMode.type;
+  },
+
+  /**
+   * Handles a click on the close button by firing a close-button-click event.
+   *
+   * @private
+   */
+  onCloseButtonClick_: function() {
+    this.fire('close-button-click');
   },
 
   /**
    * Called when a sink is clicked. Updates |currentRoute_|.
    *
    * @param {!Event} event The event object.
-   * @param {Object} detail The details of the event.
-   * @param {!Element} sender Reference to clicked node.
+   * @private
    */
-  onSinkClick: function(event, detail, sender) {
-    var clickedSink = event.target.templateInstance.model.sink;
+  onSinkClick_: function(event) {
+    var clickedSink = this.$.sinkList.itemForElement(event.target);
     this.currentRoute_ = this.sinkToRouteMap_[clickedSink.id];
-    this.maybeCreateRoute(clickedSink, this.currentRoute_);
+    this.showOrCreateRoute_(clickedSink, this.currentRoute_);
   },
 
   /**
    * Called when |routeList| is updated. Rebuilds |routeMap_| and
    * |sinkToRouteMap_|.
+   *
+   * @private
    */
-  rebuildRouteMaps: function() {
-    // Reset |routeMap_| and |sinkToRouteMap_|.
+  rebuildRouteMaps_: function() {
     this.routeMap_ = {};
-    this.sinkToRouteMap_ = {};
+    // Rebuild |sinkToRouteMap_| with a temporary map to avoid firing the
+    // computed functions prematurely.
+    var tempSinkToRouteMap = {};
 
-    // Rebuild |routeMap_| and |sinkToRouteMap_|.
     this.routeList.forEach(function(route) {
       this.routeMap_[route.id] = route;
-      this.sinkToRouteMap_[route.sinkId] = route;
+      tempSinkToRouteMap[route.sinkId] = route;
     }, this);
+
+    this.sinkToRouteMap_ = tempSinkToRouteMap;
   },
 
   /**
    * Called when |sinkList| is updated. Rebuilds |sinkMap_|.
+   *
+   * @private
    */
-  rebuildSinkMap: function() {
-    // Reset |sinkMap_|.
+  rebuildSinkMap_: function() {
     this.sinkMap_ = {};
 
-    // Rebuild |sinkMap_|.
     this.sinkList.forEach(function(sink) {
       this.sinkMap_[sink.id] = sink;
     }, this);
   },
 
   /**
-   * Updates |currentView_| to ROUTE_DETAILS.
+   * Shows the cast mode list.
+   *
+   * @private
    */
-  showRouteDetailsView: function() {
-    this.previousView_ = this.currentView_;
+  showCastModeList_: function() {
+    this.currentView_ = MediaRouterContainerView.CAST_MODE_LIST;
+  },
+
+  /**
+   * Shows the route details.
+   *
+   * @private
+   */
+  showRouteDetails_: function() {
     this.currentView_ = MediaRouterContainerView.ROUTE_DETAILS;
   },
 
   /**
-   * Updates |currentView_| to SINK_PICKER.
+   * Shows the sink list.
+   *
+   * @private
    */
-  showSinkPickerView: function() {
-    this.previousView_ = this.currentView_;
-    this.currentView_ = MediaRouterContainerView.SINK_PICKER;
+  showSinkList_: function() {
+    this.currentView_ = MediaRouterContainerView.SINK_LIST;
   },
 
   /**
-   * Toggles |castModeHidden_|.
+   * Toggles |currentView_| between CAST_MODE_LIST and SINK_LIST.
+   *
+   * @private
    */
-  toggleCastMode: function() {
-    this.castModeHidden_ = !this.castModeHidden_;
+  toggleCastModeHidden_: function() {
+    if (this.currentView_ == MediaRouterContainerView.CAST_MODE_LIST) {
+      this.showSinkList_();
+    } else {
+      this.showCastModeList_();
+    }
   },
 });
 })();

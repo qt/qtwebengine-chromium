@@ -14,10 +14,10 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
 #include "cc/resources/shared_bitmap_manager.h"
-#include "components/gpu/public/interfaces/gpu.mojom.h"
-#include "components/surfaces/public/interfaces/surfaces.mojom.h"
 #include "components/view_manager/public/cpp/view.h"
 #include "components/view_manager/public/cpp/view_manager.h"
+#include "components/view_manager/public/interfaces/gpu.mojom.h"
+#include "components/view_manager/public/interfaces/surfaces.mojom.h"
 #include "mandoline/ui/aura/window_tree_host_mojo.h"
 #include "mojo/application/public/cpp/connect.h"
 #include "mojo/application/public/interfaces/shell.mojom.h"
@@ -204,7 +204,9 @@ void SurfaceBinding::PerViewManagerState::Init() {
   DCHECK(!surface_.get());
 
   mojo::ServiceProviderPtr surfaces_service_provider;
-  shell_->ConnectToApplication("mojo:surfaces_service",
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From("mojo:surfaces_service");
+  shell_->ConnectToApplication(request.Pass(),
                                GetProxy(&surfaces_service_provider),
                                nullptr);
   ConnectToService(surfaces_service_provider.get(), &surface_);
@@ -212,7 +214,7 @@ void SurfaceBinding::PerViewManagerState::Init() {
       base::Bind(&SurfaceBinding::PerViewManagerState::SetIdNamespace,
                  base::Unretained(this)));
   // Block until we receive our id namespace.
-  surface_.WaitForIncomingMethodCall();
+  surface_.WaitForIncomingResponse();
   DCHECK_NE(0u, id_namespace_);
 
   mojo::ResourceReturnerPtr returner_ptr;
@@ -221,7 +223,9 @@ void SurfaceBinding::PerViewManagerState::Init() {
 
   mojo::ServiceProviderPtr gpu_service_provider;
   // TODO(jamesr): Should be mojo:gpu_service
-  shell_->ConnectToApplication("mojo:native_viewport_service",
+  mojo::URLRequestPtr request2(mojo::URLRequest::New());
+  request2->url = mojo::String::From("mojo:view_manager");
+  shell_->ConnectToApplication(request2.Pass(),
                                GetProxy(&gpu_service_provider),
                                nullptr);
   ConnectToService(gpu_service_provider.get(), &gpu_);

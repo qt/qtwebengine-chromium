@@ -23,8 +23,9 @@
 #include "common/mathutil.h"
 #include "common/platform.h"
 #include "libANGLE/Context.h"
-#include "libANGLE/Surface.h"
 #include "libANGLE/Device.h"
+#include "libANGLE/histogram_macros.h"
+#include "libANGLE/Surface.h"
 #include "libANGLE/renderer/DisplayImpl.h"
 #include "third_party/trace_event/trace_event.h"
 
@@ -231,6 +232,10 @@ void Display::setAttributes(rx::DisplayImpl *impl, const AttributeMap &attribMap
 
 Error Display::initialize()
 {
+    // Re-initialize default platform if it's needed
+    InitDefaultPlatformImpl();
+
+    SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.DisplayInitializeMS");
     TRACE_EVENT0("gpu.angle", "egl::Display::initialize");
 
     ASSERT(mImplementation != nullptr);
@@ -274,6 +279,7 @@ Error Display::initialize()
     }
 
     mInitialized = true;
+
     return Error(EGL_SUCCESS);
 }
 
@@ -316,6 +322,7 @@ bool Display::getConfigAttrib(const Config *configuration, EGLint attribute, EGL
       case EGL_CONFIG_ID:                 *value = configuration->configID;               break;
       case EGL_LEVEL:                     *value = configuration->level;                  break;
       case EGL_NATIVE_RENDERABLE:         *value = configuration->nativeRenderable;       break;
+      case EGL_NATIVE_VISUAL_ID:          *value = configuration->nativeVisualID;         break;
       case EGL_NATIVE_VISUAL_TYPE:        *value = configuration->nativeVisualType;       break;
       case EGL_SAMPLES:                   *value = configuration->samples;                break;
       case EGL_SAMPLE_BUFFERS:            *value = configuration->sampleBuffers;          break;
@@ -552,6 +559,7 @@ void Display::destroySurface(Surface *surface)
         }
 
         ASSERT(surfaceRemoved);
+        UNUSED_ASSERTION_VARIABLE(surfaceRemoved);
     }
 
     mImplementation->destroySurface(surface);

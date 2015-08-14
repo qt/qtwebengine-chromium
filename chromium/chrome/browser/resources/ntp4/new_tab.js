@@ -8,15 +8,6 @@
  * browsers.  For now this is still a prototype.
  */
 
-/**
- * @typedef {{direction: string,
- *            filler: (boolean|undefined),
- *            title: string,
- *            url: string}}
- * @see chrome/browser/ui/webui/ntp/most_visited_handler.cc
- */
-var PageData;
-
 // Use an anonymous function to enable strict mode just for this file (which
 // will be concatenated with other files when embedded in Chrome
 cr.define('ntp', function() {
@@ -54,12 +45,6 @@ cr.define('ntp', function() {
    * @type {boolean}
    */
   var shouldShowLoginBubble = false;
-
-  /**
-   * The 'other-sessions-menu-button' element.
-   * @type {!ntp.OtherSessionsMenuButton|undefined}
-   */
-  var otherSessionsButton;
 
   /**
    * The time when all sections are ready.
@@ -126,8 +111,6 @@ cr.define('ntp', function() {
    */
   function onLoad() {
     sectionsToWaitFor = 0;
-    if (loadTimeData.getBoolean('showMostvisited'))
-      sectionsToWaitFor++;
     if (loadTimeData.getBoolean('showApps')) {
       sectionsToWaitFor++;
       if (loadTimeData.getBoolean('showAppLauncherPromo')) {
@@ -147,27 +130,6 @@ cr.define('ntp', function() {
     notificationContainer = getRequiredElement('notification-container');
     notificationContainer.addEventListener(
         'webkitTransitionEnd', onNotificationTransitionEnd);
-
-    if (loadTimeData.getBoolean('showOtherSessionsMenu')) {
-      otherSessionsButton = /** @type {!ntp.OtherSessionsMenuButton} */(
-          getRequiredElement('other-sessions-menu-button'));
-      cr.ui.decorate(otherSessionsButton, ntp.OtherSessionsMenuButton);
-      otherSessionsButton.initialize(loadTimeData.getBoolean('isUserSignedIn'));
-    } else {
-      getRequiredElement('other-sessions-menu-button').hidden = true;
-    }
-
-    if (loadTimeData.getBoolean('showMostvisited')) {
-      var mostVisited = new ntp.MostVisitedPage();
-      // Move the footer into the most visited page if we are in "bare minimum"
-      // mode.
-      if (document.body.classList.contains('bare-minimum'))
-        mostVisited.appendFooter(getRequiredElement('footer'));
-      newTabView.appendTilePage(mostVisited,
-                                loadTimeData.getString('mostvisited'),
-                                false);
-      chrome.send('getMostVisited');
-    }
 
     if (!loadTimeData.getBoolean('showWebStoreIcon')) {
       var webStoreIcon = $('chrome-web-store-link');
@@ -341,14 +303,11 @@ cr.define('ntp', function() {
    * its length may be measured and the nav dots sized accordingly.
    */
   function measureNavDots() {
-    var pxWidth = measureNavDot('appDefaultPageName');
-    if (loadTimeData.getBoolean('showMostvisited'))
-      pxWidth = Math.max(measureNavDot('mostvisited'), pxWidth);
-
     var styleElement = document.createElement('style');
     styleElement.type = 'text/css';
     // max-width is used because if we run out of space, the nav dots will be
     // shrunk.
+    var pxWidth = measureNavDot('appDefaultPageName');
     styleElement.textContent = '.dot { max-width: ' + pxWidth + 'px; }';
     document.querySelector('head').appendChild(styleElement);
   }
@@ -522,15 +481,6 @@ cr.define('ntp', function() {
   }
 
   /**
-   * @param {Array<PageData>} data
-   * @param {boolean} hasBlacklistedUrls
-   */
-  function setMostVisitedPages(data, hasBlacklistedUrls) {
-    newTabView.mostVisitedPage.data = data;
-    cr.dispatchSimpleEvent(document, 'sectionready', true, true);
-  }
-
-  /**
    * Set the dominant color for a node. This will be called in response to
    * getFaviconDominantColor. The node represented by |id| better have a setter
    * for stripeColor.
@@ -556,6 +506,7 @@ cr.define('ntp', function() {
     /** @const */ var showLogin = loginHeader || loginSubHeader;
 
     $('login-container').hidden = !showLogin;
+    $('login-container').classList.toggle('signed-in', isUserSignedIn);
     $('card-slider-frame').classList.toggle('showing-login-area', !!showLogin);
 
     if (showLogin) {
@@ -575,10 +526,6 @@ cr.define('ntp', function() {
     } else if (loginBubble) {
       loginBubble.reposition();
     }
-    if (otherSessionsButton) {
-      otherSessionsButton.updateSignInState(isUserSignedIn);
-      layoutFooter();
-    }
   }
 
   /**
@@ -589,16 +536,6 @@ cr.define('ntp', function() {
     var rect = e.currentTarget.getBoundingClientRect();
     chrome.send('showSyncLoginUI',
                 [rect.left, rect.top, rect.width, rect.height]);
-  }
-
-  /**
-   * Logs the time to click for the specified item.
-   * @param {string} item The item to log the time-to-click.
-   */
-  function logTimeToClick(item) {
-    var timeToClick = Date.now() - startTime;
-    chrome.send('logTimeToClick',
-        ['NewTabPage.TimeToClick' + item, timeToClick]);
   }
 
   /**
@@ -664,13 +601,6 @@ cr.define('ntp', function() {
     newTabView.enterRearrangeMode();
   }
 
-  function setForeignSessions(sessionList, isTabSyncEnabled) {
-    if (otherSessionsButton) {
-      otherSessionsButton.setForeignSessions(sessionList, isTabSyncEnabled);
-      layoutFooter();
-    }
-  }
-
   /**
    * Callback invoked by chrome with the apps available.
    *
@@ -731,13 +661,10 @@ cr.define('ntp', function() {
     getCardSlider: getCardSlider,
     onLoad: onLoad,
     leaveRearrangeMode: leaveRearrangeMode,
-    logTimeToClick: logTimeToClick,
     NtpFollowAction: NtpFollowAction,
     saveAppPageName: saveAppPageName,
     setAppToBeHighlighted: setAppToBeHighlighted,
     setBookmarkBarAttached: setBookmarkBarAttached,
-    setForeignSessions: setForeignSessions,
-    setMostVisitedPages: setMostVisitedPages,
     setFaviconDominantColor: setFaviconDominantColor,
     showNotification: showNotification,
     themeChanged: themeChanged,

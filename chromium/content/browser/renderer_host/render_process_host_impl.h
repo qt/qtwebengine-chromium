@@ -24,6 +24,10 @@
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gpu_switching_observer.h"
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "content/common/mac/io_surface_manager_token.h"
+#endif
+
 namespace base {
 class CommandLine;
 class MessageLoop;
@@ -43,6 +47,7 @@ class ChannelMojoHost;
 
 namespace content {
 class AudioRendererHost;
+class BluetoothDispatcherHost;
 class BrowserCdmManager;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
@@ -92,7 +97,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
-                        bool is_isolated_guest);
+                        bool is_for_guests_only);
   ~RenderProcessHostImpl() override;
 
   // RenderProcessHost implementation (public portion).
@@ -107,7 +112,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void WidgetRestored() override;
   void WidgetHidden() override;
   int VisibleWidgetCount() const override;
-  bool IsIsolatedGuest() const override;
+  bool IsForGuestsOnly() const override;
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code, bool wait) override;
   bool FastShutdownIfPossible() override;
@@ -243,12 +248,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   }
 #endif
 
-#if defined(ENABLE_BROWSER_CDMS)
-  const scoped_refptr<BrowserCdmManager>& browser_cdm_manager() {
-    return browser_cdm_manager_;
-  }
-#endif
-
   MessagePortMessageFilter* message_port_message_filter() const {
     return message_port_message_filter_.get();
   }
@@ -257,8 +256,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return notification_message_filter_.get();
   }
 
-  void set_is_isolated_guest_for_testing(bool is_isolated_guest) {
-    is_isolated_guest_ = is_isolated_guest;
+  void set_is_for_guests_only_for_testing(bool is_for_guests_only) {
+    is_for_guests_only_ = is_for_guests_only;
   }
 
   // Called when the existence of the other renderer process which is connected
@@ -267,21 +266,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
-  // Call this function to resume the navigation when it was deferred
-  // immediately after receiving response headers.
-  void ResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
-
   void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const override;
+
+  BluetoothDispatcherHost* GetBluetoothDispatcherHost();
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
   scoped_ptr<IPC::ChannelProxy> channel_;
-
-  // A host object ChannelMojo needs. The lifetime is bound to
-  // the RenderProcessHostImpl, not the channel.
-  scoped_ptr<IPC::ChannelMojoHost> channel_mojo_host_;
 
   // True if fast shutdown has been performed on this RPH.
   bool fast_shutdown_started_;
@@ -413,7 +406,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   StoragePartitionImpl* storage_partition_impl_;
 
   // The observers watching our lifetime.
-  ObserverList<RenderProcessHostObserver> observers_;
+  base::ObserverList<RenderProcessHostObserver> observers_;
 
   // True if the process can be shut down suddenly.  If this is true, then we're
   // sure that all the RenderViews in the process can be shutdown suddenly.  If
@@ -430,9 +423,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
 
-  // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
-  // renderer.
-  bool is_isolated_guest_;
+  // Indicates whether this RenderProcessHost is exclusively hosting guest
+  // RenderFrames.
+  bool is_for_guests_only_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
@@ -455,12 +448,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<AudioRendererHost> audio_renderer_host_;
 
+  scoped_refptr<BluetoothDispatcherHost> bluetooth_dispatcher_host_;
+
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
-#endif
-
-#if defined(ENABLE_BROWSER_CDMS)
-  scoped_refptr<BrowserCdmManager> browser_cdm_manager_;
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -499,6 +490,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Whether or not the CHROMIUM_subscribe_uniform WebGL extension is enabled
   bool subscribe_uniform_enabled_;
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // Unique unguessable token that the child process is using to acquire
+  // IOSurface references.
+  IOSurfaceManagerToken io_surface_manager_token_;
+#endif
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

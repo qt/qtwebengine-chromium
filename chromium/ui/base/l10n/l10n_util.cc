@@ -201,8 +201,8 @@ bool IsDuplicateName(const std::string& locale_name) {
   };
 
   // Skip all the es_Foo other than es_419 for now.
-  if (StartsWithASCII(locale_name, "es_", false))
-    return !EndsWith(locale_name, "419", true);
+  if (base::StartsWithASCII(locale_name, "es_", false))
+    return !base::EndsWith(locale_name, "419", true);
 
   for (size_t i = 0; i < arraysize(kDuplicateNames); ++i) {
     if (base::strcasecmp(kDuplicateNames[i], locale_name.c_str()) == 0)
@@ -288,9 +288,9 @@ struct AvailableLocalesTraits
       std::replace(locale_name.begin(), locale_name.end(), '_', '-');
 
       // Map the Chinese locale names over to zh-CN and zh-TW.
-      if (LowerCaseEqualsASCII(locale_name, "zh-hans")) {
+      if (base::LowerCaseEqualsASCII(locale_name, "zh-hans")) {
         locale_name = "zh-CN";
-      } else if (LowerCaseEqualsASCII(locale_name, "zh-hant")) {
+      } else if (base::LowerCaseEqualsASCII(locale_name, "zh-hant")) {
         locale_name = "zh-TW";
       }
       locales->push_back(locale_name);
@@ -341,26 +341,26 @@ bool CheckAndResolveLocale(const std::string& locale,
     std::string tmp_locale(lang);
     // Map es-RR other than es-ES to es-419 (Chrome's Latin American
     // Spanish locale).
-    if (LowerCaseEqualsASCII(lang, "es") &&
-        !LowerCaseEqualsASCII(region, "es")) {
+    if (base::LowerCaseEqualsASCII(lang, "es") &&
+        !base::LowerCaseEqualsASCII(region, "es")) {
       tmp_locale.append("-419");
-    } else if (LowerCaseEqualsASCII(lang, "zh")) {
+    } else if (base::LowerCaseEqualsASCII(lang, "zh")) {
       // Map zh-HK and zh-MO to zh-TW. Otherwise, zh-FOO is mapped to zh-CN.
-      if (LowerCaseEqualsASCII(region, "hk") ||
-          LowerCaseEqualsASCII(region, "mo")) { // Macao
+      if (base::LowerCaseEqualsASCII(region, "hk") ||
+          base::LowerCaseEqualsASCII(region, "mo")) {  // Macao
         tmp_locale.append("-TW");
       } else {
         tmp_locale.append("-CN");
       }
-    } else if (LowerCaseEqualsASCII(lang, "en")) {
+    } else if (base::LowerCaseEqualsASCII(lang, "en")) {
       // Map Australian, Canadian, New Zealand and South African English
       // to British English for now.
       // TODO(jungshik): en-CA may have to change sides once
       // we have OS locale separate from app locale (Chrome's UI language).
-      if (LowerCaseEqualsASCII(region, "au") ||
-          LowerCaseEqualsASCII(region, "ca") ||
-          LowerCaseEqualsASCII(region, "nz") ||
-          LowerCaseEqualsASCII(region, "za")) {
+      if (base::LowerCaseEqualsASCII(region, "au") ||
+          base::LowerCaseEqualsASCII(region, "ca") ||
+          base::LowerCaseEqualsASCII(region, "nz") ||
+          base::LowerCaseEqualsASCII(region, "za")) {
         tmp_locale.append("-GB");
       } else {
         tmp_locale.append("-US");
@@ -384,7 +384,7 @@ bool CheckAndResolveLocale(const std::string& locale,
   };
 
   for (size_t i = 0; i < arraysize(alias_map); ++i) {
-    if (LowerCaseEqualsASCII(lang, alias_map[i].source)) {
+    if (base::LowerCaseEqualsASCII(lang, alias_map[i].source)) {
       std::string tmp_locale(alias_map[i].dest);
       if (IsLocaleAvailable(tmp_locale)) {
         resolved_locale->swap(tmp_locale);
@@ -539,7 +539,7 @@ base::string16 GetDisplayNameForLocale(const std::string& locale,
   // zh-Hant because the current Android Java API doesn't support scripts.
   // TODO(wangxianzhu): remove the special handling of zh-Hans and zh-Hant once
   // Android Java API supports scripts.
-  if (!StartsWithASCII(locale_code, "zh-Han", true)) {
+  if (!base::StartsWithASCII(locale_code, "zh-Han", true)) {
     display_name = GetDisplayNameForLocale(locale_code, display_locale);
   } else
 #endif
@@ -549,7 +549,7 @@ base::string16 GetDisplayNameForLocale(const std::string& locale,
 
     int actual_size = uloc_getDisplayName(
         locale_code.c_str(), display_locale.c_str(),
-        WriteInto(&display_name, kBufferSize), kBufferSize - 1, &error);
+        base::WriteInto(&display_name, kBufferSize), kBufferSize - 1, &error);
     DCHECK(U_SUCCESS(error));
     display_name.resize(actual_size);
   }
@@ -614,7 +614,7 @@ bool IsValidLocaleSyntax(const std::string& locale) {
   // underscore.
   for (size_t i = 0; i < prefix.size(); i++) {
     char ch = prefix[i];
-    if (!IsAsciiAlpha(ch) && !IsAsciiDigit(ch) && ch != '_')
+    if (!base::IsAsciiAlpha(ch) && !base::IsAsciiDigit(ch) && ch != '_')
       return false;
   }
 
@@ -627,7 +627,7 @@ bool IsValidLocaleSyntax(const std::string& locale) {
         return false;
       break;
     }
-    if (!IsAsciiAlpha(ch))
+    if (!base::IsAsciiAlpha(ch))
       return false;
   }
 
@@ -834,7 +834,7 @@ base::string16 GetPluralStringFUTF16(int message_id, int number) {
   DCHECK_GT(capacity, 1);
   base::string16 result;
   result_unistring.extract(
-      static_cast<UChar*>(WriteInto(&result, capacity)), capacity, err);
+      static_cast<UChar*>(base::WriteInto(&result, capacity)), capacity, err);
   DCHECK(U_SUCCESS(err));
   return result;
 }

@@ -94,11 +94,17 @@ extern "C" {
     "vtrn.u32   d2, d3                         \n"
 
 #define YUV422TORGB_SETUP_REG                                                  \
+    MEMACCESS([kUVToRB])                                                       \
     "vld1.8     {d24}, [%[kUVToRB]]            \n"                             \
+    MEMACCESS([kUVToG])                                                        \
     "vld1.8     {d25}, [%[kUVToG]]             \n"                             \
+    MEMACCESS([kUVBiasBGR])                                                    \
     "vld1.16    {d26[], d27[]}, [%[kUVBiasBGR]]! \n"                           \
+    MEMACCESS([kUVBiasBGR])                                                    \
     "vld1.16    {d8[], d9[]}, [%[kUVBiasBGR]]!   \n"                           \
+    MEMACCESS([kUVBiasBGR])                                                    \
     "vld1.16    {d28[], d29[]}, [%[kUVBiasBGR]]  \n"                           \
+    MEMACCESS([kYToRgb])                                                       \
     "vld1.32    {d30[], d31[]}, [%[kYToRgb]]     \n"
 
 #define YUV422TORGB                                                            \
@@ -1242,25 +1248,6 @@ void UYVYToUVRow_NEON(const uint8* src_uyvy, int stride_uyvy,
     "+r"(pix)           // %4
   :
   : "cc", "memory", "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"  // Clobber List
-  );
-}
-
-// Select G channels from ARGB.  e.g.  GGGGGGGG
-void ARGBToBayerGGRow_NEON(const uint8* src_argb, uint8* dst_bayer,
-                           uint32 /*selector*/, int pix) {
-  asm volatile (
-  "1:                                          \n"
-    MEMACCESS(0)
-    "vld4.8     {d0, d1, d2, d3}, [%0]!        \n"  // load row 8 pixels.
-    "subs       %2, %2, #8                     \n"  // 8 processed per loop
-    MEMACCESS(1)
-    "vst1.8     {d1}, [%1]!                    \n"  // store 8 G's.
-    "bgt        1b                             \n"
-  : "+r"(src_argb),   // %0
-    "+r"(dst_bayer),  // %1
-    "+r"(pix)         // %2
-  :
-  : "cc", "memory", "q0", "q1"  // Clobber List
   );
 }
 

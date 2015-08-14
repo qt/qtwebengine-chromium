@@ -48,7 +48,6 @@
 #include "core/layout/compositing/GraphicsLayerTreeBuilder.h"
 #include "core/layout/compositing/GraphicsLayerUpdater.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
@@ -74,8 +73,9 @@ DeprecatedPaintLayerCompositor::DeprecatedPaintLayerCompositor(LayoutView& layou
     , m_rootShouldAlwaysCompositeDirty(true)
     , m_needsUpdateFixedBackground(false)
     , m_isTrackingPaintInvalidations(false)
-    , m_rootLayerAttachment(RootLayerUnattached)
     , m_inOverlayFullscreenVideo(false)
+    , m_needsUpdateDescendantDependentFlags(false)
+    , m_rootLayerAttachment(RootLayerUnattached)
 {
     updateAcceleratedCompositingSettings();
 }
@@ -169,17 +169,33 @@ static LayoutVideo* findFullscreenVideoLayoutObject(Document& document)
     while (fullscreenElement && fullscreenElement->isFrameOwnerElement()) {
         contentDocument = toHTMLFrameOwnerElement(fullscreenElement)->contentDocument();
         if (!contentDocument)
-            return 0;
+            return nullptr;
         fullscreenElement = Fullscreen::fullscreenElementFrom(*contentDocument);
     }
     // Get the current fullscreen element from the document.
     fullscreenElement = Fullscreen::currentFullScreenElementFrom(*contentDocument);
     if (!isHTMLVideoElement(fullscreenElement))
-        return 0;
+        return nullptr;
     LayoutObject* layoutObject = fullscreenElement->layoutObject();
     if (!layoutObject)
-        return 0;
+        return nullptr;
     return toLayoutVideo(layoutObject);
+}
+
+// The descendant-dependent flags system is badly broken because we clean dirty
+// bits in upward tree walks, which means we need to call updateDescendantDependentFlags
+// at every node in the tree to fully clean all the dirty bits. While we'll in
+// the process of fixing this issue, updateDescendantDependentFlagsForEntireSubtree
+// provides a big hammer for actually cleaning all the dirty bits in a subtree.
+//
+// FIXME: Remove this function once the descendant-dependent flags system keeps
+// its dirty bits scoped to subtrees.
+void updateDescendantDependentFlagsForEntireSubtree(DeprecatedPaintLayer& layer)
+{
+    layer.updateDescendantDependentFlags();
+
+    for (DeprecatedPaintLayer* child = layer.firstChild(); child; child = child->nextSibling())
+        updateDescendantDependentFlagsForEntireSubtree(*child);
 }
 
 void DeprecatedPaintLayerCompositor::updateIfNeededRecursive()
@@ -205,7 +221,11 @@ void DeprecatedPaintLayerCompositor::updateIfNeededRecursive()
     // which asserts that it's not InCompositingUpdate.
     enableCompositingModeIfNeeded();
 
-    rootLayer()->updateDescendantDependentFlagsForEntireSubtree();
+    if (m_needsUpdateDescendantDependentFlags) {
+        updateDescendantDependentFlagsForEntireSubtree(*rootLayer());
+        m_needsUpdateDescendantDependentFlags = false;
+    }
+
     m_layoutView.commitPendingSelection();
 
     lifecycle().advanceTo(DocumentLifecycle::InCompositingUpdate);
@@ -214,7 +234,7 @@ void DeprecatedPaintLayerCompositor::updateIfNeededRecursive()
 
     DocumentAnimations::updateCompositorAnimations(m_layoutView.document());
 
-    m_layoutView.frameView()->updateCompositorScrollAnimations();
+    m_layoutView.frameView()->scrollableArea()->updateCompositorScrollAnimations();
     if (const FrameView::ScrollableAreaSet* animatingScrollableAreas = m_layoutView.frameView()->animatingScrollableAreas()) {
         for (ScrollableArea* scrollableArea : *animatingScrollableAreas)
             scrollableArea->updateCompositorScrollAnimations();
@@ -358,7 +378,7 @@ void DeprecatedPaintLayerCompositor::updateIfNeeded()
         {
             TRACE_EVENT0("blink", "DeprecatedPaintLayerCompositor::updateAfterCompositingChange");
             if (const FrameView::ScrollableAreaSet* scrollableAreas = m_layoutView.frameView()->scrollableAreas()) {
-                for (auto* scrollableArea : *scrollableAreas)
+                for (ScrollableArea* scrollableArea : *scrollableAreas)
                     layersChanged |= scrollableArea->updateAfterCompositingChange();
             }
         }
@@ -432,7 +452,7 @@ bool DeprecatedPaintLayerCompositor::allocateOrClearCompositedDeprecatedPaintLay
         // Need to create a test where a squashed layer pops into compositing. And also to cover all other
         // sorts of compositingState transitions.
         layer->setLostGroupedMapping(false);
-        layer->setGroupedMapping(0);
+        layer->setGroupedMapping(nullptr, DeprecatedPaintLayer::InvalidateLayerAndRemoveFromMapping);
 
         layer->ensureCompositedDeprecatedPaintLayerMapping();
         compositedDeprecatedPaintLayerMappingChanged = true;
@@ -454,7 +474,7 @@ bool DeprecatedPaintLayerCompositor::allocateOrClearCompositedDeprecatedPaintLay
                 DeprecatedPaintLayer* sourceLayer = toLayoutBoxModelObject(layer->layoutObject()->parent())->layer();
                 if (sourceLayer->hasCompositedDeprecatedPaintLayerMapping()) {
                     ASSERT(sourceLayer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->replicaLayer() == layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer());
-                    sourceLayer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->setReplicatedByLayer(0);
+                    sourceLayer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->setReplicatedByLayer(nullptr);
                 }
             }
 
@@ -514,8 +534,8 @@ void DeprecatedPaintLayerCompositor::frameViewDidChangeSize()
 {
     if (m_containerLayer) {
         FrameView* frameView = m_layoutView.frameView();
-        m_containerLayer->setSize(frameView->unscaledVisibleContentSize());
-        m_overflowControlsHostLayer->setSize(frameView->unscaledVisibleContentSize(IncludeScrollbars));
+        m_containerLayer->setSize(frameView->visibleContentSize());
+        m_overflowControlsHostLayer->setSize(frameView->visibleContentSize(IncludeScrollbars));
 
         frameViewDidScroll();
         updateOverflowControlsLayers();
@@ -618,14 +638,14 @@ String DeprecatedPaintLayerCompositor::layerTreeAsText(LayerTreeFlags flags)
 DeprecatedPaintLayerCompositor* DeprecatedPaintLayerCompositor::frameContentsCompositor(LayoutPart* layoutObject)
 {
     if (!layoutObject->node()->isFrameOwnerElement())
-        return 0;
+        return nullptr;
 
     HTMLFrameOwnerElement* element = toHTMLFrameOwnerElement(layoutObject->node());
     if (Document* contentDocument = element->contentDocument()) {
         if (LayoutView* view = contentDocument->layoutView())
             return view->compositor();
     }
-    return 0;
+    return nullptr;
 }
 
 // FIXME: What does this function do? It needs a clearer name.
@@ -741,8 +761,8 @@ void DeprecatedPaintLayerCompositor::updateRootLayerPosition()
     }
     if (m_containerLayer) {
         FrameView* frameView = m_layoutView.frameView();
-        m_containerLayer->setSize(frameView->unscaledVisibleContentSize());
-        m_overflowControlsHostLayer->setSize(frameView->unscaledVisibleContentSize(IncludeScrollbars));
+        m_containerLayer->setSize(frameView->visibleContentSize());
+        m_overflowControlsHostLayer->setSize(frameView->visibleContentSize(IncludeScrollbars));
     }
 }
 
@@ -758,7 +778,8 @@ void DeprecatedPaintLayerCompositor::updateDirectCompositingReasons(DeprecatedPa
 
 bool DeprecatedPaintLayerCompositor::canBeComposited(const DeprecatedPaintLayer* layer) const
 {
-    return m_hasAcceleratedCompositing && layer->isSelfPaintingLayer() && !layer->subtreeIsInvisible() && !layer->layoutObject()->isLayoutFlowThread();
+    const bool hasCompositorAnimation = m_compositingReasonFinder.requiresCompositingForAnimation(*layer->layoutObject()->style());
+    return m_hasAcceleratedCompositing && (hasCompositorAnimation || !layer->subtreeIsInvisible()) && layer->isSelfPaintingLayer() && !layer->layoutObject()->isLayoutFlowThread();
 }
 
 // Return true if the given layer is a stacking context and has compositing child
@@ -826,12 +847,12 @@ GraphicsLayer* DeprecatedPaintLayerCompositor::fixedRootBackgroundLayer() const
     // Get the fixed root background from the LayoutView layer's compositedDeprecatedPaintLayerMapping.
     DeprecatedPaintLayer* viewLayer = m_layoutView.layer();
     if (!viewLayer)
-        return 0;
+        return nullptr;
 
     if (viewLayer->compositingState() == PaintsIntoOwnBacking && viewLayer->compositedDeprecatedPaintLayerMapping()->backgroundLayerPaintsFixedRootBackground())
         return viewLayer->compositedDeprecatedPaintLayerMapping()->backgroundLayer();
 
-    return 0;
+    return nullptr;
 }
 
 static void resetTrackedPaintInvalidationRectsRecursive(GraphicsLayer* graphicsLayer)
@@ -1062,7 +1083,7 @@ void DeprecatedPaintLayerCompositor::attachRootLayer(RootLayerAttachment attachm
         Page* page = frame.page();
         if (!page)
             return;
-        page->chrome().client().attachRootGraphicsLayer(rootGraphicsLayer(), &frame);
+        page->chromeClient().attachRootGraphicsLayer(rootGraphicsLayer(), &frame);
         break;
     }
     case RootLayerAttachedViaEnclosingFrame: {
@@ -1101,7 +1122,7 @@ void DeprecatedPaintLayerCompositor::detachRootLayer()
         Page* page = frame.page();
         if (!page)
             return;
-        page->chrome().client().attachRootGraphicsLayer(0, &frame);
+        page->chromeClient().attachRootGraphicsLayer(0, &frame);
         break;
     }
     case RootLayerUnattached:
@@ -1125,7 +1146,7 @@ void DeprecatedPaintLayerCompositor::attachCompositorTimeline()
 
     WebCompositorAnimationTimeline* compositorTimeline = frame.document() ? frame.document()->timeline().compositorTimeline() : nullptr;
     if (compositorTimeline)
-        page->chrome().client().attachCompositorAnimationTimeline(compositorTimeline, &frame);
+        page->chromeClient().attachCompositorAnimationTimeline(compositorTimeline, &frame);
 }
 
 void DeprecatedPaintLayerCompositor::detachCompositorTimeline()
@@ -1137,7 +1158,7 @@ void DeprecatedPaintLayerCompositor::detachCompositorTimeline()
 
     WebCompositorAnimationTimeline* compositorTimeline = frame.document() ? frame.document()->timeline().compositorTimeline() : nullptr;
     if (compositorTimeline)
-        page->chrome().client().detachCompositorAnimationTimeline(compositorTimeline, &frame);
+        page->chromeClient().detachCompositorAnimationTimeline(compositorTimeline, &frame);
 }
 
 ScrollingCoordinator* DeprecatedPaintLayerCompositor::scrollingCoordinator() const
@@ -1145,14 +1166,14 @@ ScrollingCoordinator* DeprecatedPaintLayerCompositor::scrollingCoordinator() con
     if (Page* page = this->page())
         return page->scrollingCoordinator();
 
-    return 0;
+    return nullptr;
 }
 
 GraphicsLayerFactory* DeprecatedPaintLayerCompositor::graphicsLayerFactory() const
 {
     if (Page* page = this->page())
-        return page->chrome().client().graphicsLayerFactory();
-    return 0;
+        return page->chromeClient().graphicsLayerFactory();
+    return nullptr;
 }
 
 Page* DeprecatedPaintLayerCompositor::page() const

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "config.h"
+
 #include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
@@ -14,22 +15,19 @@
 #include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
+namespace blink {
+
 using namespace HTMLNames;
 
-namespace {
-
 class AffectedByFocusTest : public ::testing::Test {
-
 protected:
-
     struct ElementResult {
         const blink::HTMLQualifiedName tag;
         bool affectedBy;
         bool childrenOrSiblingsAffectedBy;
     };
 
-    virtual void SetUp() override;
+    void SetUp() override;
 
     HTMLDocument& document() const { return *m_document; }
 
@@ -53,7 +51,7 @@ void AffectedByFocusTest::SetUp()
 void AffectedByFocusTest::setHtmlInnerHTML(const char* htmlContent)
 {
     document().documentElement()->setInnerHTML(String::fromUTF8(htmlContent), ASSERT_NO_EXCEPTION);
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 }
 
 void AffectedByFocusTest::checkElements(ElementResult expected[], unsigned expectedCount) const
@@ -208,12 +206,12 @@ TEST_F(AffectedByFocusTest, AffectedByFocusUpdate)
         "<div></div>"
         "</div>");
 
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned startCount = document().styleEngine().resolverAccessCount();
 
     document().getElementById("d")->focus();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned accessCount = document().styleEngine().resolverAccessCount() - startCount;
 
@@ -239,12 +237,12 @@ TEST_F(AffectedByFocusTest, ChildrenOrSiblingsAffectedByFocusUpdate)
         "<div></div>"
         "</div>");
 
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned startCount = document().styleEngine().resolverAccessCount();
 
     document().getElementById("d")->focus();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned accessCount = document().styleEngine().resolverAccessCount() - startCount;
 
@@ -270,12 +268,12 @@ TEST_F(AffectedByFocusTest, InvalidationSetFocusUpdate)
         "<div class='a'></div>"
         "</div>");
 
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned startCount = document().styleEngine().resolverAccessCount();
 
     document().getElementById("d")->focus();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned accessCount = document().styleEngine().resolverAccessCount() - startCount;
 
@@ -302,16 +300,16 @@ TEST_F(AffectedByFocusTest, NoInvalidationSetFocusUpdate)
         "<div class='a'></div>"
         "</div>");
 
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned startCount = document().styleEngine().resolverAccessCount();
 
     document().getElementById("d")->focus();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     unsigned accessCount = document().styleEngine().resolverAccessCount() - startCount;
 
     ASSERT_EQ(1U, accessCount);
 }
 
-} // namespace
+} // namespace blink

@@ -1379,26 +1379,23 @@ static void ProcessBlock(AecCore* aec) {
 #endif
 }
 
-int WebRtcAec_CreateAec(AecCore** aecInst) {
+AecCore* WebRtcAec_CreateAec() {
   int i;
   AecCore* aec = malloc(sizeof(AecCore));
-  *aecInst = aec;
-  if (aec == NULL) {
-    return -1;
+  if (!aec) {
+    return NULL;
   }
 
   aec->nearFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->nearFrBuf) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
 
   aec->outFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->outFrBuf) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
 
   for (i = 0; i < NUM_HIGH_BANDS_MAX; ++i) {
@@ -1406,15 +1403,13 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
                                              sizeof(float));
     if (!aec->nearFrBufH[i]) {
       WebRtcAec_FreeAec(aec);
-      aec = NULL;
-      return -1;
+      return NULL;
     }
     aec->outFrBufH[i] = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN,
                                             sizeof(float));
     if (!aec->outFrBufH[i]) {
       WebRtcAec_FreeAec(aec);
-      aec = NULL;
-      return -1;
+      return NULL;
     }
   }
 
@@ -1423,15 +1418,13 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
       WebRtc_CreateBuffer(kBufSizePartitions, sizeof(float) * 2 * PART_LEN1);
   if (!aec->far_buf) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
   aec->far_buf_windowed =
       WebRtc_CreateBuffer(kBufSizePartitions, sizeof(float) * 2 * PART_LEN1);
   if (!aec->far_buf_windowed) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
 #ifdef WEBRTC_AEC_DEBUG_DUMP
   aec->instance_index = webrtc_aec_instance_count;
@@ -1439,8 +1432,7 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
       WebRtc_CreateBuffer(kBufSizePartitions, sizeof(float) * PART_LEN);
   if (!aec->far_time_buf) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
   aec->farFile = aec->nearFile = aec->outFile = aec->outLinearFile = NULL;
   aec->debug_dump_count = 0;
@@ -1449,8 +1441,7 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
       WebRtc_CreateDelayEstimatorFarend(PART_LEN1, kHistorySizeBlocks);
   if (aec->delay_estimator_farend == NULL) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
   // We create the delay_estimator with the same amount of maximum lookahead as
   // the delay history size (kHistorySizeBlocks) for symmetry reasons.
@@ -1458,16 +1449,15 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
       aec->delay_estimator_farend, kHistorySizeBlocks);
   if (aec->delay_estimator == NULL) {
     WebRtcAec_FreeAec(aec);
-    aec = NULL;
-    return -1;
+    return NULL;
   }
 #ifdef WEBRTC_ANDROID
-  aec->reported_delay_enabled = 0;  // DA-AEC enabled by default.
+  aec->delay_agnostic_enabled = 1;  // DA-AEC enabled by default.
   // DA-AEC assumes the system is causal from the beginning and will self adjust
   // the lookahead when shifting is required.
   WebRtc_set_lookahead(aec->delay_estimator, 0);
 #else
-  aec->reported_delay_enabled = 1;
+  aec->delay_agnostic_enabled = 0;
   WebRtc_set_lookahead(aec->delay_estimator, kLookaheadBlocks);
 #endif
   aec->extended_filter_enabled = 0;
@@ -1490,9 +1480,9 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
   WebRtcAec_InitAec_mips();
 #endif
 
-#if defined(WEBRTC_ARCH_ARM_NEON)
+#if defined(WEBRTC_HAS_NEON)
   WebRtcAec_InitAec_neon();
-#elif defined(WEBRTC_DETECT_ARM_NEON)
+#elif defined(WEBRTC_DETECT_NEON)
   if ((WebRtc_GetCPUFeaturesARM() & kCPUFeatureNEON) != 0) {
     WebRtcAec_InitAec_neon();
   }
@@ -1500,7 +1490,7 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
 
   aec_rdft_init();
 
-  return 0;
+  return aec;
 }
 
 void WebRtcAec_FreeAec(AecCore* aec) {
@@ -1796,7 +1786,7 @@ void WebRtcAec_ProcessFrames(AecCore* aec,
       WebRtcAec_MoveFarReadPtr(aec, -(aec->mult + 1));
     }
 
-    if (aec->reported_delay_enabled) {
+    if (!aec->delay_agnostic_enabled) {
       // 2 a) Compensate for a possible change in the system delay.
 
       // TODO(bjornv): Investigate how we should round the delay difference;
@@ -1910,28 +1900,28 @@ void WebRtcAec_SetConfigCore(AecCore* self,
   }
   // Turn on delay logging if it is either set explicitly or if delay agnostic
   // AEC is enabled (which requires delay estimates).
-  self->delay_logging_enabled = delay_logging || !self->reported_delay_enabled;
+  self->delay_logging_enabled = delay_logging || self->delay_agnostic_enabled;
   if (self->delay_logging_enabled) {
     memset(self->delay_histogram, 0, sizeof(self->delay_histogram));
   }
 }
 
-void WebRtcAec_enable_reported_delay(AecCore* self, int enable) {
-  self->reported_delay_enabled = enable;
+void WebRtcAec_enable_delay_agnostic(AecCore* self, int enable) {
+  self->delay_agnostic_enabled = enable;
 }
 
-int WebRtcAec_reported_delay_enabled(AecCore* self) {
-  return self->reported_delay_enabled;
+int WebRtcAec_delay_agnostic_enabled(AecCore* self) {
+  return self->delay_agnostic_enabled;
 }
 
-void WebRtcAec_enable_delay_correction(AecCore* self, int enable) {
+void WebRtcAec_enable_extended_filter(AecCore* self, int enable) {
   self->extended_filter_enabled = enable;
   self->num_partitions = enable ? kExtendedNumPartitions : kNormalNumPartitions;
   // Update the delay estimator with filter length.  See InitAEC() for details.
   WebRtc_set_allowed_offset(self->delay_estimator, self->num_partitions / 2);
 }
 
-int WebRtcAec_delay_correction_enabled(AecCore* self) {
+int WebRtcAec_extended_filter_enabled(AecCore* self) {
   return self->extended_filter_enabled;
 }
 

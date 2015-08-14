@@ -43,7 +43,7 @@ Constructor
 # FIXME: remove [ConstructorCallWith=Document], as can instead use
 # [ConstructorCallWith=ExecutionContext] + toDocument(executionContext)
 ConstructorCallWith=ExecutionContext|ScriptState|Document
-Custom=|Getter|Setter|LegacyCallAsFunction|VisitDOMWrapper|PropertyGetter|PropertyEnumerator|PropertyQuery|CallEpilogue
+Custom=|Getter|Setter|LegacyCallAsFunction|VisitDOMWrapper|PropertyGetter|PropertyEnumerator|PropertyQuery|CallPrologue|CallEpilogue
 CustomConstructor
 CustomElementCallbacks
 Default=Undefined
@@ -54,7 +54,6 @@ DoNotCheckSecurity=|Setter
 DoNotCheckSignature
 DoNotExposeJSAccessors
 EnforceRange
-EventConstructor
 ExposeJSAccessors
 Exposed=*
 GarbageCollected
@@ -62,7 +61,6 @@ Global=|*
 Immutable
 ImplementedAs=*
 ImplementedInPrivateScript
-InitializedByEventConstructor
 Iterable
 LegacyInterfaceTypeChecking
 LegacyTreatAsPartialInterface
@@ -81,6 +79,7 @@ OverrideBuiltins
 PartialInterfaceImplementedAs=*
 PermissiveDictionaryConversion
 PerWorldBindings
+PostMessage
 PrimaryGlobal=|*
 PutForwards=*
 RaisesException=|Getter|Setter|Constructor

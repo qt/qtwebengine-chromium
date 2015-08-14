@@ -58,11 +58,11 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
     public:
         static void loadResourceSynchronously(Document&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         static PassRefPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
-        virtual ~DocumentThreadableLoader();
+        ~DocumentThreadableLoader() override;
 
-        virtual void overrideTimeout(unsigned long timeout) override;
+        void overrideTimeout(unsigned long timeout) override;
 
-        virtual void cancel() override;
+        void cancel() override;
         void setDefersLoading(bool);
 
     private:
@@ -82,6 +82,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
         void dataReceived(Resource*, const char* data, unsigned dataLength) override;
         void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) override;
         void dataDownloaded(Resource*, int) override;
+        void didReceiveResourceTiming(Resource*, const ResourceTimingInfo&) override;
 
         void cancelWithError(const ResourceError&);
 
@@ -140,6 +141,10 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
         bool m_sameOriginRequest;
         // Set to true if the current request is cross-origin and not simple.
         bool m_crossOriginNonSimpleRequest;
+
+        // Set to true when the response data is given to a data consumer
+        // handle.
+        bool m_isUsingDataConsumerHandle;
 
         const bool m_async;
 

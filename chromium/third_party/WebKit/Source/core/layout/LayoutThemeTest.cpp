@@ -9,21 +9,18 @@
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLElement.h"
-#include "core/style/ComputedStyle.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
+#include "core/style/ComputedStyle.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/graphics/Color.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class LayoutThemeTest : public ::testing::Test {
-
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
     HTMLDocument& document() const { return *m_document; }
     void setHtmlInnerHTML(const char* htmlContent);
 
@@ -42,7 +39,7 @@ void LayoutThemeTest::SetUp()
 void LayoutThemeTest::setHtmlInnerHTML(const char* htmlContent)
 {
     document().documentElement()->setInnerHTML(String::fromUTF8(htmlContent), ASSERT_NO_EXCEPTION);
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 }
 
 inline Color outlineColor(Element* element)
@@ -73,7 +70,7 @@ TEST_F(LayoutThemeTest, ChangeFocusRingColor)
     document().page()->focusController().setActive(true);
     document().page()->focusController().setFocused(true);
     span->focus();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     // Checking focused style.
     EXPECT_NE(BNONE, outlineStyle(span));
@@ -82,11 +79,11 @@ TEST_F(LayoutThemeTest, ChangeFocusRingColor)
     // Change focus ring color.
     LayoutTheme::theme().setCustomFocusRingColor(customColor);
     Page::platformColorsChanged();
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     // Check that the focus ring color is updated.
     EXPECT_NE(BNONE, outlineStyle(span));
     EXPECT_EQ(customColor, outlineColor(span));
 }
 
-}
+} // namespace blink

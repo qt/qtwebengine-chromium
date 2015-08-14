@@ -37,6 +37,7 @@ class GrContext;
 class SkBitmap;
 struct FrameMsg_NewFrame_Params;
 struct ViewMsg_New_Params;
+struct ViewMsg_UpdateScrollbarTheme_Params;
 struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
@@ -47,7 +48,6 @@ class WebMediaStreamCenterClient;
 }
 
 namespace base {
-class MessageLoopProxy;
 class SingleThreadTaskRunner;
 class Thread;
 }
@@ -103,6 +103,7 @@ class NetInfoDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
+class RasterWorkerPool;
 class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
@@ -155,7 +156,7 @@ class CONTENT_EXPORT RenderThreadImpl
   IPC::SyncChannel* GetChannel() override;
   std::string GetLocale() override;
   IPC::SyncMessageFilter* GetSyncMessageFilter() override;
-  scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetIOMessageLoopProxy() override;
   void AddRoute(int32 routing_id, IPC::Listener* listener) override;
   void RemoveRoute(int32 routing_id) override;
   int GenerateRoutingID() override;
@@ -184,7 +185,6 @@ class CONTENT_EXPORT RenderThreadImpl
   ServiceRegistry* GetServiceRegistry() override;
 
   // CompositorDependencies implementation.
-  bool IsImplSidePaintingEnabled() override;
   bool IsGpuRasterizationForced() override;
   bool IsGpuRasterizationEnabled() override;
   int GetGpuRasterizationMSAASampleCount() override;
@@ -193,7 +193,6 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsZeroCopyEnabled() override;
   bool IsOneCopyEnabled() override;
   bool IsElasticOverscrollEnabled() override;
-  bool UseSingleThreadScheduler() override;
   uint32 GetImageTextureTarget() override;
   scoped_refptr<base::SingleThreadTaskRunner>
   GetCompositorMainThreadTaskRunner() override;
@@ -245,8 +244,8 @@ class CONTENT_EXPORT RenderThreadImpl
   }
 
   // Will be null if threaded compositing has not been enabled.
-  scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy() const {
-    return compositor_message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner() const {
+    return compositor_task_runner_;
   }
 
   AppCacheDispatcher* appcache_dispatcher() const {
@@ -310,15 +309,18 @@ class CONTENT_EXPORT RenderThreadImpl
   // has been lost.
   GpuChannelHost* GetGpuChannel();
 
-  // Returns a MessageLoopProxy instance corresponding to the message loop
+  // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which file operations should be run. Must be called
   // on the renderer's main thread.
-  scoped_refptr<base::MessageLoopProxy> GetFileThreadMessageLoopProxy();
+  scoped_refptr<base::SingleThreadTaskRunner> GetFileThreadMessageLoopProxy();
 
   // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which media operations should be run. Must be called
   // on the renderer's main thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetMediaThreadTaskRunner();
+
+  // A SequencedTaskRunner instance that runs tasks on the raster worker pool.
+  base::SequencedTaskRunner* GetWorkerSequencedTaskRunner();
 
   // Causes the idle handler to skip sending idle notifications
   // on the two next scheduled calls, so idle notifications are
@@ -451,7 +453,6 @@ class CONTENT_EXPORT RenderThreadImpl
 #endif
   void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
-  void OnTempCrashWithData(const GURL& data);
   void OnUpdateTimezone(const std::string& zoneId);
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
@@ -459,17 +460,16 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnSetWebKitSharedTimersSuspended(bool suspend);
 #endif
 #if defined(OS_MACOSX)
-  void OnUpdateScrollbarTheme(float initial_button_delay,
-                              float autoscroll_button_delay,
-                              bool jump_on_track_click,
-                              blink::ScrollerStyle preferred_scroller_style,
-                              bool redraw);
+  void OnUpdateScrollbarTheme(
+      const ViewMsg_UpdateScrollbarTheme_Params& params);
 #endif
   void OnCreateNewSharedWorker(
       const WorkerProcessMsg_CreateWorker_Params& params);
   bool RendererIsHidden() const;
   void OnRendererHidden();
   void OnRendererVisible();
+
+  void ReleaseFreeMemory();
 
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateOffscreenContext3d();
 
@@ -561,12 +561,12 @@ class CONTENT_EXPORT RenderThreadImpl
   // Thread for running multimedia operations (e.g., video decoding).
   scoped_ptr<base::Thread> media_thread_;
 
-  // Will point to appropriate MessageLoopProxy after initialization,
+  // Will point to appropriate task runner after initialization,
   // regardless of whether |compositor_thread_| is overriden.
-  scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
 
-  // Threads used by compositor for rasterization.
-  ScopedVector<base::SimpleThread> compositor_raster_threads_;
+  // Pool of workers used for raster operations (e.g., tile rasterization).
+  scoped_refptr<RasterWorkerPool> raster_worker_pool_;
 
   base::CancelableCallback<void(const IPC::Message&)> main_input_callback_;
   scoped_refptr<IPC::MessageFilter> input_event_filter_;
@@ -576,7 +576,7 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<cc_blink::ContextProviderWebContext>
       shared_main_thread_contexts_;
 
-  ObserverList<RenderProcessObserver> observers_;
+  base::ObserverList<RenderProcessObserver> observers_;
 
   scoped_refptr<ContextProviderCommandBuffer> gpu_va_context_provider_;
 
@@ -598,13 +598,10 @@ class CONTENT_EXPORT RenderThreadImpl
 
   scoped_refptr<ResourceSchedulingFilter> resource_scheduling_filter_;
 
-  scoped_ptr<cc::TaskGraphRunner> compositor_task_graph_runner_;
-
   // Compositor settings.
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
   int gpu_rasterization_msaa_sample_count_;
-  bool is_impl_side_painting_enabled_;
   bool is_lcd_text_enabled_;
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;

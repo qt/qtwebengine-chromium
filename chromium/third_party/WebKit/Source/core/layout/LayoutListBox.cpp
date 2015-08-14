@@ -45,12 +45,12 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutText.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextRunConstructor.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
@@ -86,9 +86,9 @@ inline HTMLSelectElement* LayoutListBox::selectElement() const
     return toHTMLSelectElement(node());
 }
 
-int LayoutListBox::size() const
+unsigned LayoutListBox::size() const
 {
-    int specifiedSize = selectElement()->size();
+    unsigned specifiedSize = selectElement()->size();
     if (specifiedSize >= 1)
         return specifiedSize;
 

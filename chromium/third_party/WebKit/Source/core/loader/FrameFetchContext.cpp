@@ -56,8 +56,8 @@
 #include "core/svg/graphics/SVGImageChromeClient.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
-#include "core/timing/ResourceTimingInfo.h"
 #include "platform/Logging.h"
+#include "platform/network/ResourceTimingInfo.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
@@ -197,7 +197,7 @@ ResourceRequestCachePolicy FrameFetchContext::resourceRequestCachePolicy(const R
 // cannot see imported documents.
 inline DocumentLoader* FrameFetchContext::ensureLoaderForNotifications()
 {
-    return m_documentLoader ? m_documentLoader : frame()->loader().documentLoader();
+    return m_documentLoader ? m_documentLoader.get() : frame()->loader().documentLoader();
 }
 
 void FrameFetchContext::dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority loadPriority, int intraPriorityValue)
@@ -209,7 +209,7 @@ void FrameFetchContext::dispatchWillSendRequest(unsigned long identifier, Resour
 {
     frame()->loader().applyUserAgent(request);
     frame()->loader().client()->dispatchWillSendRequest(m_documentLoader, identifier, request, redirectResponse);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorSendRequestEvent::data(identifier, frame(), request));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorSendRequestEvent::data(identifier, frame(), request));
     InspectorInstrumentation::willSendRequest(frame(), identifier, ensureLoaderForNotifications(), request, redirectResponse, initiatorInfo);
 }
 
@@ -222,12 +222,16 @@ void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, con
 {
     MixedContentChecker::checkMixedPrivatePublic(frame(), response.remoteIPAddress());
     LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), frame()->document());
-    if (m_documentLoader == frame()->loader().provisionalDocumentLoader())
-        handleAcceptClientHintsHeader(response.httpHeaderField("accept-ch"), m_documentLoader->clientHintsPreferences());
+    if (m_documentLoader == frame()->loader().provisionalDocumentLoader()) {
+        ResourceFetcher* fetcher = nullptr;
+        if (frame()->document())
+            fetcher = frame()->document()->fetcher();
+        handleAcceptClientHintsHeader(response.httpHeaderField("accept-ch"), m_documentLoader->clientHintsPreferences(), fetcher);
+    }
 
     frame()->loader().progress().incrementProgress(identifier, response);
     frame()->loader().client()->dispatchDidReceiveResponse(m_documentLoader, identifier, response);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, frame(), response));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, frame(), response));
     DocumentLoader* documentLoader = ensureLoaderForNotifications();
     InspectorInstrumentation::didReceiveResourceResponse(frame(), identifier, documentLoader, response, resourceLoader);
     // It is essential that inspector gets resource response BEFORE console.
@@ -237,14 +241,14 @@ void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, con
 void FrameFetchContext::dispatchDidReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
     frame()->loader().progress().incrementProgress(identifier, dataLength);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
     InspectorInstrumentation::didReceiveData(frame(), identifier, data, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidDownloadData(unsigned long identifier, int dataLength, int encodedDataLength)
 {
     frame()->loader().progress().incrementProgress(identifier, dataLength);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
     InspectorInstrumentation::didReceiveData(frame(), identifier, 0, dataLength, encodedDataLength);
 }
 
@@ -253,7 +257,7 @@ void FrameFetchContext::dispatchDidFinishLoading(unsigned long identifier, doubl
     frame()->loader().progress().completeProgress(identifier);
     frame()->loader().client()->dispatchDidFinishLoading(m_documentLoader, identifier);
 
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
     InspectorInstrumentation::didFinishLoading(frame(), identifier, finishTime, encodedDataLength);
 }
 
@@ -261,7 +265,7 @@ void FrameFetchContext::dispatchDidFail(unsigned long identifier, const Resource
 {
     frame()->loader().progress().completeProgress(identifier);
     frame()->loader().client()->dispatchDidFinishLoading(m_documentLoader, identifier);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, 0, true));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, 0, true));
     InspectorInstrumentation::didFailLoading(frame(), identifier, error);
     // Notification to FrameConsole should come AFTER InspectorInstrumentation call, DevTools front-end relies on this.
     if (!isInternalRequest)
@@ -305,12 +309,12 @@ void FrameFetchContext::didLoadResource()
     frame()->loader().checkCompleted();
 }
 
-void FrameFetchContext::addResourceTiming(ResourceTimingInfo* info, bool isMainResource)
+void FrameFetchContext::addResourceTiming(const ResourceTimingInfo& info)
 {
-    Document* initiatorDocument = m_document && isMainResource ? m_document->parentDocument() : m_document.get();
+    Document* initiatorDocument = m_document && info.isMainResource() ? m_document->parentDocument() : m_document.get();
     if (!initiatorDocument || !initiatorDocument->domWindow())
         return;
-    DOMWindowPerformance::performance(*initiatorDocument->domWindow())->addResourceTiming(*info, initiatorDocument);
+    DOMWindowPerformance::performance(*initiatorDocument->domWindow())->addResourceTiming(info);
 }
 
 bool FrameFetchContext::allowImage(bool imagesEnabled, const KURL& url) const
@@ -357,6 +361,7 @@ bool FrameFetchContext::canRequest(Resource::Type type, const ResourceRequest& r
     case Resource::Raw:
     case Resource::LinkPrefetch:
     case Resource::LinkSubresource:
+    case Resource::LinkPreload:
     case Resource::TextTrack:
     case Resource::ImportResource:
     case Resource::Media:
@@ -435,6 +440,7 @@ bool FrameFetchContext::canRequest(Resource::Type type, const ResourceRequest& r
     case Resource::Raw:
     case Resource::LinkPrefetch:
     case Resource::LinkSubresource:
+    case Resource::LinkPreload:
         break;
     case Resource::Media:
     case Resource::TextTrack:
@@ -550,8 +556,12 @@ bool FrameFetchContext::updateTimingInfoForIFrameNavigation(ResourceTimingInfo* 
     // FIXME: Resource timing is broken when the parent is a remote frame.
     if (!frame()->deprecatedLocalOwner() || frame()->deprecatedLocalOwner()->loadedNonEmptyDocument())
         return false;
-    info->setInitiatorType(frame()->deprecatedLocalOwner()->localName());
     frame()->deprecatedLocalOwner()->didLoadNonEmptyDocument();
+    // Do not report iframe navigation that restored from history, since its
+    // location may have been changed after initial navigation.
+    if (frame()->loader().loadType() == FrameLoadTypeInitialHistoryLoad)
+        return false;
+    info->setInitiatorType(frame()->deprecatedLocalOwner()->localName());
     return true;
 }
 
@@ -571,11 +581,6 @@ SecurityOrigin* FrameFetchContext::securityOrigin() const
     return m_document ? m_document->securityOrigin() : nullptr;
 }
 
-String FrameFetchContext::charset() const
-{
-    return m_document ? m_document->charset().string() : String();
-}
-
 void FrameFetchContext::upgradeInsecureRequest(FetchRequest& fetchRequest)
 {
     KURL url = fetchRequest.resourceRequest().url();
@@ -583,7 +588,7 @@ void FrameFetchContext::upgradeInsecureRequest(FetchRequest& fetchRequest)
     // Tack an 'HTTPS' header to outgoing navigational requests, as described in
     // https://w3c.github.io/webappsec/specs/upgrade/#feature-detect
     if (fetchRequest.resourceRequest().frameType() != WebURLRequest::FrameTypeNone)
-        fetchRequest.mutableResourceRequest().addHTTPHeaderField("HTTPS", "1");
+        fetchRequest.mutableResourceRequest().addHTTPHeaderField("Upgrade-Insecure-Requests", "1");
 
     if (m_document && m_document->insecureRequestsPolicy() == SecurityContext::InsecureRequestsUpgrade && url.protocolIs("http")) {
         ASSERT(m_document->insecureNavigationsToUpgrade());
@@ -614,16 +619,20 @@ void FrameFetchContext::addClientHintsIfNecessary(FetchRequest& fetchRequest)
         return;
 
     bool shouldSendDPR = m_document->clientHintsPreferences().shouldSendDPR() || fetchRequest.clientHintsPreferences().shouldSendDPR();
-    bool shouldSendRW = m_document->clientHintsPreferences().shouldSendRW() || fetchRequest.clientHintsPreferences().shouldSendRW();
+    bool shouldSendResourceWidth = m_document->clientHintsPreferences().shouldSendResourceWidth() || fetchRequest.clientHintsPreferences().shouldSendResourceWidth();
+    bool shouldSendViewportWidth = m_document->clientHintsPreferences().shouldSendViewportWidth() || fetchRequest.clientHintsPreferences().shouldSendViewportWidth();
 
     if (shouldSendDPR)
         fetchRequest.mutableResourceRequest().addHTTPHeaderField("DPR", AtomicString(String::number(m_document->devicePixelRatio())));
 
-    if (shouldSendRW && frame()->view()) {
+    if (shouldSendResourceWidth) {
         FetchRequest::ResourceWidth resourceWidth = fetchRequest.resourceWidth();
-        float usedResourceWidth = resourceWidth.isSet ? resourceWidth.width : frame()->view()->viewportWidth();
-        fetchRequest.mutableResourceRequest().addHTTPHeaderField("RW", AtomicString(String::number(usedResourceWidth)));
+        if (resourceWidth.isSet)
+            fetchRequest.mutableResourceRequest().addHTTPHeaderField("Width", AtomicString(String::number(ceil(resourceWidth.width))));
     }
+
+    if (shouldSendViewportWidth && frame()->view())
+        fetchRequest.mutableResourceRequest().addHTTPHeaderField("Viewport-Width", AtomicString(String::number(frame()->view()->viewportWidth())));
 }
 
 void FrameFetchContext::addCSPHeaderIfNecessary(Resource::Type type, FetchRequest& fetchRequest)
@@ -636,9 +645,30 @@ void FrameFetchContext::addCSPHeaderIfNecessary(Resource::Type type, FetchReques
         fetchRequest.mutableResourceRequest().addHTTPHeaderField("CSP", "active");
 }
 
+void FrameFetchContext::countClientHintsDPR()
+{
+    UseCounter::count(frame(), UseCounter::ClientHintsDPR);
+}
+
+void FrameFetchContext::countClientHintsResourceWidth()
+{
+    UseCounter::count(frame(), UseCounter::ClientHintsResourceWidth);
+}
+
+void FrameFetchContext::countClientHintsViewportWidth()
+{
+    UseCounter::count(frame(), UseCounter::ClientHintsViewportWidth);
+}
+
+bool FrameFetchContext::isLowPriorityIframe() const
+{
+    return !frame()->isMainFrame() && frame()->settings() && frame()->settings()->lowPriorityIframes();
+}
+
 DEFINE_TRACE(FrameFetchContext)
 {
     visitor->trace(m_document);
+    visitor->trace(m_documentLoader);
     FetchContext::trace(visitor);
 }
 

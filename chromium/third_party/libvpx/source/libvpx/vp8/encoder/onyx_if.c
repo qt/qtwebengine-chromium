@@ -587,7 +587,8 @@ static void cyclic_background_refresh(VP8_COMP *cpi, int Q, int lf_adjustment)
       // Turn-off under certain conditions (i.e., away from key frame, and if
       // we are at good quality (low Q) and most of the blocks were skipped-encoded
       // in previous frame.
-      if (Q >= 100) {
+      int qp_thresh = (cpi->oxcf.screen_content_mode == 2) ? 80 : 100;
+      if (Q >= qp_thresh) {
         cpi->cyclic_refresh_mode_max_mbs_perframe =
             (cpi->common.mb_rows * cpi->common.mb_cols) / 10;
       } else if (cpi->frames_since_key > 250 &&
@@ -2011,6 +2012,8 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     cpi->source_alt_ref_active = 0;
     cpi->common.refresh_alt_ref_frame = 0;
 
+    cpi->force_maxqp = 0;
+
     cpi->b_calculate_psnr = CONFIG_INTERNAL_STATS;
 #if CONFIG_INTERNAL_STATS
     cpi->b_calculate_ssimg = 0;
@@ -2128,7 +2131,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
 #endif
 
     cpi->fn_ptr[BLOCK_16X16].sdf            = vpx_sad16x16;
-    cpi->fn_ptr[BLOCK_16X16].vf             = vp8_variance16x16;
+    cpi->fn_ptr[BLOCK_16X16].vf             = vpx_variance16x16;
     cpi->fn_ptr[BLOCK_16X16].svf            = vp8_sub_pixel_variance16x16;
     cpi->fn_ptr[BLOCK_16X16].svf_halfpix_h  = vp8_variance_halfpixvar16x16_h;
     cpi->fn_ptr[BLOCK_16X16].svf_halfpix_v  = vp8_variance_halfpixvar16x16_v;
@@ -2138,7 +2141,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     cpi->fn_ptr[BLOCK_16X16].sdx4df         = vpx_sad16x16x4d;
 
     cpi->fn_ptr[BLOCK_16X8].sdf            = vpx_sad16x8;
-    cpi->fn_ptr[BLOCK_16X8].vf             = vp8_variance16x8;
+    cpi->fn_ptr[BLOCK_16X8].vf             = vpx_variance16x8;
     cpi->fn_ptr[BLOCK_16X8].svf            = vp8_sub_pixel_variance16x8;
     cpi->fn_ptr[BLOCK_16X8].svf_halfpix_h  = NULL;
     cpi->fn_ptr[BLOCK_16X8].svf_halfpix_v  = NULL;
@@ -2148,7 +2151,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     cpi->fn_ptr[BLOCK_16X8].sdx4df         = vpx_sad16x8x4d;
 
     cpi->fn_ptr[BLOCK_8X16].sdf            = vpx_sad8x16;
-    cpi->fn_ptr[BLOCK_8X16].vf             = vp8_variance8x16;
+    cpi->fn_ptr[BLOCK_8X16].vf             = vpx_variance8x16;
     cpi->fn_ptr[BLOCK_8X16].svf            = vp8_sub_pixel_variance8x16;
     cpi->fn_ptr[BLOCK_8X16].svf_halfpix_h  = NULL;
     cpi->fn_ptr[BLOCK_8X16].svf_halfpix_v  = NULL;
@@ -2158,7 +2161,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     cpi->fn_ptr[BLOCK_8X16].sdx4df         = vpx_sad8x16x4d;
 
     cpi->fn_ptr[BLOCK_8X8].sdf            = vpx_sad8x8;
-    cpi->fn_ptr[BLOCK_8X8].vf             = vp8_variance8x8;
+    cpi->fn_ptr[BLOCK_8X8].vf             = vpx_variance8x8;
     cpi->fn_ptr[BLOCK_8X8].svf            = vp8_sub_pixel_variance8x8;
     cpi->fn_ptr[BLOCK_8X8].svf_halfpix_h  = NULL;
     cpi->fn_ptr[BLOCK_8X8].svf_halfpix_v  = NULL;
@@ -2168,7 +2171,7 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     cpi->fn_ptr[BLOCK_8X8].sdx4df         = vpx_sad8x8x4d;
 
     cpi->fn_ptr[BLOCK_4X4].sdf            = vpx_sad4x4;
-    cpi->fn_ptr[BLOCK_4X4].vf             = vp8_variance4x4;
+    cpi->fn_ptr[BLOCK_4X4].vf             = vpx_variance4x4;
     cpi->fn_ptr[BLOCK_4X4].svf            = vp8_sub_pixel_variance4x4;
     cpi->fn_ptr[BLOCK_4X4].svf_halfpix_h  = NULL;
     cpi->fn_ptr[BLOCK_4X4].svf_halfpix_v  = NULL;
@@ -2555,7 +2558,7 @@ static uint64_t calc_plane_error(unsigned char *orig, int orig_stride,
         {
             unsigned int sse;
 
-            vp8_mse16x16(orig + col, orig_stride,
+            vpx_mse16x16(orig + col, orig_stride,
                                             recon + col, recon_stride,
                                             &sse);
             total_sse += sse;
@@ -3381,7 +3384,7 @@ static int measure_square_diff_partial(YV12_BUFFER_CONFIG *source,
                 int index = block_index_row + (j >> 4);
                 if (cpi->consec_zero_last[index] >= min_consec_zero_last) {
                   unsigned int sse;
-                  Total += vp8_mse16x16(src + j,
+                  Total += vpx_mse16x16(src + j,
                                         source->y_stride,
                                         dst + j, dest->y_stride,
                                         &sse);
@@ -3445,7 +3448,7 @@ static void process_denoiser_mode_change(VP8_COMP *cpi) {
       int index = block_index_row + (j >> 4);
       if (cpi->consec_zero_last[index] >= min_consec_zero_last) {
         unsigned int sse;
-        const unsigned int var = vp8_variance16x16(src + j,
+        const unsigned int var = vpx_variance16x16(src + j,
                                                    ystride,
                                                    dst + j,
                                                    ystride,
@@ -3455,7 +3458,7 @@ static void process_denoiser_mode_change(VP8_COMP *cpi) {
         // is small (to avoid effects from lighting change).
         if ((sse - var) < 128) {
           unsigned int sse2;
-          const unsigned int act = vp8_variance16x16(src + j,
+          const unsigned int act = vpx_variance16x16(src + j,
                                                      ystride,
                                                      const_source,
                                                      0,
@@ -4184,7 +4187,10 @@ static void encode_frame_to_data_rate
     */
     if (cpi->cyclic_refresh_mode_enabled)
     {
-      if (cpi->current_layer==0)
+      // Special case for screen_content_mode with golden frame updates.
+      int disable_cr_gf = (cpi->oxcf.screen_content_mode == 2 &&
+                           cm->refresh_golden_frame);
+      if (cpi->current_layer == 0 && cpi->force_maxqp == 0 && !disable_cr_gf)
         cyclic_background_refresh(cpi, Q, 0);
       else
         disable_segmentation(cpi);
@@ -4405,6 +4411,11 @@ static void encode_frame_to_data_rate
 #else
         /* transform / motion compensation build reconstruction frame */
         vp8_encode_frame(cpi);
+
+        if (cpi->oxcf.screen_content_mode == 2) {
+          if (vp8_drop_encodedframe_overshoot(cpi, Q))
+            return;
+        }
 
         cpi->projected_frame_size -= vp8_estimate_entropy_savings(cpi);
         cpi->projected_frame_size = (cpi->projected_frame_size > 0) ? cpi->projected_frame_size : 0;
@@ -5982,7 +5993,8 @@ int vp8_calc_ss_err(YV12_BUFFER_CONFIG *source, YV12_BUFFER_CONFIG *dest)
         for (j = 0; j < source->y_width; j += 16)
         {
             unsigned int sse;
-            Total += vp8_mse16x16(src + j, source->y_stride, dst + j, dest->y_stride, &sse);
+            Total += vpx_mse16x16(src + j, source->y_stride,
+                                  dst + j, dest->y_stride, &sse);
         }
 
         src += 16 * source->y_stride;

@@ -4,7 +4,6 @@
 
 #include "media/base/media_log.h"
 
-
 #include "base/atomic_sequence_num.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
@@ -47,10 +46,6 @@ std::string MediaLog::EventTypeToString(MediaLogEvent::Type type) {
       return "WEBMEDIAPLAYER_CREATED";
     case MediaLogEvent::WEBMEDIAPLAYER_DESTROYED:
       return "WEBMEDIAPLAYER_DESTROYED";
-    case MediaLogEvent::PIPELINE_CREATED:
-      return "PIPELINE_CREATED";
-    case MediaLogEvent::PIPELINE_DESTROYED:
-      return "PIPELINE_DESTROYED";
     case MediaLogEvent::LOAD:
       return "LOAD";
     case MediaLogEvent::SEEK:
@@ -100,8 +95,6 @@ std::string MediaLog::PipelineStatusToString(PipelineStatus status) {
       return "pipeline: network error";
     case PIPELINE_ERROR_DECODE:
       return "pipeline: decode error";
-    case PIPELINE_ERROR_DECRYPT:
-      return "pipeline: decrypt error";
     case PIPELINE_ERROR_ABORT:
       return "pipeline: abort";
     case PIPELINE_ERROR_INITIALIZATION_FAILED:
@@ -139,7 +132,7 @@ std::string MediaLog::MediaEventToLogString(const MediaLogEvent& event) {
         media::MediaLog::PipelineStatusToString(status);
   }
   std::string params_json;
-  base::JSONWriter::Write(&event.params, &params_json);
+  base::JSONWriter::Write(event.params, &params_json);
   return EventTypeToString(event.type) + " " + params_json;
 }
 
@@ -282,10 +275,16 @@ LogHelper::LogHelper(MediaLog::MediaLogLevel level, const LogCB& log_cb)
     : level_(level), log_cb_(log_cb) {
 }
 
+LogHelper::LogHelper(MediaLog::MediaLogLevel level,
+                     const scoped_refptr<MediaLog>& media_log)
+    : level_(level), media_log_(media_log) {
+}
+
 LogHelper::~LogHelper() {
-  if (log_cb_.is_null())
-    return;
-  log_cb_.Run(level_, stream_.str());
+  if (!log_cb_.is_null())
+    log_cb_.Run(level_, stream_.str());
+  else if (media_log_)
+    media_log_->AddLogEvent(level_, stream_.str());
 }
 
 }  //namespace media

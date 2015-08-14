@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -119,9 +120,6 @@ class MultiThreadedProxyResolver : public ProxyResolver,
                      const BoundNetLog& net_log) override;
   void CancelRequest(RequestHandle request) override;
   LoadState GetLoadState(RequestHandle request) const override;
-  void CancelSetPacScript() override;
-  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& script_data,
-                   const CompletionCallback& callback) override;
 
  private:
   class GetProxyForURLJob;
@@ -370,7 +368,7 @@ void Executor::StartJob(Job* job) {
   // cancelled), it will invoke OnJobCompleted() on this thread.
   job->set_executor(this);
   job->FinishedWaitingForThread();
-  thread_->message_loop()->PostTask(
+  thread_->task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&Job::Run, job, base::ThreadTaskRunnerHandle::Get()));
 }
@@ -424,8 +422,7 @@ MultiThreadedProxyResolver::MultiThreadedProxyResolver(
     size_t max_num_threads,
     const scoped_refptr<ProxyResolverScriptData>& script_data,
     scoped_refptr<Executor> executor)
-    : ProxyResolver(resolver_factory->expects_pac_bytes()),
-      resolver_factory_(resolver_factory.Pass()),
+    : resolver_factory_(resolver_factory.Pass()),
       max_num_threads_(max_num_threads),
       script_data_(script_data) {
   DCHECK(script_data_);
@@ -502,17 +499,6 @@ LoadState MultiThreadedProxyResolver::GetLoadState(RequestHandle req) const {
   DCHECK(CalledOnValidThread());
   DCHECK(req);
   return LOAD_STATE_RESOLVING_PROXY_FOR_URL;
-}
-
-void MultiThreadedProxyResolver::CancelSetPacScript() {
-  NOTREACHED();
-}
-
-int MultiThreadedProxyResolver::SetPacScript(
-    const scoped_refptr<ProxyResolverScriptData>& script_data,
-    const CompletionCallback&callback) {
-  NOTREACHED();
-  return ERR_NOT_IMPLEMENTED;
 }
 
 Executor* MultiThreadedProxyResolver::FindIdleExecutor() {

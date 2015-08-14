@@ -30,19 +30,19 @@
     SetErrorState(x);                          \
   } while (0)
 
-#define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value)                 \
-  do {                                                                \
-    if (device_->Ioctl(type, arg) != 0) {                             \
-      PLOG(ERROR) << __FUNCTION__ << "(): ioctl() failed: " << #type; \
-      return value;                                                   \
-    }                                                                 \
+#define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value, type_str)           \
+  do {                                                                    \
+    if (device_->Ioctl(type, arg) != 0) {                                 \
+      PLOG(ERROR) << __FUNCTION__ << "(): ioctl() failed: " << type_str;  \
+      return value;                                                       \
+    }                                                                     \
   } while (0)
 
 #define IOCTL_OR_ERROR_RETURN(type, arg) \
-  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, ((void)0))
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, ((void)0), #type)
 
 #define IOCTL_OR_ERROR_RETURN_FALSE(type, arg) \
-  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false)
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false, #type)
 
 #define IOCTL_OR_LOG_ERROR(type, arg)                                 \
   do {                                                                \
@@ -532,6 +532,11 @@ void V4L2SliceVideoDecodeAccelerator::Destroy() {
     decoder_thread_task_runner_->PostTask(
         FROM_HERE, base::Bind(&V4L2SliceVideoDecodeAccelerator::DestroyTask,
                               base::Unretained(this)));
+
+    // Wake up decoder thread in case we are waiting in CreateOutputBuffers
+    // for client to provide pictures. Since this is Destroy, we won't be
+    // getting them anymore (AssignPictureBuffers won't be called).
+    pictures_assigned_.Signal();
 
     // Wait for tasks to finish/early-exit.
     decoder_thread_.Stop();

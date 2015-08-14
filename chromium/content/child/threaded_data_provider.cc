@@ -4,6 +4,8 @@
 
 #include "content/child/threaded_data_provider.h"
 
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "content/child/child_process.h"
 #include "content/child/child_thread_impl.h"
@@ -21,7 +23,7 @@ namespace {
 class DataProviderMessageFilter : public IPC::MessageFilter {
  public:
   DataProviderMessageFilter(
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop,
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       const scheduler::WebThreadImplForWorkerScheduler& background_thread,
       const base::WeakPtr<ThreadedDataProvider>&
@@ -39,7 +41,7 @@ class DataProviderMessageFilter : public IPC::MessageFilter {
   void OnReceivedData(int request_id, int data_offset, int data_length,
                       int encoded_data_length);
 
-  const scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   const scheduler::WebThreadImplForWorkerScheduler& background_thread_;
   // This weakptr can only be dereferenced on the background thread.
@@ -52,14 +54,14 @@ class DataProviderMessageFilter : public IPC::MessageFilter {
 };
 
 DataProviderMessageFilter::DataProviderMessageFilter(
-    const scoped_refptr<base::MessageLoopProxy>& io_message_loop,
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
     const scheduler::WebThreadImplForWorkerScheduler& background_thread,
     const base::WeakPtr<ThreadedDataProvider>&
         background_thread_resource_provider,
     const base::WeakPtr<ThreadedDataProvider>& main_thread_resource_provider,
     int request_id)
-    : io_message_loop_(io_message_loop),
+    : io_task_runner_(io_task_runner),
       main_thread_task_runner_(main_thread_task_runner),
       background_thread_(background_thread),
       background_thread_resource_provider_(background_thread_resource_provider),
@@ -69,7 +71,7 @@ DataProviderMessageFilter::DataProviderMessageFilter(
 }
 
 void DataProviderMessageFilter::OnFilterAdded(IPC::Sender* sender) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
 
   main_thread_task_runner_->PostTask(
       FROM_HERE,
@@ -79,14 +81,14 @@ void DataProviderMessageFilter::OnFilterAdded(IPC::Sender* sender) {
 
 bool DataProviderMessageFilter::OnMessageReceived(
     const IPC::Message& message) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
 
   if (message.type() != ResourceMsg_DataReceived::ID)
     return false;
 
   int request_id;
 
-  PickleIterator iter(message);
+  base::PickleIterator iter(message);
   if (!iter.ReadInt(&request_id)) {
     NOTREACHED() << "malformed resource message";
     return true;
@@ -95,7 +97,8 @@ bool DataProviderMessageFilter::OnMessageReceived(
   if (request_id == request_id_) {
     ResourceMsg_DataReceived::Schema::Param arg;
     if (ResourceMsg_DataReceived::Read(&message, &arg)) {
-      OnReceivedData(get<0>(arg), get<1>(arg), get<2>(arg), get<3>(arg));
+      OnReceivedData(base::get<0>(arg), base::get<1>(arg),
+                     base::get<2>(arg), base::get<3>(arg));
       return true;
     }
   }
@@ -107,7 +110,7 @@ void DataProviderMessageFilter::OnReceivedData(int request_id,
                                                int data_offset,
                                                int data_length,
                                                int encoded_data_length) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
   background_thread_.TaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&ThreadedDataProvider::OnReceivedDataOnBackgroundThread,
@@ -143,9 +146,8 @@ ThreadedDataProvider::ThreadedDataProvider(
       new base::WeakPtrFactory<ThreadedDataProvider>(this));
 
   filter_ = new DataProviderMessageFilter(
-      ChildProcess::current()->io_message_loop_proxy(),
-      main_thread_task_runner_, background_thread_,
-      background_thread_weak_factory_->GetWeakPtr(),
+      ChildProcess::current()->io_task_runner(), main_thread_task_runner_,
+      background_thread_, background_thread_weak_factory_->GetWeakPtr(),
       main_thread_weak_factory_.GetWeakPtr(), request_id);
 
   ChildThreadImpl::current()->channel()->AddFilter(filter_.get());
@@ -311,10 +313,6 @@ void ThreadedDataProvider::ForwardAndACKData(const char* data,
                                              int encoded_data_length) {
   DCHECK(background_thread_.isCurrentThread());
 
-  // TODO(oysteine): SiteIsolationPolicy needs to be be checked
-  // here before we pass the data to the data provider
-  // (or earlier on the I/O thread), otherwise once SiteIsolationPolicy does
-  // actual blocking as opposed to just UMA logging this will bypass it.
   threaded_data_receiver_->acceptData(data, data_length);
 
   scoped_ptr<std::vector<char>> data_copy;

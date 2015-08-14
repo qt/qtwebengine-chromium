@@ -391,9 +391,8 @@ void PepperVideoEncoderHost::RequireBitstreamBuffers(
   for (size_t i = 0; i < shm_buffers_.size(); ++i) {
     encoder_->UseOutputBitstreamBuffer(shm_buffers_[i]->ToBitstreamBuffer());
     handles.push_back(SerializedHandle(
-        renderer_ppapi_host_->ShareHandleWithRemote(
-            PlatformFileFromSharedMemoryHandle(shm_buffers_[i]->shm->handle()),
-            false),
+        renderer_ppapi_host_->ShareSharedMemoryHandleWithRemote(
+            shm_buffers_[i]->shm->handle()),
         output_buffer_size));
   }
 
@@ -601,11 +600,10 @@ void PepperVideoEncoderHost::AllocateVideoFrames() {
   }
 
   DCHECK(get_video_frames_reply_context_.is_valid());
-  get_video_frames_reply_context_.params.AppendHandle(SerializedHandle(
-      renderer_ppapi_host_->ShareHandleWithRemote(
-          PlatformFileFromSharedMemoryHandle(buffer_manager_.shm()->handle()),
-          false),
-      total_size));
+  get_video_frames_reply_context_.params.AppendHandle(
+      SerializedHandle(renderer_ppapi_host_->ShareSharedMemoryHandleWithRemote(
+                           buffer_manager_.shm()->handle()),
+                       total_size));
 
   host()->SendReply(get_video_frames_reply_context_,
                     PpapiPluginMsg_VideoEncoder_GetVideoFramesReply(
@@ -632,13 +630,16 @@ scoped_refptr<media::VideoFrame> PepperVideoEncoderHost::CreateVideoFrame(
   uint32_t shm_offset = static_cast<uint8*>(buffer->video.data) -
                         static_cast<uint8*>(buffer_manager_.shm()->memory());
 
-  return media::VideoFrame::WrapExternalPackedMemory(
-      media_input_format_, input_coded_size_, gfx::Rect(input_coded_size_),
-      input_coded_size_, static_cast<uint8*>(buffer->video.data),
-      buffer->video.data_size, buffer_manager_.shm()->handle(), shm_offset,
-      base::TimeDelta(),
+  scoped_refptr<media::VideoFrame> frame =
+      media::VideoFrame::WrapExternalSharedMemory(
+          media_input_format_, input_coded_size_, gfx::Rect(input_coded_size_),
+          input_coded_size_, static_cast<uint8*>(buffer->video.data),
+          buffer->video.data_size, buffer_manager_.shm()->handle(), shm_offset,
+          base::TimeDelta());
+  frame->AddDestructionObserver(
       base::Bind(&PepperVideoEncoderHost::FrameReleased,
                  weak_ptr_factory_.GetWeakPtr(), reply_context, frame_id));
+  return frame;
 }
 
 void PepperVideoEncoderHost::FrameReleased(

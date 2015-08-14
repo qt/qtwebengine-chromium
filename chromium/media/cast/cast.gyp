@@ -162,6 +162,10 @@
         'sender/fake_software_video_encoder.h',
         'sender/frame_sender.cc',
         'sender/frame_sender.h',
+        'sender/performance_metrics_overlay.cc',
+        'sender/performance_metrics_overlay.h',
+        'sender/sender_encoded_frame.cc',
+        'sender/sender_encoded_frame.h',
         'sender/size_adaptable_video_encoder_base.cc',
         'sender/size_adaptable_video_encoder_base.h',
         'sender/software_video_encoder.h',
@@ -201,17 +205,11 @@
           ],
           'link_settings': {
             'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/AudioToolbox.framework',
               '$(SDKROOT)/System/Library/Frameworks/CoreVideo.framework',
             ],
           },
         }],  # OS=="ios" or OS=="mac"
-        ['OS=="mac"', {
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/AudioToolbox.framework',
-            ],
-          },
-        }],  # OS=="mac"
       ], # conditions
     },
     {

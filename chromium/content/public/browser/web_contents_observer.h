@@ -10,6 +10,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "content/public/common/security_style.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -31,6 +32,7 @@ struct LoadFromMemoryCacheDetails;
 struct Referrer;
 struct ResourceRedirectDetails;
 struct ResourceRequestDetails;
+struct SecurityStyleExplanations;
 
 // An observer API implemented by classes which are interested in various page
 // load events from WebContents.  They also get a chance to filter IPC messages.
@@ -161,7 +163,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
       RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description) {}
+      const base::string16& error_description,
+      bool was_ignored_by_handler) {}
 
   // If the provisional load corresponded to the main frame, this method is
   // invoked in addition to DidCommitProvisionalLoadForFrame.
@@ -175,6 +178,14 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
       RenderFrameHost* render_frame_host,
       const LoadCommittedDetails& details,
       const FrameNavigateParams& params) {}
+
+  // This method is invoked when the SecurityStyle of the WebContents changes.
+  // |security_style| is the new SecurityStyle. |security_style_explanations|
+  // contains human-readable strings explaining why the SecurityStyle of the
+  // page has been downgraded.
+  virtual void SecurityStyleChanged(
+      SecurityStyle security_style,
+      const SecurityStyleExplanations& security_style_explanations) {}
 
   // This method is invoked once the window.document object of the main frame
   // was created.
@@ -203,7 +214,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void DidFailLoad(RenderFrameHost* render_frame_host,
                            const GURL& validated_url,
                            int error_code,
-                           const base::string16& error_description) {}
+                           const base::string16& error_description,
+                           bool was_ignored_by_handler) {}
 
   // This method is invoked when content was loaded from an in-memory cache.
   virtual void DidLoadResourceFromMemoryCache(
@@ -278,6 +290,11 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void AppCacheAccessed(const GURL& manifest_url,
                                 bool blocked_by_policy) {}
 
+  // These methods are invoked when a Pepper plugin instance is created/deleted
+  // in the DOM.
+  virtual void PepperInstanceCreated() {}
+  virtual void PepperInstanceDeleted() {}
+
   // Notification that a plugin has crashed.
   // |plugin_pid| is the process ID identifying the plugin process. Note that
   // this ID is supplied by the renderer process, so should not be trusted.
@@ -348,6 +365,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // Invoked when media is paused.
   virtual void MediaPaused() {}
+
+  // Invoked when media session has changed its state.
+  virtual void MediaSessionStateChanged(bool is_controllable,
+                                        bool is_suspended) {}
 
   // Invoked if an IPC message is coming from a specific RenderFrameHost.
   virtual bool OnMessageReceived(const IPC::Message& message,

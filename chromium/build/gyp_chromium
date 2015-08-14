@@ -32,6 +32,7 @@ sys.path.insert(1, os.path.join(chrome_src, 'android_webview', 'tools'))
 sys.path.insert(1, os.path.join(chrome_src, 'build', 'android', 'gyp'))
 sys.path.insert(1, os.path.join(chrome_src, 'chrome', 'tools', 'build'))
 sys.path.insert(1, os.path.join(chrome_src, 'chromecast', 'tools', 'build'))
+sys.path.insert(1, os.path.join(chrome_src, 'ios', 'chrome', 'tools', 'build'))
 sys.path.insert(1, os.path.join(chrome_src, 'native_client', 'build'))
 sys.path.insert(1, os.path.join(chrome_src, 'native_client_sdk', 'src',
     'build_tools'))
@@ -227,19 +228,12 @@ if __name__ == '__main__':
                                                'python2*_bin')))[-1]
     env = os.environ.copy()
     env['PATH'] = python_dir + os.pathsep + env.get('PATH', '')
-    p = subprocess.Popen(
-       [os.path.join(python_dir, 'python.exe')] + sys.argv,
-       env=env, shell=False)
-    p.communicate()
-    sys.exit(p.returncode)
+    cmd = [os.path.join(python_dir, 'python.exe')] + sys.argv
+    sys.exit(subprocess.call(cmd, env=env))
 
   # This could give false positives since it doesn't actually do real option
   # parsing.  Oh well.
-  gyp_file_specified = False
-  for arg in args:
-    if arg.endswith('.gyp'):
-      gyp_file_specified = True
-      break
+  gyp_file_specified = any(arg.endswith('.gyp') for arg in args)
 
   gyp_environment.SetEnvironment()
 
@@ -267,6 +261,14 @@ if __name__ == '__main__':
   # list.
   if gyp_vars_dict.get('OS') != 'ios':
     args.append('--no-circular-check')
+
+  # libtool on Mac warns about duplicate basenames in static libraries, so
+  # they're disallowed in general by gyp. We are lax on this point, so disable
+  # this check other than on Mac. GN does not use static libraries as heavily,
+  # so over time this restriction will mostly go away anyway, even on Mac.
+  # https://code.google.com/p/gyp/issues/detail?id=384
+  if sys.platform != 'darwin':
+    args.append('--no-duplicate-basename-check')
 
   # We explicitly don't support the make gyp generator (crbug.com/348686). Be
   # nice and fail here, rather than choking in gyp.

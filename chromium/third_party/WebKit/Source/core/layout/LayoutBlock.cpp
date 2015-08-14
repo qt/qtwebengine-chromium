@@ -33,11 +33,11 @@
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h"
-#include "core/events/OverflowEvent.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLMarqueeElement.h"
 #include "core/layout/HitTestLocation.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutAnalyzer.h"
@@ -55,16 +55,17 @@
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
+#include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/InlineIterator.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/shapes/ShapeOutsideInfo.h"
-#include "core/style/ContentData.h"
-#include "core/style/ComputedStyle.h"
 #include "core/page/Page.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/ContentData.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
@@ -81,69 +82,20 @@ using namespace HTMLNames;
 struct SameSizeAsLayoutBlock : public LayoutBox {
     LayoutObjectChildList children;
     LineBoxList lineBoxes;
-    int pageLogicalOffset;
     uint32_t bitfields;
 };
 
 static_assert(sizeof(LayoutBlock) == sizeof(SameSizeAsLayoutBlock), "LayoutBlock should stay small");
 
-typedef WTF::HashMap<const LayoutBox*, OwnPtr<ColumnInfo>> ColumnInfoMap;
-static ColumnInfoMap* gColumnInfoMap = 0;
+static TrackedDescendantsMap* gPositionedDescendantsMap = nullptr;
+static TrackedDescendantsMap* gPercentHeightDescendantsMap = nullptr;
 
-static TrackedDescendantsMap* gPositionedDescendantsMap = 0;
-static TrackedDescendantsMap* gPercentHeightDescendantsMap = 0;
-
-static TrackedContainerMap* gPositionedContainerMap = 0;
-static TrackedContainerMap* gPercentHeightContainerMap = 0;
+static TrackedContainerMap* gPositionedContainerMap = nullptr;
+static TrackedContainerMap* gPercentHeightContainerMap = nullptr;
 
 typedef WTF::HashSet<LayoutBlock*> DelayedUpdateScrollInfoSet;
 static int gDelayUpdateScrollInfo = 0;
-static DelayedUpdateScrollInfoSet* gDelayedUpdateScrollInfoSet = 0;
-
-static bool gColumnFlowSplitEnabled = true;
-
-// This class helps dispatching the 'overflow' event on layout change. overflow can be set on LayoutBoxes, yet the existing code
-// only works on LayoutBlocks. If this changes, this class should be shared with other LayoutBoxes.
-class OverflowEventDispatcher {
-    WTF_MAKE_NONCOPYABLE(OverflowEventDispatcher);
-public:
-    OverflowEventDispatcher(const LayoutBlock* block)
-        : m_block(block)
-        , m_hadHorizontalLayoutOverflow(false)
-        , m_hadVerticalLayoutOverflow(false)
-    {
-        m_shouldDispatchEvent = !m_block->isAnonymous() && m_block->hasOverflowClip() && m_block->document().hasListenerType(Document::OVERFLOWCHANGED_LISTENER);
-        if (m_shouldDispatchEvent) {
-            m_hadHorizontalLayoutOverflow = m_block->hasHorizontalLayoutOverflow();
-            m_hadVerticalLayoutOverflow = m_block->hasVerticalLayoutOverflow();
-        }
-    }
-
-    ~OverflowEventDispatcher()
-    {
-        if (!m_shouldDispatchEvent)
-            return;
-
-        bool hasHorizontalLayoutOverflow = m_block->hasHorizontalLayoutOverflow();
-        bool hasVerticalLayoutOverflow = m_block->hasVerticalLayoutOverflow();
-
-        bool horizontalLayoutOverflowChanged = hasHorizontalLayoutOverflow != m_hadHorizontalLayoutOverflow;
-        bool verticalLayoutOverflowChanged = hasVerticalLayoutOverflow != m_hadVerticalLayoutOverflow;
-
-        if (!horizontalLayoutOverflowChanged && !verticalLayoutOverflowChanged)
-            return;
-
-        RefPtrWillBeRawPtr<OverflowEvent> event = OverflowEvent::create(horizontalLayoutOverflowChanged, hasHorizontalLayoutOverflow, verticalLayoutOverflowChanged, hasVerticalLayoutOverflow);
-        event->setTarget(m_block->node());
-        m_block->document().enqueueAnimationFrameEvent(event.release());
-    }
-
-private:
-    const LayoutBlock* m_block;
-    bool m_shouldDispatchEvent;
-    bool m_hadHorizontalLayoutOverflow;
-    bool m_hadVerticalLayoutOverflow;
-};
+static DelayedUpdateScrollInfoSet* gDelayedUpdateScrollInfoSet = nullptr;
 
 LayoutBlock::LayoutBlock(ContainerNode* node)
     : LayoutBox(node)
@@ -210,8 +162,6 @@ static void appendImagesFromStyle(Vector<ImageResource*>& images, const Computed
 
 void LayoutBlock::removeFromGlobalMaps()
 {
-    if (hasColumns())
-        gColumnInfoMap->take(this);
     if (gPercentHeightDescendantsMap)
         removeBlockFromDescendantAndContainerMaps(this, gPercentHeightDescendantsMap, gPercentHeightContainerMap);
     if (gPositionedDescendantsMap)
@@ -238,7 +188,7 @@ void LayoutBlock::willBeDestroyed()
     LayoutBoxModelObject* continuation = this->continuation();
     if (continuation) {
         continuation->destroy();
-        setContinuation(0);
+        setContinuation(nullptr);
     }
 
     if (!documentBeingDestroyed()) {
@@ -282,27 +232,19 @@ void LayoutBlock::styleWillChange(StyleDifference diff, const ComputedStyle& new
     setReplaced(newStyle.isDisplayInlineType());
 
     if (oldStyle && parent()) {
-        bool oldStyleIsContainer = oldStyle->position() != StaticPosition || oldStyle->hasTransformRelatedProperty();
-        bool newStyleIsContainer = newStyle.position() != StaticPosition || newStyle.hasTransformRelatedProperty();
+        bool oldHasTransformRelatedProperty = oldStyle->hasTransformRelatedProperty();
+        bool newHasTransformRelatedProperty = newStyle.hasTransformRelatedProperty();
+        bool oldStyleIsContainer = oldStyle->position() != StaticPosition || oldHasTransformRelatedProperty;
 
-        if (oldStyleIsContainer && !newStyleIsContainer) {
+        if (oldStyleIsContainer && (newStyle.position() == StaticPosition || (oldHasTransformRelatedProperty && !newHasTransformRelatedProperty))) {
             // Clear our positioned objects list. Our absolutely positioned descendants will be
             // inserted into our containing block's positioned objects list during layout.
             removePositionedObjects(0, NewContainingBlock);
-        } else if (!oldStyleIsContainer && newStyleIsContainer) {
+        } else if (!oldStyleIsContainer && (newStyle.position() != StaticPosition || newHasTransformRelatedProperty)) {
             // Remove our absolutely positioned descendants from their current containing block.
             // They will be inserted into our positioned objects list during layout.
-            LayoutObject* cb = parent();
-            while (cb && (cb->style()->position() == StaticPosition || (cb->isInline() && !cb->isReplaced())) && !cb->isLayoutView()) {
-                if (cb->style()->position() == RelativePosition && cb->isInline() && !cb->isReplaced()) {
-                    cb = cb->containingBlock();
-                    break;
-                }
-                cb = cb->parent();
-            }
-
-            if (cb->isLayoutBlock())
-                toLayoutBlock(cb)->removePositionedObjects(this, NewContainingBlock);
+            if (LayoutBlock* cb = containingBlockForAbsolutePosition())
+                cb->removePositionedObjects(this, NewContainingBlock);
         }
     }
 
@@ -333,13 +275,13 @@ void LayoutBlock::styleDidChange(StyleDifference diff, const ComputedStyle* oldS
 
     const ComputedStyle& newStyle = styleRef();
 
-    if (!isAnonymousBlock()) {
-        // Ensure that all of our continuation blocks pick up the new style.
-        for (LayoutBlock* currCont = blockElementContinuation(); currCont; currCont = currCont->blockElementContinuation()) {
-            LayoutBoxModelObject* nextCont = currCont->continuation();
-            currCont->setContinuation(0);
-            currCont->setStyle(mutableStyle());
-            currCont->setContinuation(nextCont);
+    if (oldStyle && parent()) {
+        if (oldStyle->position() != newStyle.position() && newStyle.position() != StaticPosition) {
+            // Remove our absolutely positioned descendants from their new containing block,
+            // in case containingBlock() changes by the change to the position property.
+            // See styleWillChange() for other cases.
+            if (LayoutBlock* cb = containingBlock())
+                cb->removePositionedObjects(this, NewContainingBlock);
         }
     }
 
@@ -405,404 +347,7 @@ void LayoutBlock::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& chil
     }
 }
 
-LayoutBlock* LayoutBlock::continuationBefore(LayoutObject* beforeChild)
-{
-    if (beforeChild && beforeChild->parent() == this)
-        return this;
-
-    LayoutBlock* curr = toLayoutBlock(continuation());
-    LayoutBlock* nextToLast = this;
-    LayoutBlock* last = this;
-    while (curr) {
-        if (beforeChild && beforeChild->parent() == curr) {
-            if (curr->firstChild() == beforeChild)
-                return last;
-            return curr;
-        }
-
-        nextToLast = last;
-        last = curr;
-        curr = toLayoutBlock(curr->continuation());
-    }
-
-    if (!beforeChild && !last->firstChild())
-        return nextToLast;
-    return last;
-}
-
-void LayoutBlock::addChildToContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
-{
-    LayoutBlock* flow = continuationBefore(beforeChild);
-    LayoutBoxModelObject* beforeChildParent = 0;
-    if (beforeChild) {
-        beforeChildParent = toLayoutBoxModelObject(beforeChild->parent());
-        // Don't attempt to insert into something that isn't a LayoutBlockFlow (block
-        // container). While the DOM nodes of |beforeChild| and |newChild| are siblings, there may
-        // be anonymous table wrapper objects around |beforeChild| on the layout side. Therefore,
-        // find the nearest LayoutBlockFlow. If it turns out that the new layoutObject doesn't belong
-        // inside the anonymous table, this will make sure that it's really put on the outside. If
-        // it turns out that it does belong inside it, the normal child insertion machinery will
-        // make sure it ends up there, and at the right place too. We cannot just guess that it's
-        // going to be right under the parent of |beforeChild|.
-        while (beforeChildParent && !beforeChildParent->isLayoutBlockFlow()) {
-            ASSERT(!beforeChildParent->virtualContinuation());
-            ASSERT(beforeChildParent->isAnonymous());
-            RELEASE_ASSERT(beforeChildParent != this);
-            beforeChildParent = toLayoutBoxModelObject(beforeChildParent->parent());
-        }
-        ASSERT(beforeChildParent);
-    } else {
-        LayoutBoxModelObject* cont = flow->continuation();
-        if (cont)
-            beforeChildParent = cont;
-        else
-            beforeChildParent = flow;
-    }
-
-    if (newChild->isFloatingOrOutOfFlowPositioned()) {
-        beforeChildParent->addChildIgnoringContinuation(newChild, beforeChild);
-        return;
-    }
-
-    // A continuation always consists of two potential candidates: a block or an anonymous
-    // column span box holding column span children.
-    bool childIsNormal = newChild->isInline() || !newChild->style()->columnSpan();
-    bool bcpIsNormal = beforeChildParent->isInline() || !beforeChildParent->style()->columnSpan();
-    bool flowIsNormal = flow->isInline() || !flow->style()->columnSpan();
-
-    if (flow == beforeChildParent) {
-        flow->addChildIgnoringContinuation(newChild, beforeChild);
-        return;
-    }
-
-    // The goal here is to match up if we can, so that we can coalesce and create the
-    // minimal # of continuations needed for the inline.
-    if (childIsNormal == bcpIsNormal) {
-        beforeChildParent->addChildIgnoringContinuation(newChild, beforeChild);
-        return;
-    }
-    if (flowIsNormal == childIsNormal) {
-        flow->addChildIgnoringContinuation(newChild, 0); // Just treat like an append.
-        return;
-    }
-    beforeChildParent->addChildIgnoringContinuation(newChild, beforeChild);
-}
-
-
-void LayoutBlock::addChildToAnonymousColumnBlocks(LayoutObject* newChild, LayoutObject* beforeChild)
-{
-    ASSERT(!continuation()); // We don't yet support column spans that aren't immediate children of the multi-column block.
-
-    // The goal is to locate a suitable box in which to place our child.
-    LayoutBlock* beforeChildParent = 0;
-    if (beforeChild) {
-        LayoutObject* curr = beforeChild;
-        while (curr && curr->parent() != this)
-            curr = curr->parent();
-        beforeChildParent = toLayoutBlock(curr);
-        ASSERT(beforeChildParent);
-        ASSERT(beforeChildParent->isAnonymousColumnsBlock() || beforeChildParent->isAnonymousColumnSpanBlock());
-    } else {
-        beforeChildParent = toLayoutBlock(lastChild());
-    }
-
-    // If the new child is floating or positioned it can just go in that block.
-    if (newChild->isFloatingOrOutOfFlowPositioned()) {
-        beforeChildParent->addChildIgnoringAnonymousColumnBlocks(newChild, beforeChild);
-        return;
-    }
-
-    // See if the child can be placed in the box.
-    bool newChildHasColumnSpan = newChild->style()->columnSpan() && !newChild->isInline();
-    bool beforeChildParentHoldsColumnSpans = beforeChildParent->isAnonymousColumnSpanBlock();
-
-    if (newChildHasColumnSpan == beforeChildParentHoldsColumnSpans) {
-        beforeChildParent->addChildIgnoringAnonymousColumnBlocks(newChild, beforeChild);
-        return;
-    }
-
-    if (!beforeChild) {
-        // Create a new block of the correct type.
-        LayoutBlock* newBox = newChildHasColumnSpan ? createAnonymousColumnSpanBlock() : createAnonymousColumnsBlock();
-        children()->appendChildNode(this, newBox);
-        newBox->addChildIgnoringAnonymousColumnBlocks(newChild, 0);
-        return;
-    }
-
-    LayoutObject* immediateChild = beforeChild;
-    bool isPreviousBlockViable = true;
-    while (immediateChild->parent() != this) {
-        if (isPreviousBlockViable)
-            isPreviousBlockViable = !immediateChild->previousSibling();
-        immediateChild = immediateChild->parent();
-    }
-    if (isPreviousBlockViable && immediateChild->previousSibling()) {
-        toLayoutBlock(immediateChild->previousSibling())->addChildIgnoringAnonymousColumnBlocks(newChild, 0); // Treat like an append.
-        return;
-    }
-
-    // Split our anonymous blocks.
-    LayoutObject* newBeforeChild = splitAnonymousBoxesAroundChild(beforeChild);
-
-
-    // Create a new anonymous box of the appropriate type.
-    LayoutBlock* newBox = newChildHasColumnSpan ? createAnonymousColumnSpanBlock() : createAnonymousColumnsBlock();
-    children()->insertChildNode(this, newBox, newBeforeChild);
-    newBox->addChildIgnoringAnonymousColumnBlocks(newChild, 0);
-    return;
-}
-
-LayoutBlockFlow* LayoutBlock::containingColumnsBlock(bool allowAnonymousColumnBlock)
-{
-    LayoutBlock* firstChildIgnoringAnonymousWrappers = 0;
-    for (LayoutObject* curr = this; curr; curr = curr->parent()) {
-        if (!curr->isLayoutBlock() || curr->isFloatingOrOutOfFlowPositioned() || curr->isTableCell() || curr->isDocumentElement() || curr->isLayoutView() || curr->hasOverflowClip()
-            || curr->isInlineBlockOrInlineTable())
-            return 0;
-
-        // FIXME: LayoutObjects that do special management of their children (tables, buttons,
-        // lists, flexboxes, etc.) breaks when the flow is split through them. Disabling
-        // multi-column for them to avoid this problem.)
-        if (!curr->isLayoutBlockFlow() || curr->isListItem())
-            return 0;
-
-        LayoutBlockFlow* currBlock = toLayoutBlockFlow(curr);
-        if (!currBlock->createsAnonymousWrapper())
-            firstChildIgnoringAnonymousWrappers = currBlock;
-
-        if (currBlock->style()->specifiesColumns() && (allowAnonymousColumnBlock || !currBlock->isAnonymousColumnsBlock()))
-            return toLayoutBlockFlow(firstChildIgnoringAnonymousWrappers);
-
-        if (currBlock->isAnonymousColumnSpanBlock())
-            return 0;
-    }
-    return 0;
-}
-
-LayoutBlock* LayoutBlock::clone() const
-{
-    LayoutBlock* cloneBlock;
-    if (isAnonymousBlock()) {
-        cloneBlock = createAnonymousBlock();
-        cloneBlock->setChildrenInline(childrenInline());
-    } else {
-        LayoutObject* cloneLayoutObject = toElement(node())->createLayoutObject(styleRef());
-        cloneBlock = toLayoutBlock(cloneLayoutObject);
-        cloneBlock->setStyle(mutableStyle());
-
-        // This takes care of setting the right value of childrenInline in case
-        // generated content is added to cloneBlock and 'this' does not have
-        // generated content added yet.
-        cloneBlock->setChildrenInline(cloneBlock->firstChild() ? cloneBlock->firstChild()->isInline() : childrenInline());
-    }
-    cloneBlock->setIsInsideFlowThread(isInsideFlowThread());
-    return cloneBlock;
-}
-
-void LayoutBlock::splitBlocks(LayoutBlock* fromBlock, LayoutBlock* toBlock,
-    LayoutBlock* middleBlock,
-    LayoutObject* beforeChild, LayoutBoxModelObject* oldCont)
-{
-    ASSERT(isDescendantOf(fromBlock));
-
-    if (!beforeChild && isAfterContent(lastChild()))
-        beforeChild = lastChild();
-
-    Vector<LayoutBlock*> blocksToClone;
-    for (LayoutObject* o = this; o != fromBlock; o = o->parent())
-        blocksToClone.append(toLayoutBlock(o));
-
-    // Create a new clone of the top-most block.
-    LayoutBlock* topMostBlockToClone = blocksToClone.last();
-    LayoutBlock* cloneBlock = topMostBlockToClone->clone();
-
-    // Put |cloneBlock| as a child of |toBlock|.
-    toBlock->children()->appendChildNode(toBlock, cloneBlock);
-
-    // Now take all the children after |topMostBlockToClone| and remove them from the |fromBlock|
-    // and put them in the |toBlock|.
-    fromBlock->moveChildrenTo(toBlock, topMostBlockToClone->nextSibling(), nullptr, true);
-
-    LayoutBlock* currentBlockParent = topMostBlockToClone;
-    LayoutBlock* cloneBlockParent = cloneBlock;
-
-    // Clone the blocks from top to down to ensure any new object will be added into a rooted tree.
-    // Note that we have already cloned the top-most one, so the loop begins from size - 2.
-    for (int i = static_cast<int>(blocksToClone.size()) - 2; i >= 0; --i) {
-        // Hook the clone up as a continuation of |currentBlockParent|. Note we do encounter
-        // anonymous blocks possibly as we walk down the block chain.  When we split an
-        // anonymous block, there's no need to do any continuation hookup, since we haven't
-        // actually split a real element.
-        if (!currentBlockParent->isAnonymousBlock()) {
-            LayoutBoxModelObject* oldCont = currentBlockParent->continuation();
-            currentBlockParent->setContinuation(cloneBlock);
-            cloneBlock->setContinuation(oldCont);
-        }
-
-        // Create a new clone.
-        LayoutBlock* currentBlock = blocksToClone[i];
-        cloneBlock = currentBlock->clone();
-
-        // Insert the |cloneBlock| as the first child of |cloneBlockParent|.
-        cloneBlockParent->addChildIgnoringContinuation(cloneBlock, nullptr);
-
-        // Take all the children after |currentBlock| and remove them from the |currentBlockParent|
-        // and put them to the end of the |cloneParent|.
-        currentBlockParent->moveChildrenTo(cloneBlockParent, currentBlock->nextSibling(), nullptr, true);
-
-        cloneBlockParent = cloneBlock;
-        currentBlockParent = currentBlock;
-    }
-
-    // The last block to clone is |this|, and the current |cloneBlock| is cloned from |this|.
-    ASSERT(this == blocksToClone.first());
-
-    // Hook |cloneBlock| up as the continuation of the |middleBlock|.
-    if (!isAnonymousBlock()) {
-        cloneBlock->setContinuation(oldCont);
-        middleBlock->setContinuation(cloneBlock);
-    }
-
-    // Now take all of the children from |beforeChild| to the end and remove
-    // them from |this| and place them in the |cloneBlock|.
-    moveChildrenTo(cloneBlock, beforeChild, nullptr, true);
-}
-
-void LayoutBlock::splitFlow(LayoutObject* beforeChild, LayoutBlock* newBlockBox,
-    LayoutObject* newChild, LayoutBoxModelObject* oldCont)
-{
-    LayoutBlock* pre = 0;
-    LayoutBlock* block = containingColumnsBlock();
-
-    // Delete our line boxes before we do the inline split into continuations.
-    block->deleteLineBoxTree();
-
-    bool madeNewBeforeBlock = false;
-    if (block->isAnonymousColumnsBlock()) {
-        // We can reuse this block and make it the preBlock of the next continuation.
-        pre = block;
-        pre->removePositionedObjects(0);
-        if (block->isLayoutBlockFlow())
-            toLayoutBlockFlow(pre)->removeFloatingObjects();
-        block = toLayoutBlock(block->parent());
-    } else {
-        // No anonymous block available for use.  Make one.
-        pre = block->createAnonymousColumnsBlock();
-        pre->setChildrenInline(false);
-        madeNewBeforeBlock = true;
-    }
-
-    LayoutBlock* post = block->createAnonymousColumnsBlock();
-    post->setChildrenInline(false);
-
-    LayoutObject* boxFirst = madeNewBeforeBlock ? block->firstChild() : pre->nextSibling();
-    if (madeNewBeforeBlock)
-        block->children()->insertChildNode(block, pre, boxFirst);
-    block->children()->insertChildNode(block, newBlockBox, boxFirst);
-    block->children()->insertChildNode(block, post, boxFirst);
-    block->setChildrenInline(false);
-
-    if (madeNewBeforeBlock)
-        block->moveChildrenTo(pre, boxFirst, 0, true);
-
-    splitBlocks(pre, post, newBlockBox, beforeChild, oldCont);
-
-    // We already know the newBlockBox isn't going to contain inline kids, so avoid wasting
-    // time in makeChildrenNonInline by just setting this explicitly up front.
-    newBlockBox->setChildrenInline(false);
-
-    newBlockBox->addChild(newChild);
-
-    // Always just do a full layout in order to ensure that line boxes (especially wrappers for images)
-    // get deleted properly.  Because objects moves from the pre block into the post block, we want to
-    // make new line boxes instead of leaving the old line boxes around.
-    pre->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-    block->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-    post->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-}
-
-void LayoutBlock::makeChildrenAnonymousColumnBlocks(LayoutObject* beforeChild, LayoutBlockFlow* newBlockBox, LayoutObject* newChild)
-{
-    LayoutBlockFlow* pre = 0;
-    LayoutBlockFlow* post = 0;
-    LayoutBlock* block = this; // Eventually block will not just be |this|, but will also be a block nested inside |this|.  Assign to a variable
-        // so that we don't have to patch all of the rest of the code later on.
-
-    // Delete the block's line boxes before we do the split.
-    block->deleteLineBoxTree();
-
-    if (beforeChild && beforeChild->parent() != this)
-        beforeChild = splitAnonymousBoxesAroundChild(beforeChild);
-
-    if (beforeChild != firstChild()) {
-        pre = block->createAnonymousColumnsBlock();
-        pre->setChildrenInline(block->childrenInline());
-    }
-
-    if (beforeChild) {
-        post = block->createAnonymousColumnsBlock();
-        post->setChildrenInline(block->childrenInline());
-    }
-
-    LayoutObject* boxFirst = block->firstChild();
-    if (pre)
-        block->children()->insertChildNode(block, pre, boxFirst);
-    block->children()->insertChildNode(block, newBlockBox, boxFirst);
-    if (post)
-        block->children()->insertChildNode(block, post, boxFirst);
-    block->setChildrenInline(false);
-
-    // The pre/post blocks always have layers, so we know to always do a full insert/remove (so we pass true as the last argument).
-    block->moveChildrenTo(pre, boxFirst, beforeChild, true);
-    block->moveChildrenTo(post, beforeChild, 0, true);
-
-    // We already know the newBlockBox isn't going to contain inline kids, so avoid wasting
-    // time in makeChildrenNonInline by just setting this explicitly up front.
-    newBlockBox->setChildrenInline(false);
-
-    newBlockBox->addChild(newChild);
-
-    // Always just do a full layout in order to ensure that line boxes (especially wrappers for images)
-    // get deleted properly.  Because objects moved from the pre block into the post block, we want to
-    // make new line boxes instead of leaving the old line boxes around.
-    if (pre)
-        pre->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-    block->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-    if (post)
-        post->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
-}
-
-LayoutBlockFlow* LayoutBlock::columnsBlockForSpanningElement(LayoutObject* newChild)
-{
-    // FIXME: This function is the gateway for the addition of column-span support.  It will
-    // be added to in three stages:
-    // (1) Immediate children of a multi-column block can span.
-    // (2) Nested block-level children with only block-level ancestors between them and the multi-column block can span.
-    // (3) Nested children with block or inline ancestors between them and the multi-column block can span (this is when we
-    // cross the streams and have to cope with both types of continuations mixed together).
-    // This function currently supports (1) and (2).
-    LayoutBlockFlow* columnsBlockAncestor = 0;
-    if (!newChild->isText() && newChild->style()->columnSpan() && !newChild->isBeforeOrAfterContent()
-        && !newChild->isFloatingOrOutOfFlowPositioned() && !newChild->isInline() && !newChild->isTablePart()
-        && !isAnonymousColumnSpanBlock()) {
-        columnsBlockAncestor = containingColumnsBlock(false);
-        if (columnsBlockAncestor) {
-            // Make sure that none of the parent ancestors have a continuation.
-            // If yes, we do not want split the block into continuations.
-            LayoutObject* curr = this;
-            while (curr && curr != columnsBlockAncestor) {
-                if (curr->isLayoutBlock() && toLayoutBlock(curr)->continuation()) {
-                    columnsBlockAncestor = 0;
-                    break;
-                }
-                curr = curr->parent();
-            }
-        }
-    }
-    return columnsBlockAncestor;
-}
-
-void LayoutBlock::addChildIgnoringAnonymousColumnBlocks(LayoutObject* newChild, LayoutObject* beforeChild)
+void LayoutBlock::addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
 {
     if (beforeChild && beforeChild->parent() != this) {
         LayoutObject* beforeChildContainer = beforeChild->parent();
@@ -842,36 +387,6 @@ void LayoutBlock::addChildIgnoringAnonymousColumnBlocks(LayoutObject* newChild, 
                 // safe fallback to use the topmost beforeChild container.
                 beforeChild = beforeChildContainer;
             }
-        }
-    }
-
-    // Check for a spanning element in columns.
-    if (gColumnFlowSplitEnabled && !RuntimeEnabledFeatures::regionBasedColumnsEnabled()) {
-        LayoutBlockFlow* columnsBlockAncestor = columnsBlockForSpanningElement(newChild);
-        if (columnsBlockAncestor) {
-            TemporaryChange<bool> columnFlowSplitEnabled(gColumnFlowSplitEnabled, false);
-            // We are placing a column-span element inside a block.
-            LayoutBlockFlow* newBox = createAnonymousColumnSpanBlock();
-
-            if (columnsBlockAncestor != this && !isLayoutFlowThread()) {
-                // We are nested inside a multi-column element and are being split by the span. We have to break up
-                // our block into continuations.
-                LayoutBoxModelObject* oldContinuation = continuation();
-
-                // When we split an anonymous block, there's no need to do any continuation hookup,
-                // since we haven't actually split a real element.
-                if (!isAnonymousBlock())
-                    setContinuation(newBox);
-
-                splitFlow(beforeChild, newBox, newChild, oldContinuation);
-                return;
-            }
-
-            // We have to perform a split of this block's children. This involves creating an anonymous block box to hold
-            // the column-spanning |newChild|. We take all of the children from before |newChild| and put them into
-            // one anonymous columns block, and all of the children after |newChild| go into another anonymous block.
-            makeChildrenAnonymousColumnBlocks(beforeChild, newBox, newChild);
-            return;
         }
     }
 
@@ -919,18 +434,7 @@ void LayoutBlock::addChildIgnoringAnonymousColumnBlocks(LayoutObject* newChild, 
 
 void LayoutBlock::addChild(LayoutObject* newChild, LayoutObject* beforeChild)
 {
-    if (continuation() && !isAnonymousBlock())
-        addChildToContinuation(newChild, beforeChild);
-    else
-        addChildIgnoringContinuation(newChild, beforeChild);
-}
-
-void LayoutBlock::addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
-{
-    if (!isAnonymousBlock() && firstChild() && (firstChild()->isAnonymousColumnsBlock() || firstChild()->isAnonymousColumnSpanBlock()))
-        addChildToAnonymousColumnBlocks(newChild, beforeChild);
-    else
-        addChildIgnoringAnonymousColumnBlocks(newChild, beforeChild);
+    addChildIgnoringContinuation(newChild, beforeChild);
 }
 
 static void getInlineRun(LayoutObject* start, LayoutObject* boundary,
@@ -1048,7 +552,7 @@ void LayoutBlock::removeLeftoverAnonymousBlock(LayoutBlock* child)
     ASSERT(!child->childrenInline());
     ASSERT(child->parent() == this);
 
-    if (child->continuation() || (child->firstChild() && (child->isAnonymousColumnSpanBlock() || child->isAnonymousColumnsBlock())))
+    if (child->continuation())
         return;
 
     // Promote all the leftover anonymous block's children (to become children of this block
@@ -1083,12 +587,7 @@ static bool canMergeContiguousAnonymousBlocks(LayoutObject* oldChild, LayoutObje
         || (next && (next->isRubyRun() || next->isRubyBase())))
         return false;
 
-    if (!prev || !next)
-        return true;
-
-    // Make sure the types of the anonymous blocks match up.
-    return prev->isAnonymousColumnsBlock() == next->isAnonymousColumnsBlock()
-        && prev->isAnonymousColumnSpanBlock() == next->isAnonymousColumnSpanBlock();
+    return true;
 }
 
 void LayoutBlock::removeAnonymousWrappersIfRequired()
@@ -1129,16 +628,7 @@ void LayoutBlock::collapseAnonymousBlockChild(LayoutBlock* parent, LayoutBlock* 
     LayoutObject* nextSibling = child->nextSibling();
 
     parent->children()->removeChildNode(parent, child, child->hasLayer());
-    // FIXME: Get rid of the temporary disabling of continuations. This is needed by the old
-    // multicol implementation, because of buggy block continuation handling (which is hard and
-    // rather pointless to fix at this point). Support for block continuations can be removed
-    // together with the old multicol implementation. crbug.com/408123
-    LayoutBoxModelObject* temporarilyInactiveContinuation = parent->continuation();
-    if (temporarilyInactiveContinuation)
-        parent->setContinuation(0);
     child->moveAllChildrenTo(parent, nextSibling, child->hasLayer());
-    if (temporarilyInactiveContinuation)
-        parent->setContinuation(temporarilyInactiveContinuation);
     // Explicitly delete the child's line box tree, or the special anonymous
     // block handling in willBeDestroyed will cause problems.
     child->deleteLineBoxTree();
@@ -1153,9 +643,6 @@ void LayoutBlock::removeChild(LayoutObject* oldChild)
         LayoutBox::removeChild(oldChild);
         return;
     }
-
-    // This protects against column split flows when anonymous blocks are getting merged.
-    TemporaryChange<bool> columnFlowSplitEnabled(gColumnFlowSplitEnabled, false);
 
     // If this child is a block, and if our previous and next siblings are
     // both anonymous blocks with inline content, then we can go ahead and
@@ -1173,14 +660,8 @@ void LayoutBlock::removeChild(LayoutObject* oldChild)
             LayoutBlock* blockChildrenBlock = prev->childrenInline() ? nextBlock : prevBlock;
 
             // Place the inline children block inside of the block children block instead of deleting it.
-            // In order to reuse it, we have to reset it to just be a generic anonymous block.  Make sure
-            // to clear out inherited column properties by just making a new style, and to also clear the
-            // column span flag if it is set.
             ASSERT(!inlineChildrenBlock->continuation());
-            RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(styleRef(), BLOCK);
-            // Cache this value as it might get changed in setStyle() call.
             bool inlineChildrenBlockHasLayer = inlineChildrenBlock->hasLayer();
-            inlineChildrenBlock->setStyle(newStyle);
             children()->removeChildNode(this, inlineChildrenBlock, inlineChildrenBlockHasLayer);
 
             // Now just put the inlineChildrenBlock inside the blockChildrenBlock.
@@ -1191,9 +672,9 @@ void LayoutBlock::removeChild(LayoutObject* oldChild)
             // inlineChildrenBlock got reparented to blockChildrenBlock, so it is no longer a child
             // of "this". we null out prev or next so that is not used later in the function.
             if (inlineChildrenBlock == prevBlock)
-                prev = 0;
+                prev = nullptr;
             else
-                next = 0;
+                next = nullptr;
         } else {
             // Take all the children out of the |next| block and put them in
             // the |prev| block.
@@ -1202,7 +683,7 @@ void LayoutBlock::removeChild(LayoutObject* oldChild)
             // Delete the now-empty block's lines and nuke it.
             nextBlock->deleteLineBoxTree();
             nextBlock->destroy();
-            next = 0;
+            next = nullptr;
         }
     }
 
@@ -1253,7 +734,7 @@ void LayoutBlock::removeChild(LayoutObject* oldChild)
 
                 break;
             }
-            setContinuation(0);
+            setContinuation(nullptr);
             destroy();
         }
     }
@@ -1339,7 +820,7 @@ void LayoutBlock::finishDelayUpdateScrollInfo()
         ASSERT(gDelayedUpdateScrollInfoSet);
 
         OwnPtr<DelayedUpdateScrollInfoSet> infoSet(adoptPtr(gDelayedUpdateScrollInfoSet));
-        gDelayedUpdateScrollInfoSet = 0;
+        gDelayedUpdateScrollInfoSet = nullptr;
 
         for (auto* block : *infoSet) {
             if (block->hasOverflowClip()) {
@@ -1371,7 +852,6 @@ void LayoutBlock::updateScrollInfoAfterLayout()
 void LayoutBlock::layout()
 {
     LayoutAnalyzer::Scope analyzer(*this);
-    OverflowEventDispatcher dispatcher(this);
 
     // Table cells call layoutBlock directly, so don't add any logic here.  Put code into
     // layoutBlock().
@@ -1433,12 +913,8 @@ bool LayoutBlock::widthAvailableToChildrenHasChanged()
 bool LayoutBlock::updateLogicalWidthAndColumnWidth()
 {
     LayoutUnit oldWidth = logicalWidth();
-    LayoutUnit oldColumnWidth = desiredColumnWidth();
-
     updateLogicalWidth();
-    calcColumnWidth();
-
-    return oldWidth != logicalWidth() || oldColumnWidth != desiredColumnWidth() || widthAvailableToChildrenHasChanged();
+    return oldWidth != logicalWidth() || widthAvailableToChildrenHasChanged();
 }
 
 void LayoutBlock::layoutBlock(bool)
@@ -1449,19 +925,10 @@ void LayoutBlock::layoutBlock(bool)
 
 void LayoutBlock::addOverflowFromChildren()
 {
-    if (!hasColumns()) {
-        if (childrenInline())
-            toLayoutBlockFlow(this)->addOverflowFromInlineChildren();
-        else
-            addOverflowFromBlockChildren();
-    } else {
-        ColumnInfo* colInfo = columnInfo();
-        if (columnCount(colInfo)) {
-            LayoutRect lastRect = columnRectAt(colInfo, columnCount(colInfo) - 1);
-            addLayoutOverflow(lastRect);
-            addContentsVisualOverflow(lastRect);
-        }
-    }
+    if (childrenInline())
+        toLayoutBlockFlow(this)->addOverflowFromInlineChildren();
+    else
+        addOverflowFromBlockChildren();
 }
 
 void LayoutBlock::computeOverflow(LayoutUnit oldClientAfterEdge, bool)
@@ -1521,7 +988,7 @@ void LayoutBlock::addVisualOverflowFromTheme()
         return;
 
     IntRect inflatedRect = pixelSnappedBorderBoxRect();
-    LayoutTheme::theme().adjustPaintInvalidationRect(this, inflatedRect);
+    LayoutTheme::theme().addVisualOverflow(*this, inflatedRect);
     addVisualOverflow(LayoutRect(inflatedRect));
 }
 
@@ -1529,14 +996,23 @@ bool LayoutBlock::createsNewFormattingContext() const
 {
     return isInlineBlockOrInlineTable() || isFloatingOrOutOfFlowPositioned() || hasOverflowClip() || isFlexItemIncludingDeprecated()
         || style()->specifiesColumns() || isLayoutFlowThread() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot()
-        || isDocumentElement() || (RuntimeEnabledFeatures::regionBasedColumnsEnabled() ? isColumnSpanAll() : style()->columnSpan()) || isGridItem();
+        || isDocumentElement() || isColumnSpanAll() || isGridItem();
 }
 
 void LayoutBlock::updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, LayoutBox& child)
 {
+    if (child.isOutOfFlowPositioned()) {
+        // It's rather useless to mark out-of-flow children at this point. We may not be their
+        // containing block (and if we are, it's just pure luck), so this would be the wrong place
+        // for it. Furthermore, it would cause trouble for out-of-flow descendants of column
+        // spanners, if the containing block is outside the spanner but inside the multicol container.
+        return;
+    }
     // FIXME: Technically percentage height objects only need a relayout if their percentage isn't going to be turned into
     // an auto value. Add a method to determine this, so that we can avoid the relayout.
-    bool hasRelativeLogicalHeight = child.hasRelativeLogicalHeight() || (child.isAnonymous() && this->hasRelativeLogicalHeight());
+    bool hasRelativeLogicalHeight = child.hasRelativeLogicalHeight()
+        || (child.isAnonymous() && this->hasRelativeLogicalHeight())
+        || child.stretchesToViewport();
     if (relayoutChildren || (hasRelativeLogicalHeight && !isLayoutView()))
         child.setChildNeedsLayout(MarkOnlyThis);
 
@@ -1681,14 +1157,36 @@ LayoutUnit LayoutBlock::marginIntrinsicLogicalWidthForChild(LayoutBox& child) co
     return margin;
 }
 
+static bool needsLayoutDueToStaticPosition(LayoutBox* child)
+{
+    // When a non-positioned block element moves, it may have positioned children that are
+    // implicitly positioned relative to the non-positioned block.
+    const ComputedStyle* style = child->style();
+    bool isHorizontal = style->isHorizontalWritingMode();
+    if (style->hasStaticBlockPosition(isHorizontal)) {
+        LayoutBox::LogicalExtentComputedValues computedValues;
+        LayoutUnit currentLogicalTop = child->logicalTop();
+        LayoutUnit currentLogicalHeight = child->logicalHeight();
+        child->computeLogicalHeight(currentLogicalHeight, currentLogicalTop, computedValues);
+        if (computedValues.m_position != currentLogicalTop || computedValues.m_extent != currentLogicalHeight)
+            return true;
+    }
+    if (style->hasStaticInlinePosition(isHorizontal)) {
+        LayoutBox::LogicalExtentComputedValues computedValues;
+        LayoutUnit currentLogicalLeft = child->logicalLeft();
+        LayoutUnit currentLogicalWidth = child->logicalWidth();
+        child->computeLogicalWidth(computedValues);
+        if (computedValues.m_position != currentLogicalLeft || computedValues.m_extent != currentLogicalWidth)
+            return true;
+    }
+    return false;
+}
+
 void LayoutBlock::layoutPositionedObjects(bool relayoutChildren, PositionedLayoutBehavior info)
 {
     TrackedLayoutBoxListHashSet* positionedDescendants = positionedObjects();
     if (!positionedDescendants)
         return;
-
-    if (hasColumns())
-        view()->layoutState()->clearPaginationInformation(); // Positioned objects are not part of the column flow, so they don't paginate with the columns.
 
     for (auto* positionedObject : *positionedDescendants) {
         positionedObject->setMayNeedPaintInvalidation();
@@ -1703,11 +1201,7 @@ void LayoutBlock::layoutPositionedObjects(bool relayoutChildren, PositionedLayou
             continue;
         }
 
-        // When a non-positioned block element moves, it may have positioned children that are implicitly positioned relative to the
-        // non-positioned block.  Rather than trying to detect all of these movement cases, we just always lay out positioned
-        // objects that are positioned implicitly like this.  Such objects are rare, and so in typical DHTML menu usage (where everything is
-        // positioned explicitly) this should not incur a performance penalty.
-        if (relayoutChildren || (positionedObject->style()->hasStaticBlockPosition(isHorizontalWritingMode()) && positionedObject->parent() != this))
+        if (!positionedObject->normalChildNeedsLayout() && (relayoutChildren || needsLayoutDueToStaticPosition(positionedObject)))
             layoutScope.setChildNeedsLayout(positionedObject);
 
         // If relayoutChildren is set and the child has percentage padding or an embedded content box, we also need to invalidate the childs pref widths.
@@ -1740,9 +1234,6 @@ void LayoutBlock::layoutPositionedObjects(bool relayoutChildren, PositionedLayou
         if (needsBlockDirectionLocationSetBeforeLayout && logicalTopForChild(*positionedObject) != oldLogicalTop)
             positionedObject->forceChildLayout();
     }
-
-    if (hasColumns())
-        view()->layoutState()->setColumnInfo(columnInfo()); // FIXME: Kind of gross. We just put this back into the layout state so that pop() will work.
 }
 
 void LayoutBlock::markPositionedObjectsForLayout()
@@ -1782,17 +1273,6 @@ LayoutInline* LayoutBlock::inlineElementContinuation() const
 {
     LayoutBoxModelObject* continuation = this->continuation();
     return continuation && continuation->isInline() ? toLayoutInline(continuation) : 0;
-}
-
-LayoutBlock* LayoutBlock::blockElementContinuation() const
-{
-    LayoutBoxModelObject* currentContinuation = continuation();
-    if (!currentContinuation || currentContinuation->isInline())
-        return 0;
-    LayoutBlock* nextContinuation = toLayoutBlock(currentContinuation);
-    if (nextContinuation->isAnonymousBlock())
-        return nextContinuation->blockElementContinuation();
-    return nextContinuation;
 }
 
 ContinuationOutlineTableMap* continuationOutlineTable()
@@ -1884,7 +1364,7 @@ LayoutUnit LayoutBlock::logicalRightSelectionOffset(const LayoutBlock* rootBlock
 LayoutBlock* LayoutBlock::blockBeforeWithinSelectionRoot(LayoutSize& offset) const
 {
     if (isSelectionRoot())
-        return 0;
+        return nullptr;
 
     const LayoutObject* object = this;
     LayoutObject* sibling;
@@ -1898,7 +1378,7 @@ LayoutBlock* LayoutBlock::blockBeforeWithinSelectionRoot(LayoutSize& offset) con
     } while (!sibling && object && object->isLayoutBlock() && !toLayoutBlock(object)->isSelectionRoot());
 
     if (!sibling)
-        return 0;
+        return nullptr;
 
     LayoutBlock* beforeBlock = toLayoutBlock(sibling);
 
@@ -1980,7 +1460,7 @@ TrackedLayoutBoxListHashSet* LayoutBlock::positionedObjects() const
 {
     if (gPositionedDescendantsMap)
         return gPositionedDescendantsMap->get(this);
-    return 0;
+    return nullptr;
 }
 
 void LayoutBlock::insertPositionedObject(LayoutBox* o)
@@ -2207,18 +1687,13 @@ bool LayoutBlock::nodeAtPoint(HitTestResult& result, const HitTestLocation& loca
         if (hasOverflowClip())
             scrolledOffset -= scrolledContentOffset();
 
-        // Hit test contents if we don't have columns.
-        if (!hasColumns()) {
-            if (hitTestContents(result, locationInContainer, toLayoutPoint(scrolledOffset), hitTestAction)) {
-                updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - localOffset));
-                return true;
-            }
-            if (hitTestAction == HitTestFloat && hitTestFloats(result, locationInContainer, toLayoutPoint(scrolledOffset)))
-                return true;
-        } else if (hitTestColumns(result, locationInContainer, toLayoutPoint(scrolledOffset), hitTestAction)) {
+        // Hit test contents
+        if (hitTestContents(result, locationInContainer, toLayoutPoint(scrolledOffset), hitTestAction)) {
             updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - localOffset));
             return true;
         }
+        if (hitTestAction == HitTestFloat && hitTestFloats(result, locationInContainer, toLayoutPoint(scrolledOffset)))
+            return true;
     }
 
     // Check if the point is outside radii.
@@ -2241,102 +1716,6 @@ bool LayoutBlock::nodeAtPoint(HitTestResult& result, const HitTestLocation& loca
     }
 
     return false;
-}
-
-class ColumnRectIterator {
-    WTF_MAKE_NONCOPYABLE(ColumnRectIterator);
-public:
-    ColumnRectIterator(const LayoutBlock& block)
-        : m_block(block)
-        , m_colInfo(block.columnInfo())
-        , m_direction(m_block.style()->isFlippedBlocksWritingMode() ? 1 : -1)
-        , m_isHorizontal(block.isHorizontalWritingMode())
-        , m_logicalLeft(block.logicalLeftOffsetForContent())
-    {
-        int colCount = m_colInfo->columnCount();
-        m_colIndex = colCount - 1;
-        m_currLogicalTopOffset = colCount * m_colInfo->columnHeight() * m_direction;
-        update();
-    }
-
-    void advance()
-    {
-        ASSERT(hasMore());
-        m_colIndex--;
-        update();
-    }
-
-    LayoutRect columnRect() const { return m_colRect; }
-    bool hasMore() const { return m_colIndex >= 0; }
-
-    void adjust(LayoutSize& offset) const
-    {
-        LayoutUnit currLogicalLeftOffset = (m_isHorizontal ? m_colRect.x() : m_colRect.y()) - m_logicalLeft;
-        offset += m_isHorizontal ? LayoutSize(currLogicalLeftOffset, m_currLogicalTopOffset) : LayoutSize(m_currLogicalTopOffset, currLogicalLeftOffset);
-        if (m_colInfo->progressionAxis() == ColumnInfo::BlockAxis) {
-            if (m_isHorizontal)
-                offset.expand(0, m_colRect.y() - m_block.borderTop() - m_block.paddingTop());
-            else
-                offset.expand(m_colRect.x() - m_block.borderLeft() - m_block.paddingLeft(), 0);
-        }
-    }
-
-private:
-    void update()
-    {
-        if (m_colIndex < 0)
-            return;
-
-        m_colRect = m_block.columnRectAt(const_cast<ColumnInfo*>(m_colInfo), m_colIndex);
-        m_block.flipForWritingMode(m_colRect);
-        m_currLogicalTopOffset -= (m_isHorizontal ? m_colRect.height() : m_colRect.width()) * m_direction;
-    }
-
-    const LayoutBlock& m_block;
-    const ColumnInfo* const m_colInfo;
-    const int m_direction;
-    const bool m_isHorizontal;
-    const LayoutUnit m_logicalLeft;
-    int m_colIndex;
-    LayoutUnit m_currLogicalTopOffset;
-    LayoutRect m_colRect;
-};
-
-bool LayoutBlock::hitTestColumns(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
-{
-    // We need to do multiple passes, breaking up our hit testing into strips.
-    if (!hasColumns())
-        return false;
-
-    for (ColumnRectIterator it(*this); it.hasMore(); it.advance()) {
-        LayoutRect hitRect = LayoutRect(locationInContainer.boundingBox());
-        LayoutRect colRect = it.columnRect();
-        colRect.moveBy(accumulatedOffset);
-        if (locationInContainer.intersects(colRect)) {
-            // The point is inside this column.
-            // Adjust accumulatedOffset to change where we hit test.
-            LayoutSize offset;
-            it.adjust(offset);
-            LayoutPoint finalLocation = accumulatedOffset + offset;
-            if (!result.isRectBasedTest() || colRect.contains(hitRect))
-                return hitTestContents(result, locationInContainer, finalLocation, hitTestAction) || (hitTestAction == HitTestFloat && hitTestFloats(result, locationInContainer, finalLocation));
-
-            hitTestContents(result, locationInContainer, finalLocation, hitTestAction);
-        }
-    }
-
-    return false;
-}
-
-void LayoutBlock::adjustForColumnRect(LayoutSize& offset, const LayoutPoint& locationInContainer) const
-{
-    for (ColumnRectIterator it(*this); it.hasMore(); it.advance()) {
-        LayoutRect colRect = it.columnRect();
-        if (colRect.contains(locationInContainer)) {
-            it.adjust(offset);
-            return;
-        }
-    }
 }
 
 bool LayoutBlock::hitTestContents(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
@@ -2429,9 +1808,9 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
     bool blocksAreFlipped = style()->isFlippedBlocksWritingMode();
 
     // look for the closest line box in the root box which is at the passed-in y coordinate
-    InlineBox* closestBox = 0;
-    RootInlineBox* firstRootBoxWithChildren = 0;
-    RootInlineBox* lastRootBoxWithChildren = 0;
+    InlineBox* closestBox = nullptr;
+    RootInlineBox* firstRootBoxWithChildren = nullptr;
+    RootInlineBox* lastRootBoxWithChildren = nullptr;
     for (RootInlineBox* root = firstRootBox(); root; root = root->nextRootBox()) {
         if (!root->firstLeafChild())
             continue;
@@ -2572,18 +1951,7 @@ void LayoutBlock::offsetForContents(LayoutPoint& offset) const
     if (hasOverflowClip())
         offset += LayoutSize(scrolledContentOffset());
 
-    if (hasColumns())
-        adjustPointToColumnContents(offset);
-
     offset = flipForWritingMode(offset);
-}
-
-LayoutUnit LayoutBlock::availableLogicalWidth() const
-{
-    // If we have multiple columns, then the available logical width is reduced to our column width.
-    if (hasColumns())
-        return desiredColumnWidth();
-    return LayoutBox::availableLogicalWidth();
 }
 
 int LayoutBlock::columnGap() const
@@ -2591,341 +1959,6 @@ int LayoutBlock::columnGap() const
     if (style()->hasNormalColumnGap())
         return style()->fontDescription().computedPixelSize(); // "1em" is recommended as the normal gap setting. Matches <p> margins.
     return static_cast<int>(style()->columnGap());
-}
-
-void LayoutBlock::calcColumnWidth()
-{
-    if (RuntimeEnabledFeatures::regionBasedColumnsEnabled())
-        return;
-
-    // Calculate our column width and column count.
-    // FIXME: Can overflow on fast/block/float/float-not-removed-from-next-sibling4.html, see https://bugs.webkit.org/show_bug.cgi?id=68744
-    unsigned desiredColumnCount = 1;
-    LayoutUnit desiredColumnWidth = contentLogicalWidth();
-
-    // For now, we don't support multi-column layouts when printing, since we have to do a lot of work for proper pagination.
-    if (document().paginated() || !style()->specifiesColumns()) {
-        setDesiredColumnCountAndWidth(desiredColumnCount, desiredColumnWidth);
-        return;
-    }
-
-    LayoutUnit availWidth = desiredColumnWidth;
-    LayoutUnit colGap = columnGap();
-    LayoutUnit colWidth = std::max<LayoutUnit>(1, LayoutUnit(style()->columnWidth()));
-    int colCount = std::max<int>(1, style()->columnCount());
-
-    if (style()->hasAutoColumnWidth() && !style()->hasAutoColumnCount()) {
-        desiredColumnCount = colCount;
-        desiredColumnWidth = std::max<LayoutUnit>(0, (availWidth - ((desiredColumnCount - 1) * colGap)) / desiredColumnCount);
-    } else if (!style()->hasAutoColumnWidth() && style()->hasAutoColumnCount()) {
-        desiredColumnCount = std::max<LayoutUnit>(1, (availWidth + colGap) / (colWidth + colGap));
-        desiredColumnWidth = ((availWidth + colGap) / desiredColumnCount) - colGap;
-    } else {
-        desiredColumnCount = std::max<LayoutUnit>(std::min<LayoutUnit>(colCount, (availWidth + colGap) / (colWidth + colGap)), 1);
-        desiredColumnWidth = ((availWidth + colGap) / desiredColumnCount) - colGap;
-    }
-    setDesiredColumnCountAndWidth(desiredColumnCount, desiredColumnWidth);
-}
-
-bool LayoutBlock::requiresColumns(int desiredColumnCount) const
-{
-    // Paged overflow is treated as multicol here, unless this element was the one that got its
-    // overflow propagated to the viewport.
-    bool isPaginated = style()->isOverflowPaged() && node() != document().viewportDefiningElement();
-
-    return firstChild()
-        && (desiredColumnCount != 1 || !style()->hasAutoColumnWidth() || isPaginated)
-        && !firstChild()->isAnonymousColumnsBlock()
-        && !firstChild()->isAnonymousColumnSpanBlock() && !isFlexibleBoxIncludingDeprecated();
-}
-
-void LayoutBlock::setDesiredColumnCountAndWidth(int count, LayoutUnit width)
-{
-    bool destroyColumns = !requiresColumns(count);
-    if (destroyColumns) {
-        if (hasColumns()) {
-            gColumnInfoMap->take(this);
-            setHasColumns(false);
-        }
-    } else {
-        ColumnInfo* info;
-        if (hasColumns()) {
-            info = gColumnInfoMap->get(this);
-        } else {
-            if (!gColumnInfoMap)
-                gColumnInfoMap = new ColumnInfoMap;
-            info = new ColumnInfo;
-            gColumnInfoMap->add(this, adoptPtr(info));
-            setHasColumns(true);
-        }
-        info->setDesiredColumnWidth(width);
-        if (style()->isOverflowPaged()) {
-            info->setDesiredColumnCount(1);
-            info->setProgressionAxis(style()->hasInlinePaginationAxis() ? ColumnInfo::InlineAxis : ColumnInfo::BlockAxis);
-        } else {
-            info->setDesiredColumnCount(count);
-            info->setProgressionAxis(ColumnInfo::InlineAxis);
-        }
-    }
-}
-
-LayoutUnit LayoutBlock::desiredColumnWidth() const
-{
-    if (!hasColumns())
-        return contentLogicalWidth();
-    return gColumnInfoMap->get(this)->desiredColumnWidth();
-}
-
-ColumnInfo* LayoutBlock::columnInfo() const
-{
-    if (!hasColumns())
-        return 0;
-    return gColumnInfoMap->get(this);
-}
-
-unsigned LayoutBlock::columnCount(ColumnInfo* colInfo) const
-{
-    ASSERT(hasColumns());
-    ASSERT(gColumnInfoMap->get(this) == colInfo);
-    return colInfo->columnCount();
-}
-
-LayoutRect LayoutBlock::columnRectAt(ColumnInfo* colInfo, unsigned index) const
-{
-    ASSERT(hasColumns() && gColumnInfoMap->get(this) == colInfo);
-
-    // Compute the appropriate rect based off our information.
-    LayoutUnit colLogicalWidth = colInfo->desiredColumnWidth();
-    LayoutUnit colLogicalHeight = colInfo->columnHeight();
-    LayoutUnit colLogicalTop = borderBefore() + paddingBefore();
-    LayoutUnit colLogicalLeft = logicalLeftOffsetForContent();
-    LayoutUnit colGap = columnGap();
-    if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
-        if (style()->isLeftToRightDirection())
-            colLogicalLeft += index * (colLogicalWidth + colGap);
-        else
-            colLogicalLeft += contentLogicalWidth() - colLogicalWidth - index * (colLogicalWidth + colGap);
-    } else {
-        colLogicalTop += index * (colLogicalHeight + colGap);
-    }
-
-    if (isHorizontalWritingMode())
-        return LayoutRect(colLogicalLeft, colLogicalTop, colLogicalWidth, colLogicalHeight);
-    return LayoutRect(colLogicalTop, colLogicalLeft, colLogicalHeight, colLogicalWidth);
-}
-
-void LayoutBlock::adjustPointToColumnContents(LayoutPoint& point) const
-{
-    // Just bail if we have no columns.
-    if (!hasColumns())
-        return;
-
-    ColumnInfo* colInfo = columnInfo();
-    if (!columnCount(colInfo))
-        return;
-
-    // Determine which columns we intersect.
-    LayoutUnit colGap = columnGap();
-    LayoutUnit halfColGap = colGap / 2;
-    LayoutPoint columnPoint(columnRectAt(colInfo, 0).location());
-    LayoutUnit logicalOffset = 0;
-    for (unsigned i = 0; i < colInfo->columnCount(); i++) {
-        // Add in half the column gap to the left and right of the rect.
-        LayoutRect colRect = columnRectAt(colInfo, i);
-        flipForWritingMode(colRect);
-        if (isHorizontalWritingMode() == (colInfo->progressionAxis() == ColumnInfo::InlineAxis)) {
-            LayoutRect gapAndColumnRect(colRect.x() - halfColGap, colRect.y(), colRect.width() + colGap, colRect.height());
-            if (point.x() >= gapAndColumnRect.x() && point.x() < gapAndColumnRect.maxX()) {
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
-                    // FIXME: The clamping that follows is not completely right for right-to-left
-                    // content.
-                    if (point.y() < gapAndColumnRect.y()) {
-                        // Clamp everything above the column to its top left.
-                        point = gapAndColumnRect.location();
-                    } else if (point.y() >= gapAndColumnRect.maxY()) {
-                        // Clamp everything below the column to the next column's top left. If there is
-                        // no next column, this still maps to just after this column.
-                        point = gapAndColumnRect.location();
-                        point.move(0, gapAndColumnRect.height());
-                    }
-                } else {
-                    if (point.x() < colRect.x())
-                        point.setX(colRect.x());
-                    else if (point.x() >= colRect.maxX())
-                        point.setX(colRect.maxX() - 1);
-                }
-
-                // We're inside the column.  Translate the x and y into our column coordinate space.
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                    point.move(columnPoint.x() - colRect.x(), (!style()->isFlippedBlocksWritingMode() ? logicalOffset : -logicalOffset));
-                else
-                    point.move((!style()->isFlippedBlocksWritingMode() ? logicalOffset : -logicalOffset) - colRect.x() + borderLeft() + paddingLeft(), 0);
-                return;
-            }
-
-            // Move to the next position.
-            logicalOffset += colInfo->progressionAxis() == ColumnInfo::InlineAxis ? colRect.height() : colRect.width();
-        } else {
-            LayoutRect gapAndColumnRect(colRect.x(), colRect.y() - halfColGap, colRect.width(), colRect.height() + colGap);
-            if (point.y() >= gapAndColumnRect.y() && point.y() < gapAndColumnRect.maxY()) {
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
-                    // FIXME: The clamping that follows is not completely right for right-to-left
-                    // content.
-                    if (point.x() < gapAndColumnRect.x()) {
-                        // Clamp everything above the column to its top left.
-                        point = gapAndColumnRect.location();
-                    } else if (point.x() >= gapAndColumnRect.maxX()) {
-                        // Clamp everything below the column to the next column's top left. If there is
-                        // no next column, this still maps to just after this column.
-                        point = gapAndColumnRect.location();
-                        point.move(gapAndColumnRect.width(), 0);
-                    }
-                } else {
-                    if (point.y() < colRect.y())
-                        point.setY(colRect.y());
-                    else if (point.y() >= colRect.maxY())
-                        point.setY(colRect.maxY() - 1);
-                }
-
-                // We're inside the column.  Translate the x and y into our column coordinate space.
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                    point.move((!style()->isFlippedBlocksWritingMode() ? logicalOffset : -logicalOffset), columnPoint.y() - colRect.y());
-                else
-                    point.move(0, (!style()->isFlippedBlocksWritingMode() ? logicalOffset : -logicalOffset) - colRect.y() + borderTop() + paddingTop());
-                return;
-            }
-
-            // Move to the next position.
-            logicalOffset += colInfo->progressionAxis() == ColumnInfo::InlineAxis ? colRect.width() : colRect.height();
-        }
-    }
-}
-
-void LayoutBlock::adjustRectForColumns(LayoutRect& r) const
-{
-    // Just bail if we have no columns.
-    if (!hasColumns())
-        return;
-
-    ColumnInfo* colInfo = columnInfo();
-
-    // Determine which columns we intersect.
-    unsigned colCount = columnCount(colInfo);
-    if (!colCount)
-        return;
-
-    // Begin with a result rect that is empty.
-    LayoutRect result;
-
-    bool isHorizontal = isHorizontalWritingMode();
-    LayoutUnit beforeBorderPadding = borderBefore() + paddingBefore();
-    LayoutUnit colHeight = colInfo->columnHeight();
-    if (!colHeight)
-        return;
-
-    LayoutUnit startOffset = std::max(isHorizontal ? r.y() : r.x(), beforeBorderPadding);
-    LayoutUnit endOffset = std::max(std::min<LayoutUnit>(isHorizontal ? r.maxY() : r.maxX(), beforeBorderPadding + colCount * colHeight), beforeBorderPadding);
-
-    // FIXME: Can overflow on fast/block/float/float-not-removed-from-next-sibling4.html, see https://bugs.webkit.org/show_bug.cgi?id=68744
-    unsigned startColumn = (startOffset - beforeBorderPadding) / colHeight;
-    unsigned endColumn = (endOffset - beforeBorderPadding) / colHeight;
-
-    if (startColumn == endColumn) {
-        // The rect is fully contained within one column. Adjust for our offsets
-        // and issue paint invalidations only that portion.
-        LayoutUnit logicalLeftOffset = logicalLeftOffsetForContent();
-        LayoutRect colRect = columnRectAt(colInfo, startColumn);
-        LayoutRect paintInvalidationRect = r;
-
-        if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {
-            if (isHorizontal)
-                paintInvalidationRect.move(colRect.x() - logicalLeftOffset, - static_cast<int>(startColumn) * colHeight);
-            else
-                paintInvalidationRect.move(- static_cast<int>(startColumn) * colHeight, colRect.y() - logicalLeftOffset);
-        } else {
-            if (isHorizontal)
-                paintInvalidationRect.move(0, colRect.y() - startColumn * colHeight - beforeBorderPadding);
-            else
-                paintInvalidationRect.move(colRect.x() - startColumn * colHeight - beforeBorderPadding, 0);
-        }
-        paintInvalidationRect.intersect(colRect);
-        result.unite(paintInvalidationRect);
-    } else {
-        // We span multiple columns. We can just unite the start and end column to get the final
-        // paint invalidation rect.
-        result.unite(columnRectAt(colInfo, startColumn));
-        result.unite(columnRectAt(colInfo, endColumn));
-    }
-
-    r = result;
-}
-
-LayoutPoint LayoutBlock::flipForWritingModeIncludingColumns(const LayoutPoint& point) const
-{
-    ASSERT(hasColumns());
-    if (!hasColumns() || !style()->isFlippedBlocksWritingMode())
-        return point;
-    ColumnInfo* colInfo = columnInfo();
-    LayoutUnit columnLogicalHeight = colInfo->columnHeight();
-    LayoutUnit expandedLogicalHeight = borderBefore() + paddingBefore() + columnCount(colInfo) * columnLogicalHeight + borderAfter() + paddingAfter() + scrollbarLogicalHeight();
-    if (isHorizontalWritingMode())
-        return LayoutPoint(point.x(), expandedLogicalHeight - point.y());
-    return LayoutPoint(expandedLogicalHeight - point.x(), point.y());
-}
-
-void LayoutBlock::adjustStartEdgeForWritingModeIncludingColumns(LayoutRect& rect) const
-{
-    ASSERT(hasColumns());
-    if (!hasColumns() || !style()->isFlippedBlocksWritingMode())
-        return;
-
-    ColumnInfo* colInfo = columnInfo();
-    LayoutUnit columnLogicalHeight = colInfo->columnHeight();
-    LayoutUnit expandedLogicalHeight = borderBefore() + paddingBefore() + columnCount(colInfo) * columnLogicalHeight + borderAfter() + paddingAfter() + scrollbarLogicalHeight();
-
-    if (isHorizontalWritingMode())
-        rect.setY(expandedLogicalHeight - rect.maxY());
-    else
-        rect.setX(expandedLogicalHeight - rect.maxX());
-}
-
-LayoutSize LayoutBlock::columnOffset(const LayoutPoint& point) const
-{
-    if (!hasColumns())
-        return LayoutSize();
-
-    ColumnInfo* colInfo = columnInfo();
-
-    LayoutUnit logicalLeft = logicalLeftOffsetForContent();
-    unsigned colCount = columnCount(colInfo);
-    LayoutUnit colLogicalWidth = colInfo->desiredColumnWidth();
-    LayoutUnit colLogicalHeight = colInfo->columnHeight();
-
-    for (unsigned i = 0; i < colCount; ++i) {
-        // Compute the edges for a given column in the block progression direction.
-        LayoutRect sliceRect = LayoutRect(logicalLeft, borderBefore() + paddingBefore() + i * colLogicalHeight, colLogicalWidth, colLogicalHeight);
-        if (!isHorizontalWritingMode())
-            sliceRect = sliceRect.transposedRect();
-
-        LayoutUnit logicalOffset = i * colLogicalHeight;
-
-        // Now we're in the same coordinate space as the point.  See if it is inside the rectangle.
-        if (isHorizontalWritingMode()) {
-            if (point.y() >= sliceRect.y() && point.y() < sliceRect.maxY()) {
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                    return LayoutSize(columnRectAt(colInfo, i).x() - logicalLeft, -logicalOffset);
-                return LayoutSize(0, columnRectAt(colInfo, i).y() - logicalOffset - borderBefore() - paddingBefore());
-            }
-        } else {
-            if (point.x() >= sliceRect.x() && point.x() < sliceRect.maxX()) {
-                if (colInfo->progressionAxis() == ColumnInfo::InlineAxis)
-                    return LayoutSize(-logicalOffset, columnRectAt(colInfo, i).y() - logicalLeft);
-                return LayoutSize(columnRectAt(colInfo, i).x() - logicalOffset - borderBefore() - paddingBefore(), 0);
-            }
-        }
-    }
-
-    return LayoutSize();
 }
 
 void LayoutBlock::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
@@ -2939,11 +1972,8 @@ void LayoutBlock::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, Lay
 
     maxLogicalWidth = std::max(minLogicalWidth, maxLogicalWidth);
 
-    // The flow thread based multicol implementation will do this adjustment on the flow thread, and
-    // not here on the multicol container, so that spanners won't incorrectly be treated as column
-    // content (and have spanners' preferred widths multiplied by the number of columns, etc.).
-    if (style()->specifiesColumns() && !RuntimeEnabledFeatures::regionBasedColumnsEnabled())
-        adjustIntrinsicLogicalWidthsForColumns(minLogicalWidth, maxLogicalWidth);
+    if (isHTMLMarqueeElement(node()) && toHTMLMarqueeElement(node())->isHorizontal())
+        minLogicalWidth = LayoutUnit();
 
     if (isTableCell()) {
         Length tableCellWidth = toLayoutTableCell(this)->styleOrColLogicalWidth();
@@ -2993,31 +2023,6 @@ void LayoutBlock::computePreferredLogicalWidths()
     m_maxPreferredLogicalWidth += borderAndPadding;
 
     clearPreferredLogicalWidthsDirty();
-}
-
-void LayoutBlock::adjustIntrinsicLogicalWidthsForColumns(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
-{
-    ASSERT(!RuntimeEnabledFeatures::regionBasedColumnsEnabled());
-    if (!style()->hasAutoColumnCount() || !style()->hasAutoColumnWidth()) {
-        // The min/max intrinsic widths calculated really tell how much space elements need when
-        // laid out inside the columns. In order to eventually end up with the desired column width,
-        // we need to convert them to values pertaining to the multicol container.
-        int columnCount = style()->hasAutoColumnCount() ? 1 : style()->columnCount();
-        LayoutUnit columnWidth;
-        LayoutUnit gapExtra = (columnCount - 1) * columnGap();
-        if (style()->hasAutoColumnWidth()) {
-            minLogicalWidth = minLogicalWidth * columnCount + gapExtra;
-        } else {
-            columnWidth = style()->columnWidth();
-            minLogicalWidth = std::min(minLogicalWidth, columnWidth);
-        }
-        // FIXME: If column-count is auto here, we should resolve it to calculate the maximum
-        // intrinsic width, instead of pretending that it's 1. The only way to do that is by
-        // performing a layout pass, but this is not an appropriate time or place for layout. The
-        // good news is that if height is unconstrained and there are no explicit breaks, the
-        // resolved column-count really should be 1.
-        maxLogicalWidth = std::max(maxLogicalWidth, columnWidth) * columnCount + gapExtra;
-    }
 }
 
 void LayoutBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
@@ -3306,7 +2311,7 @@ LayoutBlock* LayoutBlock::firstLineBlock() const
     }
 
     if (!hasPseudo)
-        return 0;
+        return nullptr;
 
     return firstLineBlock;
 }
@@ -3329,7 +2334,7 @@ static int getHeightForLineCount(LayoutBlock* block, int l, bool includeBottom, 
                     return box->lineBottom() + (includeBottom ? (block->borderBottom() + block->paddingBottom()) : LayoutUnit());
             }
         } else {
-            LayoutBox* normalFlowChildWithoutLines = 0;
+            LayoutBox* normalFlowChildWithoutLines = nullptr;
             for (LayoutBox* obj = block->firstChildBox(); obj; obj = obj->nextSiblingBox()) {
                 if (shouldCheckLines(obj)) {
                     int result = getHeightForLineCount(toLayoutBlock(obj), l, false, count);
@@ -3352,7 +2357,7 @@ RootInlineBox* LayoutBlock::lineAtIndex(int i) const
     ASSERT(i >= 0);
 
     if (style()->visibility() != VISIBLE)
-        return 0;
+        return nullptr;
 
     if (childrenInline()) {
         for (RootInlineBox* box = firstRootBox(); box; box = box->nextRootBox()) {
@@ -3368,7 +2373,7 @@ RootInlineBox* LayoutBlock::lineAtIndex(int i) const
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 int LayoutBlock::lineCount(const RootInlineBox* stopRootInlineBox, bool* found) const
@@ -3532,11 +2537,12 @@ void LayoutBlock::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint
         bool prevInlineHasLineBox = toLayoutInline(inlineElementContinuation->node()->layoutObject())->firstLineBox();
         LayoutUnit topMargin = prevInlineHasLineBox ? collapsedMarginBefore() : LayoutUnit();
         LayoutUnit bottomMargin = nextInlineHasLineBox ? collapsedMarginAfter() : LayoutUnit();
-        LayoutRect rect(additionalOffset, size());
-        rect.expandEdges(topMargin, 0, bottomMargin, 0);
-
-        if (!rect.isEmpty())
-            rects.append(rect);
+        if (topMargin || bottomMargin) {
+            LayoutRect rect(additionalOffset, size());
+            rect.expandEdges(topMargin, 0, bottomMargin, 0);
+            if (!rect.isEmpty())
+                rects.append(rect);
+        }
     } else if (size().width() && size().height()) {
         rects.append(LayoutRect(additionalOffset, size()));
     }
@@ -3550,7 +2556,11 @@ void LayoutBlock::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint
                 rects.append(rect);
         }
 
-        addChildFocusRingRects(rects, additionalOffset);
+        addFocusRingRectsForNormalChildren(rects, additionalOffset);
+        if (TrackedLayoutBoxListHashSet* positionedObjects = this->positionedObjects()) {
+            for (auto* box : *positionedObjects)
+                addFocusRingRectsForDescendant(*box, rects, additionalOffset);
+        }
     }
 
     if (inlineElementContinuation) {
@@ -3579,10 +2589,6 @@ void LayoutBlock::computeSelfHitTestRects(Vector<LayoutRect>& rects, const Layou
 
 LayoutBox* LayoutBlock::createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const
 {
-    if (isAnonymousColumnsBlock())
-        return createAnonymousColumnsWithParent(parent);
-    if (isAnonymousColumnSpanBlock())
-        return createAnonymousColumnSpanWithParent(parent);
     return createAnonymousWithParentAndDisplay(parent, style()->display());
 }
 
@@ -3638,21 +2644,6 @@ void LayoutBlock::updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeigh
 {
     if (LayoutFlowThread* flowThread = flowThreadContainingBlock())
         flowThread->updateMinimumPageHeight(offsetFromLogicalTopOfFirstPage() + offset, minHeight);
-    else if (ColumnInfo* colInfo = view()->layoutState()->columnInfo())
-        colInfo->updateMinimumColumnHeight(minHeight);
-}
-
-LayoutUnit LayoutBlock::offsetFromLogicalTopOfFirstPage() const
-{
-    LayoutState* layoutState = view()->layoutState();
-    RELEASE_ASSERT(layoutState);
-    if (!layoutState->isPaginated())
-        return LayoutUnit();
-    // It would be possible to remove the requirement that this block be the one currently being
-    // laid out, but nobody needs that at the moment.
-    ASSERT(layoutState->layoutObject() == this);
-    LayoutSize offsetDelta = layoutState->layoutOffset() - layoutState->pageOffset();
-    return isHorizontalWritingMode() ? offsetDelta.height() : offsetDelta.width();
 }
 
 LayoutUnit LayoutBlock::collapsedMarginBeforeForChild(const LayoutBox& child) const
@@ -3733,7 +2724,7 @@ LayoutBlock* LayoutBlock::createAnonymousWithParentAndDisplay(const LayoutObject
 {
     // FIXME: Do we need to convert all our inline displays to block-type in the anonymous logic ?
     EDisplay newDisplay;
-    LayoutBlock* newBox = 0;
+    LayoutBlock* newBox = nullptr;
     if (display == FLEX || display == INLINE_FLEX) {
         newBox = LayoutFlexibleBox::createAnonymous(&parent->document());
         newDisplay = FLEX;
@@ -3743,28 +2734,6 @@ LayoutBlock* LayoutBlock::createAnonymousWithParentAndDisplay(const LayoutObject
     }
 
     RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), newDisplay);
-    parent->updateAnonymousChildStyle(*newBox, *newStyle);
-    newBox->setStyle(newStyle.release());
-    return newBox;
-}
-
-LayoutBlockFlow* LayoutBlock::createAnonymousColumnsWithParent(const LayoutObject* parent)
-{
-    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), BLOCK);
-    newStyle->inheritColumnPropertiesFrom(parent->styleRef());
-
-    LayoutBlockFlow* newBox = LayoutBlockFlow::createAnonymous(&parent->document());
-    parent->updateAnonymousChildStyle(*newBox, *newStyle);
-    newBox->setStyle(newStyle.release());
-    return newBox;
-}
-
-LayoutBlockFlow* LayoutBlock::createAnonymousColumnSpanWithParent(const LayoutObject* parent)
-{
-    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), BLOCK);
-    newStyle->setColumnSpan(ColumnSpanAll);
-
-    LayoutBlockFlow* newBox = LayoutBlockFlow::createAnonymous(&parent->document());
     parent->updateAnonymousChildStyle(*newBox, *newStyle);
     newBox->setStyle(newStyle.release());
     return newBox;

@@ -10,7 +10,7 @@ source_set("core") {
     "device_monitor_win.h",
   ]
 
-  deps = [
+  public_deps = [
     "//base",
   ]
 }

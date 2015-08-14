@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -42,6 +43,10 @@
    ((uint32_t)(d) << 24))
 
 namespace {
+
+double clamp(double min, double max, double value) {
+  return std::max(std::min(value, max), min);
+}
 
 // IVF container writer. It is possible to parse H264 bitstream using
 // NAL units but for VP8 we need a container to at least find encoded
@@ -159,6 +164,7 @@ class VideoEncoderInstance : public pp::Instance {
   VideoProfileToStringMap profile_to_string_;
 
   bool is_encoding_;
+  bool is_encode_ticking_;
   bool is_receiving_track_frames_;
 
   pp::VideoEncoder video_encoder_;
@@ -176,12 +182,15 @@ class VideoEncoderInstance : public pp::Instance {
   pp::VideoFrame current_track_frame_;
 
   IVFWriter ivf_writer_;
+
+  PP_Time last_encode_tick_;
 };
 
 VideoEncoderInstance::VideoEncoderInstance(PP_Instance instance,
                                            pp::Module* module)
     : pp::Instance(instance),
       is_encoding_(false),
+      is_encode_ticking_(false),
       callback_factory_(this),
 #if defined(USE_VP8_INSTEAD_OF_H264)
       video_profile_(PP_VIDEOPROFILE_VP8_ANY),
@@ -189,7 +198,8 @@ VideoEncoderInstance::VideoEncoderInstance(PP_Instance instance,
       video_profile_(PP_VIDEOPROFILE_H264MAIN),
 #endif
       frame_format_(PP_VIDEOFRAME_FORMAT_I420),
-      encoded_frames_(0) {
+      encoded_frames_(0),
+      last_encode_tick_(0) {
   InitializeVideoProfiles();
   ProbeEncoder();
 }
@@ -339,13 +349,28 @@ void VideoEncoderInstance::OnInitializedEncoder(int32_t result) {
 }
 
 void VideoEncoderInstance::ScheduleNextEncode() {
+  // Avoid scheduling more than once at a time.
+  if (is_encode_ticking_)
+    return;
+
+  PP_Time now = pp::Module::Get()->core()->GetTime();
+  PP_Time tick = 1.0 / 30;
+  // If the callback was triggered late, we need to account for that
+  // delay for the next tick.
+  PP_Time delta = tick - clamp(0, tick, now - last_encode_tick_ - tick);
+
   pp::Module::Get()->core()->CallOnMainThread(
-      1000 / 30,
+      delta * 1000,
       callback_factory_.NewCallback(&VideoEncoderInstance::GetEncoderFrameTick),
       0);
+
+  last_encode_tick_ = now;
+  is_encode_ticking_ = true;
 }
 
 void VideoEncoderInstance::GetEncoderFrameTick(int32_t result) {
+  is_encode_ticking_ = false;
+
   if (is_encoding_) {
     if (!current_track_frame_.is_null()) {
       pp::VideoFrame frame = current_track_frame_;

@@ -17,8 +17,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
+#include "base/thread_task_runner_handle.h"
 #include "mojo/common/message_pump_mojo.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/platform_channel_pair.h"
@@ -97,7 +99,7 @@ class AppContext : public embedder::ProcessDelegate {
     // Create and start our I/O thread.
     base::Thread::Options io_thread_options(base::MessageLoop::TYPE_IO, 0);
     CHECK(io_thread_.StartWithOptions(io_thread_options));
-    io_runner_ = io_thread_.message_loop_proxy().get();
+    io_runner_ = io_thread_.task_runner().get();
     CHECK(io_runner_.get());
 
     // Create and start our controller thread.
@@ -107,7 +109,7 @@ class AppContext : public embedder::ProcessDelegate {
     controller_thread_options.message_pump_factory =
         base::Bind(&common::MessagePumpMojo::Create);
     CHECK(controller_thread_.StartWithOptions(controller_thread_options));
-    controller_runner_ = controller_thread_.message_loop_proxy().get();
+    controller_runner_ = controller_thread_.task_runner().get();
     CHECK(controller_runner_.get());
 
     // TODO(vtl): This should be SLAVE, not NONE.
@@ -191,10 +193,10 @@ class ChildControllerImpl : public ChildController, public ErrorHandler {
         new ChildControllerImpl(app_context, unblocker));
 
     ScopedMessagePipeHandle host_message_pipe(embedder::CreateChannel(
-        platform_channel.Pass(), app_context->io_runner(),
+        platform_channel.Pass(),
         base::Bind(&ChildControllerImpl::DidCreateChannel,
                    base::Unretained(impl.get())),
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get()));
 
     impl->Bind(host_message_pipe.Pass());
 

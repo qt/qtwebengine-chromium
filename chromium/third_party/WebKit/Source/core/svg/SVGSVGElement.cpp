@@ -178,7 +178,7 @@ public:
         return adoptRefWillBeNoop(new SVGCurrentTranslateTearOff(contextElement));
     }
 
-    virtual void commitChange() override
+    void commitChange() override
     {
         ASSERT(contextElement());
         toSVGSVGElement(contextElement())->updateCurrentTranslate();
@@ -315,6 +315,7 @@ void SVGSVGElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (SVGFitToViewBox::isKnownAttribute(attrName)) {
         updateRelativeLengthsOrViewBox = true;
+        invalidateRelativeLengthClients();
         if (LayoutObject* object = layoutObject())
             object->setNeedsTransformUpdate();
     }

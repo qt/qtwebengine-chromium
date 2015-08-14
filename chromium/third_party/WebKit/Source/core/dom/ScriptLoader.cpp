@@ -29,23 +29,23 @@
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
-#include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
 #include "core/dom/ScriptLoaderClient.h"
 #include "core/dom/ScriptRunner.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/Text.h"
+#include "core/events/Event.h"
 #include "core/fetch/AccessControlStatus.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/SubresourceIntegrity.h"
 #include "core/frame/UseCounter.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/imports/HTMLImport.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/frame/LocalFrame.h"
-#include "core/frame/SubresourceIntegrity.h"
-#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/svg/SVGScriptElement.h"
 #include "platform/MIMETypeRegistry.h"
@@ -257,7 +257,9 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         m_pendingScript = PendingScript(m_element, m_resource.get());
         LocalFrame* frame = m_element->document().frame();
         if (frame) {
-            ScriptStreamer::startStreaming(m_pendingScript, PendingScript::Async, frame->settings(), ScriptState::forMainWorld(frame));
+            ScriptState* scriptState = ScriptState::forMainWorld(frame);
+            if (scriptState->contextIsValid())
+                ScriptStreamer::startStreaming(m_pendingScript, PendingScript::Async, frame->settings(), scriptState);
         }
         contextDocument->scriptRunner()->queueScriptForExecution(this, ScriptRunner::ASYNC_EXECUTION);
         // Note that watchForLoad can immediately call notifyFinished.
@@ -297,7 +299,7 @@ bool ScriptLoader::fetchScript(const String& sourceUrl, FetchRequest::DeferOptio
             request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
         request.setDefer(defer);
 
-        m_resource = elementDocument->fetcher()->fetchScript(request);
+        m_resource = ScriptResource::fetch(request, elementDocument->fetcher());
         m_isExternalScript = true;
     }
 
@@ -362,9 +364,19 @@ bool ScriptLoader::executeScript(const ScriptSourceCode& sourceCode, double* com
     if (!frame)
         return true;
 
-    AccessControlStatus corsCheck = NotSharableCrossOrigin;
-    if (!m_isExternalScript || (sourceCode.resource() && sourceCode.resource()->passesAccessControlCheck(m_element->document().securityOrigin())))
-        corsCheck = SharableCrossOrigin;
+    AccessControlStatus accessControlStatus = NotSharableCrossOrigin;
+    if (!m_isExternalScript) {
+        accessControlStatus = SharableCrossOrigin;
+    } else if (sourceCode.resource()) {
+        if (sourceCode.resource()->response().wasFetchedViaServiceWorker()) {
+            if (sourceCode.resource()->response().serviceWorkerResponseType() == WebServiceWorkerResponseTypeOpaque)
+                accessControlStatus = OpaqueResource;
+            else
+                accessControlStatus = SharableCrossOrigin;
+        } else if (sourceCode.resource()->passesAccessControlCheck(m_element->document().securityOrigin())) {
+            accessControlStatus = SharableCrossOrigin;
+        }
+    }
 
     if (m_isExternalScript) {
         const KURL resourceUrl = sourceCode.resource()->resourceRequest().url();
@@ -384,7 +396,7 @@ bool ScriptLoader::executeScript(const ScriptSourceCode& sourceCode, double* com
     // Create a script from the script element node, using the script
     // block's source and the script block's type.
     // Note: This is where the script is compiled and actually executed.
-    frame->script().executeScriptInMainWorld(sourceCode, corsCheck, compilationFinishTime);
+    frame->script().executeScriptInMainWorld(sourceCode, accessControlStatus, compilationFinishTime);
 
     if (isHTMLScriptLoader(m_element)) {
         ASSERT(contextDocument->currentScript() == m_element);

@@ -43,16 +43,16 @@ namespace blink {
         int movementX() const { return m_movementDelta.x(); }
         int movementY() const { return m_movementDelta.y(); }
         const LayoutPoint& clientLocation() const { return m_clientLocation; }
-        virtual int layerX() override final;
-        virtual int layerY() override final;
+        int layerX();
+        int layerY();
         int offsetX();
         int offsetY();
         // FIXME: rename isSimulated to fromKeyboard() and replace m_isSimulated with a new value
         // in PlatformMouseEvent::SyntheticEventType. isSimulated() is only true for synthetic
         // mouse events that derive from keyboard input, which do not have a position.
         bool isSimulated() const { return m_isSimulated; }
-        virtual int pageX() const override final;
-        virtual int pageY() const override final;
+        int pageX() const;
+        int pageY() const;
         int x() const;
         int y() const;
 
@@ -65,10 +65,12 @@ namespace blink {
 
     protected:
         MouseRelatedEvent();
+        // TODO(lanwei): Will make this argument non-optional and all the callers need to provide
+        // sourceDevice even when it is null, see https://crbug.com/476530.
         MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable,
             PassRefPtrWillBeRawPtr<AbstractView>, int detail, const IntPoint& screenLocation,
             const IntPoint& rootFrameLocation, const IntPoint& movementDelta, bool ctrlKey, bool altKey,
-            bool shiftKey, bool metaKey, bool isSimulated = false);
+            bool shiftKey, bool metaKey, bool isSimulated = false, InputDevice* sourceDevice = nullptr);
 
         void initCoordinates();
         void initCoordinates(const LayoutPoint& clientLocation);

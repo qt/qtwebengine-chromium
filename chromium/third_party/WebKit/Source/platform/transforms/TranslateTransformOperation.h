@@ -52,10 +52,17 @@ public:
     Length y() const { return m_y; }
     double z() const { return m_z; }
 
-private:
-    virtual OperationType type() const override { return m_type; }
+    void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const override
+    {
+        transform.translate3d(x(borderBoxSize), y(borderBoxSize), z());
+    }
 
-    virtual bool operator==(const TransformOperation& o) const override
+    static bool isMatchingOperationType(OperationType type) { return type == Translate || type == TranslateX || type == TranslateY || type == TranslateZ || type == Translate3D; }
+
+private:
+    OperationType type() const override { return m_type; }
+
+    bool operator==(const TransformOperation& o) const override
     {
         if (!isSameType(o))
             return false;
@@ -63,14 +70,9 @@ private:
         return m_x == t->m_x && m_y == t->m_y && m_z == t->m_z;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const override
-    {
-        transform.translate3d(x(borderBoxSize), y(borderBoxSize), z());
-    }
+    PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
-
-    virtual bool dependsOnBoxSize() const override
+    bool dependsOnBoxSize() const override
     {
         return m_x.hasPercent() || m_y.hasPercent();
     }
@@ -81,7 +83,7 @@ private:
         , m_z(tz)
         , m_type(type)
     {
-        ASSERT(type == TranslateX || type == TranslateY || type == TranslateZ || type == Translate || type == Translate3D);
+        ASSERT(isMatchingOperationType(type));
     }
 
     Length m_x;
@@ -89,6 +91,8 @@ private:
     double m_z;
     OperationType m_type;
 };
+
+DEFINE_TRANSFORM_TYPE_CASTS(TranslateTransformOperation);
 
 } // namespace blink
 

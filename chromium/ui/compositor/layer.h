@@ -76,7 +76,8 @@ class COMPOSITOR_EXPORT Layer
   explicit Layer(LayerType type);
   ~Layer() override;
 
-  static bool UsingPictureLayer();
+  static const cc::LayerSettings& UILayerSettings();
+  static void InitializeUILayerSettings();
 
   // Retrieves the Layer's compositor. The Layer will walk up its parent chain
   // to locate it. Returns NULL if the Layer is not attached to a compositor.
@@ -88,7 +89,9 @@ class COMPOSITOR_EXPORT Layer
 
   // Called by the compositor when the Layer is set as its root Layer. This can
   // only ever be called on the root layer.
-  void SetCompositor(Compositor* compositor);
+  void SetCompositor(Compositor* compositor,
+                     scoped_refptr<cc::Layer> root_layer);
+  void ResetCompositor();
 
   LayerDelegate* delegate() { return delegate_; }
   void set_delegate(LayerDelegate* delegate) { delegate_ = delegate; }
@@ -141,6 +144,8 @@ class COMPOSITOR_EXPORT Layer
   void SetTransform(const gfx::Transform& transform);
   gfx::Transform transform() const;
 
+  gfx::PointF position() const { return cc_layer_->position(); }
+
   // Return the target transform if animator is running, or the current
   // transform otherwise.
   gfx::Transform GetTargetTransform() const;
@@ -148,6 +153,7 @@ class COMPOSITOR_EXPORT Layer
   // The bounds, relative to the parent.
   void SetBounds(const gfx::Rect& bounds);
   const gfx::Rect& bounds() const { return bounds_; }
+  const gfx::Size& size() const { return bounds_.size(); }
 
   // The offset from our parent (stored in bounds.origin()) is an integer but we
   // may need to be at a fractional pixel offset to align properly on screen.
@@ -346,13 +352,12 @@ class COMPOSITOR_EXPORT Layer
       SkCanvas* canvas,
       const gfx::Rect& clip,
       ContentLayerClient::PaintingControlSetting painting_control) override;
-  void PaintContentsToDisplayList(
-      cc::DisplayItemList* display_list,
+  scoped_refptr<cc::DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
       ContentLayerClient::PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
 
-  cc::Layer* cc_layer() { return cc_layer_; }
+  cc::Layer* cc_layer_for_testing() { return cc_layer_; }
 
   // TextureLayerClient
   bool PrepareTextureMailbox(

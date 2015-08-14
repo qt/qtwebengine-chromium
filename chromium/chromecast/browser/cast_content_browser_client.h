@@ -30,6 +30,11 @@ class HostResolver;
 }
 
 namespace chromecast {
+namespace media {
+class MediaPipelineDevice;
+class MediaPipelineDeviceParams;
+}
+
 namespace shell {
 
 class CastBrowserMainParts;
@@ -37,16 +42,29 @@ class URLRequestContextFactory;
 
 class CastContentBrowserClient: public content::ContentBrowserClient {
  public:
-  CastContentBrowserClient();
+  // Creates an implementation of CastContentBrowserClient. Platform should
+  // link in an implementation as needed.
+  static scoped_ptr<CastContentBrowserClient> Create();
+
   ~CastContentBrowserClient() override;
 
   // Appends extra command line arguments before launching a new process.
-  void PlatformAppendExtraCommandLineSwitches(base::CommandLine* command_line);
+  virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line);
 
-  // Returns any BrowserMessageFilters from the platform implementation that
-  // should be added when launching a new render process.
-  std::vector<scoped_refptr<content::BrowserMessageFilter>>
-  PlatformGetBrowserMessageFilters();
+  // Returns any BrowserMessageFilters that should be added when launching a
+  // new render process.
+  virtual std::vector<scoped_refptr<content::BrowserMessageFilter>>
+  GetBrowserMessageFilters();
+
+  // Provide an AudioManagerFactory instance for WebAudio playback.
+  virtual scoped_ptr<::media::AudioManagerFactory> CreateAudioManagerFactory();
+
+#if !defined(OS_ANDROID)
+  // Creates a MediaPipelineDevice (CMA backend) for media playback, called
+  // once per media player instance.
+  virtual scoped_ptr<media::MediaPipelineDevice> CreateMediaPipelineDevice(
+      const media::MediaPipelineDeviceParams& params);
+#endif
 
   // content::ContentBrowserClient implementation:
   content::BrowserMainParts* CreateBrowserMainParts(
@@ -95,17 +113,29 @@ class CastContentBrowserClient: public content::ContentBrowserClient {
       bool opener_suppressed,
       content::ResourceContext* context,
       int render_process_id,
-      int opener_id,
+      int opener_render_view_id,
+      int opener_render_frame_id,
       bool* no_javascript_access) override;
+#if defined(OS_ANDROID)
+  void GetAdditionalMappedFilesForChildProcess(
+      const base::CommandLine& command_line,
+      int child_process_id,
+      content::FileDescriptorInfo* mappings,
+      std::map<int, base::MemoryMappedFile::Region>* regions) override;
+#else
   void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
       content::FileDescriptorInfo* mappings) override;
+#endif  // defined(OS_ANDROID)
 #if defined(OS_ANDROID) && defined(VIDEO_HOLE)
   content::ExternalVideoSurfaceContainer*
   OverrideCreateExternalVideoSurfaceContainer(
       content::WebContents* web_contents) override;
 #endif  // defined(OS_ANDROID) && defined(VIDEO_HOLE)
+
+ protected:
+  CastContentBrowserClient();
 
  private:
   void AddNetworkHintsMessageFilter(int render_process_id,
@@ -114,8 +144,6 @@ class CastContentBrowserClient: public content::ContentBrowserClient {
   net::X509Certificate* SelectClientCertificateOnIOThread(
       GURL requesting_url,
       int render_process_id);
-
-  scoped_ptr<::media::AudioManagerFactory> PlatformCreateAudioManagerFactory();
 
 #if !defined(OS_ANDROID)
   // Returns the crash signal FD corresponding to the current process type.
@@ -128,9 +156,6 @@ class CastContentBrowserClient: public content::ContentBrowserClient {
   // A static cache to hold crash_handlers for each process_type
   std::map<std::string, breakpad::CrashHandlerHostLinux*> crash_handlers_;
 #endif
-
-  base::ScopedFD v8_natives_fd_;
-  base::ScopedFD v8_snapshot_fd_;
 
   scoped_ptr<URLRequestContextFactory> url_request_context_factory_;
 

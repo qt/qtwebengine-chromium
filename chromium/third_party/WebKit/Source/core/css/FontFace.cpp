@@ -278,7 +278,7 @@ bool FontFace::setFamilyValue(CSSValueList* familyList)
 
     CSSPrimitiveValue* familyValue = toCSSPrimitiveValue(familyList->item(0));
     AtomicString family;
-    if (familyValue->isString()) {
+    if (familyValue->isCustomIdent()) {
         family = AtomicString(familyValue->getStringValue());
     } else if (familyValue->isValueID()) {
         // We need to use the raw text for all the generic family types, since @font-face is a way of actually
@@ -552,7 +552,7 @@ void FontFace::initCSSFontFace(const unsigned char* data, unsigned size)
         return;
 
     RefPtr<SharedBuffer> buffer = SharedBuffer::create(data, size);
-    OwnPtrWillBeRawPtr<BinaryDataFontFaceSource> source = adoptPtrWillBeNoop(new BinaryDataFontFaceSource(buffer.get()));
+    OwnPtrWillBeRawPtr<BinaryDataFontFaceSource> source = adoptPtrWillBeNoop(new BinaryDataFontFaceSource(buffer.get(), m_otsParseMessage));
     if (source->isValid())
         setLoadStatus(Loaded);
     else

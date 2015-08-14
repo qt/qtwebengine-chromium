@@ -14,6 +14,7 @@
 namespace content {
 class VideoCaptureBufferPool;
 class VideoCaptureController;
+class VideoCaptureGpuJpegDecoder;
 
 // Receives events from the VideoCaptureDevice and posts them to a |controller_|
 // on the IO thread. An instance of this class may safely outlive its target
@@ -30,7 +31,8 @@ class VideoCaptureController;
 // manages the necessary entities to interact with the GPU process, notably an
 // offscreen Context to avoid janking the UI thread.
 class CONTENT_EXPORT VideoCaptureDeviceClient
-    : public media::VideoCaptureDevice::Client {
+    : public media::VideoCaptureDevice::Client,
+      public base::SupportsWeakPtr<VideoCaptureDeviceClient> {
  public:
   VideoCaptureDeviceClient(
       const base::WeakPtr<VideoCaptureController>& controller,
@@ -53,8 +55,10 @@ class CONTENT_EXPORT VideoCaptureDeviceClient
                                  const media::VideoCaptureFormat& frame_format,
                                  int clockwise_rotation,
                                  const base::TimeTicks& timestamp) override;
-  scoped_ptr<Buffer> ReserveOutputBuffer(media::VideoPixelFormat format,
-                                         const gfx::Size& dimensions) override;
+  scoped_ptr<Buffer> ReserveOutputBuffer(
+      const gfx::Size& dimensions,
+      media::VideoPixelFormat format,
+      media::VideoPixelStorage storage) override;
   void OnIncomingCapturedBuffer(scoped_ptr<Buffer> buffer,
                                 const media::VideoCaptureFormat& frame_format,
                                 const base::TimeTicks& timestamp) override;
@@ -64,10 +68,17 @@ class CONTENT_EXPORT VideoCaptureDeviceClient
       const base::TimeTicks& timestamp) override;
   void OnError(const std::string& reason) override;
   void OnLog(const std::string& message) override;
+  double GetBufferPoolUtilization() const override;
 
  private:
   // The controller to which we post events.
   const base::WeakPtr<VideoCaptureController> controller_;
+
+  // Hardware JPEG decoder.
+  scoped_ptr<VideoCaptureGpuJpegDecoder> external_jpeg_decoder_;
+
+  // Whether |external_jpeg_decoder_| has been initialized.
+  bool external_jpeg_decoder_initialized_;
 
   // The pool of shared-memory buffers used for capturing.
   const scoped_refptr<VideoCaptureBufferPool> buffer_pool_;

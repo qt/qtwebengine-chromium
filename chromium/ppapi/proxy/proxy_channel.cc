@@ -35,7 +35,7 @@ bool ProxyChannel::InitWithChannel(Delegate* delegate,
       ? IPC::Channel::MODE_CLIENT
       : IPC::Channel::MODE_SERVER;
   channel_ = IPC::SyncChannel::Create(channel_handle, mode, this,
-                                      delegate->GetIPCMessageLoop(), true,
+                                      delegate->GetIPCTaskRunner(), true,
                                       delegate->GetShutdownEvent());
   return true;
 }
@@ -72,6 +72,15 @@ IPC::PlatformFileForTransit ProxyChannel::ShareHandleWithRemote(
   DCHECK(peer_pid_ != base::kNullProcessId);
   return delegate_->ShareHandleWithRemote(handle, peer_pid_,
                                           should_close_source);
+}
+
+base::SharedMemoryHandle ProxyChannel::ShareSharedMemoryHandleWithRemote(
+    const base::SharedMemoryHandle& handle) {
+  if (!channel_.get())
+    return base::SharedMemory::NULLHandle();
+
+  DCHECK(peer_pid_ != base::kNullProcessId);
+  return delegate_->ShareSharedMemoryHandleWithRemote(handle, peer_pid_);
 }
 
 bool ProxyChannel::Send(IPC::Message* msg) {

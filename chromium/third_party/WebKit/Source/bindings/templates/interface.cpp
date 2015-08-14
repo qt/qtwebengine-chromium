@@ -476,7 +476,16 @@ static void {{cpp_class}}OriginSafeMethodSetterCallback(v8::Local<v8::Name> name
 {% if named_constructor %}
 {% set to_active_dom_object = '%s::toActiveDOMObject' % v8_class
                               if is_active_dom_object else '0' %}
+// Suppress warning: global constructors, because struct WrapperTypeInfo is trivial
+// and does not depend on another global objects.
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#endif
 const WrapperTypeInfo {{v8_class}}Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, {{v8_class}}Constructor::domTemplate, {{v8_class}}::refObject, {{v8_class}}::derefObject, {{v8_class}}::trace, {{to_active_dom_object}}, 0, {{v8_class}}::preparePrototypeObject, {{v8_class}}::installConditionallyEnabledProperties, "{{interface_name}}", 0, WrapperTypeInfo::WrapperTypeObjectPrototype, WrapperTypeInfo::{{wrapper_class_id}}, WrapperTypeInfo::{{event_target_inheritance}}, WrapperTypeInfo::{{lifetime}}, WrapperTypeInfo::{{gc_type}} };
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
 
 {{generate_constructor(named_constructor)}}
 v8::Local<v8::FunctionTemplate> {{v8_class}}Constructor::domTemplate(v8::Isolate* isolate)
@@ -545,99 +554,28 @@ static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
 
 
 {##############################################################################}
-{% block event_constructor %}
-{% if has_event_constructor %}
-static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), info.GetIsolate());
-    if (info.Length() < 1) {
-        exceptionState.throwTypeError("An event name must be provided.");
-        exceptionState.throwIfNeeded();
-        return;
-    }
-
-    V8StringResource<> type(info[0]);
-    if (!type.prepare())
-        return;
-    {% for attribute in any_type_attributes %}
-    v8::Local<v8::Value> {{attribute.name}};
-    {% endfor %}
-    {{cpp_class}}Init eventInit;
-    if (info.Length() >= 2) {
-        Dictionary options(info[1], info.GetIsolate(), exceptionState);
-        if (!initialize{{cpp_class}}(eventInit, options, exceptionState, info)) {
-            exceptionState.throwIfNeeded();
-            return;
-        }
-        {# Store attributes of type |any| on the wrapper to avoid leaking them
-           between isolated worlds. #}
-        {% for attribute in any_type_attributes %}
-        options.get("{{attribute.name}}", {{attribute.name}});
-        if (!{{attribute.name}}.IsEmpty())
-            V8HiddenValue::setHiddenValue(info.GetIsolate(), info.Holder(), v8AtomicString(info.GetIsolate(), "{{attribute.name}}"), {{attribute.name}});
-        {% endfor %}
-    }
-    {% if is_constructor_raises_exception %}
-    RefPtrWillBeRawPtr<{{cpp_class}}> event = {{cpp_class}}::create(type, eventInit, exceptionState);
-    if (exceptionState.throwIfNeeded())
-        return;
-    {% else %}
-    RefPtrWillBeRawPtr<{{cpp_class}}> event = {{cpp_class}}::create(type, eventInit);
-    {% endif %}
-    {% if any_type_attributes and not interface_name == 'ErrorEvent' %}
-    {# If we're in an isolated world, create a SerializedScriptValue and store
-       it in the event for later cloning if the property is accessed from
-       another world. The main world case is handled lazily (in custom code).
-
-       We do not clone Error objects (exceptions), for 2 reasons:
-       1) Errors carry a reference to the isolated world's global object, and
-          thus passing it around would cause leakage.
-       2) Errors cannot be cloned (or serialized):
-       http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#safe-passing-of-structured-data #}
-    if (DOMWrapperWorld::current(info.GetIsolate()).isIsolatedWorld()) {
-        {% for attribute in any_type_attributes %}
-        if (!{{attribute.name}}.IsEmpty())
-            event->setSerialized{{attribute.name | blink_capitalize}}(SerializedScriptValueFactory::instance().createAndSwallowExceptions(info.GetIsolate(), {{attribute.name}}));
-        {% endfor %}
-    }
-
-    {% endif %}
-    v8::Local<v8::Object> wrapper = info.Holder();
-    event->associateWithWrapper(info.GetIsolate(), &{{v8_class}}::wrapperTypeInfo, wrapper);
-    v8SetReturnValue(info, wrapper);
-}
-
-{% endif %}
-{% endblock %}
-
-
-{##############################################################################}
 {% block visit_dom_wrapper %}
-{% if reachable_node_function or set_wrapper_reference_to_list %}
+{% if set_wrapper_reference_from or set_wrapper_reference_to %}
 void {{v8_class}}::visitDOMWrapper(v8::Isolate* isolate, ScriptWrappable* scriptWrappable, const v8::Persistent<v8::Object>& wrapper)
 {
     {{cpp_class}}* impl = scriptWrappable->toImpl<{{cpp_class}}>();
-    {% if set_wrapper_reference_to_list %}
+    {% if set_wrapper_reference_to %}
     v8::Local<v8::Object> creationContext = v8::Local<v8::Object>::New(isolate, wrapper);
     V8WrapperInstantiationScope scope(creationContext, isolate);
-    {% for set_wrapper_reference_to in set_wrapper_reference_to_list %}
     {{set_wrapper_reference_to.cpp_type}} {{set_wrapper_reference_to.name}} = impl->{{set_wrapper_reference_to.name}}();
     if ({{set_wrapper_reference_to.name}}) {
-        if (!DOMDataStore::containsWrapper({{set_wrapper_reference_to.name}}, isolate))
-            {{set_wrapper_reference_to.name}}->wrap(isolate, creationContext);
-        DOMDataStore::setWrapperReference(wrapper, {{set_wrapper_reference_to.name}}, isolate);
+        if (DOMDataStore::containsWrapper({{set_wrapper_reference_to.name}}, isolate))
+            DOMDataStore::setWrapperReference(wrapper, {{set_wrapper_reference_to.name}}, isolate);
     }
-    {% endfor %}
     {% endif %}
-    {% if reachable_node_function %}
-    // The {{reachable_node_function}}() method may return a reference or a pointer.
-    if (Node* owner = WTF::getPtr(impl->{{reachable_node_function}}())) {
+    {% if set_wrapper_reference_from %}
+    // The {{set_wrapper_reference_from}}() method may return a reference or a pointer.
+    if (Node* owner = WTF::getPtr(impl->{{set_wrapper_reference_from}}())) {
         Node* root = V8GCController::opaqueRootForGC(isolate, owner);
         isolate->SetReferenceFromGroup(v8::UniqueId(reinterpret_cast<intptr_t>(root)), wrapper);
         return;
     }
     {% endif %}
-    setObjectGroup(isolate, scriptWrappable, wrapper);
 }
 
 {% endif %}
@@ -648,45 +586,20 @@ void {{v8_class}}::visitDOMWrapper(v8::Isolate* isolate, ScriptWrappable* script
 {% block shadow_attributes %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
 {% if interface_name == 'Window' %}
+// Suppress warning: global constructors, because AttributeConfiguration is trivial
+// and does not depend on another global objects.
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#endif
 static const V8DOMConfiguration::AttributeConfiguration shadowAttributes[] = {
     {% for attribute in attributes if attribute.is_unforgeable and attribute.should_be_exposed_to_script %}
     {{attribute_configuration(attribute)}},
     {% endfor %}
 };
-
-{% endif %}
-{% endblock %}
-
-
-{##############################################################################}
-{% block initialize_event %}
-{% if has_event_constructor %}
-{{exported}}bool initialize{{cpp_class}}({{cpp_class}}Init& eventInit, const Dictionary& options, ExceptionState& exceptionState, const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    Dictionary::ConversionContext conversionContext(exceptionState);
-    {% if parent_interface %}{# any Event interface except Event itself #}
-    if (!initialize{{parent_interface}}(eventInit, options, exceptionState, info))
-        return false;
-
-    {% endif %}
-    {% for attribute in attributes
-           if (attribute.is_initialized_by_event_constructor and
-               not attribute.idl_type == 'any')%}
-    {% set is_nullable = 'true' if attribute.is_nullable else 'false' %}
-    {% if attribute.deprecate_as %}
-    if (DictionaryHelper::convert(options, conversionContext.setConversionType("{{attribute.idl_type}}", {{is_nullable}}), "{{attribute.name}}", eventInit.{{attribute.cpp_name}})) {
-        if (options.hasProperty("{{attribute.name}}"))
-            UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.deprecate_as}});
-    } else {
-        return false;
-    }
-    {% else %}
-    if (!DictionaryHelper::convert(options, conversionContext.setConversionType("{{attribute.idl_type}}", {{is_nullable}}), "{{attribute.name}}", eventInit.{{attribute.cpp_name}}))
-        return false;
-    {% endif %}
-    {% endfor %}
-    return true;
-}
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
 
 {% endif %}
 {% endblock %}
@@ -826,13 +739,10 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
     // Transfer the ownership of the allocated memory to an ArrayBuffer without
     // copying.
     v8::ArrayBuffer::Contents v8Contents = v8buffer->Externalize();
-    WTF::ArrayBufferContents contents(v8Contents.Data(), v8Contents.ByteLength(), 0);
+    WTF::ArrayBufferContents contents(v8Contents.Data(), v8Contents.ByteLength(), WTF::ArrayBufferContents::NotShared);
     RefPtr<{{cpp_class}}> buffer = {{cpp_class}}::create(contents);
-    // Since this transfer doesn't allocate new memory, do not call
-    // DOMArrayBufferDeallocationObserver::blinkAllocatedMemory.
-    buffer->buffer()->setDeallocationObserverWithoutAllocationNotification(
-        DOMArrayBufferDeallocationObserver::instance());
-    buffer->associateWithWrapper(v8::Isolate::GetCurrent(), buffer->wrapperTypeInfo(), object);
+    v8::Local<v8::Object> associatedWrapper = buffer->associateWithWrapper(v8::Isolate::GetCurrent(), buffer->wrapperTypeInfo(), object);
+    ASSERT_UNUSED(associatedWrapper, associatedWrapper == object);
 
     return buffer.get();
 }
@@ -880,7 +790,8 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
 
     v8::Local<v8::{{interface_name}}> v8View = object.As<v8::{{interface_name}}>();
     RefPtr<{{cpp_class}}> typedArray = {{cpp_class}}::create(V8ArrayBuffer::toImpl(v8View->Buffer()), v8View->ByteOffset(), v8View->{% if interface_name == 'DataView' %}Byte{% endif %}Length());
-    typedArray->associateWithWrapper(v8::Isolate::GetCurrent(), typedArray->wrapperTypeInfo(), object);
+    v8::Local<v8::Object> associatedWrapper = typedArray->associateWithWrapper(v8::Isolate::GetCurrent(), typedArray->wrapperTypeInfo(), object);
+    ASSERT_UNUSED(associatedWrapper, associatedWrapper == object);
 
     return typedArray->toImpl<{{cpp_class}}>();
 }
@@ -902,23 +813,10 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
 {##############################################################################}
 {% block install_conditional_attributes %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
-{% if has_conditional_attributes %}
+{% if has_conditional_attributes_on_instance %}
 void {{v8_class}}::installConditionallyEnabledProperties(v8::Local<v8::Object> instanceObject, v8::Isolate* isolate)
 {
-    v8::Local<v8::Object> prototypeObject = v8::Local<v8::Object>::Cast(instanceObject->GetPrototype());
-    ExecutionContext* context = toExecutionContext(prototypeObject->CreationContext());
-
-    {% for attribute in attributes if attribute.exposed_test %}
-    {% filter exposed(attribute.exposed_test) %}
-    {% if attribute.is_expose_js_accessors %}
-    static const V8DOMConfiguration::AccessorConfiguration accessorConfiguration = {{attribute_configuration(attribute)}};
-    V8DOMConfiguration::installAccessor(isolate, prototypeObject, accessorConfiguration);
-    {% else %}
-    static const V8DOMConfiguration::AttributeConfiguration attributeConfiguration = {{attribute_configuration(attribute)}};
-    V8DOMConfiguration::installAttribute(isolate, instanceObject, prototypeObject, attributeConfiguration);
-    {% endif %}
-    {% endfilter %}
-    {% endfor %}
+#error TODO(yukishiino): Rename this function to prepareInstanceObject (c.f. preparePrototypeObject) and implement this function if necessary.  http://crbug.com/503508
 }
 
 {% endif %}
@@ -928,11 +826,14 @@ void {{v8_class}}::installConditionallyEnabledProperties(v8::Local<v8::Object> i
 {##############################################################################}
 {% block prepare_prototype_object %}
 {% from 'methods.cpp' import install_conditionally_enabled_methods with context %}
-{% if unscopeables or conditionally_enabled_methods %}
-void {{v8_class}}::preparePrototypeObject(v8::Isolate* isolate, v8::Local<v8::Object> prototypeObject)
+{% if unscopeables or has_conditional_attributes_on_prototype or conditionally_enabled_methods %}
+void {{v8_class}}::preparePrototypeObject(v8::Isolate* isolate, v8::Local<v8::Object> prototypeObject, v8::Local<v8::FunctionTemplate> interfaceTemplate)
 {
 {% if unscopeables %}
     {{install_unscopeables() | indent}}
+{% endif %}
+{% if has_conditional_attributes_on_prototype %}
+    {{install_conditionally_enabled_attributes_on_prototype() | indent}}
 {% endif %}
 {% if conditionally_enabled_methods %}
     {{install_conditionally_enabled_methods() | indent}}
@@ -954,10 +855,24 @@ else
     unscopeables = v8::Object::New(isolate);
 {% for name, runtime_enabled_function in unscopeables %}
 {% filter runtime_enabled(runtime_enabled_function) %}
-unscopeables->ForceSet(v8Context, v8AtomicString(isolate, "{{name}}"), v8::True(isolate)).FromJust();
+unscopeables->CreateDataProperty(v8Context, v8AtomicString(isolate, "{{name}}"), v8::True(isolate)).FromJust();
 {% endfilter %}
 {% endfor %}
-prototypeObject->ForceSet(v8Context, unscopablesSymbol, unscopeables).FromJust();
+prototypeObject->CreateDataProperty(v8Context, unscopablesSymbol, unscopeables).FromJust();
+{% endmacro %}
+
+
+{##############################################################################}
+{% macro install_conditionally_enabled_attributes_on_prototype() %}
+{% from 'attributes.cpp' import attribute_configuration with context %}
+ExecutionContext* context = toExecutionContext(prototypeObject->CreationContext());
+v8::Local<v8::Signature> signature = v8::Signature::New(isolate, interfaceTemplate);
+{% for attribute in attributes if attribute.exposed_test and attribute.on_prototype %}
+{% filter exposed(attribute.exposed_test) %}
+static const V8DOMConfiguration::AccessorConfiguration accessorConfiguration = {{attribute_configuration(attribute)}};
+V8DOMConfiguration::installAccessor(isolate, v8::Local<v8::Object>(), prototypeObject, v8::Local<v8::Function>(), signature, accessorConfiguration);
+{% endfilter %}
+{% endfor %}
 {% endmacro %}
 
 

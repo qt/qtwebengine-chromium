@@ -23,6 +23,7 @@
 #define HitTestResult_h
 
 #include "core/CoreExport.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "core/layout/HitTestLocation.h"
 #include "core/layout/HitTestRequest.h"
 #include "platform/geometry/FloatQuad.h"
@@ -34,6 +35,7 @@
 #include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/VectorTraits.h"
 
 namespace blink {
 
@@ -45,11 +47,11 @@ class Image;
 class KURL;
 class Node;
 class LayoutObject;
-class PositionWithAffinity;
 class Scrollbar;
 
 class CORE_EXPORT HitTestResult {
-    DISALLOW_ALLOCATION();
+    ALLOW_ONLY_INLINE_ALLOCATION();
+
 public:
     typedef WillBeHeapListHashSet<RefPtrWillBeMember<Node>> NodeSet;
 
@@ -62,6 +64,15 @@ public:
     ~HitTestResult();
     HitTestResult& operator=(const HitTestResult&);
     DECLARE_TRACE();
+
+    bool equalForCacheability(const HitTestResult&) const;
+    unsigned equalityScore(const HitTestResult&) const;
+    void cacheValues(const HitTestResult&);
+
+    // Populate this object based on another HitTestResult; similar to assignment operator
+    // but don't assign any of the request parameters. ie. Thie method avoids setting
+    // |m_hitTestLocation|, |m_hitTestRequest|.
+    void populateFromCachedResult(const HitTestResult&);
 
     // For point-based hit tests, these accessors provide information about the node
     // under the point. For rect-based hit tests they are meaningless (reflect the
@@ -124,6 +135,9 @@ public:
 
     bool isOverLink() const;
 
+    bool isCacheable() const { return m_cacheable; }
+    void setCacheable(bool cacheable) { m_cacheable = cacheable; }
+
     // Return true if the test is a list-based test and we should continue testing.
     bool addNodeToListBasedTestResult(Node*, const HitTestLocation& pointInContainer, const LayoutRect& = LayoutRect());
     bool addNodeToListBasedTestResult(Node*, const HitTestLocation& pointInContainer, const FloatRect&);
@@ -143,6 +157,7 @@ private:
 
     HitTestLocation m_hitTestLocation;
     HitTestRequest m_hitTestRequest;
+    bool m_cacheable;
 
     RefPtrWillBeMember<Node> m_innerNode;
     RefPtrWillBeMember<Node> m_innerPossiblyPseudoNode;
@@ -158,5 +173,7 @@ private:
 };
 
 } // namespace blink
+
+WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(blink::HitTestResult);
 
 #endif // HitTestResult_h

@@ -119,7 +119,6 @@ namespace gfx {
 typedef ui::Cursor NativeCursor;
 typedef aura::Window* NativeView;
 typedef aura::Window* NativeWindow;
-typedef SkRegion* NativeRegion;
 typedef ui::Event* NativeEvent;
 #elif defined(OS_IOS)
 typedef void* NativeCursor;
@@ -130,14 +129,14 @@ typedef UIEvent* NativeEvent;
 typedef NSCursor* NativeCursor;
 typedef NSView* NativeView;
 typedef NSWindow* NativeWindow;
-typedef void* NativeRegion;
 typedef NSEvent* NativeEvent;
 #elif defined(OS_ANDROID)
 typedef void* NativeCursor;
 typedef ui::ViewAndroid* NativeView;
 typedef ui::WindowAndroid* NativeWindow;
-typedef void* NativeRegion;
 typedef jobject NativeEvent;
+#else
+#error Unknown build environment.
 #endif
 
 #if defined(OS_WIN)

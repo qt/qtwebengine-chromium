@@ -803,6 +803,8 @@ void GetQueryivEXT(GLenum target, GLenum pname, GLint* params) override;
 
 void GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params) override;
 
+void GetQueryObjectui64vEXT(GLuint id, GLenum pname, GLuint64* params) override;
+
 void InsertEventMarkerEXT(GLsizei length, const GLchar* marker) override;
 
 void PushGroupMarkerEXT(GLsizei length, const GLchar* marker) override;
@@ -918,13 +920,27 @@ void CopyTextureCHROMIUM(GLenum target,
                          GLenum source_id,
                          GLenum dest_id,
                          GLint internalformat,
-                         GLenum dest_type) override;
+                         GLenum dest_type,
+                         GLboolean unpack_flip_y,
+                         GLboolean unpack_premultiply_alpha,
+                         GLboolean unpack_unmultiply_alpha) override;
 
 void CopySubTextureCHROMIUM(GLenum target,
                             GLenum source_id,
                             GLenum dest_id,
                             GLint xoffset,
-                            GLint yoffset) override;
+                            GLint yoffset,
+                            GLint x,
+                            GLint y,
+                            GLsizei width,
+                            GLsizei height,
+                            GLboolean unpack_flip_y,
+                            GLboolean unpack_premultiply_alpha,
+                            GLboolean unpack_unmultiply_alpha) override;
+
+void CompressedCopyTextureCHROMIUM(GLenum target,
+                                   GLenum source_id,
+                                   GLenum dest_id) override;
 
 void DrawArraysInstancedANGLE(GLenum mode,
                               GLint first,
@@ -1033,9 +1049,13 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
 
 void SwapInterval(GLint interval) override;
 
+void FlushDriverCachesCHROMIUM() override;
+
 void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) override;
 
 void MatrixLoadIdentityCHROMIUM(GLenum matrixMode) override;
+
+GLenum GetGraphicsResetStatusKHR() override;
 
 void BlendBarrierKHR() override;
 

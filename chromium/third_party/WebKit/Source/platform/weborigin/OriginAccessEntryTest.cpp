@@ -37,28 +37,38 @@
 #include "public/platform/WebPublicSuffixList.h"
 #include <gtest/gtest.h>
 
-using blink::SecurityOrigin;
-using blink::OriginAccessEntry;
-
-namespace {
+namespace blink {
 
 class OriginAccessEntryTestSuffixList : public blink::WebPublicSuffixList {
 public:
-    virtual size_t getPublicSuffixLength(const blink::WebString&)
+    size_t getPublicSuffixLength(const blink::WebString&) override
     {
-        return 3; // e.g. "com"
+        return m_length;
     }
+
+    void setPublicSuffix(const blink::WebString& suffix)
+    {
+        m_length = suffix.length();
+    }
+
+private:
+    size_t m_length;
 };
 
 class OriginAccessEntryTestPlatform : public blink::Platform {
 public:
-    virtual blink::WebPublicSuffixList* publicSuffixList()
+    blink::WebPublicSuffixList* publicSuffixList() override
     {
         return &m_suffixList;
     }
 
     // Stub for pure virtual method.
-    virtual void cryptographicallyRandomValues(unsigned char*, size_t) { ASSERT_NOT_REACHED(); }
+    void cryptographicallyRandomValues(unsigned char*, size_t) override { ASSERT_NOT_REACHED(); }
+
+    void setPublicSuffix(const blink::WebString& suffix)
+    {
+        m_suffixList.setPublicSuffix(suffix);
+    }
 
 private:
     OriginAccessEntryTestSuffixList m_suffixList;
@@ -67,17 +77,18 @@ private:
 TEST(OriginAccessEntryTest, PublicSuffixListTest)
 {
     OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
 
     RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString("http://www.google.com");
-    OriginAccessEntry entry1("http", "google.com", OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
-    OriginAccessEntry entry2("http", "hamster.com", OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
-    OriginAccessEntry entry3("http", "com", OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
+    OriginAccessEntry entry1("http", "google.com", OriginAccessEntry::AllowSubdomains);
+    OriginAccessEntry entry2("http", "hamster.com", OriginAccessEntry::AllowSubdomains);
+    OriginAccessEntry entry3("http", "com", OriginAccessEntry::AllowSubdomains);
     EXPECT_EQ(OriginAccessEntry::MatchesOrigin, entry1.matchesOrigin(*origin));
     EXPECT_EQ(OriginAccessEntry::DoesNotMatchOrigin, entry2.matchesOrigin(*origin));
     EXPECT_EQ(OriginAccessEntry::MatchesOriginButIsPublicSuffix, entry3.matchesOrigin(*origin));
 
-    blink::Platform::shutdown();
+    Platform::shutdown();
 }
 
 TEST(OriginAccessEntryTest, AllowSubdomainsTest)
@@ -91,6 +102,9 @@ TEST(OriginAccessEntryTest, AllowSubdomainsTest)
         { "http", "example.com", "http://example.com/", OriginAccessEntry::MatchesOrigin },
         { "http", "example.com", "http://www.example.com/", OriginAccessEntry::MatchesOrigin },
         { "http", "example.com", "http://www.www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.com", "http://example.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "http", "www.example.com", "http://www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.com", "http://www.www.example.com/", OriginAccessEntry::MatchesOrigin },
         { "http", "com", "http://example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
         { "http", "com", "http://www.example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
         { "http", "com", "http://www.www.example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
@@ -103,21 +117,100 @@ TEST(OriginAccessEntryTest, AllowSubdomainsTest)
         { "https", "", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
     };
 
-    // Initialize a PSL mock that whitelists any three-letter label as a TLD ('com', 'org', 'net', etc).
     OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
 
     for (const auto& test : inputs) {
         SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin);
         RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
-        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
+        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::AllowSubdomains);
         EXPECT_EQ(test.expected, entry1.matchesOrigin(*originToTest));
-
-        OriginAccessEntry entry2(test.protocol, test.host, OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsDomain);
-        EXPECT_EQ(test.expected, entry2.matchesOrigin(*originToTest));
     }
 
-    blink::Platform::shutdown();
+    Platform::shutdown();
+}
+
+TEST(OriginAccessEntryTest, AllowRegisterableDomainsTest)
+{
+    struct TestCase {
+        const char* protocol;
+        const char* host;
+        const char* origin;
+        OriginAccessEntry::MatchResult expected;
+    } inputs[] = {
+        { "http", "example.com", "http://example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "example.com", "http://www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "example.com", "http://www.www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.com", "http://example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.com", "http://www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.com", "http://www.www.example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "com", "http://example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "http", "com", "http://www.example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "http", "com", "http://www.www.example.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "https", "example.com", "http://example.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "https", "example.com", "http://www.example.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "https", "example.com", "http://www.www.example.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "http", "example.com", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "http", "", "http://example.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "", "http://beispiel.de/", OriginAccessEntry::MatchesOrigin },
+        { "https", "", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
+    };
+
+    OriginAccessEntryTestPlatform platform;
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
+
+    for (const auto& test : inputs) {
+        RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
+        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::AllowRegisterableDomains);
+
+        SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin << ", Domain: " << entry1.registerable().utf8().data());
+        EXPECT_EQ(test.expected, entry1.matchesOrigin(*originToTest));
+    }
+
+    Platform::shutdown();
+}
+
+TEST(OriginAccessEntryTest, AllowRegisterableDomainsTestWithDottedSuffix)
+{
+    struct TestCase {
+        const char* protocol;
+        const char* host;
+        const char* origin;
+        OriginAccessEntry::MatchResult expected;
+    } inputs[] = {
+        { "http", "example.appspot.com", "http://example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "example.appspot.com", "http://www.example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "example.appspot.com", "http://www.www.example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.appspot.com", "http://example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.appspot.com", "http://www.example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "www.example.appspot.com", "http://www.www.example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "appspot.com", "http://example.appspot.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "http", "appspot.com", "http://www.example.appspot.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "http", "appspot.com", "http://www.www.example.appspot.com/", OriginAccessEntry::MatchesOriginButIsPublicSuffix },
+        { "https", "example.appspot.com", "http://example.appspot.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "https", "example.appspot.com", "http://www.example.appspot.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "https", "example.appspot.com", "http://www.www.example.appspot.com/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "http", "example.appspot.com", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
+        { "http", "", "http://example.appspot.com/", OriginAccessEntry::MatchesOrigin },
+        { "http", "", "http://beispiel.de/", OriginAccessEntry::MatchesOrigin },
+        { "https", "", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
+    };
+
+    OriginAccessEntryTestPlatform platform;
+    platform.setPublicSuffix("appspot.com");
+    Platform::initialize(&platform);
+
+    for (const auto& test : inputs) {
+        RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
+        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::AllowRegisterableDomains);
+
+        SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin << ", Domain: " << entry1.registerable().utf8().data());
+        EXPECT_EQ(test.expected, entry1.matchesOrigin(*originToTest));
+    }
+
+    Platform::shutdown();
 }
 
 TEST(OriginAccessEntryTest, DisallowSubdomainsTest)
@@ -143,21 +236,18 @@ TEST(OriginAccessEntryTest, DisallowSubdomainsTest)
         { "https", "", "http://beispiel.de/", OriginAccessEntry::DoesNotMatchOrigin },
     };
 
-    // Initialize a PSL mock that whitelists any three-letter label as a TLD ('com', 'org', 'net', etc).
     OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
 
     for (const auto& test : inputs) {
         SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin);
         RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
-        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
+        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains);
         EXPECT_EQ(test.expected, entry1.matchesOrigin(*originToTest));
-
-        OriginAccessEntry entry2(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains, OriginAccessEntry::TreatIPAddressAsDomain);
-        EXPECT_EQ(test.expected, entry2.matchesOrigin(*originToTest));
     }
 
-    blink::Platform::shutdown();
+    Platform::shutdown();
 }
 
 TEST(OriginAccessEntryTest, IPAddressTest)
@@ -178,48 +268,20 @@ TEST(OriginAccessEntryTest, IPAddressTest)
         { "http", "", false },
     };
 
-    // Initialize a PSL mock that whitelists any three-letter label as a TLD ('com', 'org', 'net', etc).
     OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
 
     for (const auto& test : inputs) {
         SCOPED_TRACE(testing::Message() << "Host: " << test.host);
-        OriginAccessEntry entry(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains, OriginAccessEntry::TreatIPAddressAsDomain);
+        OriginAccessEntry entry(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains);
         EXPECT_EQ(test.isIPAddress, entry.hostIsIPAddress()) << test.host;
     }
 
-    blink::Platform::shutdown();
+    Platform::shutdown();
 }
 
-TEST(OriginAccessEntryTest, IPAddressAsDomainTest)
-{
-    struct TestCase {
-        const char* protocol;
-        const char* host;
-        const char* origin;
-        OriginAccessEntry::MatchResult expected;
-    } inputs[] = {
-        { "http", "192.0.0.123", "http://192.0.0.123/", OriginAccessEntry::MatchesOrigin },
-        { "http", "0.0.123", "http://192.0.0.123/", OriginAccessEntry::MatchesOrigin },
-        { "http", "0.123", "http://192.0.0.123/", OriginAccessEntry::MatchesOrigin },
-        { "http", "1.123", "http://192.0.0.123/", OriginAccessEntry::DoesNotMatchOrigin },
-    };
-
-    // Initialize a PSL mock that whitelists any three-letter label as a TLD ('.123', etc).
-    OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
-
-    for (const auto& test : inputs) {
-        SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin);
-        RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
-        OriginAccessEntry entry(test.protocol, test.host, OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsDomain);
-        EXPECT_EQ(test.expected, entry.matchesOrigin(*originToTest));
-    }
-
-    blink::Platform::shutdown();
-}
-
-TEST(OriginAccessEntryTest, IPAddressAsIPAddressTest)
+TEST(OriginAccessEntryTest, IPAddressMatchingTest)
 {
     struct TestCase {
         const char* protocol;
@@ -233,18 +295,22 @@ TEST(OriginAccessEntryTest, IPAddressAsIPAddressTest)
         { "http", "1.123", "http://192.0.0.123/", OriginAccessEntry::DoesNotMatchOrigin },
     };
 
-    // Initialize a PSL mock that whitelists any three-letter label as a TLD ('.123', etc).
     OriginAccessEntryTestPlatform platform;
-    blink::Platform::initialize(&platform);
+    platform.setPublicSuffix("com");
+    Platform::initialize(&platform);
 
     for (const auto& test : inputs) {
         SCOPED_TRACE(testing::Message() << "Host: " << test.host << ", Origin: " << test.origin);
         RefPtr<SecurityOrigin> originToTest = SecurityOrigin::createFromString(test.origin);
-        OriginAccessEntry entry(test.protocol, test.host, OriginAccessEntry::AllowSubdomains, OriginAccessEntry::TreatIPAddressAsIPAddress);
-        EXPECT_EQ(test.expected, entry.matchesOrigin(*originToTest));
+        OriginAccessEntry entry1(test.protocol, test.host, OriginAccessEntry::AllowSubdomains);
+        EXPECT_EQ(test.expected, entry1.matchesOrigin(*originToTest));
+
+        OriginAccessEntry entry2(test.protocol, test.host, OriginAccessEntry::DisallowSubdomains);
+        EXPECT_EQ(test.expected, entry2.matchesOrigin(*originToTest));
     }
 
-    blink::Platform::shutdown();
+    Platform::shutdown();
 }
-} // namespace
+
+} // namespace blink
 

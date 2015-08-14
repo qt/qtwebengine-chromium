@@ -33,17 +33,9 @@ public:
     virtual ~GrGLPathRendering();
 
     // GrPathRendering implementations.
-    GrPath* createPath(const SkPath&, const SkStrokeRec&) override;
+    GrPath* createPath(const SkPath&, const GrStrokeInfo&) override;
     virtual GrPathRange* createPathRange(GrPathRange::PathGenerator*,
-                                         const SkStrokeRec&) override;
-    virtual GrPathRange* createGlyphs(const SkTypeface*,
-                                      const SkDescriptor*,
-                                      const SkStrokeRec&) override;
-    void stencilPath(const GrPath*, const GrStencilSettings&) override;
-    void drawPath(const GrPath*, const GrStencilSettings&) override;
-    virtual void drawPaths(const GrPathRange*, const void* indices, PathIndexType,
-                           const float transformValues[], PathTransformType, int count,
-                           const GrStencilSettings&) override;
+                                         const GrStrokeInfo&) override;
 
     /* Called when the 3D context state is unknown. */
     void resetContext();
@@ -67,36 +59,13 @@ public:
     GrGLuint genPaths(GrGLsizei range);
     GrGLvoid deletePaths(GrGLuint path, GrGLsizei range);
 
+protected:
+    void onStencilPath(const StencilPathArgs&, const GrPath*) override;
+    void onDrawPath(const DrawPathArgs&, const GrPath*) override;
+    void onDrawPaths(const DrawPathArgs&, const GrPathRange*, const void* indices, PathIndexType,
+                     const float transformValues[], PathTransformType, int count) override;
 private:
-    /**
-     * Mark certain functionality as not supported if the driver version is too
-     * old and a backup implementation is not practical.
-     */
-    struct Caps {
-        bool stencilThenCoverSupport : 1;
-        bool fragmentInputGenSupport : 1;
-        bool glyphLoadingSupport     : 1;
-    };
-    const Caps& caps() const { return fCaps; }
-
     void flushPathStencilSettings(const GrStencilSettings&);
-
-    // NV_path_rendering v1.2
-    void stencilThenCoverFillPath(GrGLuint path, GrGLenum fillMode,
-                                  GrGLuint mask, GrGLenum coverMode);
-
-    void stencilThenCoverStrokePath(GrGLuint path, GrGLint reference,
-                                    GrGLuint mask, GrGLenum coverMode);
-
-    void stencilThenCoverFillPathInstanced(
-        GrGLsizei numPaths, GrGLenum pathNameType, const GrGLvoid *paths,
-                         GrGLuint pathBase, GrGLenum fillMode, GrGLuint mask, GrGLenum coverMode,
-                         GrGLenum transformType, const GrGLfloat *transformValues);
-
-    void stencilThenCoverStrokePathInstanced(
-                         GrGLsizei numPaths, GrGLenum pathNameType, const GrGLvoid *paths,
-                         GrGLuint pathBase, GrGLint reference, GrGLuint mask, GrGLenum coverMode,
-                         GrGLenum transformType, const GrGLfloat *transformValues);
 
     struct MatrixState {
         SkMatrix        fViewMatrix;
@@ -129,17 +98,11 @@ private:
             GrGLGetMatrix<Size>(destMatrix, combined);
         }
     };
+    GrGLGpu* gpu();
 
-    GrGLGpu* fGpu;
     SkAutoTDelete<GrGLNameAllocator> fPathNameAllocator;
-    Caps fCaps;
     MatrixState fHWProjectionMatrixState;
     GrStencilSettings fHWPathStencilSettings;
-    struct PathTexGenData {
-        GrGLenum  fMode;
-        GrGLint   fNumComponents;
-        GrGLfloat fCoefficients[3 * 3];
-    };
 };
 
 #endif

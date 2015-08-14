@@ -18,6 +18,7 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_STRUCTS_H_
 #define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_STRUCTS_H_
 
+#include "webrtc/modules/audio_coding/codecs/isac/bandwidth_info.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/interface/isac.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/source/settings.h"
 #include "webrtc/typedefs.h"
@@ -223,6 +224,8 @@ typedef struct {
   uint16_t                 numConsecLatePkts;
   float                        consecLatency;
   int16_t                  inWaitLatePkts;
+
+  IsacBandwidthInfo external_bw_info;
 } BwEstimatorstr;
 
 
@@ -428,6 +431,16 @@ typedef struct {
   uint8_t  stream[3];
 } transcode_obj;
 
+typedef struct {
+  // TODO(kwiberg): The size of these tables could be reduced by storing floats
+  // instead of doubles, and by making use of the identity cos(x) =
+  // sin(x+pi/2). They could also be made global constants that we fill in at
+  // compile time.
+  double costab1[FRAMESAMPLES_HALF];
+  double sintab1[FRAMESAMPLES_HALF];
+  double costab2[FRAMESAMPLES_QUARTER];
+  double sintab2[FRAMESAMPLES_QUARTER];
+} TransformTables;
 
 typedef struct {
   // lower-band codec instance
@@ -477,6 +490,9 @@ typedef struct {
   uint16_t in_sample_rate_hz;
   /* State for the input-resampler. It is only used for 48 kHz input signals. */
   int16_t state_in_resampler[SIZE_RESAMPLER_STATE];
+
+  // Trig tables for WebRtcIsac_Time2Spec and WebRtcIsac_Spec2time.
+  TransformTables transform_tables;
 } ISACMainStruct;
 
 #endif /* WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_STRUCTS_H_ */

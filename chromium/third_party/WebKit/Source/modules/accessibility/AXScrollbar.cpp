@@ -35,11 +35,16 @@
 
 namespace blink {
 
-AXScrollbar::AXScrollbar(Scrollbar* scrollbar, AXObjectCacheImpl* axObjectCache)
+AXScrollbar::AXScrollbar(Scrollbar* scrollbar, AXObjectCacheImpl& axObjectCache)
     : AXMockObject(axObjectCache)
     , m_scrollbar(scrollbar)
 {
     ASSERT(scrollbar);
+}
+
+AXScrollbar::~AXScrollbar()
+{
+    ASSERT(!m_scrollbar);
 }
 
 void AXScrollbar::detachFromParent()
@@ -48,9 +53,9 @@ void AXScrollbar::detachFromParent()
     AXMockObject::detachFromParent();
 }
 
-PassRefPtr<AXScrollbar> AXScrollbar::create(Scrollbar* scrollbar, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXScrollbar> AXScrollbar::create(Scrollbar* scrollbar, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXScrollbar(scrollbar, axObjectCache));
+    return adoptRefWillBeNoop(new AXScrollbar(scrollbar, axObjectCache));
 }
 
 LayoutRect AXScrollbar::elementRect() const
@@ -106,7 +111,15 @@ void AXScrollbar::setValue(float value)
         return;
 
     float newValue = value * m_scrollbar->maximum();
-    m_scrollbar->scrollableArea()->scrollToOffsetWithoutAnimation(m_scrollbar->orientation(), newValue);
+
+    // TODO(bokan): This should potentially be a UserScroll.
+    m_scrollbar->scrollableArea()->setScrollPositionSingleAxis(m_scrollbar->orientation(), newValue, ProgrammaticScroll);
+}
+
+DEFINE_TRACE(AXScrollbar)
+{
+    visitor->trace(m_scrollbar);
+    AXMockObject::trace(visitor);
 }
 
 } // namespace blink

@@ -268,6 +268,8 @@ source_set("gl_unittest_utils") {
     "gl_mock.cc",
     "gl_mock.h",
     "gl_mock_autogen_gl.h",
+    "gpu_timing_fake.cc",
+    "gpu_timing_fake.h",
   ]
 
   configs += [ "//third_party/khronos:khronos_headers" ]
@@ -281,13 +283,25 @@ source_set("gl_unittest_utils") {
 test("gl_unittests") {
   sources = [
     "gl_api_unittest.cc",
+    "gpu_timing_unittest.cc",
     "test/run_all_unittests.cc",
   ]
 
+  if (is_win || is_android || is_linux) {
+    sources += [
+      "egl_api_unittest.cc",
+      "test/egl_initialization_displays_unittest.cc",
+    ]
+  }
+
+  include_dirs = [ "//third_party/khronos" ]
+
   deps = [
     ":gl",
+    ":gl_unittest_utils",
     "//base",
     "//base/test:test_support",
+    "//testing/gmock",
     "//testing/gtest",
   ]
 }

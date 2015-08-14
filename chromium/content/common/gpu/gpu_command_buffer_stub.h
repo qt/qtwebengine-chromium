@@ -27,6 +27,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/swap_result.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_preference.h"
 #include "url/gurl.h"
@@ -145,10 +146,13 @@ class GpuCommandBufferStub
 
   void MarkContextLost();
 
+  const gpu::gles2::FeatureInfo* GetFeatureInfo() const;
+
   uint64 GetMemoryUsage() const;
 
   void SendSwapBuffersCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info);
+      const std::vector<ui::LatencyInfo>& latency_info,
+      gfx::SwapResult result);
   void SendUpdateVSyncParameters(base::TimeTicks timebase,
                                  base::TimeDelta interval);
 
@@ -264,7 +268,7 @@ class GpuCommandBufferStub
 
   GpuWatchdog* watchdog_;
 
-  ObserverList<DestructionObserver> destruction_observers_;
+  base::ObserverList<DestructionObserver> destruction_observers_;
 
   // A queue of sync points associated with this stub.
   std::deque<uint32> sync_points_;

@@ -126,7 +126,6 @@
         'event_target.cc',
         'event_target.h',
         'event_target_iterator.h',
-        'event_targeter.cc',
         'event_targeter.h',
         'event_utils.cc',
         'event_utils.h',
@@ -289,6 +288,11 @@
             'gesture_detection/gesture_configuration_default.cc',
           ],
         }],
+        ['use_aura==1 and OS=="android"', {
+          'sources!': [
+            'gesture_detection/gesture_configuration_aura.cc',
+          ],
+        }],
       ],
     },
     {
@@ -324,6 +328,8 @@
         'test/test_event_processor.h',
         'test/test_event_target.cc',
         'test/test_event_target.h',
+        'test/test_event_targeter.cc',
+        'test/test_event_targeter.h',
       ],
       'conditions': [
         ['OS=="ios"', {

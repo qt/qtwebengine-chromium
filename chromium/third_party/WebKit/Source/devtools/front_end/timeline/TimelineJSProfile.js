@@ -82,7 +82,6 @@ WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents = function(events)
     var jsFrameEvents = [];
     var jsFramesStack = [];
     var lockedJsStackDepth = [];
-    var invocationEventsDepth = 0;
     var currentSamplingIntervalMs = 0.1;
     var lastStackSampleTime = 0;
     var ordinal = 0;
@@ -114,18 +113,17 @@ WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents = function(events)
         extractStackTrace(e);
         // For the duration of the event we cannot go beyond the stack associated with it.
         lockedJsStackDepth.push(jsFramesStack.length);
-        if (isJSInvocationEvent(e))
-            ++invocationEventsDepth;
     }
 
     /**
      * @param {!WebInspector.TracingModel.Event} e
+     * @param {?WebInspector.TracingModel.Event} parent
      */
-    function onInstantEvent(e)
+    function onInstantEvent(e, parent)
     {
         e.ordinal = ++ordinal;
         updateSamplingInterval(e);
-        if (invocationEventsDepth)
+        if (parent && isJSInvocationEvent(parent))
             extractStackTrace(e);
     }
 
@@ -134,8 +132,6 @@ WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents = function(events)
      */
     function onEndEvent(e)
     {
-        if (isJSInvocationEvent(e))
-            --invocationEventsDepth;
         truncateJSStack(lockedJsStackDepth.pop(), e.endTime);
     }
 
@@ -169,8 +165,9 @@ WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents = function(events)
     {
         var eventData = e.args["data"] || e.args["beginData"];
         var stackTrace = eventData && eventData["stackTrace"];
+        var recordTypes = WebInspector.TimelineModel.RecordType;
         // GC events do not hold call stack, so make a copy of the current stack.
-        if (e.name === WebInspector.TimelineModel.RecordType.GCEvent)
+        if (e.name === recordTypes.GCEvent || e.name === recordTypes.MajorGC || e.name === recordTypes.MinorGC)
             stackTrace = jsFramesStack.map(function(frameEvent) { return frameEvent.args["data"]; }).reverse();
         if (!stackTrace)
             return;
@@ -207,8 +204,8 @@ WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents = function(events)
  */
 WebInspector.TimelineJSProfileProcessor.CodeMap = function()
 {
-    /** @type {!Array<!WebInspector.TimelineJSProfileProcessor.CodeMap.Entry>} */
-    this._entries = [];
+    /** @type {!Map<string, !WebInspector.TimelineJSProfileProcessor.CodeMap.Bank>} */
+    this._banks = new Map();
 }
 
 /**
@@ -242,8 +239,8 @@ WebInspector.TimelineJSProfileProcessor.CodeMap.prototype = {
      */
     addEntry: function(addressHex, size, callFrame)
     {
-        var address = this._addressStringToNumber(addressHex);
-        this._addEntry(new WebInspector.TimelineJSProfileProcessor.CodeMap.Entry(address, size, callFrame));
+        var entry = new WebInspector.TimelineJSProfileProcessor.CodeMap.Entry(this._getAddress(addressHex), size, callFrame);
+        this._addEntry(addressHex, entry);
     },
 
     /**
@@ -253,16 +250,14 @@ WebInspector.TimelineJSProfileProcessor.CodeMap.prototype = {
      */
     moveEntry: function(oldAddressHex, newAddressHex, size)
     {
-        var oldAddress = this._addressStringToNumber(oldAddressHex);
-        var newAddress = this._addressStringToNumber(newAddressHex);
-        var index = this._entries.lowerBound(oldAddress, WebInspector.TimelineJSProfileProcessor.CodeMap.comparator);
-        var entry = this._entries[index];
-        if (!entry || entry.address !== oldAddress)
+        var entry = this._getBank(oldAddressHex).removeEntry(this._getAddress(oldAddressHex));
+        if (!entry) {
+            console.error("Entry at address " + oldAddressHex + " not found");
             return;
-        this._entries.splice(index, 1);
-        entry.address = newAddress;
+        }
+        entry.address = this._getAddress(newAddressHex);
         entry.size = size;
-        this._addEntry(entry);
+        this._addEntry(newAddressHex, entry);
     },
 
     /**
@@ -271,29 +266,90 @@ WebInspector.TimelineJSProfileProcessor.CodeMap.prototype = {
      */
     lookupEntry: function(addressHex)
     {
-        var address = this._addressStringToNumber(addressHex);
-        var index = this._entries.upperBound(address, WebInspector.TimelineJSProfileProcessor.CodeMap.comparator) - 1;
-        var entry = this._entries[index];
-        return entry && address < entry.address + entry.size ? entry.callFrame : null;
+        return this._getBank(addressHex).lookupEntry(this._getAddress(addressHex));
+    },
+
+    /**
+     * @param {string} addressHex
+     * @param {!WebInspector.TimelineJSProfileProcessor.CodeMap.Entry} entry
+     */
+    _addEntry: function(addressHex, entry)
+    {
+        // FIXME: deal with entries that span across [multiple] banks.
+        this._getBank(addressHex).addEntry(entry);
+    },
+
+    /**
+     * @param {string} addressHex
+     * @return {!WebInspector.TimelineJSProfileProcessor.CodeMap.Bank}
+     */
+    _getBank: function(addressHex)
+    {
+        addressHex = addressHex.slice(2);  // cut 0x prefix.
+        // 13 hex digits == 52 bits, double mantissa fits 53 bits.
+        var /** @const */ bankSizeHexDigits = 13;
+        var /** @const */ maxHexDigits = 16;
+        var bankName = addressHex.slice(-maxHexDigits, -bankSizeHexDigits);
+        var bank = this._banks.get(bankName);
+        if (!bank) {
+            bank = new WebInspector.TimelineJSProfileProcessor.CodeMap.Bank();
+            this._banks.set(bankName, bank);
+        }
+        return bank;
     },
 
     /**
      * @param {string} addressHex
      * @return {number}
      */
-    _addressStringToNumber: function(addressHex)
+    _getAddress: function(addressHex)
     {
-        // TODO(alph): The addressHex may represent addresses from 0 to 2^64-1,
-        // whereas address is a double type that has exact representation for
-        // integers up to 2^53. So it might lose up to 11 bits at the end.
-        // Do something about it, e.g. introduce banks, or just find and subtract a base.
-        return parseInt(addressHex, 16);
+        // 13 hex digits == 52 bits, double mantissa fits 53 bits.
+        var /** @const */ bankSizeHexDigits = 13;
+        addressHex = addressHex.slice(2);  // cut 0x prefix.
+        return parseInt(addressHex.slice(-bankSizeHexDigits), 16);
+    }
+}
+
+/**
+ * @constructor
+ */
+WebInspector.TimelineJSProfileProcessor.CodeMap.Bank = function()
+{
+    /** @type {!Array<!WebInspector.TimelineJSProfileProcessor.CodeMap.Entry>} */
+    this._entries = [];
+}
+
+WebInspector.TimelineJSProfileProcessor.CodeMap.Bank.prototype = {
+    /**
+     * @param {number} address
+     * @return {?WebInspector.TimelineJSProfileProcessor.CodeMap.Entry}
+     */
+    removeEntry: function(address)
+    {
+        var index = this._entries.lowerBound(address, WebInspector.TimelineJSProfileProcessor.CodeMap.comparator);
+        var entry = this._entries[index];
+        if (!entry || entry.address !== address)
+            return null;
+        this._entries.splice(index, 1);
+        return entry;
+    },
+
+    /**
+     * @param {number} address
+     * @return {?ConsoleAgent.CallFrame}
+     */
+    lookupEntry: function(address)
+    {
+        var index = this._entries.upperBound(address, WebInspector.TimelineJSProfileProcessor.CodeMap.comparator) - 1;
+        var entry = this._entries[index];
+        return entry && address < entry.address + entry.size ? entry.callFrame : null;
     },
 
     /**
      * @param {!WebInspector.TimelineJSProfileProcessor.CodeMap.Entry} newEntry
      */
-    _addEntry: function(newEntry)
+    addEntry: function(newEntry)
     {
         var endAddress = newEntry.address + newEntry.size;
         var lastIndex = this._entries.lowerBound(endAddress, WebInspector.TimelineJSProfileProcessor.CodeMap.comparator);
@@ -310,56 +366,83 @@ WebInspector.TimelineJSProfileProcessor.CodeMap.prototype = {
 }
 
 /**
- * @param {!Array<!WebInspector.TracingModel.Event>} events
- * @return {!Array<!WebInspector.TracingModel.Event>}
+ * @param {string} name
+ * @param {number} scriptId
+ * @return {!ConsoleAgent.CallFrame}
  */
-WebInspector.TimelineJSProfileProcessor.processRawV8Samples = function(events)
+WebInspector.TimelineJSProfileProcessor._buildCallFrame = function(name, scriptId)
 {
-    var unknownFrame = {
-        functionName: "(unknown)",
-        url: "",
-        scriptId: "0",
-        lineNumber: 0,
-        columnNumber: 0
-    };
     /**
-     * @param {string} address
+     * @param {string} functionName
+     * @param {string=} url
+     * @param {string=} scriptId
+     * @param {number=} line
+     * @param {number=} column
+     * @param {boolean=} isNative
      * @return {!ConsoleAgent.CallFrame}
      */
-    function convertRawFrame(address)
+    function createFrame(functionName, url, scriptId, line, column, isNative)
     {
-        return codeMap.lookupEntry(address) || unknownFrame;
+        return /** @type {!ConsoleAgent.CallFrame} */ ({
+            "functionName": functionName,
+            "url": url || "",
+            "scriptId": scriptId || "0",
+            "lineNumber": line || 0,
+            "columnNumber": column || 0,
+            "isNative": isNative || false
+        });
     }
 
     // Code states:
     // (empty) -> compiled
     //    ~    -> optimizable
     //    *    -> optimized
-    var reName = /^(\S*:)?[*~]?(\S*)(?: (\S*))?$/;
+    var rePrefix = /^(\w*:)?[*~]?(.*)$/m;
+    var tokens = rePrefix.exec(name);
+    var prefix = tokens[1];
+    var body = tokens[2];
+    var rawName;
+    var rawUrl;
+    if (prefix === "Script:") {
+        rawName = "";
+        rawUrl = body;
+    } else {
+        var spacePos = body.lastIndexOf(" ");
+        rawName = spacePos !== -1 ? body.substr(0, spacePos) : body;
+        rawUrl = spacePos !== -1 ? body.substr(spacePos + 1) : "";
+    }
+    var nativeSuffix = " native";
+    var isNative = rawName.endsWith(nativeSuffix);
+    var functionName = isNative ? rawName.slice(0, -nativeSuffix.length) : rawName;
+    var urlData = WebInspector.ParsedURL.splitLineAndColumn(rawUrl);
+    var url = urlData.url || "";
+    var line = urlData.lineNumber || 0;
+    var column = urlData.columnNumber || 0;
+    return createFrame(functionName, url, String(scriptId), line, column, isNative);
+}
+
+/**
+ * @param {!Array<!WebInspector.TracingModel.Event>} events
+ * @return {!Array<!WebInspector.TracingModel.Event>}
+ */
+WebInspector.TimelineJSProfileProcessor.processRawV8Samples = function(events)
+{
+    var missingAddesses = new Set();
 
     /**
-     * @param {string} name
-     * @param {number} scriptId
-     * @return {!ConsoleAgent.CallFrame}
+     * @param {string} address
+     * @return {?ConsoleAgent.CallFrame}
      */
-    function buildCallFrame(name, scriptId)
+    function convertRawFrame(address)
     {
-        var parsed = reName.exec(name);
-        if (!parsed)
-            return unknownFrame;
-        var functionName = parsed[2] || "";
-        var urlData = WebInspector.ParsedURL.splitLineAndColumn(parsed[3] || "");
-        var url = urlData && urlData.url || "";
-        var line = urlData && urlData.lineNumber || 0;
-        var column = urlData && urlData.columnNumber || 0;
-        var frame = {
-            "functionName": functionName,
-            "url": url,
-            "scriptId": String(scriptId),
-            "lineNumber": line,
-            "columnNumber": column
-        };
-        return frame;
+        var entry = codeMap.lookupEntry(address);
+        if (entry)
+            return entry.isNative ? null : entry;
+        if (!missingAddesses.has(address)) {
+            missingAddesses.add(address);
+            console.error("Address " + address + " has missing code entry");
+        }
+        return null;
     }
 
     var recordTypes = WebInspector.TimelineModel.RecordType;
@@ -370,7 +453,8 @@ WebInspector.TimelineJSProfileProcessor.processRawV8Samples = function(events)
         var data = e.args["data"];
         switch (e.name) {
         case recordTypes.JitCodeAdded:
-            codeMap.addEntry(data["code_start"], data["code_len"], buildCallFrame(data["name"], data["script_id"]));
+            var frame = WebInspector.TimelineJSProfileProcessor._buildCallFrame(data["name"], data["script_id"]);
+            codeMap.addEntry(data["code_start"], data["code_len"], frame);
             break;
         case recordTypes.JitCodeMoved:
             codeMap.moveEntry(data["code_start"], data["new_code_start"], data["code_len"]);
@@ -382,6 +466,7 @@ WebInspector.TimelineJSProfileProcessor.processRawV8Samples = function(events)
             if (data["vm_state"] === "js" && !rawStack.length)
                 break;
             var stack = rawStack.map(convertRawFrame);
+            stack.remove(null);
             var sampleEvent = new WebInspector.TracingModel.Event(
                 WebInspector.TracingModel.DevToolsTimelineEventCategory,
                 WebInspector.TimelineModel.RecordType.JSSample,

@@ -21,7 +21,9 @@ class RasterBuffer;
 class CC_EXPORT TileTaskClient {
  public:
   virtual scoped_ptr<RasterBuffer> AcquireBufferForRaster(
-      const Resource* resource) = 0;
+      const Resource* resource,
+      uint64_t resource_content_id,
+      uint64_t previous_content_id) = 0;
   virtual void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) = 0;
 
  protected:
@@ -161,7 +163,10 @@ class CC_EXPORT TileTaskRunner {
   virtual void CheckForCompletedTasks() = 0;
 
   // Returns the format to use for the tiles.
-  virtual ResourceFormat GetResourceFormat() = 0;
+  virtual ResourceFormat GetResourceFormat() const = 0;
+
+  // Determine if the resource requires swizzling.
+  virtual bool GetResourceRequiresSwizzle() const = 0;
 
  protected:
   virtual ~TileTaskRunner() {}

@@ -6,13 +6,14 @@
 
 #include "base/logging.h"
 #include "ui/gl/gl_image.h"
+#include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace content {
 namespace {
 
 const GpuMemoryBufferFactory::Configuration kSupportedConfigurations[] = {
-  { gfx::GpuMemoryBuffer::RGBA_8888, gfx::GpuMemoryBuffer::SCANOUT },
+  { gfx::GpuMemoryBuffer::BGRA_8888, gfx::GpuMemoryBuffer::SCANOUT },
   { gfx::GpuMemoryBuffer::RGBX_8888, gfx::GpuMemoryBuffer::SCANOUT }
 };
 
@@ -41,8 +42,9 @@ bool GpuMemoryBufferFactoryOzoneNativeBuffer::
 void GpuMemoryBufferFactoryOzoneNativeBuffer::
     GetSupportedGpuMemoryBufferConfigurations(
         std::vector<Configuration>* configurations) {
-  if (!ui::SurfaceFactoryOzone::GetInstance()->CanCreateNativePixmap(
-          ui::SurfaceFactoryOzone::SCANOUT))
+  if (!ui::OzonePlatform::GetInstance()
+           ->GetSurfaceFactoryOzone()
+           ->CanCreateNativePixmap(ui::SurfaceFactoryOzone::SCANOUT))
     return;
 
   configurations->assign(

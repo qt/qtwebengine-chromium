@@ -21,6 +21,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
@@ -193,29 +194,33 @@ bool RemoveChars(const std::string& input,
   return ReplaceChars(input, remove_chars.as_string(), std::string(), output);
 }
 
-template<typename STR>
-TrimPositions TrimStringT(const STR& input,
-                          const STR& trim_chars,
+template<typename Str>
+TrimPositions TrimStringT(const Str& input,
+                          BasicStringPiece<Str> trim_chars,
                           TrimPositions positions,
-                          STR* output) {
-  // Find the edges of leading/trailing whitespace as desired.
+                          Str* output) {
+  // Find the edges of leading/trailing whitespace as desired. Need to use
+  // a StringPiece version of input to be able to call find* on it with the
+  // StringPiece version of trim_chars (normally the trim_chars will be a
+  // constant so avoid making a copy).
+  BasicStringPiece<Str> input_piece(input);
   const size_t last_char = input.length() - 1;
   const size_t first_good_char = (positions & TRIM_LEADING) ?
-      input.find_first_not_of(trim_chars) : 0;
+      input_piece.find_first_not_of(trim_chars) : 0;
   const size_t last_good_char = (positions & TRIM_TRAILING) ?
-      input.find_last_not_of(trim_chars) : last_char;
+      input_piece.find_last_not_of(trim_chars) : last_char;
 
-  // When the string was all whitespace, report that we stripped off whitespace
-  // from whichever position the caller was interested in.  For empty input, we
-  // stripped no whitespace, but we still need to clear |output|.
+  // When the string was all trimmed, report that we stripped off characters
+  // from whichever position the caller was interested in. For empty input, we
+  // stripped no characters, but we still need to clear |output|.
   if (input.empty() ||
-      (first_good_char == STR::npos) || (last_good_char == STR::npos)) {
+      (first_good_char == Str::npos) || (last_good_char == Str::npos)) {
     bool input_was_empty = input.empty();  // in case output == &input
     output->clear();
     return input_was_empty ? TRIM_NONE : positions;
   }
 
-  // Trim the whitespace.
+  // Trim.
   *output =
       input.substr(first_good_char, last_good_char - first_good_char + 1);
 
@@ -226,17 +231,38 @@ TrimPositions TrimStringT(const STR& input,
 }
 
 bool TrimString(const string16& input,
-                const base::StringPiece16& trim_chars,
+                base::StringPiece16 trim_chars,
                 string16* output) {
-  return TrimStringT(input, trim_chars.as_string(), TRIM_ALL, output) !=
-      TRIM_NONE;
+  return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
 }
 
 bool TrimString(const std::string& input,
-                const base::StringPiece& trim_chars,
+                base::StringPiece trim_chars,
                 std::string* output) {
-  return TrimStringT(input, trim_chars.as_string(), TRIM_ALL, output) !=
-      TRIM_NONE;
+  return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
+}
+
+template<typename Str>
+BasicStringPiece<Str> TrimStringPieceT(BasicStringPiece<Str> input,
+                                       BasicStringPiece<Str> trim_chars,
+                                       TrimPositions positions) {
+  size_t begin = (positions & TRIM_LEADING) ?
+      input.find_first_not_of(trim_chars) : 0;
+  size_t end = (positions & TRIM_TRAILING) ?
+      input.find_last_not_of(trim_chars) + 1 : input.size();
+  return input.substr(begin, end - begin);
+}
+
+StringPiece16 TrimString(StringPiece16 input,
+                         const base::StringPiece16& trim_chars,
+                         TrimPositions positions) {
+  return TrimStringPieceT(input, trim_chars, positions);
+}
+
+StringPiece TrimString(StringPiece input,
+                       const base::StringPiece& trim_chars,
+                       TrimPositions positions) {
+  return TrimStringPieceT(input, trim_chars, positions);
 }
 
 void TruncateUTF8ToByteSize(const std::string& input,
@@ -278,14 +304,22 @@ void TruncateUTF8ToByteSize(const std::string& input,
 TrimPositions TrimWhitespace(const string16& input,
                              TrimPositions positions,
                              string16* output) {
-  return TrimStringT(input, base::string16(kWhitespaceUTF16), positions,
-                     output);
+  return TrimStringT(input, StringPiece16(kWhitespaceUTF16), positions, output);
+}
+
+StringPiece16 TrimWhitespaceASCII(StringPiece16 input,
+                                  TrimPositions positions) {
+  return TrimStringPieceT(input, StringPiece16(kWhitespaceUTF16), positions);
 }
 
 TrimPositions TrimWhitespaceASCII(const std::string& input,
                                   TrimPositions positions,
                                   std::string* output) {
-  return TrimStringT(input, std::string(kWhitespaceASCII), positions, output);
+  return TrimStringT(input, StringPiece(kWhitespaceASCII), positions, output);
+}
+
+StringPiece TrimWhitespaceASCII(StringPiece input, TrimPositions positions) {
+  return TrimStringPieceT(input, StringPiece(kWhitespaceASCII), positions);
 }
 
 // This function is only for backward-compatibility.
@@ -309,7 +343,7 @@ STR CollapseWhitespaceT(const STR& text,
 
   int chars_written = 0;
   for (typename STR::const_iterator i(text.begin()); i != text.end(); ++i) {
-    if (IsWhitespace(*i)) {
+    if (IsUnicodeWhitespace(*i)) {
       if (!in_whitespace) {
         // Reduce all whitespace sequences to a single space.
         in_whitespace = true;
@@ -420,14 +454,12 @@ bool IsStringUTF8(const StringPiece& str) {
   return true;
 }
 
-}  // namespace base
-
 template<typename Iter>
 static inline bool DoLowerCaseEqualsASCII(Iter a_begin,
                                           Iter a_end,
                                           const char* b) {
   for (Iter it = a_begin; it != a_end; ++it, ++b) {
-    if (!*b || base::ToLowerASCII(*it) != *b)
+    if (!*b || ToLowerASCII(*it) != *b)
       return false;
   }
   return *b == 0;
@@ -454,12 +486,22 @@ bool LowerCaseEqualsASCII(string16::const_iterator a_begin,
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
 
-// TODO(port): Resolve wchar_t/iterator issues that require OS_ANDROID here.
-#if !defined(OS_ANDROID)
 bool LowerCaseEqualsASCII(const char* a_begin,
                           const char* a_end,
                           const char* b) {
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
+}
+
+bool LowerCaseEqualsASCII(const char* a_begin,
+                          const char* a_end,
+                          const char* b_begin,
+                          const char* b_end) {
+  while (a_begin != a_end && b_begin != b_end &&
+         ToLowerASCII(*a_begin) == *b_begin) {
+    a_begin++;
+    b_begin++;
+  }
+  return a_begin == a_end && b_begin == b_end;
 }
 
 bool LowerCaseEqualsASCII(const char16* a_begin,
@@ -468,61 +510,131 @@ bool LowerCaseEqualsASCII(const char16* a_begin,
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
 
-#endif  // !defined(OS_ANDROID)
-
-bool EqualsASCII(const string16& a, const base::StringPiece& b) {
+bool EqualsASCII(const string16& a, const StringPiece& b) {
   if (a.length() != b.length())
     return false;
   return std::equal(b.begin(), b.end(), a.begin());
 }
 
-bool StartsWithASCII(const std::string& str,
-                     const std::string& search,
-                     bool case_sensitive) {
-  if (case_sensitive)
-    return str.compare(0, search.length(), search) == 0;
-  else
-    return base::strncasecmp(str.c_str(), search.c_str(), search.length()) == 0;
-}
+template<typename Str>
+bool StartsWithT(BasicStringPiece<Str> str,
+                 BasicStringPiece<Str> search_for,
+                 CompareCase case_sensitivity) {
+  if (search_for.size() > str.size())
+    return false;
 
-template <typename STR>
-bool StartsWithT(const STR& str, const STR& search, bool case_sensitive) {
-  if (case_sensitive) {
-    return str.compare(0, search.length(), search) == 0;
-  } else {
-    if (search.size() > str.size())
+  BasicStringPiece<Str> source = str.substr(0, search_for.size());
+
+  switch (case_sensitivity) {
+    case CompareCase::SENSITIVE:
+      return source == search_for;
+
+    case CompareCase::INSENSITIVE_ASCII:
+      return std::equal(
+          search_for.begin(), search_for.end(),
+          source.begin(),
+          base::CaseInsensitiveCompareASCII<typename Str::value_type>());
+
+    default:
+      NOTREACHED();
       return false;
-    return std::equal(search.begin(), search.end(), str.begin(),
-                      base::CaseInsensitiveCompare<typename STR::value_type>());
   }
 }
 
-bool StartsWith(const string16& str, const string16& search,
+bool StartsWith(StringPiece str,
+                StringPiece search_for,
+                CompareCase case_sensitivity) {
+  return StartsWithT<std::string>(str, search_for, case_sensitivity);
+}
+
+bool StartsWith(StringPiece16 str,
+                StringPiece16 search_for,
+                CompareCase case_sensitivity) {
+  return StartsWithT<string16>(str, search_for, case_sensitivity);
+}
+
+bool StartsWith(const string16& str,
+                const string16& search,
                 bool case_sensitive) {
-  return StartsWithT(str, search, case_sensitive);
+  if (!case_sensitive) {
+    // This function was originally written using the current locale functions
+    // for case-insensitive comparisons. Emulate this behavior until callers
+    // can be converted either to use the case-insensitive ASCII one (most
+    // callers) or ICU functions in base_i18n.
+    if (search.size() > str.size())
+      return false;
+    return std::equal(search.begin(), search.end(), str.begin(),
+                      CaseInsensitiveCompare<char16>());
+  }
+  return StartsWith(StringPiece16(str), StringPiece16(search),
+                    CompareCase::SENSITIVE);
 }
 
-template <typename STR>
-bool EndsWithT(const STR& str, const STR& search, bool case_sensitive) {
-  size_t str_length = str.length();
-  size_t search_length = search.length();
-  if (search_length > str_length)
+template <typename Str>
+bool EndsWithT(BasicStringPiece<Str> str,
+               BasicStringPiece<Str> search_for,
+               CompareCase case_sensitivity) {
+  if (search_for.size() > str.size())
     return false;
-  if (case_sensitive)
-    return str.compare(str_length - search_length, search_length, search) == 0;
-  return std::equal(search.begin(), search.end(),
-                    str.begin() + (str_length - search_length),
-                    base::CaseInsensitiveCompare<typename STR::value_type>());
+
+  BasicStringPiece<Str> source = str.substr(str.size() - search_for.size(),
+                                            search_for.size());
+
+  switch (case_sensitivity) {
+    case CompareCase::SENSITIVE:
+      return source == search_for;
+
+    case CompareCase::INSENSITIVE_ASCII:
+      return std::equal(
+          source.begin(), source.end(),
+          search_for.begin(),
+          base::CaseInsensitiveCompareASCII<typename Str::value_type>());
+
+    default:
+      NOTREACHED();
+      return false;
+  }
 }
 
-bool EndsWith(const std::string& str, const std::string& search,
-              bool case_sensitive) {
-  return EndsWithT(str, search, case_sensitive);
+bool EndsWith(StringPiece str,
+              StringPiece search_for,
+              CompareCase case_sensitivity) {
+  return EndsWithT<std::string>(str, search_for, case_sensitivity);
 }
 
-bool EndsWith(const string16& str, const string16& search,
+bool EndsWith(StringPiece16 str,
+              StringPiece16 search_for,
+                          CompareCase case_sensitivity) {
+  return EndsWithT<string16>(str, search_for, case_sensitivity);
+}
+
+bool EndsWith(const string16& str,
+              const string16& search,
               bool case_sensitive) {
-  return EndsWithT(str, search, case_sensitive);
+  if (!case_sensitive) {
+    // This function was originally written using the current locale functions
+    // for case-insensitive comparisons. Emulate this behavior until callers
+    // can be converted either to use the case-insensitive ASCII one (most
+    // callers) or ICU functions in base_i18n.
+    if (search.size() > str.size())
+      return false;
+    return std::equal(search.begin(), search.end(),
+                      str.begin() + (str.size() - search.size()),
+                      CaseInsensitiveCompare<char16>());
+  }
+  return EndsWith(StringPiece16(str), StringPiece16(search),
+                    CompareCase::SENSITIVE);
+}
+
+char HexDigitToInt(wchar_t c) {
+  DCHECK(IsHexDigit(c));
+  if (c >= '0' && c <= '9')
+    return static_cast<char>(c - '0');
+  if (c >= 'A' && c <= 'F')
+    return static_cast<char>(c - 'A' + 10);
+  if (c >= 'a' && c <= 'f')
+    return static_cast<char>(c - 'a' + 10);
+  return 0;
 }
 
 static const char* const kByteStringsUnlocalized[] = {
@@ -553,20 +665,20 @@ string16 FormatBytesUnlocalized(int64 bytes) {
                    kByteStringsUnlocalized[dimension]);
   }
 
-  return base::ASCIIToUTF16(buf);
+  return ASCIIToUTF16(buf);
 }
 
 // Runs in O(n) time in the length of |str|.
 template<class StringType>
 void DoReplaceSubstringsAfterOffset(StringType* str,
                                     size_t offset,
-                                    const StringType& find_this,
-                                    const StringType& replace_with,
+                                    BasicStringPiece<StringType> find_this,
+                                    BasicStringPiece<StringType> replace_with,
                                     bool replace_all) {
   DCHECK(!find_this.empty());
 
   // If the find string doesn't appear, there's nothing to do.
-  offset = str->find(find_this, offset);
+  offset = str->find(find_this.data(), offset, find_this.size());
   if (offset == StringType::npos)
     return;
 
@@ -574,7 +686,7 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
   // complicated.
   size_t find_length = find_this.length();
   if (!replace_all) {
-    str->replace(offset, find_length, replace_with);
+    str->replace(offset, find_length, replace_with.data(), replace_with.size());
     return;
   }
 
@@ -583,8 +695,10 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
   size_t replace_length = replace_with.length();
   if (find_length == replace_length) {
     do {
-      str->replace(offset, find_length, replace_with);
-      offset = str->find(find_this, offset + replace_length);
+      str->replace(offset, find_length,
+                   replace_with.data(), replace_with.size());
+      offset = str->find(find_this.data(), offset + replace_length,
+                         find_this.size());
     } while (offset != StringType::npos);
     return;
   }
@@ -601,11 +715,14 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
     size_t write_offset = offset;
     do {
       if (replace_length) {
-        str->replace(write_offset, replace_length, replace_with);
+        str->replace(write_offset, replace_length,
+                     replace_with.data(), replace_with.size());
         write_offset += replace_length;
       }
       size_t read_offset = offset + find_length;
-      offset = std::min(str->find(find_this, read_offset), str_length);
+      offset = std::min(
+          str->find(find_this.data(), read_offset, find_this.size()),
+          str_length);
       size_t length = offset - read_offset;
       if (length) {
         memmove(&(*str)[write_offset], &(*str)[read_offset],
@@ -634,13 +751,15 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
     // exit from the loop, |current_match| will point at the last instance of
     // the find string, and we won't need to find() it again immediately.
     current_match = offset;
-    offset = str->find(find_this, offset + find_length);
+    offset = str->find(find_this.data(), offset + find_length,
+                       find_this.size());
   } while (offset != StringType::npos);
   str->resize(final_length);
 
   // Now do the replacement loop, working backwards through the string.
   for (size_t prev_match = str_length, write_offset = final_length; ;
-       current_match = str->rfind(find_this, current_match - 1)) {
+       current_match = str->rfind(find_this.data(), current_match - 1,
+                                  find_this.size())) {
     size_t read_offset = current_match + find_length;
     size_t length = prev_match - read_offset;
     if (length) {
@@ -649,7 +768,8 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
               length * sizeof(typename StringType::value_type));
     }
     write_offset -= replace_length;
-    str->replace(write_offset, replace_length, replace_with);
+    str->replace(write_offset, replace_length,
+                 replace_with.data(), replace_with.size());
     if (current_match == first_match)
       return;
     prev_match = current_match;
@@ -658,75 +778,54 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
 
 void ReplaceFirstSubstringAfterOffset(string16* str,
                                       size_t start_offset,
-                                      const string16& find_this,
-                                      const string16& replace_with) {
-  DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
-                                 false);  // replace first instance
+                                      StringPiece16 find_this,
+                                      StringPiece16 replace_with) {
+  DoReplaceSubstringsAfterOffset<string16>(
+      str, start_offset, find_this, replace_with, false);  // Replace first.
 }
 
 void ReplaceFirstSubstringAfterOffset(std::string* str,
                                       size_t start_offset,
-                                      const std::string& find_this,
-                                      const std::string& replace_with) {
-  DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
-                                 false);  // replace first instance
+                                      StringPiece find_this,
+                                      StringPiece replace_with) {
+  DoReplaceSubstringsAfterOffset<std::string>(
+      str, start_offset, find_this, replace_with, false);  // Replace first.
 }
 
 void ReplaceSubstringsAfterOffset(string16* str,
                                   size_t start_offset,
-                                  const string16& find_this,
-                                  const string16& replace_with) {
-  DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
-                                 true);  // replace all instances
+                                  StringPiece16 find_this,
+                                  StringPiece16 replace_with) {
+  DoReplaceSubstringsAfterOffset<string16>(
+      str, start_offset, find_this, replace_with, true);  // Replace all.
 }
 
 void ReplaceSubstringsAfterOffset(std::string* str,
                                   size_t start_offset,
-                                  const std::string& find_this,
-                                  const std::string& replace_with) {
-  DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
-                                 true);  // replace all instances
+                                  StringPiece find_this,
+                                  StringPiece replace_with) {
+  DoReplaceSubstringsAfterOffset<std::string>(
+      str, start_offset, find_this, replace_with, true);  // Replace all.
 }
 
-
-template<typename STR>
-static size_t TokenizeT(const STR& str,
-                        const STR& delimiters,
-                        std::vector<STR>* tokens) {
-  tokens->clear();
-
-  size_t start = str.find_first_not_of(delimiters);
-  while (start != STR::npos) {
-    size_t end = str.find_first_of(delimiters, start + 1);
-    if (end == STR::npos) {
-      tokens->push_back(str.substr(start));
-      break;
-    } else {
-      tokens->push_back(str.substr(start, end - start));
-      start = str.find_first_not_of(delimiters, end + 1);
-    }
-  }
-
-  return tokens->size();
+template <class string_type>
+inline typename string_type::value_type* WriteIntoT(string_type* str,
+                                                    size_t length_with_null) {
+  DCHECK_GT(length_with_null, 1u);
+  str->reserve(length_with_null);
+  str->resize(length_with_null - 1);
+  return &((*str)[0]);
 }
 
-size_t Tokenize(const string16& str,
-                const string16& delimiters,
-                std::vector<string16>* tokens) {
-  return TokenizeT(str, delimiters, tokens);
+char* WriteInto(std::string* str, size_t length_with_null) {
+  return WriteIntoT(str, length_with_null);
 }
 
-size_t Tokenize(const std::string& str,
-                const std::string& delimiters,
-                std::vector<std::string>* tokens) {
-  return TokenizeT(str, delimiters, tokens);
+char16* WriteInto(base::string16* str, size_t length_with_null) {
+  return WriteIntoT(str, length_with_null);
 }
 
-size_t Tokenize(const base::StringPiece& str,
-                const base::StringPiece& delimiters,
-                std::vector<base::StringPiece>* tokens) {
-  return TokenizeT(str, delimiters, tokens);
-}
+}  // namespace base
 
 template<typename STR>
 static STR JoinStringT(const std::vector<STR>& parts, const STR& sep) {
@@ -849,161 +948,6 @@ string16 ReplaceStringPlaceholders(const string16& format_string,
   if (offset)
     *offset = offsets[0];
   return result;
-}
-
-static bool IsWildcard(base_icu::UChar32 character) {
-  return character == '*' || character == '?';
-}
-
-// Move the strings pointers to the point where they start to differ.
-template <typename CHAR, typename NEXT>
-static void EatSameChars(const CHAR** pattern, const CHAR* pattern_end,
-                         const CHAR** string, const CHAR* string_end,
-                         NEXT next) {
-  const CHAR* escape = NULL;
-  while (*pattern != pattern_end && *string != string_end) {
-    if (!escape && IsWildcard(**pattern)) {
-      // We don't want to match wildcard here, except if it's escaped.
-      return;
-    }
-
-    // Check if the escapement char is found. If so, skip it and move to the
-    // next character.
-    if (!escape && **pattern == '\\') {
-      escape = *pattern;
-      next(pattern, pattern_end);
-      continue;
-    }
-
-    // Check if the chars match, if so, increment the ptrs.
-    const CHAR* pattern_next = *pattern;
-    const CHAR* string_next = *string;
-    base_icu::UChar32 pattern_char = next(&pattern_next, pattern_end);
-    if (pattern_char == next(&string_next, string_end) &&
-        pattern_char != CBU_SENTINEL) {
-      *pattern = pattern_next;
-      *string = string_next;
-    } else {
-      // Uh oh, it did not match, we are done. If the last char was an
-      // escapement, that means that it was an error to advance the ptr here,
-      // let's put it back where it was. This also mean that the MatchPattern
-      // function will return false because if we can't match an escape char
-      // here, then no one will.
-      if (escape) {
-        *pattern = escape;
-      }
-      return;
-    }
-
-    escape = NULL;
-  }
-}
-
-template <typename CHAR, typename NEXT>
-static void EatWildcard(const CHAR** pattern, const CHAR* end, NEXT next) {
-  while (*pattern != end) {
-    if (!IsWildcard(**pattern))
-      return;
-    next(pattern, end);
-  }
-}
-
-template <typename CHAR, typename NEXT>
-static bool MatchPatternT(const CHAR* eval, const CHAR* eval_end,
-                          const CHAR* pattern, const CHAR* pattern_end,
-                          int depth,
-                          NEXT next) {
-  const int kMaxDepth = 16;
-  if (depth > kMaxDepth)
-    return false;
-
-  // Eat all the matching chars.
-  EatSameChars(&pattern, pattern_end, &eval, eval_end, next);
-
-  // If the string is empty, then the pattern must be empty too, or contains
-  // only wildcards.
-  if (eval == eval_end) {
-    EatWildcard(&pattern, pattern_end, next);
-    return pattern == pattern_end;
-  }
-
-  // Pattern is empty but not string, this is not a match.
-  if (pattern == pattern_end)
-    return false;
-
-  // If this is a question mark, then we need to compare the rest with
-  // the current string or the string with one character eaten.
-  const CHAR* next_pattern = pattern;
-  next(&next_pattern, pattern_end);
-  if (pattern[0] == '?') {
-    if (MatchPatternT(eval, eval_end, next_pattern, pattern_end,
-                      depth + 1, next))
-      return true;
-    const CHAR* next_eval = eval;
-    next(&next_eval, eval_end);
-    if (MatchPatternT(next_eval, eval_end, next_pattern, pattern_end,
-                      depth + 1, next))
-      return true;
-  }
-
-  // This is a *, try to match all the possible substrings with the remainder
-  // of the pattern.
-  if (pattern[0] == '*') {
-    // Collapse duplicate wild cards (********** into *) so that the
-    // method does not recurse unnecessarily. http://crbug.com/52839
-    EatWildcard(&next_pattern, pattern_end, next);
-
-    while (eval != eval_end) {
-      if (MatchPatternT(eval, eval_end, next_pattern, pattern_end,
-                        depth + 1, next))
-        return true;
-      eval++;
-    }
-
-    // We reached the end of the string, let see if the pattern contains only
-    // wildcards.
-    if (eval == eval_end) {
-      EatWildcard(&pattern, pattern_end, next);
-      if (pattern != pattern_end)
-        return false;
-      return true;
-    }
-  }
-
-  return false;
-}
-
-struct NextCharUTF8 {
-  base_icu::UChar32 operator()(const char** p, const char* end) {
-    base_icu::UChar32 c;
-    int offset = 0;
-    CBU8_NEXT(*p, offset, end - *p, c);
-    *p += offset;
-    return c;
-  }
-};
-
-struct NextCharUTF16 {
-  base_icu::UChar32 operator()(const char16** p, const char16* end) {
-    base_icu::UChar32 c;
-    int offset = 0;
-    CBU16_NEXT(*p, offset, end - *p, c);
-    *p += offset;
-    return c;
-  }
-};
-
-bool MatchPattern(const base::StringPiece& eval,
-                  const base::StringPiece& pattern) {
-  return MatchPatternT(eval.data(), eval.data() + eval.size(),
-                       pattern.data(), pattern.data() + pattern.size(),
-                       0, NextCharUTF8());
-}
-
-bool MatchPattern(const string16& eval, const string16& pattern) {
-  return MatchPatternT(eval.c_str(), eval.c_str() + eval.size(),
-                       pattern.c_str(), pattern.c_str() + pattern.size(),
-                       0, NextCharUTF16());
 }
 
 // The following code is compatible with the OpenBSD lcpy interface.  See:

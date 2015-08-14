@@ -41,6 +41,7 @@
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/svg/SVGElement.h"
 #include "platform/geometry/TransformState.h"
+#include "platform/graphics/StrokeData.h"
 
 namespace blink {
 
@@ -51,23 +52,21 @@ static inline LayoutRect enclosingIntRectIfNotEmpty(const FloatRect& rect)
     return LayoutRect(enclosingIntRect(rect));
 }
 
-LayoutRect SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(const LayoutObject* object, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState)
+LayoutRect SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(const LayoutObject& object, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState)
 {
     // Return early for any cases where we don't actually paint
-    if (object->style()->visibility() != VISIBLE && !object->enclosingLayer()->hasVisibleContent())
+    if (object.styleRef().visibility() != VISIBLE && !object.enclosingLayer()->hasVisibleContent())
         return LayoutRect();
 
-    // Pass our local paint rect to computeRectForPaintInvalidation() which will
-    // map to parent coords and recurse up the parent chain.
-    FloatRect paintInvalidationRect = object->paintInvalidationRectInLocalCoordinates();
-    paintInvalidationRect.inflate(object->style()->outlineWidth());
+    FloatRect paintInvalidationRect = object.paintInvalidationRectInLocalCoordinates();
+    if (int outlineOutset = object.styleRef().outlineOutset())
+        paintInvalidationRect.inflate(outlineOutset);
 
     if (paintInvalidationState && paintInvalidationState->canMapToContainer(paintInvalidationContainer)) {
         // Compute accumulated SVG transform and apply to local paint rect.
-        AffineTransform transform = paintInvalidationState->svgTransform() * object->localToParentTransform();
-        paintInvalidationRect = transform.mapRect(paintInvalidationRect);
+        AffineTransform transform = paintInvalidationState->svgTransform() * object.localToParentTransform();
         // FIXME: These are quirks carried forward from the old paint invalidation infrastructure.
-        LayoutRect rect = enclosingIntRectIfNotEmpty(paintInvalidationRect);
+        LayoutRect rect = enclosingIntRectIfNotEmpty(transform.mapRect(paintInvalidationRect));
         // Offset by SVG root paint offset and apply clipping as needed.
         rect.move(paintInvalidationState->paintOffset());
         if (paintInvalidationState->isClipped())
@@ -81,16 +80,16 @@ LayoutRect SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(const Layou
     return rect;
 }
 
-const LayoutSVGRoot& SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(const LayoutObject* object, const FloatRect& localPaintInvalidationRect, LayoutRect& rect)
+const LayoutSVGRoot& SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(const LayoutObject& object, const FloatRect& localPaintInvalidationRect, LayoutRect& rect)
 {
-    ASSERT(object && object->isSVG() && !object->isSVGRoot());
+    ASSERT(object.isSVG() && !object.isSVGRoot());
 
     FloatRect paintInvalidationRect = localPaintInvalidationRect;
     // FIXME: Building the transform to the SVG root border box and then doing
     // mapRect() with that would be slightly more efficient, but requires some
     // additions to AffineTransform (preMultiply, preTranslate) to avoid
     // excessive copying and to get a similar fast-path for translations.
-    const LayoutObject* parent = object;
+    const LayoutObject* parent = &object;
     do {
         paintInvalidationRect = parent->localToParentTransform().mapRect(paintInvalidationRect);
         parent = parent->parent();
@@ -419,19 +418,11 @@ SubtreeContentTransformScope::~SubtreeContentTransformScope()
     currentContentTransformation() = m_savedContentTransformation;
 }
 
-float SVGLayoutSupport::calculateScreenFontSizeScalingFactor(const LayoutObject* layoutObject)
+AffineTransform SVGLayoutSupport::deprecatedCalculateTransformToLayer(const LayoutObject* layoutObject)
 {
-    // FIXME: trying to compute a device space transform at record time is wrong. All clients
-    // should be updated to avoid relying on this information, and the method should be removed.
-
-    ASSERT(layoutObject);
-    // We're about to possibly clear the layoutObject, so save the deviceScaleFactor now.
-    float deviceScaleFactor = layoutObject->document().frameHost()->deviceScaleFactor();
-
-    // Walk up the layout tree, accumulating SVG transforms.
-    AffineTransform ctm = currentContentTransformation();
+    AffineTransform transform;
     while (layoutObject) {
-        ctm = layoutObject->localToParentTransform() * ctm;
+        transform = layoutObject->localToParentTransform() * transform;
         if (layoutObject->isSVGRoot())
             break;
         layoutObject = layoutObject->parent();
@@ -451,12 +442,22 @@ float SVGLayoutSupport::calculateScreenFontSizeScalingFactor(const LayoutObject*
             break;
 
         if (TransformationMatrix* layerTransform = layer->transform())
-            ctm = layerTransform->toAffineTransform() * ctm;
+            transform = layerTransform->toAffineTransform() * transform;
 
         layer = layer->parent();
     }
 
-    ctm.scale(deviceScaleFactor);
+    return transform;
+}
+
+float SVGLayoutSupport::calculateScreenFontSizeScalingFactor(const LayoutObject* layoutObject)
+{
+    ASSERT(layoutObject);
+
+    // FIXME: trying to compute a device space transform at record time is wrong. All clients
+    // should be updated to avoid relying on this information, and the method should be removed.
+    AffineTransform ctm = deprecatedCalculateTransformToLayer(layoutObject) * currentContentTransformation();
+    ctm.scale(layoutObject->document().frameHost()->deviceScaleFactor());
 
     return narrowPrecisionToFloat(sqrt((pow(ctm.xScale(), 2) + pow(ctm.yScale(), 2)) / 2));
 }

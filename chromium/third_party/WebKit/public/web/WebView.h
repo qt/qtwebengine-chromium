@@ -68,8 +68,6 @@ public:
     BLINK_EXPORT static const double textSizeMultiplierRatio;
     BLINK_EXPORT static const double minTextSizeMultiplier;
     BLINK_EXPORT static const double maxTextSizeMultiplier;
-    BLINK_EXPORT static const float minPageScaleFactor;
-    BLINK_EXPORT static const float maxPageScaleFactor;
 
     enum StyleInjectionTarget {
         InjectStyleInAllFrames,
@@ -229,12 +227,6 @@ public:
     // setPageScaleFactor() magnifies and shrinks a page without affecting layout.
     // On the other hand, zooming affects layout of the page.
     virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) { setPageScaleFactor(scaleFactor); }
-
-    // TODO: Reevaluate if this is needed once all users are converted to using the
-    // virtual viewport pinch model.
-    // Temporary to keep old style pinch viewport working while we gradually bring up
-    // virtual viewport pinch.
-    virtual void setMainFrameScrollOffset(const WebPoint& origin) = 0;
 
     // Scales the page without affecting layout by using the pinch-to-zoom viewport.
     virtual void setPageScaleFactor(float) = 0;
@@ -469,6 +461,10 @@ public:
     // Force the webgl context to fail so that webglcontextcreationerror
     // event gets generated/tested.
     virtual void forceNextWebGLContextCreationToFail() = 0;
+
+    // Force the drawing buffer used by webgl contexts to fail so that the webgl
+    // context's ability to deal with that failure gracefully can be tested.
+    virtual void forceNextDrawingBufferCreationToFail() = 0;
 
 protected:
     ~WebView() {}

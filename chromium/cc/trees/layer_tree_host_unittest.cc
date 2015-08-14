@@ -13,7 +13,6 @@
 #include "base/thread_task_runner_handle.h"
 #include "cc/animation/timing_function.h"
 #include "cc/debug/frame_rate_counter.h"
-#include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/io_surface_layer.h"
 #include "cc/layers/layer_impl.h"
@@ -31,12 +30,7 @@
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/resources/prioritized_resource.h"
-#include "cc/resources/prioritized_resource_manager.h"
-#include "cc/resources/resource_update_queue.h"
-#include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
-#include "cc/test/fake_content_layer_impl.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_painted_scrollbar_layer.h"
@@ -47,7 +41,6 @@
 #include "cc/test/fake_scoped_ui_resource.h"
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/geometry_test_utils.h"
-#include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
@@ -61,7 +54,6 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkPicture.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
@@ -74,28 +66,15 @@ using testing::Mock;
 namespace cc {
 namespace {
 
-class LayerTreeHostTest : public LayerTreeTest {
- public:
-  LayerTreeHostTest() : contents_texture_manager_(nullptr) {}
-
-  void DidInitializeOutputSurface() override {
-    contents_texture_manager_ = layer_tree_host()->contents_texture_manager();
-  }
-
- protected:
-  PrioritizedResourceManager* contents_texture_manager_;
-};
+class LayerTreeHostTest : public LayerTreeTest {};
 
 class LayerTreeHostTestHasImplThreadTest : public LayerTreeHostTest {
  public:
   LayerTreeHostTestHasImplThreadTest() : threaded_(false) {}
 
-  void RunTest(bool threaded,
-               bool delegating_renderer,
-               bool impl_side_painting) override {
+  void RunTest(bool threaded, bool delegating_renderer) override {
     threaded_ = threaded;
-    LayerTreeHostTest::RunTest(threaded, delegating_renderer,
-                               impl_side_painting);
+    LayerTreeHostTest::RunTest(threaded, delegating_renderer);
   }
 
   void BeginTest() override {
@@ -109,7 +88,7 @@ class LayerTreeHostTestHasImplThreadTest : public LayerTreeHostTest {
   bool threaded_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestHasImplThreadTest);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestHasImplThreadTest);
 
 class LayerTreeHostTestSetNeedsCommitInsideLayout : public LayerTreeHostTest {
  protected:
@@ -128,8 +107,7 @@ class LayerTreeHostTestSetNeedsCommitInsideLayout : public LayerTreeHostTest {
   void AfterTest() override {}
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(
-    LayerTreeHostTestSetNeedsCommitInsideLayout);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsCommitInsideLayout);
 
 class LayerTreeHostTestSetNeedsUpdateInsideLayout : public LayerTreeHostTest {
  protected:
@@ -148,8 +126,7 @@ class LayerTreeHostTestSetNeedsUpdateInsideLayout : public LayerTreeHostTest {
   void AfterTest() override {}
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(
-    LayerTreeHostTestSetNeedsUpdateInsideLayout);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsUpdateInsideLayout);
 
 // Test if the LTHI receives ReadyToActivate notifications from the TileManager
 // when no raster tasks get scheduled.
@@ -193,7 +170,7 @@ class LayerTreeHostTestReadyToActivateEmpty : public LayerTreeHostTest {
   size_t required_for_activation_count_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestReadyToActivateEmpty);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestReadyToActivateEmpty);
 
 // Test if the LTHI receives ReadyToActivate notifications from the TileManager
 // when some raster tasks flagged as REQUIRED_FOR_ACTIVATION got scheduled.
@@ -203,7 +180,7 @@ class LayerTreeHostTestReadyToActivateNonEmpty
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(1024, 1024));
     root_layer->SetIsDrawable(true);
 
@@ -223,7 +200,7 @@ class LayerTreeHostTestReadyToActivateNonEmpty
 
 // Multi-thread only because in single thread the commit goes directly to the
 // active tree, so notify ready to activate is skipped.
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestReadyToActivateNonEmpty);
+MULTI_THREAD_TEST_F(LayerTreeHostTestReadyToActivateNonEmpty);
 
 // Test if the LTHI receives ReadyToDraw notifications from the TileManager when
 // no raster tasks get scheduled.
@@ -263,7 +240,7 @@ class LayerTreeHostTestReadyToDrawEmpty : public LayerTreeHostTest {
   size_t required_for_draw_count_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestReadyToDrawEmpty);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestReadyToDrawEmpty);
 
 // Test if the LTHI receives ReadyToDraw notifications from the TileManager when
 // some raster tasks flagged as REQUIRED_FOR_DRAW got scheduled.
@@ -273,7 +250,7 @@ class LayerTreeHostTestReadyToDrawNonEmpty
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(1024, 1024));
     root_layer->SetIsDrawable(true);
 
@@ -293,7 +270,104 @@ class LayerTreeHostTestReadyToDrawNonEmpty
 
 // Note: With this test setup, we only get tiles flagged as REQUIRED_FOR_DRAW in
 // single threaded mode.
-SINGLE_THREAD_IMPL_TEST_F(LayerTreeHostTestReadyToDrawNonEmpty);
+SINGLE_THREAD_TEST_F(LayerTreeHostTestReadyToDrawNonEmpty);
+
+class LayerTreeHostFreeWorkerContextResourcesTest : public LayerTreeHostTest {
+ public:
+  scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface() override {
+    auto output_surface = make_scoped_ptr(new testing::StrictMock<
+        MockSetWorkerContextShouldAggressivelyFreeResourcesOutputSurface>(
+        delegating_renderer()));
+
+    // At init, we expect one call to set visibility to true.
+    testing::Expectation visibility_true =
+        EXPECT_CALL(*output_surface,
+                    SetWorkerContextShouldAggressivelyFreeResources(false))
+            .Times(1);
+
+    // After running, we should get exactly one call to
+    // FreeWorkerContextGpuResources.
+    EXPECT_CALL(*output_surface,
+                SetWorkerContextShouldAggressivelyFreeResources(true))
+        .After(visibility_true)
+        .WillOnce(testing::Invoke([this](bool is_visible) { EndTest(); }));
+    return output_surface.Pass();
+  }
+
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    settings->gpu_rasterization_enabled = true;
+    settings->gpu_rasterization_forced = true;
+  }
+
+  void BeginTest() override {
+    // Logic is handled in InitializedRendererOnThread to ensure that our
+    // LTHI is fully set up.
+  }
+
+  void AfterTest() override {
+    // Expectations handled via mock.
+  }
+
+ private:
+  class MockSetWorkerContextShouldAggressivelyFreeResourcesOutputSurface
+      : public FakeOutputSurface {
+   public:
+    ~MockSetWorkerContextShouldAggressivelyFreeResourcesOutputSurface() {}
+    explicit MockSetWorkerContextShouldAggressivelyFreeResourcesOutputSurface(
+        bool delegated_rendering)
+        : FakeOutputSurface(TestContextProvider::Create(),
+                            TestContextProvider::Create(),
+                            delegated_rendering) {}
+    MOCK_METHOD1(SetWorkerContextShouldAggressivelyFreeResources,
+                 void(bool is_visible));
+  };
+};
+
+// Test if the LTH successfully frees resources on the worker context when
+// visibility is set to false.
+class LayerTreeHostFreeWorkerContextResourcesOnInvisible
+    : public LayerTreeHostFreeWorkerContextResourcesTest {
+ public:
+  void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
+                                   bool success) override {
+    PostSetVisibleToMainThread(false);
+  }
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostFreeWorkerContextResourcesOnInvisible);
+
+// Test if the LTH successfully frees resources on the worker context when
+// hard memory limit is set to zero.
+class LayerTreeHostFreeWorkerContextResourcesOnZeroMemoryLimit
+    : public LayerTreeHostFreeWorkerContextResourcesTest {
+ public:
+  void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
+                                   bool success) override {
+    ManagedMemoryPolicy zero_policy(
+        0, gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING, 0);
+    host_impl->SetMemoryPolicy(zero_policy);
+  }
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostFreeWorkerContextResourcesOnZeroMemoryLimit);
+
+// Test if the LTH successfully frees resources on the worker context when
+// hard memory limit is set to zero while using a synchronous compositor (like
+// Android WebView).
+class LayerTreeHostFreeWorkerContextResourcesOnZeroMemoryLimitSynchronous
+    : public LayerTreeHostFreeWorkerContextResourcesOnZeroMemoryLimit {
+ public:
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    LayerTreeHostFreeWorkerContextResourcesTest::InitializeSettings(settings);
+    settings->use_external_begin_frame_source = true;
+    settings->using_synchronous_renderer_compositor = true;
+  }
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostFreeWorkerContextResourcesOnZeroMemoryLimitSynchronous);
 
 // Two setNeedsCommits in a row should lead to at least 1 commit and at least 1
 // draw with frame 0.
@@ -368,7 +442,7 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsCommit2);
 class LayerTreeHostTestPushPropertiesTo : public LayerTreeHostTest {
  protected:
   void SetupTree() override {
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->CreateRenderSurface();
     root->SetBounds(gfx::Size(10, 10));
     layer_tree_host()->SetRootLayer(root);
@@ -502,10 +576,7 @@ class LayerTreeHostTestSetNeedsRedrawRect : public LayerTreeHostTest {
       : num_draws_(0), bounds_(50, 50), invalid_rect_(10, 10, 20, 20) {}
 
   void BeginTest() override {
-    if (layer_tree_host()->settings().impl_side_painting)
-      root_layer_ = FakePictureLayer::Create(&client_);
-    else
-      root_layer_ = ContentLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetIsDrawable(true);
     root_layer_->SetBounds(bounds_);
     layer_tree_host()->SetRootLayer(root_layer_);
@@ -549,7 +620,7 @@ class LayerTreeHostTestSetNeedsRedrawRect : public LayerTreeHostTest {
   const gfx::Size bounds_;
   const gfx::Rect invalid_rect_;
   FakeContentLayerClient client_;
-  scoped_refptr<Layer> root_layer_;
+  scoped_refptr<FakePictureLayer> root_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSetNeedsRedrawRect);
@@ -563,7 +634,7 @@ class LayerTreeHostTestGpuRasterDeviceSizeChanged : public LayerTreeHostTest {
 
   void BeginTest() override {
     client_.set_fill_with_nonsolid_color(true);
-    root_layer_ = FakePictureLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetIsDrawable(true);
     gfx::Transform transform;
     // Translate the layer out of the viewport to force it to not update its
@@ -631,8 +702,7 @@ class LayerTreeHostTestGpuRasterDeviceSizeChanged : public LayerTreeHostTest {
   scoped_refptr<FakePictureLayer> root_layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(
-    LayerTreeHostTestGpuRasterDeviceSizeChanged);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterDeviceSizeChanged);
 
 class LayerTreeHostTestNoExtraCommitFromInvalidate : public LayerTreeHostTest {
  public:
@@ -641,14 +711,11 @@ class LayerTreeHostTestNoExtraCommitFromInvalidate : public LayerTreeHostTest {
   }
 
   void SetupTree() override {
-    root_layer_ = Layer::Create();
+    root_layer_ = Layer::Create(layer_settings());
     root_layer_->SetBounds(gfx::Size(10, 20));
     root_layer_->CreateRenderSurface();
 
-    if (layer_tree_host()->settings().impl_side_painting)
-      scaled_layer_ = FakePictureLayer::Create(&client_);
-    else
-      scaled_layer_ = FakeContentLayer::Create(&client_);
+    scaled_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     scaled_layer_->SetBounds(gfx::Size(1, 1));
     root_layer_->AddChild(scaled_layer_);
 
@@ -695,14 +762,14 @@ class LayerTreeHostTestNoExtraCommitFromScrollbarInvalidate
   }
 
   void SetupTree() override {
-    root_layer_ = Layer::Create();
+    root_layer_ = Layer::Create(layer_settings());
     root_layer_->SetBounds(gfx::Size(10, 20));
     root_layer_->CreateRenderSurface();
 
     bool paint_scrollbar = true;
     bool has_thumb = false;
     scrollbar_ = FakePaintedScrollbarLayer::Create(
-        paint_scrollbar, has_thumb, root_layer_->id());
+        layer_settings(), paint_scrollbar, has_thumb, root_layer_->id());
     scrollbar_->SetPosition(gfx::Point(0, 10));
     scrollbar_->SetBounds(gfx::Size(10, 10));
 
@@ -752,10 +819,7 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
       : num_draws_(0), bounds_(50, 50), invalid_rect_(10, 10, 20, 20) {}
 
   void BeginTest() override {
-    if (layer_tree_host()->settings().impl_side_painting)
-      root_layer_ = FakePictureLayer::Create(&client_);
-    else
-      root_layer_ = ContentLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetIsDrawable(true);
     root_layer_->SetBounds(bounds_);
     layer_tree_host()->SetRootLayer(root_layer_);
@@ -764,7 +828,7 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
   }
 
   void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
-    if (num_draws_ == 3 && host_impl->settings().impl_side_painting)
+    if (num_draws_ == 3)
       host_impl->SetNeedsRedrawRect(invalid_rect_);
   }
 
@@ -810,10 +874,7 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
         // Should force full frame damage on the next commit
         PostSetNextCommitForcesRedrawToMainThread();
         PostSetNeedsCommitToMainThread();
-        if (host_impl->settings().impl_side_painting)
-          host_impl->BlockNotifyReadyToActivateForTesting(true);
-        else
-          num_draws_++;
+        host_impl->BlockNotifyReadyToActivateForTesting(true);
         break;
       case 3:
         host_impl->BlockNotifyReadyToActivateForTesting(false);
@@ -832,18 +893,16 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
   const gfx::Size bounds_;
   const gfx::Rect invalid_rect_;
   FakeContentLayerClient client_;
-  scoped_refptr<Layer> root_layer_;
+  scoped_refptr<FakePictureLayer> root_layer_;
 };
 
-SINGLE_AND_MULTI_THREAD_BLOCKNOTIFY_TEST_F(
-    LayerTreeHostTestSetNextCommitForcesRedraw);
+// This test blocks activation which is not supported for single thread mode.
+MULTI_THREAD_BLOCKNOTIFY_TEST_F(LayerTreeHostTestSetNextCommitForcesRedraw);
 
 // Tests that if a layer is not drawn because of some reason in the parent then
 // its damage is preserved until the next time it is drawn.
 class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
  public:
-  LayerTreeHostTestUndrawnLayersDamageLater() {}
-
   void InitializeSettings(LayerTreeSettings* settings) override {
     // If we don't set the minimum contents scale, it's harder to verify whether
     // the damage we get is correct. For other scale amounts, please see
@@ -852,28 +911,19 @@ class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
   }
 
   void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting)
-      root_layer_ = FakePictureLayer::Create(&client_);
-    else
-      root_layer_ = ContentLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetIsDrawable(true);
     root_layer_->SetBounds(gfx::Size(50, 50));
     layer_tree_host()->SetRootLayer(root_layer_);
 
     // The initially transparent layer has a larger child layer, which is
     // not initially drawn because of the this (parent) layer.
-    if (layer_tree_host()->settings().impl_side_painting)
-      parent_layer_ = FakePictureLayer::Create(&client_);
-    else
-      parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     parent_layer_->SetBounds(gfx::Size(15, 15));
     parent_layer_->SetOpacity(0.0f);
     root_layer_->AddChild(parent_layer_);
 
-    if (layer_tree_host()->settings().impl_side_painting)
-      child_layer_ = FakePictureLayer::Create(&client_);
-    else
-      child_layer_ = FakeContentLayer::Create(&client_);
+    child_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     child_layer_->SetBounds(gfx::Size(25, 25));
     parent_layer_->AddChild(child_layer_);
 
@@ -938,9 +988,9 @@ class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
 
  private:
   FakeContentLayerClient client_;
-  scoped_refptr<Layer> root_layer_;
-  scoped_refptr<Layer> parent_layer_;
-  scoped_refptr<Layer> child_layer_;
+  scoped_refptr<FakePictureLayer> root_layer_;
+  scoped_refptr<FakePictureLayer> parent_layer_;
+  scoped_refptr<FakePictureLayer> child_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestUndrawnLayersDamageLater);
@@ -955,17 +1005,16 @@ class LayerTreeHostTestDamageWithScale : public LayerTreeHostTest {
     client_.set_fill_with_nonsolid_color(true);
 
     scoped_ptr<FakePicturePile> pile(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
-    root_layer_ =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+        new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                            LayerTreeSettings().default_tile_grid_size));
+    root_layer_ = FakePictureLayer::CreateWithRecordingSource(
+        layer_settings(), &client_, pile.Pass());
     root_layer_->SetBounds(gfx::Size(50, 50));
 
-    pile.reset(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
-    child_layer_ =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+    pile.reset(new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                                   LayerTreeSettings().default_tile_grid_size));
+    child_layer_ = FakePictureLayer::CreateWithRecordingSource(
+        layer_settings(), &client_, pile.Pass());
     child_layer_->SetBounds(gfx::Size(25, 25));
     child_layer_->SetIsDrawable(true);
     child_layer_->SetContentsOpaque(true);
@@ -1051,79 +1100,7 @@ class LayerTreeHostTestDamageWithScale : public LayerTreeHostTest {
   scoped_refptr<Layer> child_layer_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestDamageWithScale);
-
-// Tests that if a layer is not drawn because of some reason in the parent,
-// causing its content bounds to not be computed, then when it is later drawn,
-// its content bounds get pushed.
-class LayerTreeHostTestUndrawnLayersPushContentBoundsLater
-    : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestUndrawnLayersPushContentBoundsLater()
-      : root_layer_(Layer::Create()) {}
-
-  void SetupTree() override {
-    root_layer_->CreateRenderSurface();
-    root_layer_->SetIsDrawable(true);
-    root_layer_->SetBounds(gfx::Size(20, 20));
-    layer_tree_host()->SetRootLayer(root_layer_);
-
-    parent_layer_ = Layer::Create();
-    parent_layer_->SetBounds(gfx::Size(20, 20));
-    parent_layer_->SetOpacity(0.0f);
-    root_layer_->AddChild(parent_layer_);
-
-    child_layer_ = Layer::Create();
-    child_layer_->SetBounds(gfx::Size(15, 15));
-    parent_layer_->AddChild(child_layer_);
-
-    LayerTreeHostTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
-    LayerImpl* root = host_impl->active_tree()->root_layer();
-    LayerImpl* parent = root->children()[0];
-    LayerImpl* child = parent->children()[0];
-
-    switch (host_impl->active_tree()->source_frame_number()) {
-      case 0:
-        EXPECT_EQ(0.f, parent->opacity());
-        EXPECT_EQ(gfx::SizeF(), child->content_bounds());
-        break;
-      case 1:
-        EXPECT_EQ(1.f, parent->opacity());
-        EXPECT_EQ(gfx::SizeF(15.f, 15.f), child->content_bounds());
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-
-  void DidCommit() override {
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
-        parent_layer_->SetOpacity(1.0f);
-        break;
-      case 2:
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-
-  void AfterTest() override {}
-
- private:
-  scoped_refptr<Layer> root_layer_;
-  scoped_refptr<Layer> parent_layer_;
-  scoped_refptr<Layer> child_layer_;
-};
-
-SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
-    LayerTreeHostTestUndrawnLayersPushContentBoundsLater);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestDamageWithScale);
 
 // This test verifies that properties on the layer tree host are commited
 // to the impl side.
@@ -1168,8 +1145,7 @@ class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
 
   void BeginCommitOnThread(LayerTreeHostImpl* impl) override {
     EXPECT_EQ(frame_count_with_pending_tree_, 0);
-    if (impl->settings().impl_side_painting)
-      impl->BlockNotifyReadyToActivateForTesting(true);
+    impl->BlockNotifyReadyToActivateForTesting(true);
   }
 
   void WillBeginImplFrameOnThread(LayerTreeHostImpl* impl,
@@ -1180,27 +1156,21 @@ class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
     if (frame_count_with_pending_tree_ == 1) {
       EXPECT_EQ(first_frame_time_.ToInternalValue(), 0);
       first_frame_time_ = impl->CurrentBeginFrameArgs().frame_time;
-    } else if (frame_count_with_pending_tree_ == 2 &&
-               impl->settings().impl_side_painting) {
+    } else if (frame_count_with_pending_tree_ == 2) {
       impl->BlockNotifyReadyToActivateForTesting(false);
     }
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    if (frame_count_with_pending_tree_ > 1) {
-      EXPECT_NE(first_frame_time_.ToInternalValue(), 0);
-      EXPECT_NE(first_frame_time_.ToInternalValue(),
-                impl->CurrentBeginFrameArgs().frame_time.ToInternalValue());
-      EndTest();
-      return;
-    }
-
-    EXPECT_FALSE(impl->settings().impl_side_painting);
+    EXPECT_GT(frame_count_with_pending_tree_, 1);
+    EXPECT_NE(first_frame_time_.ToInternalValue(), 0);
+    EXPECT_NE(first_frame_time_.ToInternalValue(),
+              impl->CurrentBeginFrameArgs().frame_time.ToInternalValue());
     EndTest();
   }
+
   void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->settings().impl_side_painting)
-      EXPECT_NE(frame_count_with_pending_tree_, 1);
+    EXPECT_GT(frame_count_with_pending_tree_, 1);
   }
 
   void AfterTest() override {}
@@ -1210,7 +1180,8 @@ class LayerTreeHostTestFrameTimeUpdatesAfterActivationFails
   base::TimeTicks first_frame_time_;
 };
 
-SINGLE_AND_MULTI_THREAD_BLOCKNOTIFY_TEST_F(
+// This test blocks activation which is not supported for single thread mode.
+MULTI_THREAD_BLOCKNOTIFY_TEST_F(
     LayerTreeHostTestFrameTimeUpdatesAfterActivationFails);
 
 // This test verifies that LayerTreeHostImpl's current frame time gets
@@ -1234,7 +1205,7 @@ class LayerTreeHostTestFrameTimeUpdatesAfterDraw : public LayerTreeHostTest {
 
       // Since we might use a low-resolution clock on Windows, we need to
       // make sure that the clock has incremented past first_frame_time_.
-      while (first_frame_time_ == gfx::FrameTime::Now()) {
+      while (first_frame_time_ == base::TimeTicks::Now()) {
       }
 
       return;
@@ -1271,7 +1242,8 @@ class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<FakePictureLayer> layer = FakePictureLayer::Create(&client_);
+    scoped_refptr<FakePictureLayer> layer =
+        FakePictureLayer::Create(layer_settings(), &client_);
     layer->set_always_update_resources(true);
     scroll_layer_ = layer;
 
@@ -1291,7 +1263,9 @@ class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
 
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+  void ApplyViewportDeltas(const gfx::Vector2dF& scroll_delta,
+                           const gfx::Vector2dF&,
+                           const gfx::Vector2dF& elastic_overscroll_delta,
                            float scale,
                            float) override {
     gfx::ScrollOffset offset = scroll_layer_->scroll_offset();
@@ -1335,7 +1309,8 @@ class LayerTreeHostTestStartPageScaleAnimation : public LayerTreeHostTest {
   scoped_refptr<Layer> scroll_layer_;
 };
 
-MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestStartPageScaleAnimation);
+// Single thread proxy does not support impl-side page scale changes.
+MULTI_THREAD_TEST_F(LayerTreeHostTestStartPageScaleAnimation);
 
 class LayerTreeHostTestSetVisible : public LayerTreeHostTest {
  public:
@@ -1377,44 +1352,16 @@ class TestOpacityChangeLayerDelegate : public ContentLayerClient {
     if (test_layer_)
       test_layer_->SetOpacity(0.f);
   }
-  void PaintContentsToDisplayList(
-      DisplayItemList* display_list,
+  scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
       PaintingControlSetting picture_control) override {
     NOTIMPLEMENTED();
+    return nullptr;
   }
   bool FillsBoundsCompletely() const override { return false; }
 
  private:
   Layer* test_layer_;
-};
-
-class ContentLayerWithUpdateTracking : public ContentLayer {
- public:
-  static scoped_refptr<ContentLayerWithUpdateTracking> Create(
-      ContentLayerClient* client) {
-    return make_scoped_refptr(new ContentLayerWithUpdateTracking(client));
-  }
-
-  int PaintContentsCount() { return paint_contents_count_; }
-  void ResetPaintContentsCount() { paint_contents_count_ = 0; }
-
-  bool Update(ResourceUpdateQueue* queue,
-              const OcclusionTracker<Layer>* occlusion) override {
-    bool updated = ContentLayer::Update(queue, occlusion);
-    paint_contents_count_++;
-    return updated;
-  }
-
- private:
-  explicit ContentLayerWithUpdateTracking(ContentLayerClient* client)
-      : ContentLayer(client), paint_contents_count_(0) {
-    SetBounds(gfx::Size(10, 10));
-    SetIsDrawable(true);
-  }
-  ~ContentLayerWithUpdateTracking() override {}
-
-  int paint_contents_count_;
 };
 
 // Layer opacity change during paint should not prevent compositor resources
@@ -1423,44 +1370,28 @@ class LayerTreeHostTestOpacityChange : public LayerTreeHostTest {
  public:
   LayerTreeHostTestOpacityChange() : test_opacity_change_delegate_() {}
 
-  void BeginTest() override {
-    if (layer_tree_host()->settings().impl_side_painting) {
-      update_check_picture_layer_ =
-          FakePictureLayer::Create(&test_opacity_change_delegate_);
-      test_opacity_change_delegate_.SetTestLayer(
-          update_check_picture_layer_.get());
-      is_impl_paint_ = true;
-    } else {
-      update_check_content_layer_ = ContentLayerWithUpdateTracking::Create(
-          &test_opacity_change_delegate_);
-      test_opacity_change_delegate_.SetTestLayer(
-          update_check_content_layer_.get());
-      is_impl_paint_ = false;
-    }
-    layer_tree_host()->SetViewportSize(gfx::Size(10, 10));
-    if (layer_tree_host()->settings().impl_side_painting)
-      layer_tree_host()->root_layer()->AddChild(update_check_picture_layer_);
-    else
-      layer_tree_host()->root_layer()->AddChild(update_check_content_layer_);
+  void SetupTree() override {
+    LayerTreeHostTest::SetupTree();
 
-    PostSetNeedsCommitToMainThread();
+    update_check_picture_layer_ = FakePictureLayer::Create(
+        layer_settings(), &test_opacity_change_delegate_);
+    test_opacity_change_delegate_.SetTestLayer(
+        update_check_picture_layer_.get());
+    layer_tree_host()->root_layer()->AddChild(update_check_picture_layer_);
   }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
   void CommitCompleteOnThread(LayerTreeHostImpl* impl) override { EndTest(); }
 
   void AfterTest() override {
     // Update() should have been called once.
-    if (is_impl_paint_)
-      EXPECT_EQ(1u, update_check_picture_layer_->update_count());
-    else
-      EXPECT_EQ(1, update_check_content_layer_->PaintContentsCount());
+    EXPECT_EQ(1, update_check_picture_layer_->update_count());
   }
 
  private:
   TestOpacityChangeLayerDelegate test_opacity_change_delegate_;
-  scoped_refptr<ContentLayerWithUpdateTracking> update_check_content_layer_;
   scoped_refptr<FakePictureLayer> update_check_picture_layer_;
-  bool is_impl_paint_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestOpacityChange);
@@ -1470,15 +1401,10 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
  public:
   LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers() {}
 
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    // PictureLayer can only be used with impl side painting enabled.
-    settings->impl_side_painting = true;
-  }
-
   void BeginTest() override {
     client_.set_fill_with_nonsolid_color(true);
-    root_layer_ = FakePictureLayer::Create(&client_);
-    child_layer_ = FakePictureLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
+    child_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
 
     layer_tree_host()->SetViewportSize(gfx::Size(60, 60));
     layer_tree_host()->SetDeviceScaleFactor(1.5);
@@ -1573,666 +1499,6 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers);
 
-// TODO(sohanjg) : Remove it once impl-side painting ships everywhere.
-// Verify atomicity of commits and reuse of textures.
-class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
- public:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->renderer_settings.texture_id_allocation_chunk_size = 1;
-    // Make sure partial texture updates are turned off.
-    settings->max_partial_texture_updates = 0;
-    // Linear fade animator prevents scrollbars from drawing immediately.
-    settings->scrollbar_animator = LayerTreeSettings::NO_ANIMATOR;
-  }
-
-  void SetupTree() override {
-    layer_ = FakeContentLayer::Create(&client_);
-    layer_->SetBounds(gfx::Size(10, 20));
-
-    bool paint_scrollbar = true;
-    bool has_thumb = false;
-    scrollbar_ = FakePaintedScrollbarLayer::Create(
-        paint_scrollbar, has_thumb, layer_->id());
-    scrollbar_->SetPosition(gfx::Point(0, 10));
-    scrollbar_->SetBounds(gfx::Size(10, 10));
-
-    layer_->AddChild(scrollbar_);
-
-    layer_tree_host()->SetRootLayer(layer_);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  void BeginTest() override {
-    drew_frame_ = -1;
-    PostSetNeedsCommitToMainThread();
-  }
-
-  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
-    ASSERT_EQ(0u, impl->settings().max_partial_texture_updates);
-
-    TestWebGraphicsContext3D* context = TestContext();
-
-    switch (impl->active_tree()->source_frame_number()) {
-      case 0:
-        // Number of textures should be one for each layer
-        ASSERT_EQ(2u, context->NumTextures());
-        // Number of textures used for commit should be one for each layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-        // Verify that used texture is correct.
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-
-        context->ResetUsedTextures();
-        break;
-      case 1:
-        // Number of textures should be one for scrollbar layer since it was
-        // requested and deleted on the impl-thread, and double for the content
-        // layer since its first texture is used by impl thread and cannot by
-        // used for update.
-        ASSERT_EQ(3u, context->NumTextures());
-        // Number of textures used for commit should be one for each layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-        // First textures should not have been used.
-        EXPECT_FALSE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-        // New textures should have been used.
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
-        context->ResetUsedTextures();
-        break;
-      case 2:
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    TestWebGraphicsContext3D* context = TestContext();
-
-    if (drew_frame_ == impl->active_tree()->source_frame_number()) {
-      EXPECT_EQ(0u, context->NumUsedTextures()) << "For frame " << drew_frame_;
-      return;
-    }
-    drew_frame_ = impl->active_tree()->source_frame_number();
-
-    // We draw/ship one texture each frame for each layer.
-    EXPECT_EQ(2u, context->NumUsedTextures());
-    context->ResetUsedTextures();
-
-    if (!TestEnded())
-      PostSetNeedsCommitToMainThread();
-  }
-
-  void Layout() override {
-    layer_->SetNeedsDisplay();
-    scrollbar_->SetNeedsDisplay();
-  }
-
-  void AfterTest() override {}
-
- protected:
-  FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> layer_;
-  scoped_refptr<FakePaintedScrollbarLayer> scrollbar_;
-  int drew_frame_;
-};
-
-MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
-    LayerTreeHostTestDirectRendererAtomicCommit);
-
-// TODO(sohanjg) : Remove it once impl-side painting ships everywhere.
-class LayerTreeHostTestDelegatingRendererAtomicCommit
-    : public LayerTreeHostTestDirectRendererAtomicCommit {
- public:
-  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
-    ASSERT_EQ(0u, impl->settings().max_partial_texture_updates);
-
-    TestWebGraphicsContext3D* context = TestContext();
-
-    switch (impl->active_tree()->source_frame_number()) {
-      case 0:
-        // Number of textures should be one for each layer
-        ASSERT_EQ(2u, context->NumTextures());
-        // Number of textures used for commit should be one for each layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-        // Verify that used texture is correct.
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-        break;
-      case 1:
-        // Number of textures should be doubled as the first context layer
-        // texture is being used by the impl-thread and cannot be used for
-        // update.  The scrollbar behavior is different direct renderer because
-        // UI resource deletion with delegating renderer occurs after tree
-        // activation.
-        ASSERT_EQ(4u, context->NumTextures());
-        // Number of textures used for commit should still be
-        // one for each layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-        // First textures should not have been used.
-        EXPECT_FALSE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_FALSE(context->UsedTexture(context->TextureAt(1)));
-        // New textures should have been used.
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(3)));
-        break;
-      case 2:
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-};
-
-MULTI_THREAD_DELEGATING_RENDERER_NOIMPL_TEST_F(
-    LayerTreeHostTestDelegatingRendererAtomicCommit);
-
-static void SetLayerPropertiesForTesting(Layer* layer,
-                                         Layer* parent,
-                                         const gfx::Transform& transform,
-                                         const gfx::Point3F& transform_origin,
-                                         const gfx::PointF& position,
-                                         const gfx::Size& bounds,
-                                         bool opaque) {
-  layer->RemoveAllChildren();
-  if (parent)
-    parent->AddChild(layer);
-  layer->SetTransform(transform);
-  layer->SetTransformOrigin(transform_origin);
-  layer->SetPosition(position);
-  layer->SetBounds(bounds);
-  layer->SetContentsOpaque(opaque);
-}
-
-// TODO(sohanjg) : Remove it once impl-side painting ships everywhere.
-class LayerTreeHostTestAtomicCommitWithPartialUpdate
-    : public LayerTreeHostTest {
- public:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->renderer_settings.texture_id_allocation_chunk_size = 1;
-    // Allow one partial texture update.
-    settings->max_partial_texture_updates = 1;
-    // No partial updates when impl side painting is enabled.
-    settings->impl_side_painting = false;
-  }
-
-  void SetupTree() override {
-    parent_ = FakeContentLayer::Create(&client_);
-    parent_->SetBounds(gfx::Size(10, 20));
-
-    child_ = FakeContentLayer::Create(&client_);
-    child_->SetPosition(gfx::Point(0, 10));
-    child_->SetBounds(gfx::Size(3, 10));
-
-    parent_->AddChild(child_);
-
-    layer_tree_host()->SetRootLayer(parent_);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void DidCommitAndDrawFrame() override {
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
-        parent_->SetNeedsDisplay();
-        child_->SetNeedsDisplay();
-        break;
-      case 2:
-        // Damage part of layers.
-        parent_->SetNeedsDisplayRect(gfx::Rect(5, 5));
-        child_->SetNeedsDisplayRect(gfx::Rect(5, 5));
-        break;
-      case 3:
-        child_->SetNeedsDisplay();
-        layer_tree_host()->SetViewportSize(gfx::Size(10, 10));
-        break;
-      case 4:
-        layer_tree_host()->SetViewportSize(gfx::Size(10, 20));
-        break;
-      case 5:
-        EndTest();
-        break;
-      default:
-        NOTREACHED() << layer_tree_host()->source_frame_number();
-        break;
-    }
-  }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    ASSERT_EQ(1u, impl->settings().max_partial_texture_updates);
-
-    TestWebGraphicsContext3D* context = TestContext();
-
-    switch (impl->active_tree()->source_frame_number()) {
-      case 0:
-        // Number of textures should be one for each layer.
-        ASSERT_EQ(2u, context->NumTextures());
-        // Number of textures used for commit should be one for each layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-        // Verify that used textures are correct.
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
-        EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-        context->ResetUsedTextures();
-        break;
-      case 1:
-        if (HasImplThread()) {
-          // Number of textures should be two for each content layer.
-          ASSERT_EQ(4u, context->NumTextures());
-        } else {
-          // In single thread we can always do partial updates, so the limit has
-          // no effect.
-          ASSERT_EQ(2u, context->NumTextures());
-        }
-        // Number of textures used for commit should be one for each content
-        // layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-
-        if (HasImplThread()) {
-          // First content textures should not have been used.
-          EXPECT_FALSE(context->UsedTexture(context->TextureAt(0)));
-          EXPECT_FALSE(context->UsedTexture(context->TextureAt(1)));
-          // New textures should have been used.
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(3)));
-        } else {
-          // In single thread we can always do partial updates, so the limit has
-          // no effect.
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-        }
-
-        context->ResetUsedTextures();
-        break;
-      case 2:
-        if (HasImplThread()) {
-          // Number of textures should be two for each content layer.
-          ASSERT_EQ(4u, context->NumTextures());
-        } else {
-          // In single thread we can always do partial updates, so the limit has
-          // no effect.
-          ASSERT_EQ(2u, context->NumTextures());
-        }
-        // Number of textures used for commit should be one for each content
-        // layer.
-        EXPECT_EQ(2u, context->NumUsedTextures());
-
-        if (HasImplThread()) {
-          // One content layer does a partial update also.
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(2)));
-          EXPECT_FALSE(context->UsedTexture(context->TextureAt(3)));
-        } else {
-          // In single thread we can always do partial updates, so the limit has
-          // no effect.
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(0)));
-          EXPECT_TRUE(context->UsedTexture(context->TextureAt(1)));
-        }
-
-        context->ResetUsedTextures();
-        break;
-      case 3:
-        // No textures should be used for commit.
-        EXPECT_EQ(0u, context->NumUsedTextures());
-
-        context->ResetUsedTextures();
-        break;
-      case 4:
-        // Number of textures used for commit should be one, for the
-        // content layer.
-        EXPECT_EQ(1u, context->NumUsedTextures());
-
-        context->ResetUsedTextures();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    EXPECT_LT(impl->active_tree()->source_frame_number(), 5);
-
-    TestWebGraphicsContext3D* context = TestContext();
-
-    // Number of textures used for drawing should one per layer except for
-    // frame 3 where the viewport only contains one layer.
-    if (impl->active_tree()->source_frame_number() == 3) {
-      EXPECT_EQ(1u, context->NumUsedTextures());
-    } else {
-      EXPECT_EQ(2u, context->NumUsedTextures())
-          << "For frame " << impl->active_tree()->source_frame_number();
-    }
-
-    context->ResetUsedTextures();
-  }
-
-  void AfterTest() override {}
-
- private:
-  FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> parent_;
-  scoped_refptr<FakeContentLayer> child_;
-};
-
-// Partial updates are not possible with a delegating renderer.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostTestAtomicCommitWithPartialUpdate);
-
-// TODO(sohanjg) : Make it work with impl-side painting.
-class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
-    : public LayerTreeHostTest {
- protected:
-  void SetupTree() override {
-    root_layer_ = FakeContentLayer::Create(&client_);
-    root_layer_->SetBounds(gfx::Size(100, 100));
-
-    surface_layer1_ = FakeContentLayer::Create(&client_);
-    surface_layer1_->SetBounds(gfx::Size(100, 100));
-    surface_layer1_->SetForceRenderSurface(true);
-    surface_layer1_->SetOpacity(0.5f);
-    root_layer_->AddChild(surface_layer1_);
-
-    surface_layer2_ = FakeContentLayer::Create(&client_);
-    surface_layer2_->SetBounds(gfx::Size(100, 100));
-    surface_layer2_->SetForceRenderSurface(true);
-    surface_layer2_->SetOpacity(0.5f);
-    surface_layer1_->AddChild(surface_layer2_);
-
-    replica_layer1_ = FakeContentLayer::Create(&client_);
-    surface_layer1_->SetReplicaLayer(replica_layer1_.get());
-
-    replica_layer2_ = FakeContentLayer::Create(&client_);
-    surface_layer2_->SetReplicaLayer(replica_layer2_.get());
-
-    layer_tree_host()->SetRootLayer(root_layer_);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
-    Renderer* renderer = host_impl->renderer();
-    RenderPassId surface1_render_pass_id = host_impl->active_tree()
-                                               ->root_layer()
-                                               ->children()[0]
-                                               ->render_surface()
-                                               ->GetRenderPassId();
-    RenderPassId surface2_render_pass_id = host_impl->active_tree()
-                                               ->root_layer()
-                                               ->children()[0]
-                                               ->children()[0]
-                                               ->render_surface()
-                                               ->GetRenderPassId();
-
-    switch (host_impl->active_tree()->source_frame_number()) {
-      case 0:
-        EXPECT_TRUE(
-            renderer->HasAllocatedResourcesForTesting(surface1_render_pass_id));
-        EXPECT_TRUE(
-            renderer->HasAllocatedResourcesForTesting(surface2_render_pass_id));
-
-        // Reduce the memory limit to only fit the root layer and one render
-        // surface. This prevents any contents drawing into surfaces
-        // from being allocated.
-        host_impl->SetMemoryPolicy(ManagedMemoryPolicy(100 * 100 * 4 * 2));
-        break;
-      case 1:
-        EXPECT_FALSE(
-            renderer->HasAllocatedResourcesForTesting(surface1_render_pass_id));
-        EXPECT_FALSE(
-            renderer->HasAllocatedResourcesForTesting(surface2_render_pass_id));
-
-        EndTest();
-        break;
-    }
-  }
-
-  void DidCommitAndDrawFrame() override {
-    if (layer_tree_host()->source_frame_number() < 2)
-      root_layer_->SetNeedsDisplay();
-  }
-
-  void AfterTest() override {
-    EXPECT_LE(2u, root_layer_->update_count());
-    EXPECT_LE(2u, surface_layer1_->update_count());
-    EXPECT_LE(2u, surface_layer2_->update_count());
-  }
-
-  FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_layer_;
-  scoped_refptr<FakeContentLayer> surface_layer1_;
-  scoped_refptr<FakeContentLayer> replica_layer1_;
-  scoped_refptr<FakeContentLayer> surface_layer2_;
-  scoped_refptr<FakeContentLayer> replica_layer2_;
-};
-
-// Surfaces don't exist with a delegated renderer.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
-    LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit);
-
-class EvictionTestLayer : public Layer {
- public:
-  static scoped_refptr<EvictionTestLayer> Create() {
-    return make_scoped_refptr(new EvictionTestLayer());
-  }
-
-  bool Update(ResourceUpdateQueue*, const OcclusionTracker<Layer>*) override;
-  bool DrawsContent() const override { return true; }
-
-  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
-  void PushPropertiesTo(LayerImpl* impl) override;
-  void SetTexturePriorities(const PriorityCalculator&) override;
-
-  bool HaveBackingTexture() const {
-    return texture_.get() ? texture_->have_backing_texture() : false;
-  }
-
- private:
-  EvictionTestLayer() : Layer() {}
-  ~EvictionTestLayer() override {}
-
-  void CreateTextureIfNeeded() {
-    if (texture_)
-      return;
-    texture_ = PrioritizedResource::Create(
-        layer_tree_host()->contents_texture_manager());
-    texture_->SetDimensions(gfx::Size(10, 10), RGBA_8888);
-    bitmap_.allocN32Pixels(10, 10);
-  }
-
-  scoped_ptr<PrioritizedResource> texture_;
-  SkBitmap bitmap_;
-};
-
-class EvictionTestLayerImpl : public LayerImpl {
- public:
-  static scoped_ptr<EvictionTestLayerImpl> Create(LayerTreeImpl* tree_impl,
-                                                  int id) {
-    return make_scoped_ptr(new EvictionTestLayerImpl(tree_impl, id));
-  }
-  ~EvictionTestLayerImpl() override {}
-
-  void AppendQuads(RenderPass* render_pass,
-                   AppendQuadsData* append_quads_data) override {
-    ASSERT_TRUE(has_texture_);
-    ASSERT_NE(0u, layer_tree_impl()->resource_provider()->num_resources());
-  }
-
-  void SetHasTexture(bool has_texture) { has_texture_ = has_texture; }
-
- private:
-  EvictionTestLayerImpl(LayerTreeImpl* tree_impl, int id)
-      : LayerImpl(tree_impl, id), has_texture_(false) {}
-
-  bool has_texture_;
-};
-
-void EvictionTestLayer::SetTexturePriorities(const PriorityCalculator&) {
-  CreateTextureIfNeeded();
-  if (!texture_)
-    return;
-  texture_->set_request_priority(PriorityCalculator::UIPriority(true));
-}
-
-bool EvictionTestLayer::Update(ResourceUpdateQueue* queue,
-                               const OcclusionTracker<Layer>* occlusion) {
-  CreateTextureIfNeeded();
-  if (!texture_)
-    return false;
-
-  gfx::Rect full_rect(0, 0, 10, 10);
-  ResourceUpdate upload = ResourceUpdate::Create(
-      texture_.get(), &bitmap_, full_rect, full_rect, gfx::Vector2d());
-  queue->AppendFullUpload(upload);
-  return true;
-}
-
-scoped_ptr<LayerImpl> EvictionTestLayer::CreateLayerImpl(
-    LayerTreeImpl* tree_impl) {
-  return EvictionTestLayerImpl::Create(tree_impl, layer_id_);
-}
-
-void EvictionTestLayer::PushPropertiesTo(LayerImpl* layer_impl) {
-  Layer::PushPropertiesTo(layer_impl);
-
-  EvictionTestLayerImpl* test_layer_impl =
-      static_cast<EvictionTestLayerImpl*>(layer_impl);
-  test_layer_impl->SetHasTexture(texture_->have_backing_texture());
-}
-
-class LayerTreeHostTestEvictTextures : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestEvictTextures()
-      : layer_(EvictionTestLayer::Create()),
-        impl_for_evict_textures_(0),
-        num_commits_(0) {}
-
-  void BeginTest() override {
-    layer_tree_host()->SetRootLayer(layer_);
-    layer_tree_host()->SetViewportSize(gfx::Size(10, 20));
-
-    gfx::Transform identity_matrix;
-    SetLayerPropertiesForTesting(layer_.get(),
-                                 0,
-                                 identity_matrix,
-                                 gfx::Point3F(0.f, 0.f, 0.f),
-                                 gfx::PointF(0.f, 0.f),
-                                 gfx::Size(10, 20),
-                                 true);
-
-    PostSetNeedsCommitToMainThread();
-  }
-
-  void PostEvictTextures() {
-    ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::Bind(&LayerTreeHostTestEvictTextures::EvictTexturesOnImplThread,
-                   base::Unretained(this)));
-  }
-
-  void EvictTexturesOnImplThread() {
-    DCHECK(impl_for_evict_textures_);
-    impl_for_evict_textures_->EvictTexturesForTesting();
-  }
-
-  // Commit 1: Just commit and draw normally, then post an eviction at the end
-  // that will trigger a commit.
-  // Commit 2: Triggered by the eviction, let it go through and then set
-  // needsCommit.
-  // Commit 3: Triggered by the setNeedsCommit. In Layout(), post an eviction
-  // task, which will be handled before the commit. Don't set needsCommit, it
-  // should have been posted. A frame should not be drawn (note,
-  // didCommitAndDrawFrame may be called anyway).
-  // Commit 4: Triggered by the eviction, let it go through and then set
-  // needsCommit.
-  // Commit 5: Triggered by the setNeedsCommit, post an eviction task in
-  // Layout(), a frame should not be drawn but a commit will be posted.
-  // Commit 6: Triggered by the eviction, post an eviction task in
-  // Layout(), which will be a noop, letting the commit (which recreates the
-  // textures) go through and draw a frame, then end the test.
-  //
-  // Commits 1+2 test the eviction recovery path where eviction happens outside
-  // of the beginFrame/commit pair.
-  // Commits 3+4 test the eviction recovery path where eviction happens inside
-  // the beginFrame/commit pair.
-  // Commits 5+6 test the path where an eviction happens during the eviction
-  // recovery path.
-  void DidCommit() override {
-    switch (num_commits_) {
-      case 1:
-        EXPECT_TRUE(layer_->HaveBackingTexture());
-        PostEvictTextures();
-        break;
-      case 2:
-        EXPECT_TRUE(layer_->HaveBackingTexture());
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 3:
-        break;
-      case 4:
-        EXPECT_TRUE(layer_->HaveBackingTexture());
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 5:
-        break;
-      case 6:
-        EXPECT_TRUE(layer_->HaveBackingTexture());
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    impl_for_evict_textures_ = impl;
-  }
-
-  void Layout() override {
-    ++num_commits_;
-    switch (num_commits_) {
-      case 1:
-      case 2:
-        break;
-      case 3:
-        PostEvictTextures();
-        break;
-      case 4:
-        // We couldn't check in didCommitAndDrawFrame on commit 3,
-        // so check here.
-        EXPECT_FALSE(layer_->HaveBackingTexture());
-        break;
-      case 5:
-        PostEvictTextures();
-        break;
-      case 6:
-        // We couldn't check in didCommitAndDrawFrame on commit 5,
-        // so check here.
-        EXPECT_FALSE(layer_->HaveBackingTexture());
-        PostEvictTextures();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void AfterTest() override {}
-
- private:
-  FakeContentLayerClient client_;
-  scoped_refptr<EvictionTestLayer> layer_;
-  LayerTreeHostImpl* impl_for_evict_textures_;
-  int num_commits_;
-};
-
-MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestEvictTextures);
-
 class LayerTreeHostTestContinuousInvalidate : public LayerTreeHostTest {
  public:
   LayerTreeHostTestContinuousInvalidate()
@@ -2242,11 +1508,7 @@ class LayerTreeHostTestContinuousInvalidate : public LayerTreeHostTest {
     layer_tree_host()->SetViewportSize(gfx::Size(10, 10));
     layer_tree_host()->root_layer()->SetBounds(gfx::Size(10, 10));
 
-    if (layer_tree_host()->settings().impl_side_painting)
-      layer_ = FakePictureLayer::Create(&client_);
-    else
-      layer_ = FakeContentLayer::Create(&client_);
-
+    layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     layer_->SetBounds(gfx::Size(10, 10));
     layer_->SetPosition(gfx::PointF(0.f, 0.f));
     layer_->SetIsDrawable(true);
@@ -2364,6 +1626,8 @@ class LayerTreeHostTestCompositeImmediatelyStateTransitions
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void BeginTest() override {
@@ -2414,263 +1678,13 @@ class LayerTreeHostTestCompositeImmediatelyStateTransitions
 
 SINGLE_THREAD_TEST_F(LayerTreeHostTestCompositeImmediatelyStateTransitions);
 
-class LayerTreeHostWithProxy : public LayerTreeHost {
- public:
-  LayerTreeHostWithProxy(FakeLayerTreeHostClient* client,
-                         scoped_ptr<FakeProxy> proxy,
-                         LayerTreeHost::InitParams* params)
-      : LayerTreeHost(params) {
-    proxy->SetLayerTreeHost(this);
-    client->SetLayerTreeHost(this);
-    InitializeForTesting(proxy.Pass());
-  }
-};
-
-TEST(LayerTreeHostTest, LimitPartialUpdates) {
-  // When partial updates are not allowed, max updates should be 0.
-  {
-    FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
-
-    scoped_ptr<FakeProxy> proxy(new FakeProxy);
-    proxy->GetRendererCapabilities().allow_partial_texture_updates = false;
-    proxy->SetMaxPartialTextureUpdates(5);
-
-    LayerTreeSettings settings;
-    settings.impl_side_painting = false;
-    settings.max_partial_texture_updates = 10;
-
-    LayerTreeHost::InitParams params;
-    params.client = &client;
-    params.settings = &settings;
-    LayerTreeHostWithProxy host(&client, proxy.Pass(), &params);
-
-    EXPECT_EQ(0u, host.MaxPartialTextureUpdates());
-  }
-
-  // When partial updates are allowed,
-  // max updates should be limited by the proxy.
-  {
-    FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
-
-    scoped_ptr<FakeProxy> proxy(new FakeProxy);
-    proxy->GetRendererCapabilities().allow_partial_texture_updates = true;
-    proxy->SetMaxPartialTextureUpdates(5);
-
-    LayerTreeSettings settings;
-    settings.impl_side_painting = false;
-    settings.max_partial_texture_updates = 10;
-
-    LayerTreeHost::InitParams params;
-    params.client = &client;
-    params.settings = &settings;
-    LayerTreeHostWithProxy host(&client, proxy.Pass(), &params);
-
-    EXPECT_EQ(5u, host.MaxPartialTextureUpdates());
-  }
-
-  // When partial updates are allowed,
-  // max updates should also be limited by the settings.
-  {
-    FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
-
-    scoped_ptr<FakeProxy> proxy(new FakeProxy);
-    proxy->GetRendererCapabilities().allow_partial_texture_updates = true;
-    proxy->SetMaxPartialTextureUpdates(20);
-
-    LayerTreeSettings settings;
-    settings.impl_side_painting = false;
-    settings.max_partial_texture_updates = 10;
-
-    LayerTreeHost::InitParams params;
-    params.client = &client;
-    params.settings = &settings;
-    LayerTreeHostWithProxy host(&client, proxy.Pass(), &params);
-
-    EXPECT_EQ(10u, host.MaxPartialTextureUpdates());
-  }
-}
-
-TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
-  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
-
-  LayerTreeSettings settings;
-  settings.max_partial_texture_updates = 4;
-  settings.single_thread_proxy_scheduler = false;
-  settings.impl_side_painting = false;
-
-  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
-      new TestSharedBitmapManager());
-  LayerTreeHost::InitParams params;
-  params.client = &client;
-  params.shared_bitmap_manager = shared_bitmap_manager.get();
-  params.settings = &settings;
-  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &params);
-  client.SetLayerTreeHost(host.get());
-  host->Composite(base::TimeTicks::Now());
-
-  EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
-}
-
-TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
-  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_SOFTWARE);
-
-  LayerTreeSettings settings;
-  settings.max_partial_texture_updates = 4;
-  settings.single_thread_proxy_scheduler = false;
-  settings.impl_side_painting = false;
-
-  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
-      new TestSharedBitmapManager());
-  LayerTreeHost::InitParams params;
-  params.client = &client;
-  params.shared_bitmap_manager = shared_bitmap_manager.get();
-  params.settings = &settings;
-  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &params);
-  client.SetLayerTreeHost(host.get());
-  host->Composite(base::TimeTicks::Now());
-
-  EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
-}
-
-TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
-  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DELEGATED_3D);
-
-  LayerTreeSettings settings;
-  settings.max_partial_texture_updates = 4;
-  settings.single_thread_proxy_scheduler = false;
-  settings.impl_side_painting = false;
-
-  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
-      new TestSharedBitmapManager());
-  LayerTreeHost::InitParams params;
-  params.client = &client;
-  params.shared_bitmap_manager = shared_bitmap_manager.get();
-  params.settings = &settings;
-  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &params);
-  client.SetLayerTreeHost(host.get());
-  host->Composite(base::TimeTicks::Now());
-
-  EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
-}
-
-TEST(LayerTreeHostTest,
-     PartialUpdatesWithDelegatingRendererAndSoftwareContent) {
-  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DELEGATED_SOFTWARE);
-
-  LayerTreeSettings settings;
-  settings.max_partial_texture_updates = 4;
-  settings.single_thread_proxy_scheduler = false;
-  settings.impl_side_painting = false;
-
-  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
-      new TestSharedBitmapManager());
-  LayerTreeHost::InitParams params;
-  params.client = &client;
-  params.shared_bitmap_manager = shared_bitmap_manager.get();
-  params.settings = &settings;
-  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
-  scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::CreateSingleThreaded(&client, &params);
-  client.SetLayerTreeHost(host.get());
-  host->Composite(base::TimeTicks::Now());
-
-  EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
-}
-
-// TODO(sohanjg) : Remove it once impl-side painting ships everywhere.
-class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
-    : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted()
-      : root_layer_(FakeContentLayer::Create(&client_)),
-        child_layer1_(FakeContentLayer::Create(&client_)),
-        child_layer2_(FakeContentLayer::Create(&client_)),
-        num_commits_(0) {}
-
-  void BeginTest() override {
-    layer_tree_host()->SetViewportSize(gfx::Size(100, 100));
-    root_layer_->SetBounds(gfx::Size(100, 100));
-    child_layer1_->SetBounds(gfx::Size(100, 100));
-    child_layer2_->SetBounds(gfx::Size(100, 100));
-    root_layer_->AddChild(child_layer1_);
-    root_layer_->AddChild(child_layer2_);
-    layer_tree_host()->SetRootLayer(root_layer_);
-    PostSetNeedsCommitToMainThread();
-  }
-
-  void DidSetVisibleOnImplTree(LayerTreeHostImpl* host_impl,
-                               bool visible) override {
-    if (visible) {
-      // One backing should remain unevicted.
-      EXPECT_EQ(100u * 100u * 4u * 1u,
-                contents_texture_manager_->MemoryUseBytes());
-    } else {
-      EXPECT_EQ(0u, contents_texture_manager_->MemoryUseBytes());
-    }
-
-    // Make sure that contents textures are marked as having been
-    // purged.
-    EXPECT_TRUE(host_impl->active_tree()->ContentsTexturesPurged());
-    // End the test in this state.
-    EndTest();
-  }
-
-  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
-    ++num_commits_;
-    switch (num_commits_) {
-      case 1:
-        // All three backings should have memory.
-        EXPECT_EQ(100u * 100u * 4u * 3u,
-                  contents_texture_manager_->MemoryUseBytes());
-
-        // Set a new policy that will kick out 1 of the 3 resources.
-        // Because a resource was evicted, a commit will be kicked off.
-        host_impl->SetMemoryPolicy(
-            ManagedMemoryPolicy(100 * 100 * 4 * 2,
-                                gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
-                                1000));
-        break;
-      case 2:
-        // Only two backings should have memory.
-        EXPECT_EQ(100u * 100u * 4u * 2u,
-                  contents_texture_manager_->MemoryUseBytes());
-        // Become backgrounded, which will cause 1 more resource to be
-        // evicted.
-        PostSetVisibleToMainThread(false);
-        break;
-      default:
-        // No further commits should happen because this is not visible
-        // anymore.
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void AfterTest() override {}
-
- private:
-  FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_layer_;
-  scoped_refptr<FakeContentLayer> child_layer1_;
-  scoped_refptr<FakeContentLayer> child_layer2_;
-  int num_commits_;
-};
-
-SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
-    LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted);
-
 class LayerTreeHostTestLCDChange : public LayerTreeHostTest {
  public:
   void SetupTree() override {
     num_tiles_rastered_ = 0;
 
-    scoped_refptr<Layer> root_layer = PictureLayer::Create(&client_);
+    scoped_refptr<Layer> root_layer =
+        PictureLayer::Create(layer_settings(), &client_);
     client_.set_fill_with_nonsolid_color(true);
     root_layer->SetIsDrawable(true);
     root_layer->SetBounds(gfx::Size(10, 10));
@@ -2751,7 +1765,7 @@ class LayerTreeHostTestLCDChange : public LayerTreeHostTest {
   int num_tiles_rastered_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestLCDChange);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestLCDChange);
 
 // Verify that the BeginFrame notification is used to initiate rendering.
 class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
@@ -2886,7 +1900,7 @@ class LayerTreeHostTestAbortedCommitDoesntStallDisabledVsync
     : public LayerTreeHostTestAbortedCommitDoesntStall {
   void InitializeSettings(LayerTreeSettings* settings) override {
     LayerTreeHostTestAbortedCommitDoesntStall::InitializeSettings(settings);
-    settings->throttle_frame_production = false;
+    settings->renderer_settings.disable_gpu_vsync = true;
   }
 };
 
@@ -2895,14 +1909,11 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestAbortedCommitDoesntStallDisabledVsync);
 class LayerTreeHostTestUninvertibleTransformDoesNotBlockActivation
     : public LayerTreeHostTest {
  protected:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<Layer> layer = PictureLayer::Create(&client_);
+    scoped_refptr<Layer> layer =
+        PictureLayer::Create(layer_settings(), &client_);
     layer->SetTransform(gfx::Transform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
     layer->SetBounds(gfx::Size(10, 10));
     layer_tree_host()->root_layer()->AddChild(layer);
@@ -2919,7 +1930,7 @@ class LayerTreeHostTestUninvertibleTransformDoesNotBlockActivation
   FakeContentLayerClient client_;
 };
 
-MULTI_THREAD_TEST_F(
+SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostTestUninvertibleTransformDoesNotBlockActivation);
 
 class LayerTreeHostTestChangeLayerPropertiesInPaintContents
@@ -2937,11 +1948,11 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
       layer_->SetBounds(gfx::Size(2, 2));
     }
 
-    void PaintContentsToDisplayList(
-        DisplayItemList* display_list,
+    scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
         const gfx::Rect& clip,
         PaintingControlSetting picture_control) override {
       NOTIMPLEMENTED();
+      return nullptr;
     }
 
     bool FillsBoundsCompletely() const override { return false; }
@@ -2953,19 +1964,13 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
   LayerTreeHostTestChangeLayerPropertiesInPaintContents() : num_commits_(0) {}
 
   void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting) {
-      scoped_refptr<PictureLayer> root_layer = PictureLayer::Create(&client_);
-      layer_tree_host()->SetRootLayer(root_layer);
-    } else {
-      scoped_refptr<ContentLayer> root_layer = ContentLayer::Create(&client_);
-      layer_tree_host()->SetRootLayer(root_layer);
-    }
-    Layer* root_layer = layer_tree_host()->root_layer();
+    scoped_refptr<PictureLayer> root_layer =
+        PictureLayer::Create(layer_settings(), &client_);
     root_layer->SetIsDrawable(true);
     root_layer->SetBounds(gfx::Size(1, 1));
+    client_.set_layer(root_layer.get());
 
-    client_.set_layer(root_layer);
-
+    layer_tree_host()->SetRootLayer(root_layer);
     LayerTreeHostTest::SetupTree();
   }
 
@@ -3041,7 +2046,8 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     io_surface_id_ = 9;
     io_surface_size_ = gfx::Size(6, 7);
 
-    scoped_refptr<IOSurfaceLayer> io_surface_layer = IOSurfaceLayer::Create();
+    scoped_refptr<IOSurfaceLayer> io_surface_layer =
+        IOSurfaceLayer::Create(layer_settings());
     io_surface_layer->SetBounds(gfx::Size(10, 10));
     io_surface_layer->SetIsDrawable(true);
     io_surface_layer->SetContentsOpaque(true);
@@ -3102,10 +2108,10 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     const IOSurfaceDrawQuad* io_surface_draw_quad =
         IOSurfaceDrawQuad::MaterialCast(quad);
     EXPECT_EQ(io_surface_size_, io_surface_draw_quad->io_surface_size);
-    EXPECT_NE(0u, io_surface_draw_quad->io_surface_resource_id);
+    EXPECT_NE(0u, io_surface_draw_quad->io_surface_resource_id());
     EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ARB),
               resource_provider->TargetForTesting(
-                  io_surface_draw_quad->io_surface_resource_id));
+                  io_surface_draw_quad->io_surface_resource_id()));
 
     if (delegating_renderer()) {
       // The io surface layer's resource should be sent to the parent.
@@ -3182,28 +2188,21 @@ class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
   int frame_;
 };
 
-// Flaky on all platforms: http://crbug.com/327498
-TEST_F(LayerTreeHostTestNumFramesPending, DISABLED_DelegatingRenderer) {
-  RunTest(true, true, true);
-}
-
-TEST_F(LayerTreeHostTestNumFramesPending, DISABLED_GLRenderer) {
-  RunTest(true, false, true);
-}
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestNumFramesPending);
 
 class LayerTreeHostTestResourcelessSoftwareDraw : public LayerTreeHostTest {
  public:
   void SetupTree() override {
-    root_layer_ = FakePictureLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetIsDrawable(true);
     root_layer_->SetBounds(gfx::Size(50, 50));
 
-    parent_layer_ = FakePictureLayer::Create(&client_);
+    parent_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     parent_layer_->SetIsDrawable(true);
     parent_layer_->SetBounds(gfx::Size(50, 50));
     parent_layer_->SetForceRenderSurface(true);
 
-    child_layer_ = FakePictureLayer::Create(&client_);
+    child_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     child_layer_->SetIsDrawable(true);
     child_layer_->SetBounds(gfx::Size(50, 50));
 
@@ -3280,7 +2279,7 @@ class LayerTreeHostTestResourcelessSoftwareDraw : public LayerTreeHostTest {
   int swap_count_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestResourcelessSoftwareDraw);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestResourcelessSoftwareDraw);
 
 // Test for UI Resource management.
 class LayerTreeHostTestUIResource : public LayerTreeHostTest {
@@ -3325,7 +2324,7 @@ class LayerTreeHostTestUIResource : public LayerTreeHostTest {
     }
   }
 
-  void PerformTest(LayerTreeHostImpl* impl) {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
     TestWebGraphicsContext3D* context = TestContext();
 
     int frame = impl->active_tree()->source_frame_number();
@@ -3352,16 +2351,6 @@ class LayerTreeHostTestUIResource : public LayerTreeHostTest {
         ASSERT_EQ(3u, context->NumTextures());
         break;
     }
-  }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    if (!impl->settings().impl_side_painting)
-      PerformTest(impl);
-  }
-
-  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->settings().impl_side_painting)
-      PerformTest(impl);
   }
 
   void AfterTest() override {}
@@ -3420,8 +2409,9 @@ class PushPropertiesCountingLayerImpl : public LayerImpl {
 
 class PushPropertiesCountingLayer : public Layer {
  public:
-  static scoped_refptr<PushPropertiesCountingLayer> Create() {
-    return new PushPropertiesCountingLayer();
+  static scoped_refptr<PushPropertiesCountingLayer> Create(
+      const LayerSettings& settings) {
+    return new PushPropertiesCountingLayer(settings);
   }
 
   void PushPropertiesTo(LayerImpl* layer) override {
@@ -3448,8 +2438,10 @@ class PushPropertiesCountingLayer : public Layer {
   }
 
  private:
-  PushPropertiesCountingLayer()
-      : push_properties_count_(0), persist_needs_push_properties_(false) {
+  explicit PushPropertiesCountingLayer(const LayerSettings& settings)
+      : Layer(settings),
+        push_properties_count_(0),
+        persist_needs_push_properties_(false) {
     SetBounds(gfx::Size(1, 1));
   }
   ~PushPropertiesCountingLayer() override {}
@@ -3472,12 +2464,13 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
   }
 
   void SetupTree() override {
-    root_ = PushPropertiesCountingLayer::Create();
+    root_ = PushPropertiesCountingLayer::Create(layer_settings());
     root_->CreateRenderSurface();
-    child_ = PushPropertiesCountingLayer::Create();
-    child2_ = PushPropertiesCountingLayer::Create();
-    grandchild_ = PushPropertiesCountingLayer::Create();
-    leaf_always_pushing_layer_ = PushPropertiesCountingLayer::Create();
+    child_ = PushPropertiesCountingLayer::Create(layer_settings());
+    child2_ = PushPropertiesCountingLayer::Create(layer_settings());
+    grandchild_ = PushPropertiesCountingLayer::Create(layer_settings());
+    leaf_always_pushing_layer_ =
+        PushPropertiesCountingLayer::Create(layer_settings());
     leaf_always_pushing_layer_->set_persist_needs_push_properties(true);
 
     root_->AddChild(child_);
@@ -3485,7 +2478,7 @@ class LayerTreeHostTestLayersPushProperties : public LayerTreeHostTest {
     child_->AddChild(grandchild_);
     child2_->AddChild(leaf_always_pushing_layer_);
 
-    other_root_ = PushPropertiesCountingLayer::Create();
+    other_root_ = PushPropertiesCountingLayer::Create(layer_settings());
     other_root_->CreateRenderSurface();
 
     // Don't set the root layer here.
@@ -3854,9 +2847,8 @@ class LayerTreeHostTestImplLayersPushProperties
   size_t expected_push_properties_grandchild2_impl_;
 };
 
-TEST_F(LayerTreeHostTestImplLayersPushProperties, DelegatingRenderer) {
-  RunTestWithImplSidePainting();
-}
+// In single thread there's no pending tree to push properties from.
+MULTI_THREAD_TEST_F(LayerTreeHostTestImplLayersPushProperties);
 
 class LayerTreeHostTestPropertyChangesDuringUpdateArePushed
     : public LayerTreeHostTest {
@@ -3864,14 +2856,14 @@ class LayerTreeHostTestPropertyChangesDuringUpdateArePushed
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
   void SetupTree() override {
-    root_ = Layer::Create();
+    root_ = Layer::Create(layer_settings());
     root_->CreateRenderSurface();
     root_->SetBounds(gfx::Size(1, 1));
 
     bool paint_scrollbar = true;
     bool has_thumb = false;
     scrollbar_layer_ = FakePaintedScrollbarLayer::Create(
-        paint_scrollbar, has_thumb, root_->id());
+        layer_settings(), paint_scrollbar, has_thumb, root_->id());
 
     root_->AddChild(scrollbar_layer_);
 
@@ -3921,9 +2913,9 @@ class LayerTreeHostTestSetDrawableCausesCommit : public LayerTreeHostTest {
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
   void SetupTree() override {
-    root_ = PushPropertiesCountingLayer::Create();
+    root_ = PushPropertiesCountingLayer::Create(layer_settings());
     root_->CreateRenderSurface();
-    child_ = PushPropertiesCountingLayer::Create();
+    child_ = PushPropertiesCountingLayer::Create(layer_settings());
     root_->AddChild(child_);
 
     layer_tree_host()->SetRootLayer(root_);
@@ -3983,12 +2975,12 @@ class LayerTreeHostTestCasePushPropertiesThreeGrandChildren
   }
 
   void SetupTree() override {
-    root_ = PushPropertiesCountingLayer::Create();
+    root_ = PushPropertiesCountingLayer::Create(layer_settings());
     root_->CreateRenderSurface();
-    child_ = PushPropertiesCountingLayer::Create();
-    grandchild1_ = PushPropertiesCountingLayer::Create();
-    grandchild2_ = PushPropertiesCountingLayer::Create();
-    grandchild3_ = PushPropertiesCountingLayer::Create();
+    child_ = PushPropertiesCountingLayer::Create(layer_settings());
+    grandchild1_ = PushPropertiesCountingLayer::Create(layer_settings());
+    grandchild2_ = PushPropertiesCountingLayer::Create(layer_settings());
+    grandchild3_ = PushPropertiesCountingLayer::Create(layer_settings());
 
     root_->AddChild(child_);
     child_->AddChild(grandchild1_);
@@ -4388,7 +3380,6 @@ class LayerTreeHostTestTreeActivationCallback : public LayerTreeHostTest {
       : num_commits_(0), callback_count_(0) {}
 
   void BeginTest() override {
-    EXPECT_TRUE(HasImplThread());
     PostSetNeedsCommitToMainThread();
   }
 
@@ -4440,13 +3431,7 @@ class LayerTreeHostTestTreeActivationCallback : public LayerTreeHostTest {
   int callback_count_;
 };
 
-TEST_F(LayerTreeHostTestTreeActivationCallback, DirectRenderer) {
-  RunTest(true, false, true);
-}
-
-TEST_F(LayerTreeHostTestTreeActivationCallback, DelegatingRenderer) {
-  RunTest(true, true, true);
-}
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestTreeActivationCallback);
 
 class LayerInvalidateCausesDraw : public LayerTreeHostTest {
  public:
@@ -4496,8 +3481,8 @@ class LayerTreeHostTestVideoLayerInvalidate : public LayerInvalidateCausesDraw {
  public:
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
-    scoped_refptr<VideoLayer> video_layer =
-        VideoLayer::Create(&provider_, media::VIDEO_ROTATION_0);
+    scoped_refptr<VideoLayer> video_layer = VideoLayer::Create(
+        layer_settings(), &provider_, media::VIDEO_ROTATION_0);
     video_layer->SetBounds(gfx::Size(10, 10));
     video_layer->SetIsDrawable(true);
     layer_tree_host()->root_layer()->AddChild(video_layer);
@@ -4519,7 +3504,8 @@ class LayerTreeHostTestIOSurfaceLayerInvalidate
  public:
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
-    scoped_refptr<IOSurfaceLayer> layer = IOSurfaceLayer::Create();
+    scoped_refptr<IOSurfaceLayer> layer =
+        IOSurfaceLayer::Create(layer_settings());
     layer->SetBounds(gfx::Size(10, 10));
     uint32_t fake_io_surface_id = 7;
     layer->SetIOSurfaceProperties(fake_io_surface_id, layer->bounds());
@@ -4530,25 +3516,23 @@ class LayerTreeHostTestIOSurfaceLayerInvalidate
   }
 };
 
-// TODO(danakj): IOSurface layer can not be transported. crbug.com/239335
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostTestIOSurfaceLayerInvalidate);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestIOSurfaceLayerInvalidate);
 
 class LayerTreeHostTestPushHiddenLayer : public LayerTreeHostTest {
  protected:
   void SetupTree() override {
-    root_layer_ = Layer::Create();
+    root_layer_ = Layer::Create(layer_settings());
     root_layer_->CreateRenderSurface();
     root_layer_->SetPosition(gfx::Point());
     root_layer_->SetBounds(gfx::Size(10, 10));
 
-    parent_layer_ = SolidColorLayer::Create();
+    parent_layer_ = SolidColorLayer::Create(layer_settings());
     parent_layer_->SetPosition(gfx::Point());
     parent_layer_->SetBounds(gfx::Size(10, 10));
     parent_layer_->SetIsDrawable(true);
     root_layer_->AddChild(parent_layer_);
 
-    child_layer_ = SolidColorLayer::Create();
+    child_layer_ = SolidColorLayer::Create(layer_settings());
     child_layer_->SetPosition(gfx::Point());
     child_layer_->SetBounds(gfx::Size(10, 10));
     child_layer_->SetIsDrawable(true);
@@ -4603,12 +3587,8 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestPushHiddenLayer);
 
 class LayerTreeHostTestUpdateLayerInEmptyViewport : public LayerTreeHostTest {
  protected:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-
   void SetupTree() override {
-    root_layer_ = FakePictureLayer::Create(&client_);
+    root_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_layer_->SetBounds(gfx::Size(10, 10));
 
     layer_tree_host()->SetRootLayer(root_layer_);
@@ -4625,7 +3605,7 @@ class LayerTreeHostTestUpdateLayerInEmptyViewport : public LayerTreeHostTest {
   void DidCommit() override {
     // The layer should be updated even though the viewport is empty, so we
     // are capable of drawing it on the impl tree.
-    EXPECT_GT(root_layer_->update_count(), 0u);
+    EXPECT_GT(root_layer_->update_count(), 0);
     EndTest();
   }
 
@@ -4637,72 +3617,10 @@ class LayerTreeHostTestUpdateLayerInEmptyViewport : public LayerTreeHostTest {
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestUpdateLayerInEmptyViewport);
 
-class LayerTreeHostTestAbortEvictedTextures : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestAbortEvictedTextures()
-      : num_will_begin_main_frames_(0), num_impl_commits_(0) {}
-
- protected:
-  void SetupTree() override {
-    scoped_refptr<SolidColorLayer> root_layer = SolidColorLayer::Create();
-    root_layer->SetBounds(gfx::Size(200, 200));
-    root_layer->SetIsDrawable(true);
-    root_layer->CreateRenderSurface();
-
-    layer_tree_host()->SetRootLayer(root_layer);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void WillBeginMainFrame() override {
-    num_will_begin_main_frames_++;
-    switch (num_will_begin_main_frames_) {
-      case 2:
-        // Send a redraw to the compositor thread.  This will (wrongly) be
-        // ignored unless aborting resets the texture state.
-        layer_tree_host()->SetNeedsRedraw();
-        break;
-    }
-  }
-
-  void BeginCommitOnThread(LayerTreeHostImpl* impl) override {
-    num_impl_commits_++;
-  }
-
-  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    switch (impl->SourceAnimationFrameNumber()) {
-      case 1:
-        // Prevent draws until commit.
-        impl->active_tree()->SetContentsTexturesPurged();
-        EXPECT_FALSE(impl->CanDraw());
-        // Trigger an abortable commit.
-        impl->SetNeedsCommit();
-        break;
-      case 2:
-        EndTest();
-        break;
-    }
-  }
-
-  void AfterTest() override {
-    // Ensure that the commit was truly aborted.
-    EXPECT_EQ(2, num_will_begin_main_frames_);
-    EXPECT_EQ(1, num_impl_commits_);
-  }
-
- private:
-  int num_will_begin_main_frames_;
-  int num_impl_commits_;
-};
-
-// Commits can only be aborted when using the thread proxy.
-MULTI_THREAD_TEST_F(LayerTreeHostTestAbortEvictedTextures);
-
 class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
  protected:
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
+    // Testing async uploads.
     settings->use_zero_copy = false;
     settings->use_one_copy = false;
   }
@@ -4720,7 +3638,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(1024, 1024));
     root_layer->SetIsDrawable(true);
 
@@ -4747,99 +3665,6 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
 
 // Impl-side painting is a multi-threaded compositor feature.
 MULTI_THREAD_TEST_F(LayerTreeHostTestMaxTransferBufferUsageBytes);
-
-// Test ensuring that memory limits are sent to the prioritized resource
-// manager.
-class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestMemoryLimits() : num_commits_(0) {}
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void WillCommit() override {
-    // Some commits are aborted, so increment number of attempted commits here.
-    num_commits_++;
-  }
-
-  void DidCommit() override {
-    switch (num_commits_) {
-      case 1:
-        // Verify default values.
-        EXPECT_EQ(PrioritizedResourceManager::DefaultMemoryAllocationLimit(),
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->MaxMemoryLimitBytes());
-        EXPECT_EQ(PriorityCalculator::AllowEverythingCutoff(),
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->ExternalPriorityCutoff());
-        PostSetNeedsCommitToMainThread();
-        break;
-      case 2:
-        // The values should remain the same until the commit after the policy
-        // is changed.
-        EXPECT_EQ(PrioritizedResourceManager::DefaultMemoryAllocationLimit(),
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->MaxMemoryLimitBytes());
-        EXPECT_EQ(PriorityCalculator::AllowEverythingCutoff(),
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->ExternalPriorityCutoff());
-        break;
-      case 3:
-        // Verify values were correctly passed.
-        EXPECT_EQ(16u * 1024u * 1024u,
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->MaxMemoryLimitBytes());
-        EXPECT_EQ(PriorityCalculator::AllowVisibleAndNearbyCutoff(),
-                  layer_tree_host()
-                      ->contents_texture_manager()
-                      ->ExternalPriorityCutoff());
-        EndTest();
-        break;
-      case 4:
-        // Make sure no extra commits happen.
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    switch (num_commits_) {
-      case 1:
-        break;
-      case 2:
-        // This will trigger a commit because the priority cutoff has changed.
-        impl->SetMemoryPolicy(ManagedMemoryPolicy(
-            16u * 1024u * 1024u,
-            gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            1000));
-        break;
-      case 3:
-        // This will not trigger a commit because the priority cutoff has not
-        // changed, and there is already enough memory for all allocations.
-        impl->SetMemoryPolicy(ManagedMemoryPolicy(
-            32u * 1024u * 1024u,
-            gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            1000));
-        break;
-      case 4:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void AfterTest() override {}
-
- private:
-  int num_commits_;
-};
-
-SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestMemoryLimits);
-
-}  // namespace
 
 class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
     : public LayerTreeHostTest {
@@ -4874,10 +3699,7 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
   }
 
   void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting)
-      root_ = FakePictureLayer::Create(&client_);
-    else
-      root_ = FakeContentLayer::Create(&client_);
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
     root_->SetBounds(gfx::Size(20, 20));
     layer_tree_host()->SetRootLayer(root_);
     LayerTreeHostTest::SetupTree();
@@ -5026,7 +3848,12 @@ class LayerTreeHostTestBreakSwapPromise : public LayerTreeHostTest {
     if (commit_complete_count_ == 1) {
       // This commit will be aborted because no actual update.
       PostSetNeedsUpdateLayersToMainThread();
-    } else {
+    }
+  }
+
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
+    int frame = host_impl->active_tree()->source_frame_number();
+    if (frame == 2) {
       EndTest();
     }
   }
@@ -5079,7 +3906,7 @@ class LayerTreeHostTestKeepSwapPromise : public LayerTreeTest {
   LayerTreeHostTestKeepSwapPromise() {}
 
   void BeginTest() override {
-    layer_ = SolidColorLayer::Create();
+    layer_ = SolidColorLayer::Create(layer_settings());
     layer_->SetIsDrawable(true);
     layer_->SetBounds(gfx::Size(10, 10));
     layer_tree_host()->SetRootLayer(layer_);
@@ -5344,10 +4171,6 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSimpleSwapPromiseMonitor);
 class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
     : public LayerTreeHostTest {
  protected:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
     ui_resource_ = FakeScopedUIResource::Create(layer_tree_host());
@@ -5389,8 +4212,6 @@ class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
 class LayerTreeHostTestGpuRasterizationDefault : public LayerTreeHostTest {
  protected:
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-
     EXPECT_FALSE(settings->gpu_rasterization_enabled);
     EXPECT_FALSE(settings->gpu_rasterization_forced);
   }
@@ -5398,7 +4219,8 @@ class LayerTreeHostTestGpuRasterizationDefault : public LayerTreeHostTest {
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<PictureLayer> layer = PictureLayer::Create(&layer_client_);
+    scoped_refptr<PictureLayer> layer =
+        PictureLayer::Create(layer_settings(), &layer_client_);
     layer->SetBounds(gfx::Size(10, 10));
     layer->SetIsDrawable(true);
     layer_tree_host()->root_layer()->AddChild(layer);
@@ -5443,8 +4265,6 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationDefault);
 class LayerTreeHostTestGpuRasterizationEnabled : public LayerTreeHostTest {
  protected:
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-
     EXPECT_FALSE(settings->gpu_rasterization_enabled);
     settings->gpu_rasterization_enabled = true;
   }
@@ -5452,7 +4272,8 @@ class LayerTreeHostTestGpuRasterizationEnabled : public LayerTreeHostTest {
   void SetupTree() override {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<PictureLayer> layer = PictureLayer::Create(&layer_client_);
+    scoped_refptr<PictureLayer> layer =
+        PictureLayer::Create(layer_settings(), &layer_client_);
     layer->SetBounds(gfx::Size(10, 10));
     layer->SetIsDrawable(true);
     layer_tree_host()->root_layer()->AddChild(layer);
@@ -5506,8 +4327,6 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationEnabled);
 class LayerTreeHostTestGpuRasterizationForced : public LayerTreeHostTest {
  protected:
   void InitializeSettings(LayerTreeSettings* settings) override {
-    ASSERT_TRUE(settings->impl_side_painting);
-
     EXPECT_FALSE(settings->gpu_rasterization_forced);
     settings->gpu_rasterization_forced = true;
   }
@@ -5516,7 +4335,7 @@ class LayerTreeHostTestGpuRasterizationForced : public LayerTreeHostTest {
     LayerTreeHostTest::SetupTree();
 
     scoped_refptr<FakePictureLayer> layer =
-        FakePictureLayer::Create(&layer_client_);
+        FakePictureLayer::Create(layer_settings(), &layer_client_);
     layer->SetBounds(gfx::Size(10, 10));
     layer->SetIsDrawable(true);
     layer_tree_host()->root_layer()->AddChild(layer);
@@ -5565,7 +4384,7 @@ class LayerTreeHostTestGpuRasterizationForced : public LayerTreeHostTest {
   FakeContentLayerClient layer_client_;
 };
 
-SINGLE_AND_MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestGpuRasterizationForced);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationForced);
 
 class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
  public:
@@ -5576,17 +4395,11 @@ class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
   enum { kExpectedNumCommits = 10 };
 
   void SetupTree() override {
-    scoped_refptr<Layer> root_layer = Layer::Create();
+    scoped_refptr<Layer> root_layer = Layer::Create(layer_settings());
     root_layer->SetBounds(bounds_);
     root_layer->CreateRenderSurface();
 
-    if (layer_tree_host()->settings().impl_side_painting) {
-      picture_layer_ = FakePictureLayer::Create(&client_);
-      child_layer_ = picture_layer_.get();
-    } else {
-      content_layer_ = ContentLayerWithUpdateTracking::Create(&client_);
-      child_layer_ = content_layer_.get();
-    }
+    child_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     child_layer_->SetBounds(bounds_);
     child_layer_->SetIsDrawable(true);
     root_layer->AddChild(child_layer_);
@@ -5621,10 +4434,7 @@ class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
   void AfterTest() override {
     EXPECT_LE(kExpectedNumCommits, num_commits_);
     EXPECT_LE(kExpectedNumCommits, num_draws_);
-    int update_count = content_layer_.get()
-                           ? content_layer_->PaintContentsCount()
-                           : picture_layer_->update_count();
-    EXPECT_LE(kExpectedNumCommits, update_count);
+    EXPECT_LE(kExpectedNumCommits, child_layer_->update_count());
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
@@ -5654,9 +4464,7 @@ class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
   int num_draws_;
   const gfx::Size bounds_;
   FakeContentLayerClient client_;
-  scoped_refptr<ContentLayerWithUpdateTracking> content_layer_;
-  scoped_refptr<FakePictureLayer> picture_layer_;
-  Layer* child_layer_;
+  scoped_refptr<FakePictureLayer> child_layer_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestContinuousPainting);
@@ -5792,10 +4600,6 @@ class LayerTreeHostTestActivateOnInvisible : public LayerTreeHostTest {
   LayerTreeHostTestActivateOnInvisible()
       : activation_count_(0), visible_(true) {}
 
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-
   void BeginTest() override {
     // Kick off the test with a commit.
     PostSetNeedsCommitToMainThread();
@@ -5841,7 +4645,8 @@ class LayerTreeHostTestActivateOnInvisible : public LayerTreeHostTest {
 };
 
 // TODO(vmpstr): Enable with single thread impl-side painting.
-MULTI_THREAD_TEST_F(LayerTreeHostTestActivateOnInvisible);
+// This test blocks activation which is not supported for single thread mode.
+MULTI_THREAD_BLOCKNOTIFY_TEST_F(LayerTreeHostTestActivateOnInvisible);
 
 // Do a synchronous composite and assert that the swap promise succeeds.
 class LayerTreeHostTestSynchronousCompositeSwapPromise
@@ -5851,6 +4656,8 @@ class LayerTreeHostTestSynchronousCompositeSwapPromise
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void BeginTest() override {
@@ -5858,14 +4665,14 @@ class LayerTreeHostTestSynchronousCompositeSwapPromise
     scoped_ptr<SwapPromise> swap_promise0(
         new TestSwapPromise(&swap_promise_result_[0]));
     layer_tree_host()->QueueSwapPromise(swap_promise0.Pass());
-    layer_tree_host()->Composite(gfx::FrameTime::Now());
+    layer_tree_host()->Composite(base::TimeTicks::Now());
 
     // Fail to swap (no damage).
     scoped_ptr<SwapPromise> swap_promise1(
         new TestSwapPromise(&swap_promise_result_[1]));
     layer_tree_host()->QueueSwapPromise(swap_promise1.Pass());
     layer_tree_host()->SetNeedsCommit();
-    layer_tree_host()->Composite(gfx::FrameTime::Now());
+    layer_tree_host()->Composite(base::TimeTicks::Now());
 
     // Fail to draw (not visible).
     scoped_ptr<SwapPromise> swap_promise2(
@@ -5873,7 +4680,7 @@ class LayerTreeHostTestSynchronousCompositeSwapPromise
     layer_tree_host()->QueueSwapPromise(swap_promise2.Pass());
     layer_tree_host()->SetNeedsDisplayOnAllLayers();
     layer_tree_host()->SetVisible(false);
-    layer_tree_host()->Composite(gfx::FrameTime::Now());
+    layer_tree_host()->Composite(base::TimeTicks::Now());
 
     EndTest();
   }
@@ -5919,8 +4726,7 @@ class LayerTreeHostTestSynchronousCompositeSwapPromise
   TestSwapPromiseResult swap_promise_result_[3];
 };
 
-// Impl-side painting is not supported for synchronous compositing.
-SINGLE_THREAD_NOIMPL_TEST_F(LayerTreeHostTestSynchronousCompositeSwapPromise);
+SINGLE_THREAD_TEST_F(LayerTreeHostTestSynchronousCompositeSwapPromise);
 
 // Make sure page scale and top control deltas are applied to the client even
 // when the LayerTreeHost doesn't have a root layer.
@@ -5955,15 +4761,6 @@ class LayerTreeHostAcceptsDeltasFromImplWithoutRootLayer
     deltas_sent_to_client_ = true;
   }
 
-  void ApplyViewportDeltas(
-      const gfx::Vector2d& scroll,
-      float scale_delta,
-      float top_controls_delta) override {
-    EXPECT_EQ(info_.page_scale_delta, scale_delta);
-    EXPECT_EQ(info_.top_controls_delta, top_controls_delta);
-    deltas_sent_to_client_ = true;
-  }
-
   void AfterTest() override {
     EXPECT_TRUE(deltas_sent_to_client_);
   }
@@ -5984,21 +4781,22 @@ class LayerTreeHostTestCrispUpAfterPinchEnds : public LayerTreeHostTest {
     posted_ = false;
     client_.set_fill_with_nonsolid_color(true);
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->SetBounds(gfx::Size(500, 500));
 
-    scoped_refptr<Layer> pinch = Layer::Create();
+    scoped_refptr<Layer> pinch = Layer::Create(layer_settings());
     pinch->SetBounds(gfx::Size(500, 500));
     pinch->SetScrollClipLayerId(root->id());
     pinch->SetIsContainerForFixedPositionLayers(true);
     root->AddChild(pinch);
 
     scoped_ptr<FakePicturePile> pile(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
+        new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                            LayerTreeSettings().default_tile_grid_size));
     pile->SetPlaybackAllowedEvent(&playback_allowed_event_);
     scoped_refptr<FakePictureLayer> layer =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+        FakePictureLayer::CreateWithRecordingSource(layer_settings(), &client_,
+                                                    pile.Pass());
     layer->SetBounds(gfx::Size(500, 500));
     layer->SetContentsOpaque(true);
     // Avoid LCD text on the layer so we don't cause extra commits when we
@@ -6026,8 +4824,8 @@ class LayerTreeHostTestCrispUpAfterPinchEnds : public LayerTreeHostTest {
       const TileDrawQuad* quad = TileDrawQuad::MaterialCast(draw_quad);
       float quad_scale =
           quad->tex_coord_rect.width() / static_cast<float>(quad->rect.width());
-      float transform_scale =
-          SkMScalarToFloat(quad->quadTransform().matrix().get(0, 0));
+      float transform_scale = SkMScalarToFloat(
+          quad->shared_quad_state->quad_to_target_transform.matrix().get(0, 0));
       float scale = quad_scale / transform_scale;
       if (frame_scale != 0.f && frame_scale != scale)
         return 0.f;
@@ -6156,7 +4954,9 @@ class LayerTreeHostTestCrispUpAfterPinchEnds : public LayerTreeHostTest {
   base::WaitableEvent playback_allowed_event_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestCrispUpAfterPinchEnds);
+// This test does pinching on the impl side which is not supported in single
+// thread.
+MULTI_THREAD_TEST_F(LayerTreeHostTestCrispUpAfterPinchEnds);
 
 class LayerTreeHostTestCrispUpAfterPinchEndsWithOneCopy
     : public LayerTreeHostTestCrispUpAfterPinchEnds {
@@ -6181,28 +4981,30 @@ class LayerTreeHostTestCrispUpAfterPinchEndsWithOneCopy
   }
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestCrispUpAfterPinchEndsWithOneCopy);
+// This test does pinching on the impl side which is not supported in single
+// thread.
+MULTI_THREAD_TEST_F(LayerTreeHostTestCrispUpAfterPinchEndsWithOneCopy);
 
 class RasterizeWithGpuRasterizationCreatesResources : public LayerTreeHostTest {
  protected:
   RasterizeWithGpuRasterizationCreatesResources() {}
 
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
     settings->gpu_rasterization_forced = true;
   }
 
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->SetBounds(gfx::Size(500, 500));
 
     scoped_ptr<FakePicturePile> pile(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
+        new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                            LayerTreeSettings().default_tile_grid_size));
     scoped_refptr<FakePictureLayer> layer =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+        FakePictureLayer::CreateWithRecordingSource(layer_settings(), &client_,
+                                                    pile.Pass());
     layer->SetBounds(gfx::Size(500, 500));
     layer->SetContentsOpaque(true);
     root->AddChild(layer);
@@ -6225,14 +5027,13 @@ class RasterizeWithGpuRasterizationCreatesResources : public LayerTreeHostTest {
   FakeContentLayerClient client_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(RasterizeWithGpuRasterizationCreatesResources);
+SINGLE_AND_MULTI_THREAD_TEST_F(RasterizeWithGpuRasterizationCreatesResources);
 
 class GpuRasterizationRasterizesBorderTiles : public LayerTreeHostTest {
  protected:
   GpuRasterizationRasterizesBorderTiles() : viewport_size_(1024, 2048) {}
 
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
     settings->gpu_rasterization_enabled = true;
     settings->gpu_rasterization_forced = true;
   }
@@ -6241,10 +5042,11 @@ class GpuRasterizationRasterizesBorderTiles : public LayerTreeHostTest {
     client_.set_fill_with_nonsolid_color(true);
 
     scoped_ptr<FakePicturePile> pile(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
+        new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                            LayerTreeSettings().default_tile_grid_size));
     scoped_refptr<FakePictureLayer> root =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+        FakePictureLayer::CreateWithRecordingSource(layer_settings(), &client_,
+                                                    pile.Pass());
     root->SetBounds(gfx::Size(10000, 10000));
     root->SetContentsOpaque(true);
 
@@ -6270,7 +5072,7 @@ class GpuRasterizationRasterizesBorderTiles : public LayerTreeHostTest {
   gfx::Size viewport_size_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(GpuRasterizationRasterizesBorderTiles);
+SINGLE_AND_MULTI_THREAD_TEST_F(GpuRasterizationRasterizesBorderTiles);
 
 class LayerTreeHostTestContinuousDrawWhenCreatingVisibleTiles
     : public LayerTreeHostTest {
@@ -6278,30 +5080,27 @@ class LayerTreeHostTestContinuousDrawWhenCreatingVisibleTiles
   LayerTreeHostTestContinuousDrawWhenCreatingVisibleTiles()
       : playback_allowed_event_(true, true) {}
 
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-
   void SetupTree() override {
     step_ = 1;
     continuous_draws_ = 0;
     client_.set_fill_with_nonsolid_color(true);
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->SetBounds(gfx::Size(500, 500));
 
-    scoped_refptr<Layer> pinch = Layer::Create();
+    scoped_refptr<Layer> pinch = Layer::Create(layer_settings());
     pinch->SetBounds(gfx::Size(500, 500));
     pinch->SetScrollClipLayerId(root->id());
     pinch->SetIsContainerForFixedPositionLayers(true);
     root->AddChild(pinch);
 
     scoped_ptr<FakePicturePile> pile(
-        new FakePicturePile(ImplSidePaintingSettings().minimum_contents_scale,
-                            ImplSidePaintingSettings().default_tile_grid_size));
+        new FakePicturePile(LayerTreeSettings().minimum_contents_scale,
+                            LayerTreeSettings().default_tile_grid_size));
     pile->SetPlaybackAllowedEvent(&playback_allowed_event_);
     scoped_refptr<FakePictureLayer> layer =
-        FakePictureLayer::CreateWithRecordingSource(&client_, pile.Pass());
+        FakePictureLayer::CreateWithRecordingSource(layer_settings(), &client_,
+                                                    pile.Pass());
     layer->SetBounds(gfx::Size(500, 500));
     layer->SetContentsOpaque(true);
     // Avoid LCD text on the layer so we don't cause extra commits when we
@@ -6326,8 +5125,8 @@ class LayerTreeHostTestContinuousDrawWhenCreatingVisibleTiles
       const TileDrawQuad* quad = TileDrawQuad::MaterialCast(draw_quad);
       float quad_scale =
           quad->tex_coord_rect.width() / static_cast<float>(quad->rect.width());
-      float transform_scale =
-          SkMScalarToFloat(quad->quadTransform().matrix().get(0, 0));
+      float transform_scale = SkMScalarToFloat(
+          quad->shared_quad_state->quad_to_target_transform.matrix().get(0, 0));
       float scale = quad_scale / transform_scale;
       if (frame_scale != 0.f && frame_scale != scale)
         return 0.f;
@@ -6460,7 +5259,7 @@ class LayerTreeHostTestOneActivatePerPrepareTiles : public LayerTreeHostTest {
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(1500, 1500));
     root_layer->SetIsDrawable(true);
 
@@ -6505,7 +5304,7 @@ class LayerTreeHostTestOneActivatePerPrepareTiles : public LayerTreeHostTest {
   size_t scheduled_prepare_tiles_count_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestOneActivatePerPrepareTiles);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestOneActivatePerPrepareTiles);
 
 class LayerTreeHostTestFrameTimingRequestsSaveTimestamps
     : public LayerTreeHostTest {
@@ -6515,12 +5314,12 @@ class LayerTreeHostTestFrameTimingRequestsSaveTimestamps
 
   void SetupTree() override {
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(200, 200));
     root_layer->SetIsDrawable(true);
 
     scoped_refptr<FakePictureLayer> child_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     child_layer->SetBounds(gfx::Size(1500, 1500));
     child_layer->SetIsDrawable(true);
 
@@ -6591,7 +5390,8 @@ class LayerTreeHostTestFrameTimingRequestsSaveTimestamps
   bool check_results_on_commit_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestFrameTimingRequestsSaveTimestamps);
+// Frame timing is not implemented in single thread proxy.
+MULTI_THREAD_TEST_F(LayerTreeHostTestFrameTimingRequestsSaveTimestamps);
 
 class LayerTreeHostTestActivationCausesPrepareTiles : public LayerTreeHostTest {
  public:
@@ -6601,7 +5401,7 @@ class LayerTreeHostTestActivationCausesPrepareTiles : public LayerTreeHostTest {
   void SetupTree() override {
     client_.set_fill_with_nonsolid_color(true);
     scoped_refptr<FakePictureLayer> root_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root_layer->SetBounds(gfx::Size(150, 150));
     root_layer->SetIsDrawable(true);
 
@@ -6635,7 +5435,9 @@ class LayerTreeHostTestActivationCausesPrepareTiles : public LayerTreeHostTest {
   int scheduled_prepare_tiles_count_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostTestActivationCausesPrepareTiles);
+// This test is testing activation from a pending tree and doesn't make sense
+// with single thread commit-to-active.
+MULTI_THREAD_TEST_F(LayerTreeHostTestActivationCausesPrepareTiles);
 
 // This tests an assertion that DidCommit and WillCommit happen in the same
 // stack frame with no tasks that run between them.  Various embedders of
@@ -6674,90 +5476,11 @@ class LayerTreeHostTestNoTasksBetweenWillAndDidCommit
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestNoTasksBetweenWillAndDidCommit);
 
-// Verify that if a LayerImpl holds onto a copy request for multiple
-// frames that it will continue to have a render surface through
-// multiple commits, even though the Layer itself has no reason
-// to have a render surface.
-class LayerPreserveRenderSurfaceFromOutputRequests : public LayerTreeHostTest {
- protected:
-  void SetupTree() override {
-    scoped_refptr<Layer> root = Layer::Create();
-    root->CreateRenderSurface();
-    root->SetBounds(gfx::Size(10, 10));
-    child_ = Layer::Create();
-    child_->SetBounds(gfx::Size(20, 20));
-    root->AddChild(child_);
-
-    layer_tree_host()->SetRootLayer(root);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  static void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {}
-
-  void BeginTest() override {
-    child_->RequestCopyOfOutput(
-        CopyOutputRequest::CreateBitmapRequest(base::Bind(CopyOutputCallback)));
-    EXPECT_TRUE(child_->HasCopyRequest());
-    PostSetNeedsCommitToMainThread();
-  }
-
-  void DidCommit() override { EXPECT_FALSE(child_->HasCopyRequest()); }
-
-  void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
-    LayerImpl* child_impl = host_impl->sync_tree()->LayerById(child_->id());
-
-    switch (host_impl->sync_tree()->source_frame_number()) {
-      case 0:
-        EXPECT_TRUE(child_impl->HasCopyRequest());
-        EXPECT_TRUE(child_impl->render_surface());
-        break;
-      case 1:
-        if (host_impl->proxy()->CommitToActiveTree()) {
-          EXPECT_TRUE(child_impl->HasCopyRequest());
-          EXPECT_TRUE(child_impl->render_surface());
-        } else {
-          EXPECT_FALSE(child_impl->HasCopyRequest());
-          EXPECT_FALSE(child_impl->render_surface());
-        }
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
-    LayerImpl* child_impl = host_impl->active_tree()->LayerById(child_->id());
-    EXPECT_TRUE(child_impl->HasCopyRequest());
-    EXPECT_TRUE(child_impl->render_surface());
-
-    switch (host_impl->active_tree()->source_frame_number()) {
-      case 0:
-        // Lose output surface to prevent drawing and cause another commit.
-        host_impl->DidLoseOutputSurface();
-        break;
-      case 1:
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
-  }
-
-  void AfterTest() override {}
-
- private:
-  scoped_refptr<Layer> child_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerPreserveRenderSurfaceFromOutputRequests);
-
 class LayerTreeHostTestUpdateCopyRequests : public LayerTreeHostTest {
  protected:
   void SetupTree() override {
-    root = Layer::Create();
-    child = Layer::Create();
+    root = Layer::Create(layer_settings());
+    child = Layer::Create(layer_settings());
     root->AddChild(child);
     layer_tree_host()->SetRootLayer(root);
     LayerTreeHostTest::SetupTree();
@@ -6799,21 +5522,21 @@ class LayerTreeTestMaskLayerForSurfaceWithClippedLayer : public LayerTreeTest {
     // the surface bounds to be larger. It also has a parent that clips the
     // masked layer and its surface.
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
 
-    scoped_refptr<Layer> clipping_layer = Layer::Create();
+    scoped_refptr<Layer> clipping_layer = Layer::Create(layer_settings());
     root->AddChild(clipping_layer);
 
     scoped_refptr<FakePictureLayer> content_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     clipping_layer->AddChild(content_layer);
 
     scoped_refptr<FakePictureLayer> content_child_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     content_layer->AddChild(content_child_layer);
 
     scoped_refptr<FakePictureLayer> mask_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     content_layer->SetMaskLayer(mask_layer.get());
 
     gfx::Size root_size(100, 100);
@@ -6893,17 +5616,17 @@ class LayerTreeTestMaskLayerWithScaling : public LayerTreeTest {
     //       +-- Content Layer
     //             +--Mask
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
 
-    scoped_refptr<Layer> scaling_layer = Layer::Create();
+    scoped_refptr<Layer> scaling_layer = Layer::Create(layer_settings());
     root->AddChild(scaling_layer);
 
     scoped_refptr<FakePictureLayer> content_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     scaling_layer->AddChild(content_layer);
 
     scoped_refptr<FakePictureLayer> mask_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     content_layer->SetMaskLayer(mask_layer.get());
 
     gfx::Size root_size(100, 100);
@@ -6988,14 +5711,14 @@ class LayerTreeTestMaskLayerWithDifferentBounds : public LayerTreeTest {
     // The mask layer has bounds 100x100 but is attached to a layer with bounds
     // 50x50.
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
 
     scoped_refptr<FakePictureLayer> content_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root->AddChild(content_layer);
 
     scoped_refptr<FakePictureLayer> mask_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     content_layer->SetMaskLayer(mask_layer.get());
 
     gfx::Size root_size(100, 100);
@@ -7076,17 +5799,17 @@ class LayerTreeTestReflectionMaskLayerWithDifferentBounds
     // The replica's mask layer has bounds 100x100 but the replica is of a
     // layer with bounds 50x50.
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
 
     scoped_refptr<FakePictureLayer> content_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root->AddChild(content_layer);
 
-    scoped_refptr<Layer> replica_layer = Layer::Create();
+    scoped_refptr<Layer> replica_layer = Layer::Create(layer_settings());
     content_layer->SetReplicaLayer(replica_layer.get());
 
     scoped_refptr<FakePictureLayer> mask_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     replica_layer->SetMaskLayer(mask_layer.get());
 
     gfx::Size root_size(100, 100);
@@ -7169,20 +5892,20 @@ class LayerTreeTestReflectionMaskLayerForSurfaceWithUnclippedChild
     // The replica is of a layer with bounds 50x50, but it has a child that
     // causes the surface bounds to be larger.
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
 
     scoped_refptr<FakePictureLayer> content_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     root->AddChild(content_layer);
 
-    content_child_layer_ = FakePictureLayer::Create(&client_);
+    content_child_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     content_layer->AddChild(content_child_layer_);
 
-    scoped_refptr<Layer> replica_layer = Layer::Create();
+    scoped_refptr<Layer> replica_layer = Layer::Create(layer_settings());
     content_layer->SetReplicaLayer(replica_layer.get());
 
     scoped_refptr<FakePictureLayer> mask_layer =
-        FakePictureLayer::Create(&client_);
+        FakePictureLayer::Create(layer_settings(), &client_);
     replica_layer->SetMaskLayer(mask_layer.get());
 
     gfx::Size root_size(100, 100);
@@ -7262,4 +5985,77 @@ class LayerTreeTestReflectionMaskLayerForSurfaceWithUnclippedChild
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeTestReflectionMaskLayerForSurfaceWithUnclippedChild);
 
+class LayerTreeTestPageScaleFlags : public LayerTreeTest {
+ protected:
+  void SetupTree() override {
+    // -root
+    //   -pre page scale
+    //   -page scale
+    //     -page scale child1
+    //       -page scale grandchild
+    //     -page scale child2
+    //   -post page scale
+
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
+    scoped_refptr<Layer> pre_page_scale = Layer::Create(layer_settings());
+    scoped_refptr<Layer> page_scale = Layer::Create(layer_settings());
+    scoped_refptr<Layer> page_scale_child1 = Layer::Create(layer_settings());
+    scoped_refptr<Layer> page_scale_grandchild =
+        Layer::Create(layer_settings());
+    scoped_refptr<Layer> page_scale_child2 = Layer::Create(layer_settings());
+    scoped_refptr<Layer> post_page_scale = Layer::Create(layer_settings());
+
+    root->AddChild(pre_page_scale);
+    root->AddChild(page_scale);
+    root->AddChild(post_page_scale);
+
+    page_scale->AddChild(page_scale_child1);
+    page_scale->AddChild(page_scale_child2);
+    page_scale_child1->AddChild(page_scale_grandchild);
+
+    layer_tree_host()->SetRootLayer(root);
+    LayerTreeTest::SetupTree();
+
+    scoped_refptr<Layer> overscroll_elasticity_layer = nullptr;
+    scoped_refptr<Layer> inner_viewport_scroll_layer = nullptr;
+    scoped_refptr<Layer> outer_viewport_scroll_layer = nullptr;
+    layer_tree_host()->RegisterViewportLayers(
+        overscroll_elasticity_layer, page_scale, inner_viewport_scroll_layer,
+        outer_viewport_scroll_layer);
+
+    affected_by_page_scale_.push_back(page_scale->id());
+    affected_by_page_scale_.push_back(page_scale_child1->id());
+    affected_by_page_scale_.push_back(page_scale_child2->id());
+    affected_by_page_scale_.push_back(page_scale_grandchild->id());
+
+    not_affected_by_page_scale_.push_back(root->id());
+    not_affected_by_page_scale_.push_back(pre_page_scale->id());
+    not_affected_by_page_scale_.push_back(post_page_scale->id());
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        host_impl->sync_tree()->root_layer(), [this](LayerImpl* layer) {
+          const std::vector<int>& list =
+              layer->IsAffectedByPageScale()
+                  ? this->affected_by_page_scale_
+                  : this->not_affected_by_page_scale_;
+          EXPECT_TRUE(std::find(list.begin(), list.end(), layer->id()) !=
+                      list.end());
+        });
+
+    EndTest();
+  }
+
+  void AfterTest() override {}
+
+  std::vector<int> affected_by_page_scale_;
+  std::vector<int> not_affected_by_page_scale_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeTestPageScaleFlags);
+
+}  // namespace
 }  // namespace cc

@@ -78,6 +78,13 @@ row, const LayoutTableCell* cell)
     }
 }
 
+void CellSpan::ensureConsistency(const unsigned maximumSpanSize)
+{
+    RELEASE_ASSERT(m_start >= 0 && m_start <= maximumSpanSize);
+    RELEASE_ASSERT(m_end >= 0 && m_end <= maximumSpanSize);
+    RELEASE_ASSERT(m_start <= m_end);
+}
+
 LayoutTableSection::LayoutTableSection(Element* element)
     : LayoutBox(element)
     , m_cCol(0)
@@ -723,12 +730,18 @@ int LayoutTableSection::calcRowLogicalHeight()
         m_grid[r].baseline = -1;
         LayoutUnit baselineDescent = 0;
 
-        // Our base size is the biggest logical height from our cells' styles (excluding row spanning cells).
-        m_rowPos[r + 1] = std::max(m_rowPos[r] + minimumValueForLength(m_grid[r].logicalHeight, 0).round(), 0);
+        if (m_grid[r].logicalHeight.isSpecified()) {
+            // Our base size is the biggest logical height from our cells' styles (excluding row spanning cells).
+            m_rowPos[r + 1] = std::max(m_rowPos[r] + minimumValueForLength(m_grid[r].logicalHeight, 0).round(), 0);
+        } else {
+            // Non-specified lengths are ignored because the row already accounts for the cells
+            // intrinsic logical height.
+            m_rowPos[r + 1] = std::max(m_rowPos[r], 0);
+        }
 
         Row& row = m_grid[r].row;
         unsigned totalCols = row.size();
-        LayoutTableCell* lastRowSpanCell = 0;
+        LayoutTableCell* lastRowSpanCell = nullptr;
 
         for (unsigned c = 0; c < totalCols; c++) {
             CellStruct& current = cellAt(r, c);
@@ -1137,7 +1150,7 @@ int LayoutTableSection::calcBlockDirectionOuterBorder(BlockBorderSide side) cons
     if (!m_grid.size() || !totalCols)
         return 0;
 
-    unsigned borderWidth = 0;
+    int borderWidth = 0;
 
     const BorderValue& sb = side == BorderBefore ? style()->borderBefore() : style()->borderAfter();
     if (sb.style() == BHIDDEN)
@@ -1192,7 +1205,7 @@ int LayoutTableSection::calcInlineDirectionOuterBorder(InlineBorderSide side) co
         return 0;
     unsigned colIndex = side == BorderStart ? 0 : totalCols - 1;
 
-    unsigned borderWidth = 0;
+    int borderWidth = 0;
 
     const BorderValue& sb = side == BorderStart ? style()->borderStart() : style()->borderEnd();
     if (sb.style() == BHIDDEN)
@@ -1291,12 +1304,18 @@ CellSpan LayoutTableSection::dirtiedRows(const LayoutRect& damageRect) const
 
     CellSpan coveredRows = spannedRows(damageRect);
 
-    // To issue paint invalidations for the border we might need to paint invalidate the first or last row even if they are not spanned themselves.
-    if (coveredRows.start() >= m_rowPos.size() - 1 && m_rowPos[m_rowPos.size() - 1] + table()->outerBorderAfter() >= damageRect.y())
+    // To issue paint invalidations for the border we might need to paint invalidate the first
+    // or last row even if they are not spanned themselves.
+    RELEASE_ASSERT(coveredRows.start() < m_rowPos.size());
+    if (coveredRows.start() == m_rowPos.size() - 1
+        && m_rowPos[m_rowPos.size() - 1] + table()->outerBorderAfter() >= damageRect.y())
         coveredRows.decreaseStart();
 
-    if (!coveredRows.end() && m_rowPos[0] - table()->outerBorderBefore() <= damageRect.maxY())
+    if (!coveredRows.end()
+        && m_rowPos[0] - table()->outerBorderBefore() <= damageRect.maxY())
         coveredRows.increaseEnd();
+
+    coveredRows.ensureConsistency(m_grid.size());
 
     return coveredRows;
 }
@@ -1309,12 +1328,18 @@ CellSpan LayoutTableSection::dirtiedColumns(const LayoutRect& damageRect) const
     CellSpan coveredColumns = spannedColumns(damageRect);
 
     const Vector<int>& columnPos = table()->columnPositions();
-    // To issue paint invalidations for the border we might need to paint invalidate the first or last column even if they are not spanned themselves.
-    if (coveredColumns.start() >= columnPos.size() - 1 && columnPos[columnPos.size() - 1] + table()->outerBorderEnd() >= damageRect.x())
+    // To issue paint invalidations for the border we might need to paint invalidate the first
+    // or last column even if they are not spanned themselves.
+    RELEASE_ASSERT(coveredColumns.start() < columnPos.size());
+    if (coveredColumns.start() == columnPos.size() - 1
+        && columnPos[columnPos.size() - 1] + table()->outerBorderEnd() >= damageRect.x())
         coveredColumns.decreaseStart();
 
-    if (!coveredColumns.end() && columnPos[0] - table()->outerBorderStart() <= damageRect.maxX())
+    if (!coveredColumns.end()
+        && columnPos[0] - table()->outerBorderStart() <= damageRect.maxX())
         coveredColumns.increaseEnd();
+
+    coveredColumns.ensureConsistency(table()->numEffCols());
 
     return coveredColumns;
 }
@@ -1371,11 +1396,6 @@ CellSpan LayoutTableSection::spannedColumns(const LayoutRect& flippedRect) const
     return CellSpan(startColumn, endColumn);
 }
 
-
-void LayoutTableSection::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    TableSectionPainter(*this).paintObject(paintInfo, paintOffset);
-}
 
 void LayoutTableSection::imageChanged(WrappedImagePtr, const IntRect*)
 {
@@ -1608,7 +1628,7 @@ const CollapsedBorderValue& LayoutTableSection::cachedCollapsedBorder(const Layo
 LayoutTableSection* LayoutTableSection::createAnonymousWithParent(const LayoutObject* parent)
 {
     RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_ROW_GROUP);
-    LayoutTableSection* newSection = new LayoutTableSection(0);
+    LayoutTableSection* newSection = new LayoutTableSection(nullptr);
     newSection->setDocumentForAnonymous(&parent->document());
     newSection->setStyle(newStyle.release());
     return newSection;

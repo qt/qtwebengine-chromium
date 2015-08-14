@@ -93,7 +93,6 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
 }
 
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("Resource"));
-unsigned Resource::s_instanceCount = 0;
 
 class Resource::CacheHandler : public CachedMetadataHandler {
 public:
@@ -164,7 +163,7 @@ Resource::Resource(const ResourceRequest& request, Type type)
     , m_proxyResource(nullptr)
 {
     ASSERT(m_type == unsigned(type)); // m_type is a bitfield, so this tests careless updates of the enum.
-    ++s_instanceCount;
+    InstanceCounters::incrementCounter(InstanceCounters::ResourceCounter);
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
@@ -197,7 +196,7 @@ Resource::~Resource()
 #ifndef NDEBUG
     cachedResourceLeakCounter.decrement();
 #endif
-    --s_instanceCount;
+    InstanceCounters::decrementCounter(InstanceCounters::ResourceCounter);
 }
 
 void Resource::dispose()
@@ -322,8 +321,8 @@ bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& 
 
 bool Resource::isEligibleForIntegrityCheck(SecurityOrigin* securityOrigin) const
 {
-    String errorDescription;
-    return securityOrigin->canRequest(resourceRequest().url()) || passesAccessControlCheck(securityOrigin, errorDescription);
+    String ignoredErrorDescription;
+    return securityOrigin->canRequest(resourceRequest().url()) || passesAccessControlCheck(securityOrigin, ignoredErrorDescription);
 }
 
 static double currentAge(const ResourceResponse& response, double responseTimestamp)
@@ -1034,6 +1033,8 @@ const char* Resource::resourceTypeToString(Type type, const FetchInitiatorInfo& 
         return "Link prefetch resource";
     case Resource::LinkSubresource:
         return "Link subresource";
+    case Resource::LinkPreload:
+        return "Link preload";
     case Resource::TextTrack:
         return "Text track";
     case Resource::ImportResource:
@@ -1069,6 +1070,8 @@ const char* ResourceTypeName(Resource::Type type)
         return "LinkPrefetch";
     case Resource::LinkSubresource:
         return "LinkSubresource";
+    case Resource::LinkPreload:
+        return "LinkPreload";
     case Resource::TextTrack:
         return "TextTrack";
     case Resource::ImportResource:

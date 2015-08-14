@@ -27,14 +27,16 @@ void FilterDisplayItem::SetNew(const FilterOperations& filters,
   filters_ = filters;
   bounds_ = bounds;
 
-  size_t memory_usage =
-      sizeof(skia::RefPtr<SkImageFilter>) + sizeof(gfx::RectF);
+  // FilterOperations doesn't expose its capacity, but size is probably good
+  // enough.
+  size_t external_memory_usage = filters_.size() * sizeof(filters_.at(0));
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 1 /* op_count */,
-                      memory_usage);
+                      external_memory_usage);
 }
 
 void FilterDisplayItem::Raster(SkCanvas* canvas,
-                               SkDrawPictureCallback* callback) const {
+                               const gfx::Rect& canvas_target_playback_rect,
+                               SkPicture::AbortCallback* callback) const {
   canvas->save();
   canvas->translate(bounds_.x(), bounds_.y());
 
@@ -61,14 +63,15 @@ void FilterDisplayItem::AsValueInto(
 
 EndFilterDisplayItem::EndFilterDisplayItem() {
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 0 /* op_count */,
-                      0 /* memory_usage */);
+                      0 /* external_memory_usage */);
 }
 
 EndFilterDisplayItem::~EndFilterDisplayItem() {
 }
 
 void EndFilterDisplayItem::Raster(SkCanvas* canvas,
-                                  SkDrawPictureCallback* callback) const {
+                                  const gfx::Rect& canvas_target_playback_rect,
+                                  SkPicture::AbortCallback* callback) const {
   canvas->restore();
   canvas->restore();
 }

@@ -40,7 +40,6 @@
 #include "core/layout/TextAutosizer.h"
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
@@ -69,7 +68,7 @@ using blink::GraphicsLayerFactory;
 namespace blink {
 
 PinchViewport::PinchViewport(FrameHost& owner)
-    : m_frameHost(owner)
+    : m_frameHost(&owner)
     , m_scale(1)
     , m_topControlsAdjustment(0)
 {
@@ -78,6 +77,12 @@ PinchViewport::PinchViewport(FrameHost& owner)
 
 PinchViewport::~PinchViewport()
 {
+}
+
+DEFINE_TRACE(PinchViewport)
+{
+    visitor->trace(m_frameHost);
+    ScrollableArea::trace(visitor);
 }
 
 void PinchViewport::setSize(const IntSize& size)
@@ -147,9 +152,7 @@ FloatRect PinchViewport::visibleRectInDocument() const
         return FloatRect();
 
     FloatPoint viewLocation = FloatPoint(mainFrame()->view()->scrollableArea()->scrollPositionDouble());
-    FloatRect pinchRect = visibleRect();
-    pinchRect.moveBy(viewLocation);
-    return pinchRect;
+    return FloatRect(viewLocation, visibleSize());
 }
 
 FloatRect PinchViewport::mainViewToViewportCSSPixels(const FloatRect& rect) const
@@ -195,17 +198,7 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
     if (scale != m_scale) {
         m_scale = scale;
         valuesChanged = true;
-        frameHost().chrome().client().pageScaleFactorChanged();
-    }
-
-    // Old-style pinch sets scale here but we shouldn't call into the
-    // location code below. Can be removed when there's no old-style pinch.
-    // FIXME(bokan): Remove when cleaning up old pinch code.
-    if (!m_innerViewportScrollLayer) {
-        if (valuesChanged)
-            mainFrame()->loader().saveScrollState();
-
-        return;
+        frameHost().chromeClient().pageScaleFactorChanged();
     }
 
     FloatPoint clampedOffset(clampOffsetToBoundaries(location));
@@ -214,9 +207,9 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
         m_offset = clampedOffset;
         scrollAnimator()->setCurrentPosition(m_offset);
 
-        ScrollingCoordinator* coordinator = frameHost().page().scrollingCoordinator();
-        ASSERT(coordinator);
-        coordinator->scrollableAreaScrollLayerDidChange(this);
+        // SVG runs with accelerated compositing disabled so no ScrollingCoordinator.
+        if (ScrollingCoordinator* coordinator = frameHost().page().scrollingCoordinator())
+            coordinator->scrollableAreaScrollLayerDidChange(this);
 
         Document* document = mainFrame()->document();
         document->enqueueScrollEventForNode(document);
@@ -237,7 +230,7 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
 bool PinchViewport::magnifyScaleAroundAnchor(float magnifyDelta, const FloatPoint& anchor)
 {
     const float oldPageScale = scale();
-    const float newPageScale = frameHost().chrome().client().clampPageScaleFactorToLimits(
+    const float newPageScale = frameHost().chromeClient().clampPageScaleFactorToLimits(
         magnifyDelta * oldPageScale);
     if (newPageScale == oldPageScale)
         return false;
@@ -252,11 +245,14 @@ bool PinchViewport::magnifyScaleAroundAnchor(float magnifyDelta, const FloatPoin
 
     // First try to use the anchor's delta to scroll the FrameView.
     FloatSize anchorDeltaUnusedByScroll = anchorDelta;
-    FrameView* view = mainFrame()->view();
-    DoublePoint oldPosition = view->scrollPositionDouble();
-    view->scrollBy(DoubleSize(anchorDelta.width(), anchorDelta.height()));
-    DoublePoint newPosition = view->scrollPositionDouble();
-    anchorDeltaUnusedByScroll = anchorDelta - toFloatSize(newPosition - oldPosition);
+
+    if (!frameHost().settings().invertViewportScrollOrder()) {
+        FrameView* view = mainFrame()->view();
+        DoublePoint oldPosition = view->scrollPositionDouble();
+        view->scrollBy(DoubleSize(anchorDelta.width(), anchorDelta.height()), UserScroll);
+        DoublePoint newPosition = view->scrollPositionDouble();
+        anchorDeltaUnusedByScroll -= toFloatSize(newPosition - oldPosition);
+    }
 
     // Manually bubble any remaining anchor delta up to the pinch viewport.
     FloatPoint newLocation(location() + anchorDeltaUnusedByScroll);
@@ -528,7 +524,6 @@ IntSize PinchViewport::contentsSize() const
     if (!frame || !frame->view())
         return IntSize();
 
-    ASSERT(frame->view()->visibleContentScaleFactor() == 1);
     return frame->view()->visibleContentRect(IncludeScrollbars).size();
 }
 
@@ -538,12 +533,12 @@ void PinchViewport::invalidateScrollbarRect(Scrollbar*, const IntRect&)
     // be updated when the viewport is synced to the CC.
 }
 
-void PinchViewport::setScrollOffset(const IntPoint& offset)
+void PinchViewport::setScrollOffset(const IntPoint& offset, ScrollType scrollType)
 {
-    setScrollOffset(DoublePoint(offset));
+    setScrollOffset(DoublePoint(offset), scrollType);
 }
 
-void PinchViewport::setScrollOffset(const DoublePoint& offset)
+void PinchViewport::setScrollOffset(const DoublePoint& offset, ScrollType)
 {
     setLocation(toFloatPoint(offset));
 }

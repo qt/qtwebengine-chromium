@@ -99,7 +99,7 @@ public:
     * cameraFrameRate   : Request or information from the remote side
     * frameType         : The requested frame type to encode
     */
-    int32_t Encode(const I420VideoFrame& inputFrame,
+    int32_t Encode(const VideoFrame& inputFrame,
                    const CodecSpecificInfo* codecSpecificInfo,
                    const std::vector<FrameType>& frameTypes);
     /**
@@ -138,6 +138,8 @@ public:
 
     void OnDroppedFrame();
 
+    bool SupportsNativeHandle() const;
+
 private:
     VideoEncoder* const encoder_;
     VideoEncoderRateObserver* const rate_observer_;
@@ -147,6 +149,7 @@ private:
     const bool internal_source_;
     mutable rtc::CriticalSection rates_lock_;
     VideoRotation rotation_;
+    bool is_screenshare_;
 }; // end of VCMGenericEncoder class
 
 }  // namespace webrtc

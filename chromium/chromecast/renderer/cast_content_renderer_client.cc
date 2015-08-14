@@ -7,9 +7,11 @@
 #include <sys/sysinfo.h>
 
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/strings/string_number_conversions.h"
-#include "chromecast/common/chromecast_switches.h"
+#include "base/thread_task_runner_handle.h"
+#include "chromecast/base/chromecast_switches.h"
 #include "chromecast/crash/cast_crash_keys.h"
 #include "chromecast/media/base/media_caps.h"
 #include "chromecast/renderer/cast_media_load_deferrer.h"
@@ -58,9 +60,8 @@ void PlatformPollFreemem(void) {
   }
 
   // Setup next poll.
-  base::MessageLoopProxy::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&PlatformPollFreemem),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::Bind(&PlatformPollFreemem),
       base::TimeDelta::FromMilliseconds(kPollingIntervalMS));
 }
 #endif
@@ -71,18 +72,27 @@ const blink::WebColor kColorBlack = 0xFF000000;
 
 class CastRenderViewObserver : content::RenderViewObserver {
  public:
-  explicit CastRenderViewObserver(content::RenderView* render_view);
+  CastRenderViewObserver(CastContentRendererClient* client,
+                         content::RenderView* render_view);
   ~CastRenderViewObserver() override {}
 
   void DidClearWindowObject(blink::WebLocalFrame* frame) override;
+
+ private:
+  CastContentRendererClient* const client_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastRenderViewObserver);
 };
 
-CastRenderViewObserver::CastRenderViewObserver(content::RenderView* render_view)
-    : content::RenderViewObserver(render_view) {
+CastRenderViewObserver::CastRenderViewObserver(
+    CastContentRendererClient* client,
+    content::RenderView* render_view)
+    : content::RenderViewObserver(render_view),
+      client_(client) {
 }
 
 void CastRenderViewObserver::DidClearWindowObject(blink::WebLocalFrame* frame) {
-  PlatformAddRendererNativeBindings(frame);
+  client_->AddRendererNativeBindings(frame);
 }
 
 }  // namespace
@@ -93,9 +103,18 @@ CastContentRendererClient::CastContentRendererClient() {
 CastContentRendererClient::~CastContentRendererClient() {
 }
 
+void CastContentRendererClient::AddRendererNativeBindings(
+    blink::WebLocalFrame* frame) {
+}
+
+std::vector<scoped_refptr<IPC::MessageFilter>>
+CastContentRendererClient::GetRendererMessageFilters() {
+  return std::vector<scoped_refptr<IPC::MessageFilter>>();
+}
+
 void CastContentRendererClient::RenderThreadStarted() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-#if defined(USE_NSS_CERTS)
+#if !defined(USE_OPENSSL)
   // Note: Copied from chrome_render_process_observer.cc to fix b/8676652.
   //
   // On platforms where the system NSS shared libraries are used,
@@ -120,7 +139,7 @@ void CastContentRendererClient::RenderThreadStarted() {
   }
 
   cast_observer_.reset(
-      new CastRenderProcessObserver(PlatformGetRendererMessageFilters()));
+      new CastRenderProcessObserver(GetRendererMessageFilters()));
 
   prescient_networking_dispatcher_.reset(
       new network_hints::PrescientNetworkingDispatcher());
@@ -160,19 +179,19 @@ void CastContentRendererClient::RenderViewCreated(
   }
 
   // Note: RenderView will own the lifetime of its observer.
-  new CastRenderViewObserver(render_view);
+  new CastRenderViewObserver(this, render_view);
 }
 
 void CastContentRendererClient::AddKeySystems(
     std::vector< ::media::KeySystemInfo>* key_systems) {
   AddChromecastKeySystems(key_systems);
-  AddChromecastPlatformKeySystems(key_systems);
 }
 
 #if !defined(OS_ANDROID)
 scoped_ptr<::media::RendererFactory>
 CastContentRendererClient::CreateMediaRendererFactory(
     ::content::RenderFrame* render_frame,
+    const scoped_refptr<::media::GpuVideoAcceleratorFactories>& gpu_factories,
     const scoped_refptr<::media::MediaLog>& media_log) {
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (!cmd_line->HasSwitch(switches::kEnableCmaMediaPipeline))
@@ -180,7 +199,7 @@ CastContentRendererClient::CreateMediaRendererFactory(
 
   return scoped_ptr<::media::RendererFactory>(
       new chromecast::media::ChromecastMediaRendererFactory(
-          media_log, render_frame->GetRoutingID()));
+          gpu_factories, media_log, render_frame->GetRoutingID()));
 }
 #endif
 

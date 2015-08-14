@@ -41,6 +41,7 @@
 #import "RTCMediaStreamTrack+Internal.h"
 #import "RTCPeerConnection+Internal.h"
 #import "RTCPeerConnectionDelegate.h"
+#import "RTCPeerConnectionInterface+Internal.h"
 #import "RTCVideoCapturer+Internal.h"
 #import "RTCVideoSource+Internal.h"
 #import "RTCVideoTrack+Internal.h"
@@ -52,7 +53,6 @@
 #include "talk/app/webrtc/videotrack.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/ssladapter.h"
-
 
 @implementation RTCPeerConnectionFactory {
   rtc::scoped_ptr<rtc::Thread> _signalingThread;
@@ -79,13 +79,23 @@
     _workerThread.reset(new rtc::Thread());
     result = _workerThread->Start();
     NSAssert(result, @"Failed to start worker thread.");
+
     _nativeFactory = webrtc::CreatePeerConnectionFactory(
-        _signalingThread.get(), _workerThread.get(), NULL, NULL, NULL);
+        _signalingThread.get(), _workerThread.get(), nullptr, nullptr, nullptr);
     NSAssert(_nativeFactory, @"Failed to initialize PeerConnectionFactory!");
     // Uncomment to get sensitive logs emitted (to stderr or logcat).
     // rtc::LogMessage::LogToDebug(rtc::LS_SENSITIVE);
   }
   return self;
+}
+
+- (RTCPeerConnection *)peerConnectionWithConfiguration:(RTCConfiguration *)configuration
+                                           constraints:(RTCMediaConstraints *)constraints
+                                              delegate:(id<RTCPeerConnectionDelegate>)delegate {
+  return [[RTCPeerConnection alloc] initWithFactory:self.nativeFactory.get()
+                                             config:configuration.nativeConfiguration
+                                        constraints:constraints.constraints
+                                           delegate:delegate];
 }
 
 - (RTCPeerConnection*)

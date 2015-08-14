@@ -29,9 +29,7 @@ config("rtc_base_config") {
 }
 
 config("rtc_base_chromium_config") {
-  defines = [
-    "NO_MAIN_THREAD_WRAPPING",
-  ]
+  defines = [ "NO_MAIN_THREAD_WRAPPING" ]
 }
 
 config("openssl_config") {
@@ -54,6 +52,7 @@ config("ios_config") {
     #"Foundation.framework",  # Already included in //build/config:default_libs.
     "Security.framework",
     "SystemConfiguration.framework",
+
     #"UIKit.framework",  # Already included in //build/config:default_libs.
   ]
 }
@@ -61,6 +60,7 @@ config("ios_config") {
 config("mac_config") {
   libs = [
     "Cocoa.framework",
+
     #"Foundation.framework",  # Already included in //build/config:default_libs.
     #"IOKit.framework",  # Already included in //build/config:default_libs.
     #"Security.framework",  # Already included in //build/config:default_libs.
@@ -79,9 +79,13 @@ if (is_linux && !build_with_chromium) {
   # WebRTC cannot use as we don't sync src/crypto from Chromium.
   group("linux_system_ssl") {
     if (use_openssl) {
-      deps = [ "//third_party/boringssl" ]
+      deps = [
+        "//third_party/boringssl",
+      ]
     } else {
-      deps = [ "//net/third_party/nss/ssl:libssl" ]
+      deps = [
+        "//net/third_party/nss/ssl:libssl",
+      ]
 
       public_configs = [
         "//net/third_party/nss/ssl:ssl_config",
@@ -110,6 +114,8 @@ static_library("rtc_base_approved") {
     "bitbuffer.h",
     "buffer.cc",
     "buffer.h",
+    "bufferqueue.cc",
+    "bufferqueue.h",
     "bytebuffer.cc",
     "bytebuffer.h",
     "byteorder.h",
@@ -129,6 +135,8 @@ static_library("rtc_base_approved") {
     "md5digest.h",
     "platform_file.cc",
     "platform_file.h",
+    "platform_thread.cc",
+    "platform_thread.h",
     "safe_conversions.h",
     "safe_conversions_impl.h",
     "stringencode.cc",
@@ -154,6 +162,8 @@ static_library("rtc_base_approved") {
     sources += [
       "basictypes.h",
       "constructormagic.h",
+      "logging.cc",
+      "logging.h",
     ]
   }
 }
@@ -176,9 +186,7 @@ static_library("rtc_base") {
     ":rtc_base_config",
   ]
 
-  defines = [
-    "LOGGING=1",
-  ]
+  defines = [ "LOGGING=1" ]
 
   sources = [
     "arraysize.h",
@@ -186,6 +194,9 @@ static_library("rtc_base") {
     "asyncfile.h",
     "asynchttprequest.cc",
     "asynchttprequest.h",
+    "asyncinvoker-inl.h",
+    "asyncinvoker.cc",
+    "asyncinvoker.h",
     "asyncpacketsocket.cc",
     "asyncpacketsocket.h",
     "asyncresolverinterface.cc",
@@ -342,17 +353,12 @@ static_library("rtc_base") {
     public_configs += [ ":rtc_base_chromium_config" ]
   } else {
     sources += [
-      "asyncinvoker.cc",
-      "asyncinvoker.h",
-      "asyncinvoker-inl.h",
       "bandwidthsmoother.cc",
       "bandwidthsmoother.h",
       "bind.h",
       "bind.h.pump",
       "callback.h",
       "callback.h.pump",
-      "filelock.cc",
-      "filelock.h",
       "fileutils_mock.h",
       "genericslot.h",
       "genericslot.h.pump",
@@ -360,8 +366,6 @@ static_library("rtc_base") {
       "httpserver.h",
       "json.cc",
       "json.h",
-      "logging.cc",
-      "logging.h",
       "mathutils.h",
       "multipart.cc",
       "multipart.h",
@@ -380,8 +384,8 @@ static_library("rtc_base") {
       "refcount.h",
       "referencecountedsingletonfactory.h",
       "rollingaccumulator.h",
-      "scopedptrcollection.h",
       "scoped_ref_ptr.h",
+      "scopedptrcollection.h",
       "sec_buffer.h",
       "sharedexclusivelock.cc",
       "sharedexclusivelock.h",
@@ -396,8 +400,8 @@ static_library("rtc_base") {
       "virtualsocketserver.cc",
       "virtualsocketserver.h",
       "window.h",
-      "windowpickerfactory.h",
       "windowpicker.h",
+      "windowpickerfactory.h",
     ]
 
     deps += [ "..:webrtc_common" ]
@@ -522,12 +526,17 @@ static_library("rtc_base") {
 
     libs += [
       "log",
-      "GLESv2"
+      "GLESv2",
     ]
   }
 
   if (is_ios) {
     all_dependent_configs += [ ":ios_config" ]
+
+    sources += [
+      "macconversion.cc",
+      "macconversion.h",
+    ]
   }
 
   if (use_x11) {

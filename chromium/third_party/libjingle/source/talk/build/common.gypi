@@ -34,7 +34,6 @@
     # TODO(ronghuawu): For now, disable the Chrome plugins, which causes a
     # flood of chromium-style warnings.
     'clang_use_chrome_plugins%': 0,
-    'libpeer_target_type%': 'static_library',
     'conditions': [
       ['OS=="android" or OS=="linux"', {
         'java_home%': '<!(python -c "import os; dir=os.getenv(\'JAVA_HOME\', \'/usr/lib/jvm/java-7-openjdk-amd64\'); assert os.path.exists(os.path.join(dir, \'include/jni.h\')), \'Point \\$JAVA_HOME or the java_home gyp variable to a directory containing include/jni.h!\'; print dir")',
@@ -79,20 +78,22 @@
       'HAVE_WEBRTC_VOICE',
     ],
     'conditions': [
-      # TODO(ronghuawu): Support dynamic library build.
-      ['"<(libpeer_target_type)"=="static_library"', {
-        'defines': [ 'LIBPEERCONNECTION_LIB=1' ],
-      }],
       ['OS=="linux"', {
         'defines': [
           'LINUX',
           'WEBRTC_LINUX',
+        ],
+        # Remove Chromium's disabling of the -Wformat warning.
+        'cflags!': [
+          '-Wno-format',
         ],
         'conditions': [
           ['clang==1', {
             'cflags': [
               '-Wall',
               '-Wextra',
+              '-Wformat',
+              '-Wformat-security',
               '-Wimplicit-fallthrough',
               '-Wmissing-braces',
               '-Wreorder',

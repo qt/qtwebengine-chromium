@@ -5,12 +5,13 @@ jln@chromium.org
 per-file sandbox_win.cc=set noparent
 per-file sandbox_win.cc=jschuh@chromium.org
 per-file sandbox_win.cc=cpu@chromium.org
+per-file sandbox_win.cc=wfh@chromium.org
 
 # Mac Sandbox.
-per-file sandbox_init_mac.*=jeremy@chromium.org
-per-file sandbox_mac*=jeremy@chromium.org
+per-file sandbox_init_mac.*=rsesek@chromium.org
+per-file sandbox_mac*=rsesek@chromium.org
 per-file *.sb=set noparent
-per-file *.sb=jeremy@chromium.org
+per-file *.sb=rsesek@chromium.org
 
 per-file pepper*=ananta@chromium.org
 per-file pepper*=bauerb@chromium.org

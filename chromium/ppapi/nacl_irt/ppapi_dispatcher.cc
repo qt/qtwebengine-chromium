@@ -7,16 +7,11 @@
 #include <map>
 #include <set>
 
-#include "build/build_config.h"
-// Need to include this before most other files because it defines
-// IPC_MESSAGE_LOG_ENABLED. We need to use it to define
-// IPC_MESSAGE_MACROS_LOG_ENABLED so ppapi_messages.h will generate the
-// ViewMsgLog et al. functions.
-
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "build/build_config.h"
 #include "components/tracing/child_trace_message_filter.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_logging.h"
@@ -29,34 +24,20 @@
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
-#include "ppapi/proxy/resource_reply_thread_registrar.h"
-
-#if defined(IPC_MESSAGE_LOG_ENABLED)
-#include "base/containers/hash_tables.h"
-
-LogFunctionMap g_log_function_mapping;
-
-#define IPC_MESSAGE_MACROS_LOG_ENABLED
-#define IPC_LOG_TABLE_ADD_ENTRY(msg_id, logger) \
-  g_log_function_mapping[msg_id] = logger
-
-#endif
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
 
 namespace ppapi {
 
-PpapiDispatcher::PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop,
-                                 base::WaitableEvent* shutdown_event,
-                                 int browser_ipc_fd,
-                                 int renderer_ipc_fd)
+PpapiDispatcher::PpapiDispatcher(
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+    base::WaitableEvent* shutdown_event,
+    int browser_ipc_fd,
+    int renderer_ipc_fd)
     : next_plugin_dispatcher_id_(0),
-      message_loop_(io_loop),
+      task_runner_(io_task_runner),
       shutdown_event_(shutdown_event),
       renderer_ipc_fd_(renderer_ipc_fd) {
-#if defined(IPC_MESSAGE_LOG_ENABLED)
-  IPC::Logging::set_log_function_map(&g_log_function_mapping);
-#endif
-
   IPC::ChannelHandle channel_handle(
       "NaCl IPC", base::FileDescriptor(browser_ipc_fd, false));
 
@@ -65,20 +46,19 @@ PpapiDispatcher::PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop,
   // ensures that the filters won't miss any messages received by
   // the channel.
   channel_ =
-      IPC::SyncChannel::Create(this, GetIPCMessageLoop(), GetShutdownEvent());
+      IPC::SyncChannel::Create(this, GetIPCTaskRunner(), GetShutdownEvent());
   scoped_refptr<ppapi::proxy::PluginMessageFilter> plugin_filter(
       new ppapi::proxy::PluginMessageFilter(
           NULL, globals->resource_reply_thread_registrar()));
   channel_->AddFilter(plugin_filter.get());
   globals->RegisterResourceMessageFilters(plugin_filter.get());
 
-  channel_->AddFilter(
-      new tracing::ChildTraceMessageFilter(message_loop_.get()));
+  channel_->AddFilter(new tracing::ChildTraceMessageFilter(task_runner_.get()));
   channel_->Init(channel_handle, IPC::Channel::MODE_SERVER, true);
 }
 
-base::MessageLoopProxy* PpapiDispatcher::GetIPCMessageLoop() {
-  return message_loop_.get();
+base::SingleThreadTaskRunner* PpapiDispatcher::GetIPCTaskRunner() {
+  return task_runner_.get();
 }
 
 base::WaitableEvent* PpapiDispatcher::GetShutdownEvent() {
@@ -90,6 +70,12 @@ IPC::PlatformFileForTransit PpapiDispatcher::ShareHandleWithRemote(
     base::ProcessId peer_pid,
     bool should_close_source) {
   return IPC::InvalidPlatformFileForTransit();
+}
+
+base::SharedMemoryHandle PpapiDispatcher::ShareSharedMemoryHandleWithRemote(
+    const base::SharedMemoryHandle& handle,
+    base::ProcessId remote_pid) {
+  return base::SharedMemory::NULLHandle();
 }
 
 std::set<PP_Instance>* PpapiDispatcher::GetGloballySeenInstanceIDSet() {
@@ -126,7 +112,7 @@ std::string PpapiDispatcher::GetUILanguage() {
   return std::string();
 }
 
-void PpapiDispatcher::PreCacheFont(const void* logfontw) {
+void PpapiDispatcher::PreCacheFontForFlash(const void* logfontw) {
   NOTIMPLEMENTED();
 }
 
@@ -216,7 +202,7 @@ void PpapiDispatcher::OnMsgInitializeNaClDispatcher(
 void PpapiDispatcher::OnPluginDispatcherMessageReceived(
     const IPC::Message& msg) {
   // The first parameter should be a plugin dispatcher ID.
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   uint32 id = 0;
   if (!iter.ReadUInt32(&id)) {
     NOTREACHED();

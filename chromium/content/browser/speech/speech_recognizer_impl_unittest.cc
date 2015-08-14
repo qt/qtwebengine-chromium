@@ -19,7 +19,6 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using base::MessageLoopProxy;
 using media::AudioInputController;
 using media::AudioInputStream;
 using media::AudioManager;
@@ -58,7 +57,7 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
     recognizer_ = new SpeechRecognizerImpl(
         this, kTestingSessionId, false, false, sr_engine);
     audio_manager_.reset(new media::MockAudioManager(
-        base::MessageLoop::current()->message_loop_proxy().get()));
+        base::MessageLoop::current()->task_runner().get()));
     recognizer_->SetAudioManagerForTesting(audio_manager_.get());
 
     int audio_packet_length_bytes =
@@ -261,9 +260,7 @@ TEST_F(SpeechRecognizerImplTest, StopWithData) {
   ASSERT_TRUE(fetcher);
 
   fetcher->set_url(fetcher->GetOriginalURL());
-  net::URLRequestStatus status;
-  status.set_status(net::URLRequestStatus::SUCCESS);
-  fetcher->set_status(status);
+  fetcher->set_status(net::URLRequestStatus());
   fetcher->set_response_code(200);
   fetcher->SetResponseString(
       "{\"status\":0,\"hypotheses\":[{\"utterance\":\"123\"}]}");
@@ -317,10 +314,8 @@ TEST_F(SpeechRecognizerImplTest, ConnectionError) {
 
   // Issue the network callback to complete the process.
   fetcher->set_url(fetcher->GetOriginalURL());
-  net::URLRequestStatus status;
-  status.set_status(net::URLRequestStatus::FAILED);
-  status.set_error(net::ERR_CONNECTION_REFUSED);
-  fetcher->set_status(status);
+  fetcher->set_status(
+      net::URLRequestStatus::FromError(net::ERR_CONNECTION_REFUSED));
   fetcher->set_response_code(0);
   fetcher->SetResponseString(std::string());
   fetcher->delegate()->OnURLFetchComplete(fetcher);
@@ -354,9 +349,7 @@ TEST_F(SpeechRecognizerImplTest, ServerError) {
 
   // Issue the network callback to complete the process.
   fetcher->set_url(fetcher->GetOriginalURL());
-  net::URLRequestStatus status;
-  status.set_status(net::URLRequestStatus::SUCCESS);
-  fetcher->set_status(status);
+  fetcher->set_status(net::URLRequestStatus());
   fetcher->set_response_code(500);
   fetcher->SetResponseString("Internal Server Error");
   fetcher->delegate()->OnURLFetchComplete(fetcher);

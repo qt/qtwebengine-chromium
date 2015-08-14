@@ -37,6 +37,7 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/FrameRequestCallback.h"
+#include "core/dom/SandboxFlags.h"
 #include "core/editing/Editor.h"
 #include "core/events/DOMWindowEventQueue.h"
 #include "core/events/HashChangeEvent.h"
@@ -55,16 +56,15 @@
 #include "core/frame/Settings.h"
 #include "core/frame/SuspendableTimer.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/CreateWindow.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
@@ -118,6 +118,7 @@ public:
         , m_targetOrigin(targetOrigin)
         , m_stackTrace(stackTrace)
         , m_userGestureToken(userGestureToken)
+        , m_preventDestruction(false)
     {
         m_asyncOperationId = InspectorInstrumentation::traceAsyncOperationStarting(executionContext(), "postMessage");
     }
@@ -126,7 +127,19 @@ public:
     SecurityOrigin* targetOrigin() const { return m_targetOrigin.get(); }
     ScriptCallStack* stackTrace() const { return m_stackTrace.get(); }
     UserGestureToken* userGestureToken() const { return m_userGestureToken.get(); }
+    virtual void stop() override
+    {
+        SuspendableTimer::stop();
 
+        if (!m_preventDestruction) {
+            // Will destroy this object
+            m_window->removePostMessageTimer(this);
+        }
+    }
+
+    // Eager finalization is needed to promptly stop this timer object.
+    // (see DOMTimer comment for more.)
+    EAGERLY_FINALIZE();
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_event);
@@ -139,8 +152,12 @@ private:
     virtual void fired() override
     {
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncOperationCompletedCallbackStarting(executionContext(), m_asyncOperationId);
+        // Prevent calls to stop triggered from the event handler to
+        // kill this object.
+        m_preventDestruction = true;
         m_window->postMessageTimerFired(this);
-        // This object is deleted now.
+        // Will destroy this object
+        m_window->removePostMessageTimer(this);
         InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
     }
 
@@ -150,6 +167,7 @@ private:
     RefPtrWillBeMember<ScriptCallStack> m_stackTrace;
     RefPtr<UserGestureToken> m_userGestureToken;
     int m_asyncOperationId;
+    bool m_preventDestruction;
 };
 
 static void updateSuddenTerminationStatus(LocalDOMWindow* domWindow, bool addedListener, FrameLoaderClient::SuddenTerminationDisablerType disablerType)
@@ -271,7 +289,7 @@ LocalDOMWindow::LocalDOMWindow(LocalFrame& frame)
 #endif
 {
 #if ENABLE(OILPAN)
-    ThreadState::current()->registerPreFinalizer(*this);
+    ThreadState::current()->registerPreFinalizer(this);
 #endif
 }
 
@@ -432,17 +450,16 @@ void LocalDOMWindow::dispose()
     // Oilpan: should the LocalDOMWindow be GCed along with its LocalFrame without the
     // frame having first notified its observers of imminent destruction, the
     // LocalDOMWindow will not have had an opportunity to remove event listeners.
-    // Do that here by way of a prefinalizing action.
+    //
+    // Arrange for that removal to happen using a prefinalizer action. Making LocalDOMWindow
+    // eager finalizable is problematic as other eagerly finalized objects may well
+    // want to access their associated LocalDOMWindow from their destructors.
     //
     // (Non-Oilpan, LocalDOMWindow::reset() will always be invoked, the last opportunity
-    // being via ~LocalFrame's setDOMWindow() call.)
+    // being via ~LocalFrame's setDOMWindow() call. Asserted for in the destructor.)
     if (!frame())
         return;
 
-    // (Prefinalizing actions run to completion before the Oilpan GC start to lazily sweep,
-    // so keeping them short is worthwhile. Something that's worth keeping in mind when
-    // working out where to best place some actions that have to be performed very late
-    // on in LocalDOMWindow's lifetime.)
     removeAllEventListeners();
 }
 
@@ -554,7 +571,7 @@ int LocalDOMWindow::orientation() const
     if (!frame() || !frame()->host())
         return 0;
 
-    int orientation = frame()->host()->chrome().screenInfo().orientationAngle;
+    int orientation = frame()->host()->chromeClient().screenInfo().orientationAngle;
     // For backward compatibility, we want to return a value in the range of
     // [-90; 180] instead of [0; 360[ because window.orientation used to behave
     // like that in WebKit (this is a WebKit proprietary API).
@@ -661,7 +678,6 @@ void LocalDOMWindow::schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent> ev
 void LocalDOMWindow::postMessageTimerFired(PostMessageTimer* timer)
 {
     if (!isCurrentlyDisplayedInFrame()) {
-        m_postMessageTimers.remove(timer);
         return;
     }
 
@@ -671,6 +687,10 @@ void LocalDOMWindow::postMessageTimerFired(PostMessageTimer* timer)
 
     event->entangleMessagePorts(document());
     dispatchMessageEventWithOriginCheck(timer->targetOrigin(), event, timer->stackTrace());
+}
+
+void LocalDOMWindow::removePostMessageTimer(PostMessageTimer* timer)
+{
     m_postMessageTimers.remove(timer);
 }
 
@@ -678,7 +698,7 @@ void LocalDOMWindow::dispatchMessageEventWithOriginCheck(SecurityOrigin* intende
 {
     if (intendedTargetOrigin) {
         // Check target origin now since the target document may have changed since the timer was scheduled.
-        if (!intendedTargetOrigin->isSameSchemeHostPort(document()->securityOrigin())) {
+        if (!intendedTargetOrigin->isSameSchemeHostPortAndSuborigin(document()->securityOrigin())) {
             String message = ExceptionMessages::failedToExecute("postMessage", "DOMWindow", "The target origin provided ('" + intendedTargetOrigin->toString() + "') does not match the recipient window's origin ('" + document()->securityOrigin()->toString() + "').");
             RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
             consoleMessage->setCallStack(stackTrace);
@@ -728,53 +748,13 @@ void LocalDOMWindow::focus(ExecutionContext* context)
 
     // If we're a top level window, bring the window to the front.
     if (frame()->isMainFrame() && allowFocus)
-        host->chrome().focus();
+        host->chromeClient().focus();
 
     frame()->eventHandler().focusDocumentView();
 }
 
 void LocalDOMWindow::blur()
 {
-}
-
-void LocalDOMWindow::close(ExecutionContext* context)
-{
-    if (!frame() || !frame()->isMainFrame())
-        return;
-
-    Page* page = frame()->page();
-    if (!page)
-        return;
-
-    if (context) {
-        ASSERT(isMainThread());
-        Document* activeDocument = toDocument(context);
-        if (!activeDocument)
-            return;
-
-        if (!activeDocument->frame() || !activeDocument->frame()->canNavigate(*frame()))
-            return;
-    }
-
-    Settings* settings = frame()->settings();
-    bool allowScriptsToCloseWindows = settings && settings->allowScriptsToCloseWindows();
-
-    if (!page->openedByDOM() && frame()->loader().client()->backForwardLength() > 1 && !allowScriptsToCloseWindows) {
-        frameConsole()->addMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Scripts may close only the windows that were opened by it."));
-        return;
-    }
-
-    if (!frame()->loader().shouldClose())
-        return;
-
-    InspectorInstrumentation::willCloseWindow(context);
-
-    page->chrome().closeWindowSoon();
-    // So as to make window.closed return the expected result
-    // after window.close(), separately record the to-be-closed
-    // state of this window. Scripts may access window.closed
-    // before the deferred close operation has gone ahead.
-    m_windowIsClosing = true;
 }
 
 void LocalDOMWindow::print()
@@ -786,15 +766,20 @@ void LocalDOMWindow::print()
     if (!host)
         return;
 
+    if (frame()->document()->isSandboxed(SandboxModals)) {
+        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
+        if (RuntimeEnabledFeatures::sandboxBlocksModalsEnabled()) {
+            frameConsole()->addMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Ignored call to 'print()'. The document is sandboxed, and the 'allow-modals' keyword is not set."));
+            return;
+        }
+    }
+
     if (frame()->isLoading()) {
         m_shouldPrintWhenFinishedLoading = true;
         return;
     }
     m_shouldPrintWhenFinishedLoading = false;
-    host->chrome().print(frame());
-
-    if (frame()->document()->sandboxFlags())
-        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
+    host->chromeClient().print(frame());
 }
 
 void LocalDOMWindow::stop()
@@ -809,16 +794,21 @@ void LocalDOMWindow::alert(const String& message)
     if (!frame())
         return;
 
+    if (frame()->document()->isSandboxed(SandboxModals)) {
+        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
+        if (RuntimeEnabledFeatures::sandboxBlocksModalsEnabled()) {
+            frameConsole()->addMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Ignored call to 'alert()'. The document is sandboxed, and the 'allow-modals' keyword is not set."));
+            return;
+        }
+    }
+
     frame()->document()->updateLayoutTreeIfNeeded();
 
     FrameHost* host = frame()->host();
     if (!host)
         return;
 
-    if (frame()->document()->sandboxFlags())
-        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
-
-    host->chrome().runJavaScriptAlert(frame(), message);
+    host->chromeClient().openJavaScriptAlert(frame(), message);
 }
 
 bool LocalDOMWindow::confirm(const String& message)
@@ -826,16 +816,21 @@ bool LocalDOMWindow::confirm(const String& message)
     if (!frame())
         return false;
 
+    if (frame()->document()->isSandboxed(SandboxModals)) {
+        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
+        if (RuntimeEnabledFeatures::sandboxBlocksModalsEnabled()) {
+            frameConsole()->addMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Ignored call to 'confirm()'. The document is sandboxed, and the 'allow-modals' keyword is not set."));
+            return false;
+        }
+    }
+
     frame()->document()->updateLayoutTreeIfNeeded();
 
     FrameHost* host = frame()->host();
     if (!host)
         return false;
 
-    if (frame()->document()->sandboxFlags())
-        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
-
-    return host->chrome().runJavaScriptConfirm(frame(), message);
+    return host->chromeClient().openJavaScriptConfirm(frame(), message);
 }
 
 String LocalDOMWindow::prompt(const String& message, const String& defaultValue)
@@ -843,17 +838,22 @@ String LocalDOMWindow::prompt(const String& message, const String& defaultValue)
     if (!frame())
         return String();
 
+    if (frame()->document()->isSandboxed(SandboxModals)) {
+        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
+        if (RuntimeEnabledFeatures::sandboxBlocksModalsEnabled()) {
+            frameConsole()->addMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Ignored call to 'prompt()'. The document is sandboxed, and the 'allow-modals' keyword is not set."));
+            return String();
+        }
+    }
+
     frame()->document()->updateLayoutTreeIfNeeded();
 
     FrameHost* host = frame()->host();
     if (!host)
         return String();
 
-    if (frame()->document()->sandboxFlags())
-        UseCounter::count(frame()->document(), UseCounter::DialogInSandboxedContext);
-
     String returnValue;
-    if (host->chrome().runJavaScriptPrompt(frame(), message, defaultValue, returnValue))
+    if (host->chromeClient().openJavaScriptPrompt(frame(), message, defaultValue, returnValue))
         return returnValue;
 
     return String();
@@ -888,8 +888,8 @@ int LocalDOMWindow::outerHeight() const
         return 0;
 
     if (host->settings().reportScreenSizeInPhysicalPixelsQuirk())
-        return lroundf(host->chrome().windowRect().height() * host->deviceScaleFactor());
-    return host->chrome().windowRect().height();
+        return lroundf(host->chromeClient().windowRect().height() * host->deviceScaleFactor());
+    return host->chromeClient().windowRect().height();
 }
 
 int LocalDOMWindow::outerWidth() const
@@ -902,8 +902,8 @@ int LocalDOMWindow::outerWidth() const
         return 0;
 
     if (host->settings().reportScreenSizeInPhysicalPixelsQuirk())
-        return lroundf(host->chrome().windowRect().width() * host->deviceScaleFactor());
-    return host->chrome().windowRect().width();
+        return lroundf(host->chromeClient().windowRect().width() * host->deviceScaleFactor());
+    return host->chromeClient().windowRect().width();
 }
 
 static FloatSize getViewportSize(LocalFrame* frame)
@@ -962,8 +962,8 @@ int LocalDOMWindow::screenX() const
         return 0;
 
     if (host->settings().reportScreenSizeInPhysicalPixelsQuirk())
-        return lroundf(host->chrome().windowRect().x() * host->deviceScaleFactor());
-    return host->chrome().windowRect().x();
+        return lroundf(host->chromeClient().windowRect().x() * host->deviceScaleFactor());
+    return host->chromeClient().windowRect().x();
 }
 
 int LocalDOMWindow::screenY() const
@@ -976,8 +976,8 @@ int LocalDOMWindow::screenY() const
         return 0;
 
     if (host->settings().reportScreenSizeInPhysicalPixelsQuirk())
-        return lroundf(host->chrome().windowRect().y() * host->deviceScaleFactor());
-    return host->chrome().windowRect().y();
+        return lroundf(host->chromeClient().windowRect().y() * host->deviceScaleFactor());
+    return host->chromeClient().windowRect().y();
 }
 
 double LocalDOMWindow::scrollX() const
@@ -1048,7 +1048,7 @@ void LocalDOMWindow::setStatus(const String& string)
         return;
 
     ASSERT(frame()->document()); // Client calls shouldn't be made when the frame is in inconsistent state.
-    host->chrome().setStatusbarText(frame(), m_status);
+    host->chromeClient().setStatusbarText(m_status);
 }
 
 void LocalDOMWindow::setDefaultStatus(const String& string)
@@ -1063,7 +1063,7 @@ void LocalDOMWindow::setDefaultStatus(const String& string)
         return;
 
     ASSERT(frame()->document()); // Client calls shouldn't be made when the frame is in inconsistent state.
-    host->chrome().setStatusbarText(frame(), m_defaultStatus);
+    host->chromeClient().setStatusbarText(m_defaultStatus);
 }
 
 Document* LocalDOMWindow::document() const
@@ -1128,7 +1128,7 @@ void LocalDOMWindow::scrollBy(double x, double y, ScrollBehavior scrollBehavior)
     DoublePoint currentOffset = view->scrollableArea()->scrollPositionDouble();
     DoubleSize scaledDelta(x * frame()->pageZoomFactor(), y * frame()->pageZoomFactor());
 
-    view->scrollableArea()->setScrollPosition(currentOffset + scaledDelta, scrollBehavior);
+    view->scrollableArea()->setScrollPosition(currentOffset + scaledDelta, ProgrammaticScroll, scrollBehavior);
 }
 
 void LocalDOMWindow::scrollBy(const ScrollToOptions& scrollToOptions) const
@@ -1162,7 +1162,7 @@ void LocalDOMWindow::scrollTo(double x, double y) const
         document()->updateLayoutIgnorePendingStylesheets();
 
     DoublePoint layoutPos(x * frame()->pageZoomFactor(), y * frame()->pageZoomFactor());
-    view->scrollableArea()->setScrollPosition(layoutPos, ScrollBehaviorAuto);
+    view->scrollableArea()->setScrollPosition(layoutPos, ProgrammaticScroll, ScrollBehaviorAuto);
 }
 
 void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
@@ -1198,14 +1198,11 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
 
     ScrollBehavior scrollBehavior = ScrollBehaviorAuto;
     ScrollableArea::scrollBehaviorFromString(scrollToOptions.behavior(), scrollBehavior);
-    view->scrollableArea()->setScrollPosition(DoublePoint(scaledX, scaledY), scrollBehavior);
+    view->scrollableArea()->setScrollPosition(DoublePoint(scaledX, scaledY), ProgrammaticScroll, scrollBehavior);
 }
 
-void LocalDOMWindow::moveBy(int x, int y, bool hasX, bool hasY) const
+void LocalDOMWindow::moveBy(int x, int y) const
 {
-    if (!hasX || !hasY)
-        UseCounter::count(document(), UseCounter::WindowMoveResizeMissingArguments);
-
     if (!frame() || !frame()->isMainFrame())
         return;
 
@@ -1213,17 +1210,14 @@ void LocalDOMWindow::moveBy(int x, int y, bool hasX, bool hasY) const
     if (!host)
         return;
 
-    IntRect windowRect = host->chrome().windowRect();
+    IntRect windowRect = host->chromeClient().windowRect();
     windowRect.move(x, y);
     // Security check (the spec talks about UniversalBrowserWrite to disable this check...)
-    host->chrome().setWindowRect(windowRect);
+    host->chromeClient().setWindowRectWithAdjustment(windowRect);
 }
 
-void LocalDOMWindow::moveTo(int x, int y, bool hasX, bool hasY) const
+void LocalDOMWindow::moveTo(int x, int y) const
 {
-    if (!hasX || !hasY)
-        UseCounter::count(document(), UseCounter::WindowMoveResizeMissingArguments);
-
     if (!frame() || !frame()->isMainFrame())
         return;
 
@@ -1231,17 +1225,14 @@ void LocalDOMWindow::moveTo(int x, int y, bool hasX, bool hasY) const
     if (!host)
         return;
 
-    IntRect windowRect = host->chrome().windowRect();
-    windowRect.setLocation(IntPoint(hasX ? x : windowRect.x(), hasY ? y : windowRect.y()));
+    IntRect windowRect = host->chromeClient().windowRect();
+    windowRect.setLocation(IntPoint(x, y));
     // Security check (the spec talks about UniversalBrowserWrite to disable this check...)
-    host->chrome().setWindowRect(windowRect);
+    host->chromeClient().setWindowRectWithAdjustment(windowRect);
 }
 
-void LocalDOMWindow::resizeBy(int x, int y, bool hasX, bool hasY) const
+void LocalDOMWindow::resizeBy(int x, int y) const
 {
-    if (!hasX || !hasY)
-        UseCounter::count(document(), UseCounter::WindowMoveResizeMissingArguments);
-
     if (!frame() || !frame()->isMainFrame())
         return;
 
@@ -1249,17 +1240,14 @@ void LocalDOMWindow::resizeBy(int x, int y, bool hasX, bool hasY) const
     if (!host)
         return;
 
-    IntRect fr = host->chrome().windowRect();
+    IntRect fr = host->chromeClient().windowRect();
     IntSize dest = fr.size() + IntSize(x, y);
     IntRect update(fr.location(), dest);
-    host->chrome().setWindowRect(update);
+    host->chromeClient().setWindowRectWithAdjustment(update);
 }
 
-void LocalDOMWindow::resizeTo(int width, int height, bool hasWidth, bool hasHeight) const
+void LocalDOMWindow::resizeTo(int width, int height) const
 {
-    if (!hasWidth || !hasHeight)
-        UseCounter::count(document(), UseCounter::WindowMoveResizeMissingArguments);
-
     if (!frame() || !frame()->isMainFrame())
         return;
 
@@ -1267,10 +1255,10 @@ void LocalDOMWindow::resizeTo(int width, int height, bool hasWidth, bool hasHeig
     if (!host)
         return;
 
-    IntRect fr = host->chrome().windowRect();
-    IntSize dest = IntSize(hasWidth ? width : fr.width(), hasHeight ? height : fr.height());
+    IntRect fr = host->chromeClient().windowRect();
+    IntSize dest = IntSize(width, height);
     IntRect update(fr.location(), dest);
-    host->chrome().setWindowRect(update);
+    host->chromeClient().setWindowRectWithAdjustment(update);
 }
 
 int LocalDOMWindow::requestAnimationFrame(FrameRequestCallback* callback)
@@ -1293,13 +1281,6 @@ void LocalDOMWindow::cancelAnimationFrame(int id)
 {
     if (Document* d = document())
         d->cancelAnimationFrame(id);
-}
-
-DOMWindowCSS* LocalDOMWindow::css() const
-{
-    if (!m_css)
-        m_css = DOMWindowCSS::create();
-    return m_css.get();
 }
 
 bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> prpListener, bool useCapture)
@@ -1361,7 +1342,7 @@ void LocalDOMWindow::dispatchLoadEvent()
     if (frame() && frame()->loader().documentLoader() && !frame()->loader().documentLoader()->timing().loadEventStart()) {
         // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed while dispatching
         // the event, so protect it to prevent writing the end time into freed memory.
-        RefPtr<DocumentLoader> documentLoader = frame()->loader().documentLoader();
+        RefPtrWillBeRawPtr<DocumentLoader> documentLoader = frame()->loader().documentLoader();
         DocumentLoadTiming& timing = documentLoader->timing();
         timing.markLoadEventStart();
         dispatchEvent(loadEvent, document());
@@ -1376,7 +1357,7 @@ void LocalDOMWindow::dispatchLoadEvent()
     if (owner)
         owner->dispatchLoad();
 
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "MarkLoad", TRACE_EVENT_SCOPE_THREAD, "data", InspectorMarkLoadEvent::data(frame()));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "MarkLoad", TRACE_EVENT_SCOPE_THREAD, "data", InspectorMarkLoadEvent::data(frame()));
     InspectorInstrumentation::loadEventFired(frame());
 }
 
@@ -1391,7 +1372,7 @@ bool LocalDOMWindow::dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassR
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);
 
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "data", InspectorEventDispatchEvent::data(*event));
+    TRACE_EVENT1("devtools.timeline", "EventDispatch", "data", InspectorEventDispatchEvent::data(*event));
     return fireEventListeners(event.get());
 }
 
@@ -1473,13 +1454,11 @@ PassRefPtrWillBeRawPtr<DOMWindow> LocalDOMWindow::open(const String& urlString, 
         if (urlString.isEmpty())
             return targetFrame->domWindow();
 
-        targetFrame->navigate(*activeDocument, completedURL, false);
+        targetFrame->navigate(*activeDocument, completedURL, false, UserGestureStatus::None);
         return targetFrame->domWindow();
     }
 
-    WindowFeatures windowFeatures(windowFeaturesString);
-    LocalFrame* result = createWindow(urlString, frameName, windowFeatures, *callingWindow, *firstFrame, *frame());
-    return result ? result->domWindow() : nullptr;
+    return createWindow(urlString, frameName, WindowFeatures(windowFeaturesString), *callingWindow, *firstFrame, *frame());
 }
 
 DEFINE_TRACE(LocalDOMWindow)
@@ -1500,7 +1479,6 @@ DEFINE_TRACE(LocalDOMWindow)
     visitor->trace(m_navigator);
     visitor->trace(m_media);
     visitor->trace(m_applicationCache);
-    visitor->trace(m_css);
     visitor->trace(m_eventQueue);
     visitor->trace(m_postMessageTimers);
     HeapSupplementable<LocalDOMWindow>::trace(visitor);

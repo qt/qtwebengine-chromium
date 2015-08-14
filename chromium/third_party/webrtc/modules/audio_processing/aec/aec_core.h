@@ -51,14 +51,14 @@ typedef struct Stats {
 
 typedef struct AecCore AecCore;
 
-int WebRtcAec_CreateAec(AecCore** aec);
+AecCore* WebRtcAec_CreateAec();  // Returns NULL on error.
 void WebRtcAec_FreeAec(AecCore* aec);
 int WebRtcAec_InitAec(AecCore* aec, int sampFreq);
 void WebRtcAec_InitAec_SSE2(void);
 #if defined(MIPS_FPU_LE)
 void WebRtcAec_InitAec_mips(void);
 #endif
-#if defined(WEBRTC_DETECT_ARM_NEON) || defined(WEBRTC_ARCH_ARM_NEON)
+#if defined(WEBRTC_DETECT_NEON) || defined(WEBRTC_HAS_NEON)
 void WebRtcAec_InitAec_neon(void);
 #endif
 
@@ -103,19 +103,17 @@ void WebRtcAec_SetConfigCore(AecCore* self,
                              int delay_logging);
 
 // Non-zero enables, zero disables.
-void WebRtcAec_enable_reported_delay(AecCore* self, int enable);
+void WebRtcAec_enable_delay_agnostic(AecCore* self, int enable);
 
-// Returns non-zero if reported delay is enabled and zero if disabled.
-int WebRtcAec_reported_delay_enabled(AecCore* self);
+// Returns non-zero if delay agnostic (i.e., signal based delay estimation) is
+// enabled and zero if disabled.
+int WebRtcAec_delay_agnostic_enabled(AecCore* self);
 
-// We now interpret delay correction to mean an extended filter length feature.
-// We reuse the delay correction infrastructure to avoid changes through to
-// libjingle. See details along with |DelayCorrection| in
-// echo_cancellation_impl.h. Non-zero enables, zero disables.
-void WebRtcAec_enable_delay_correction(AecCore* self, int enable);
+// Enables or disables extended filter mode. Non-zero enables, zero disables.
+void WebRtcAec_enable_extended_filter(AecCore* self, int enable);
 
-// Returns non-zero if delay correction is enabled and zero if disabled.
-int WebRtcAec_delay_correction_enabled(AecCore* self);
+// Returns non-zero if extended filter mode is enabled and zero if disabled.
+int WebRtcAec_extended_filter_enabled(AecCore* self);
 
 // Returns the current |system_delay|, i.e., the buffered difference between
 // far-end and near-end.

@@ -49,7 +49,6 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorIdentifiers.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
@@ -109,7 +108,7 @@ public:
         , m_decoder(decoder)
         , m_callback(callback)
     {
-        m_loader = adoptPtr(new FileReaderLoader(FileReaderLoader::ReadByClient, this));
+        m_loader = FileReaderLoader::create(FileReaderLoader::ReadByClient, this);
     }
 
     virtual ~InspectorFileReaderLoaderClient() { }
@@ -197,9 +196,8 @@ static PassRefPtr<TypeBuilder::Network::ResourceTiming> buildObjectForTiming(con
         .setConnectEnd(timing.calculateMillisecondDelta(timing.connectEnd()))
         .setSslStart(timing.calculateMillisecondDelta(timing.sslStart()))
         .setSslEnd(timing.calculateMillisecondDelta(timing.sslEnd()))
-        .setServiceWorkerFetchStart(timing.calculateMillisecondDelta(timing.serviceWorkerFetchStart()))
-        .setServiceWorkerFetchReady(timing.calculateMillisecondDelta(timing.serviceWorkerFetchReady()))
-        .setServiceWorkerFetchEnd(timing.calculateMillisecondDelta(timing.serviceWorkerFetchEnd()))
+        .setWorkerStart(timing.calculateMillisecondDelta(timing.workerStart()))
+        .setWorkerReady(timing.calculateMillisecondDelta(timing.workerReady()))
         .setSendStart(timing.calculateMillisecondDelta(timing.sendStart()))
         .setSendEnd(timing.calculateMillisecondDelta(timing.sendEnd()))
         .setReceiveHeadersEnd(timing.calculateMillisecondDelta(timing.receiveHeadersEnd()))
@@ -309,10 +307,11 @@ InspectorResourceAgent::~InspectorResourceAgent()
 DEFINE_TRACE(InspectorResourceAgent)
 {
     visitor->trace(m_pageAgent);
-#if ENABLE(OILPAN)
-    visitor->trace(m_pendingXHRReplayData);
     visitor->trace(m_replayXHRs);
     visitor->trace(m_replayXHRsToBeDeleted);
+
+#if ENABLE(OILPAN)
+    visitor->trace(m_pendingXHRReplayData);
 #endif
     InspectorBaseAgent::trace(visitor);
 }
@@ -327,7 +326,7 @@ void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentL
         return;
 
     String requestId = IdentifiersFactory::requestId(identifier);
-    String loaderId = InspectorIdentifiers<DocumentLoader>::identifier(loader);
+    String loaderId = IdentifiersFactory::loaderId(loader);
     m_resourcesData->resourceCreated(requestId, loaderId);
 
     InspectorPageAgent::ResourceType type = InspectorPageAgent::OtherResource;
@@ -356,7 +355,7 @@ void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentL
         request.setShouldResetAppCache(true);
     }
 
-    String frameId = loader->frame() ? InspectorIdentifiers<LocalFrame>::identifier(loader->frame()) : "";
+    String frameId = loader->frame() ? IdentifiersFactory::frameId(loader->frame()) : "";
     RefPtr<TypeBuilder::Network::Initiator> initiatorObject = buildInitiatorObject(loader->frame() ? loader->frame()->document() : 0, initiatorInfo);
     if (initiatorInfo.name == FetchInitiatorTypeNames::document) {
         FrameNavigationInitiatorMap::iterator it = m_frameNavigationInitiatorMap.find(frameId);
@@ -371,6 +370,8 @@ void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentL
 
     TypeBuilder::Page::ResourceType::Enum resourceType = InspectorPageAgent::resourceTypeJson(type);
     frontend()->requestWillBeSent(requestId, frameId, loaderId, urlWithoutFragment(loader->url()).string(), requestInfo.release(), monotonicallyIncreasingTime(), currentTime(), initiatorObject, buildObjectForResourceResponse(redirectResponse), &resourceType);
+    if (m_pendingXHRReplayData && !m_pendingXHRReplayData->async())
+        frontend()->flush();
 }
 
 void InspectorResourceAgent::markResourceAsCached(unsigned long identifier)
@@ -400,7 +401,7 @@ void InspectorResourceAgent::didReceiveResourceResponse(LocalFrame* frame, unsig
     Resource* cachedResource = 0;
     if (resourceLoader && !isNotModified)
         cachedResource = resourceLoader->cachedResource();
-    if (!cachedResource || cachedResource->type() == Resource::MainResource)
+    if (!cachedResource)
         cachedResource = InspectorPageAgent::cachedResource(frame, response.url());
 
     if (cachedResource && resourceResponse && response.mimeType().isEmpty()) {
@@ -419,8 +420,8 @@ void InspectorResourceAgent::didReceiveResourceResponse(LocalFrame* frame, unsig
 
     if (cachedResource)
         m_resourcesData->addResource(requestId, cachedResource);
-    String frameId = InspectorIdentifiers<LocalFrame>::identifier(frame);
-    String loaderId = loader ? InspectorIdentifiers<DocumentLoader>::identifier(loader) : "";
+    String frameId = IdentifiersFactory::frameId(frame);
+    String loaderId = loader ? IdentifiersFactory::loaderId(loader) : "";
     m_resourcesData->responseReceived(requestId, frameId, response);
     m_resourcesData->setResourceType(requestId, type);
 
@@ -491,26 +492,25 @@ void InspectorResourceAgent::documentThreadableLoaderStartedLoadingForClient(uns
     if (client == m_pendingEventSource) {
         m_eventSourceRequestIdMap.set(client, identifier);
         m_pendingEventSource = nullptr;
-        return;
     }
 
-    PendingXHRReplayDataMap::iterator it = m_pendingXHRReplayData.find(client);
-    if (it == m_pendingXHRReplayData.end())
-        return;
-
-    m_resourcesData->setResourceType(IdentifiersFactory::requestId(identifier), InspectorPageAgent::XHRResource);
-    XHRReplayData* xhrReplayData = it->value.get();
-    String requestId = IdentifiersFactory::requestId(identifier);
-    m_resourcesData->setXHRReplayData(requestId, xhrReplayData);
+    if (client == m_pendingXHR) {
+        String requestId = IdentifiersFactory::requestId(identifier);
+        m_resourcesData->setResourceType(requestId, InspectorPageAgent::XHRResource);
+        m_resourcesData->setXHRReplayData(requestId, m_pendingXHRReplayData.get());
+        m_xhrRequestIdMap.set(client, identifier);
+        m_pendingXHR = nullptr;
+        m_pendingXHRReplayData.clear();
+    }
 }
 
 void InspectorResourceAgent::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, const HTTPHeaderMap& headers, bool includeCredentials)
 {
     ASSERT(xhr);
-    RefPtrWillBeRawPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(xhr->executionContext(), method, urlWithoutFragment(url), async, formData.get(), includeCredentials);
+    m_pendingXHR = client;
+    m_pendingXHRReplayData = XHRReplayData::create(xhr->executionContext(), method, urlWithoutFragment(url), async, formData.get(), includeCredentials);
     for (const auto& header : headers)
-        xhrReplayData->addHeader(header.key, header.value);
-    m_pendingXHRReplayData.set(client, xhrReplayData);
+        m_pendingXHRReplayData->addHeader(header.key, header.value);
 }
 
 void InspectorResourceAgent::delayedRemoveReplayXHR(XMLHttpRequest* xhr)
@@ -523,28 +523,35 @@ void InspectorResourceAgent::delayedRemoveReplayXHR(XMLHttpRequest* xhr)
     m_removeFinishedReplayXHRTimer.startOneShot(0, FROM_HERE);
 }
 
-void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest* xhr, ThreadableLoaderClient* client)
+void InspectorResourceAgent::didFailXHRLoading(ExecutionContext* context, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url)
 {
-    m_pendingXHRReplayData.remove(client);
+    didFinishXHRInternal(context, xhr, client, method, url, false);
+}
+
+void InspectorResourceAgent::didFinishXHRLoading(ExecutionContext* context, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url)
+{
+    didFinishXHRInternal(context, xhr, client, method, url, true);
+}
+
+void InspectorResourceAgent::didFinishXHRInternal(ExecutionContext* context, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url, bool success)
+{
+    m_pendingXHR = nullptr;
+    m_pendingXHRReplayData.clear();
 
     // This method will be called from the XHR.
     // We delay deleting the replay XHR, as deleting here may delete the caller.
     delayedRemoveReplayXHR(xhr);
-}
 
-void InspectorResourceAgent::didFinishXHRLoading(ExecutionContext* context, XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString& method, const String& url)
-{
-    m_pendingXHRReplayData.remove(client);
+    ThreadableLoaderClientRequestIdMap::iterator it = m_xhrRequestIdMap.find(client);
 
-    // See comments on |didFailXHRLoading| for why we are delaying delete.
-    delayedRemoveReplayXHR(xhr);
-
-    if (m_state->getBoolean(ResourceAgentState::monitoringXHR)) {
-        String message = "XHR finished loading: " + method + " \"" + url + "\".";
+    if (m_state->getBoolean(ResourceAgentState::monitoringXHR) && it != m_eventSourceRequestIdMap.end()) {
+        String message = (success ? "XHR finished loading: " : "XHR failed loading: ") + method + " \"" + url + "\".";
         RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(NetworkMessageSource, DebugMessageLevel, message);
-        consoleMessage->setRequestIdentifier(identifier);
+        consoleMessage->setRequestIdentifier(it->value);
         m_pageAgent->frameHost()->consoleMessageStorage().reportMessage(context, consoleMessage.release());
     }
+
+    m_xhrRequestIdMap.remove(client);
 }
 
 void InspectorResourceAgent::willSendEventSourceRequest(ThreadableLoaderClient* eventSource)
@@ -554,7 +561,7 @@ void InspectorResourceAgent::willSendEventSourceRequest(ThreadableLoaderClient* 
 
 void InspectorResourceAgent::willDispachEventSourceEvent(ThreadableLoaderClient* eventSource, const AtomicString& eventName, const AtomicString& eventId, const Vector<UChar>& data)
 {
-    EventSourceRequestIdMap::iterator it = m_eventSourceRequestIdMap.find(eventSource);
+    ThreadableLoaderClientRequestIdMap::iterator it = m_eventSourceRequestIdMap.find(eventSource);
     if (it == m_eventSourceRequestIdMap.end())
         return;
     frontend()->eventSourceMessageReceived(IdentifiersFactory::requestId(it->value), monotonicallyIncreasingTime(), eventName.string(), eventId.string(), String(data));
@@ -807,7 +814,7 @@ void InspectorResourceAgent::replayXHR(ErrorString*, const String& requestId)
         return;
     }
 
-    RefPtrWillBeRawPtr<XMLHttpRequest> xhr = XMLHttpRequest::create(executionContext);
+    XMLHttpRequest* xhr = XMLHttpRequest::create(executionContext);
 
     executionContext->removeURLFromMemoryCache(xhrReplayData->url());
 
@@ -864,18 +871,18 @@ void InspectorResourceAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* lo
     if (m_state->getBoolean(ResourceAgentState::cacheDisabled))
         memoryCache()->evictResources();
 
-    m_resourcesData->clear(InspectorIdentifiers<DocumentLoader>::identifier(loader));
+    m_resourcesData->clear(IdentifiersFactory::loaderId(loader));
 }
 
 void InspectorResourceAgent::frameScheduledNavigation(LocalFrame* frame, double)
 {
     RefPtr<TypeBuilder::Network::Initiator> initiator = buildInitiatorObject(frame->document(), FetchInitiatorInfo());
-    m_frameNavigationInitiatorMap.set(InspectorIdentifiers<LocalFrame>::identifier(frame), initiator);
+    m_frameNavigationInitiatorMap.set(IdentifiersFactory::frameId(frame), initiator);
 }
 
 void InspectorResourceAgent::frameClearedScheduledNavigation(LocalFrame* frame)
 {
-    m_frameNavigationInitiatorMap.remove(InspectorIdentifiers<LocalFrame>::identifier(frame));
+    m_frameNavigationInitiatorMap.remove(IdentifiersFactory::frameId(frame));
 }
 
 void InspectorResourceAgent::setHostId(const String& hostId)
@@ -912,6 +919,7 @@ InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
     : InspectorBaseAgent<InspectorResourceAgent, InspectorFrontend::Network>("Network")
     , m_pageAgent(pageAgent)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
+    , m_pendingXHR(nullptr)
     , m_pendingEventSource(nullptr)
     , m_isRecalculatingStyle(false)
     , m_removeFinishedReplayXHRTimer(this, &InspectorResourceAgent::removeFinishedReplayXHRFired)

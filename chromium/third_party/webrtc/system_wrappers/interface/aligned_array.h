@@ -86,4 +86,3 @@ template<typename T> class AlignedArray {
 }  // namespace webrtc
 
 #endif  // WEBRTC_SYSTEM_WRAPPERS_INTERFACE_ALIGNED_ARRAY_
-

@@ -39,7 +39,6 @@ class CORE_EXPORT LayoutMenuList final : public LayoutFlexibleBox, private Popup
 public:
     explicit LayoutMenuList(Element*);
     virtual ~LayoutMenuList();
-    virtual void destroy() override;
 
     bool popupIsVisible() const { return m_popupIsVisible; }
     void showPopup();
@@ -56,13 +55,16 @@ public:
 
     virtual const char* name() const override { return "LayoutMenuList"; }
 
+protected:
+    virtual void willBeDestroyed() override;
+
 private:
     HTMLSelectElement* selectElement() const;
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectMenuList || LayoutFlexibleBox::isOfType(type); }
     virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
-    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = 0) override;
+    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
     virtual void removeChild(LayoutObject*) override;
     virtual bool createsAnonymousWrapper() const override { return true; }
 
@@ -126,7 +128,10 @@ private:
     LayoutText* m_buttonText;
     LayoutBlock* m_innerBlock;
 
-    bool m_optionsChanged;
+    bool m_optionsChanged : 1;
+    bool m_isEmpty : 1;
+    bool m_hasUpdatedActiveOption : 1;
+    bool m_popupIsVisible : 1;
     int m_optionsWidth;
 
     int m_lastActiveIndex;
@@ -134,7 +139,6 @@ private:
     RefPtr<ComputedStyle> m_optionStyle;
 
     RefPtrWillBePersistent<PopupMenu> m_popup;
-    bool m_popupIsVisible;
     int m_indexToSelectOnCancel;
 
     // TODO(tkent): Use FRIEND_TEST macro provided by gtest_prod.h

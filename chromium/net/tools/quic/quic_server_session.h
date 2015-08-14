@@ -16,7 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/quic/quic_crypto_server_stream.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/quic_session.h"
+#include "net/quic/quic_spdy_session.h"
 
 namespace net {
 
@@ -50,11 +50,13 @@ class QuicServerSessionVisitor {
       QuicConnectionId connection_id) {}
 };
 
-class QuicServerSession : public QuicSession {
+class QuicServerSession : public QuicSpdySession {
  public:
+  // |crypto_config| must outlive the session.
   QuicServerSession(const QuicConfig& config,
                     QuicConnection* connection,
-                    QuicServerSessionVisitor* visitor);
+                    QuicServerSessionVisitor* visitor,
+                    const QuicCryptoServerConfig* crypto_config);
 
   // Override the base class to notify the owner of the connection close.
   void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
@@ -66,8 +68,7 @@ class QuicServerSession : public QuicSession {
 
   ~QuicServerSession() override;
 
-  // |crypto_config| must outlive the session.
-  virtual void InitializeSession(const QuicCryptoServerConfig* crypto_config);
+  void Initialize() override;
 
   const QuicCryptoServerStream* crypto_stream() const {
     return crypto_stream_.get();
@@ -103,14 +104,14 @@ class QuicServerSession : public QuicSession {
 
  protected:
   // QuicSession methods:
-  QuicDataStream* CreateIncomingDataStream(QuicStreamId id) override;
-  QuicDataStream* CreateOutgoingDataStream() override;
+  QuicDataStream* CreateIncomingDynamicStream(QuicStreamId id) override;
+  QuicDataStream* CreateOutgoingDynamicStream() override;
   QuicCryptoServerStream* GetCryptoStream() override;
 
   // If we should create an incoming stream, returns true. Otherwise
   // does error handling, including communicating the error to the client and
   // possibly closing the connection, and returns false.
-  virtual bool ShouldCreateIncomingDataStream(QuicStreamId id);
+  virtual bool ShouldCreateIncomingDynamicStream(QuicStreamId id);
 
   virtual QuicCryptoServerStream* CreateQuicCryptoServerStream(
       const QuicCryptoServerConfig* crypto_config);
@@ -118,6 +119,7 @@ class QuicServerSession : public QuicSession {
  private:
   friend class test::QuicServerSessionPeer;
 
+  const QuicCryptoServerConfig* crypto_config_;
   scoped_ptr<QuicCryptoServerStream> crypto_stream_;
   QuicServerSessionVisitor* visitor_;
 

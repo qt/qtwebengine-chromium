@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// https://webbluetoothcg.github.io/web-bluetooth/#idl-def-bluetoothgattremoteserver
+// https://webbluetoothchrome.github.io/web-bluetooth/#idl-def-bluetoothgattremoteserver
 
 // Implement BluetoothGATTRemoteServer interface: https://crbug.com/476735
 
 [
     GarbageCollected,
-    RuntimeEnabled=Bluetooth,
+    RuntimeEnabled=WebBluetooth,
 ] interface BluetoothGATTRemoteServer
 // Implement ServiceEventHandlers interface: http://crbug.com/421670
 // : ServiceEventHandlers 
 {
   // readonly attribute BluetoothDevice      device;
-    readonly attribute boolean              connected;
+    readonly attribute boolean                           connected;
   // void                                    disconnect ();
-  // Promise<BluetoothGATTService>           getPrimaryService (BluetoothServiceUUID service);
+    [CallWith=ScriptState, RaisesException] Promise<BluetoothGATTService> getPrimaryService (BluetoothServiceUUID service);
   // Promise<sequence<BluetoothGATTService>> getPrimaryServices (optional BluetoothServiceUUID service);
 };

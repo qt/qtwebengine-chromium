@@ -106,7 +106,6 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->scroll_offset = gfx::Point(0, 100);
     frame_state->item_sequence_number = 1;
     frame_state->document_sequence_number = 2;
-    frame_state->frame_sequence_number = 3;
     frame_state->page_scale_factor = 2.0;
   }
 
@@ -147,7 +146,6 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->scroll_offset = gfx::Point(42, -42);
     frame_state->item_sequence_number = 123;
     frame_state->document_sequence_number = 456;
-    frame_state->frame_sequence_number = 789;
     frame_state->page_scale_factor = 2.0f;
 
     frame_state->document_state.push_back(
@@ -324,7 +322,7 @@ TEST_F(PageStateSerializationTest, BasicFrameSetPOST) {
 }
 
 TEST_F(PageStateSerializationTest, BadMessagesTest1) {
-  Pickle p;
+  base::Pickle p;
   // Version 14
   p.WriteInt(14);
   // Empty strings.
@@ -341,7 +339,7 @@ TEST_F(PageStateSerializationTest, BadMessagesTest1) {
 
 TEST_F(PageStateSerializationTest, BadMessagesTest2) {
   double d = 0;
-  Pickle p;
+  base::Pickle p;
   // Version 14
   p.WriteInt(14);
   // Empty strings.
@@ -435,6 +433,10 @@ TEST_F(PageStateSerializationTest, BackwardsCompat_v20) {
 
 TEST_F(PageStateSerializationTest, BackwardsCompat_v21) {
   TestBackwardsCompat(21);
+}
+
+TEST_F(PageStateSerializationTest, BackwardsCompat_v22) {
+  TestBackwardsCompat(22);
 }
 
 }  // namespace

@@ -270,7 +270,7 @@ static bool LayerShouldBeSkipped(LayerType* layer,
   // Some additional conditions need to be computed at a later point after the
   // recursion is finished.
   //   - the intersection of render_surface content and layer clip_rect is empty
-  //   - the visible_content_rect is empty
+  //   - the visible_layer_rect is empty
   //
   // Note, if the layer should not have been drawn due to being fully
   // transparent, we would have skipped the entire subtree and never made it
@@ -430,6 +430,14 @@ void ComputeTransforms(TransformTree* transform_tree) {
   transform_tree->set_needs_update(false);
 }
 
+void ComputeOpacities(OpacityTree* opacity_tree) {
+  if (!opacity_tree->needs_update())
+    return;
+  for (int i = 1; i < static_cast<int>(opacity_tree->size()); ++i)
+    opacity_tree->UpdateOpacities(i);
+  opacity_tree->set_needs_update(false);
+}
+
 template <typename LayerType>
 void ComputeVisibleRectsUsingPropertyTreesInternal(
     LayerType* root_layer,
@@ -439,6 +447,7 @@ void ComputeVisibleRectsUsingPropertyTreesInternal(
     property_trees->clip_tree.set_needs_update(true);
   ComputeTransforms(&property_trees->transform_tree);
   ComputeClips(&property_trees->clip_tree, property_trees->transform_tree);
+  ComputeOpacities(&property_trees->opacity_tree);
 
   const bool subtree_is_visible_from_ancestor = true;
   std::vector<LayerType*> visible_layer_list;
@@ -453,6 +462,8 @@ void ComputeVisibleRectsUsingPropertyTreesInternal(
 void BuildPropertyTreesAndComputeVisibleRects(
     Layer* root_layer,
     const Layer* page_scale_layer,
+    const Layer* inner_viewport_scroll_layer,
+    const Layer* outer_viewport_scroll_layer,
     float page_scale_factor,
     float device_scale_factor,
     const gfx::Rect& viewport,
@@ -460,7 +471,8 @@ void BuildPropertyTreesAndComputeVisibleRects(
     PropertyTrees* property_trees,
     LayerList* update_layer_list) {
   PropertyTreeBuilder::BuildPropertyTrees(
-      root_layer, page_scale_layer, page_scale_factor, device_scale_factor,
+      root_layer, page_scale_layer, inner_viewport_scroll_layer,
+      outer_viewport_scroll_layer, page_scale_factor, device_scale_factor,
       viewport, device_transform, property_trees);
   ComputeVisibleRectsUsingPropertyTrees(root_layer, property_trees,
                                         update_layer_list);
@@ -469,6 +481,8 @@ void BuildPropertyTreesAndComputeVisibleRects(
 void BuildPropertyTreesAndComputeVisibleRects(
     LayerImpl* root_layer,
     const LayerImpl* page_scale_layer,
+    const LayerImpl* inner_viewport_scroll_layer,
+    const LayerImpl* outer_viewport_scroll_layer,
     float page_scale_factor,
     float device_scale_factor,
     const gfx::Rect& viewport,
@@ -476,7 +490,8 @@ void BuildPropertyTreesAndComputeVisibleRects(
     PropertyTrees* property_trees,
     LayerImplList* update_layer_list) {
   PropertyTreeBuilder::BuildPropertyTrees(
-      root_layer, page_scale_layer, page_scale_factor, device_scale_factor,
+      root_layer, page_scale_layer, inner_viewport_scroll_layer,
+      outer_viewport_scroll_layer, page_scale_factor, device_scale_factor,
       viewport, device_transform, property_trees);
   ComputeVisibleRectsUsingPropertyTrees(root_layer, property_trees,
                                         update_layer_list);
@@ -501,10 +516,6 @@ gfx::Transform DrawTransformFromPropertyTreesInternal(
     const LayerType* layer,
     const TransformTree& tree) {
   const TransformNode* node = tree.Node(layer->transform_tree_index());
-  // TODO(vollick): ultimately we'll need to find this information (whether or
-  // not we establish a render surface) somewhere other than the layer.
-  const TransformNode* target_node =
-      layer->render_surface() ? node : tree.Node(node->data.content_target_id);
 
   gfx::Transform xform;
   const bool owns_non_root_surface = layer->parent() && layer->render_surface();
@@ -518,8 +529,7 @@ gfx::Transform DrawTransformFromPropertyTreesInternal(
                     layer->offset_to_transform_parent().y());
   } else {
     // Surfaces need to apply their sublayer scale.
-    xform.Scale(target_node->data.sublayer_scale.x(),
-                target_node->data.sublayer_scale.y());
+    xform.Scale(node->data.sublayer_scale.x(), node->data.sublayer_scale.y());
   }
   return xform;
 }
@@ -576,7 +586,7 @@ float DrawOpacityFromPropertyTreesInternal(LayerType layer,
 
   float draw_opacity = 1.f;
   while (node != target_node) {
-    draw_opacity *= node->data;
+    draw_opacity *= node->data.opacity;
     node = tree.parent(node);
   }
   return draw_opacity;
@@ -590,6 +600,36 @@ float DrawOpacityFromPropertyTrees(const Layer* layer,
 float DrawOpacityFromPropertyTrees(const LayerImpl* layer,
                                    const OpacityTree& tree) {
   return DrawOpacityFromPropertyTreesInternal(layer, tree);
+}
+
+bool CanUseLcdTextFromPropertyTrees(const LayerImpl* layer,
+                                    bool layers_always_allowed_lcd_text,
+                                    bool can_use_lcd_text,
+                                    PropertyTrees* property_trees) {
+  if (layers_always_allowed_lcd_text)
+    return true;
+  if (!can_use_lcd_text)
+    return false;
+  if (!layer->contents_opaque())
+    return false;
+  DCHECK(!property_trees->transform_tree.needs_update());
+  DCHECK(!property_trees->opacity_tree.needs_update());
+
+  const OpacityNode* opacity_node =
+      property_trees->opacity_tree.Node(layer->opacity_tree_index());
+  if (opacity_node->data.screen_space_opacity != 1.f)
+    return false;
+  const TransformNode* transform_node =
+      property_trees->transform_tree.Node(layer->transform_tree_index());
+  if (!transform_node->data.node_and_ancestors_have_only_integer_translation)
+    return false;
+  if (static_cast<int>(layer->offset_to_transform_parent().x()) !=
+      layer->offset_to_transform_parent().x())
+    return false;
+  if (static_cast<int>(layer->offset_to_transform_parent().y()) !=
+      layer->offset_to_transform_parent().y())
+    return false;
+  return true;
 }
 
 }  // namespace cc

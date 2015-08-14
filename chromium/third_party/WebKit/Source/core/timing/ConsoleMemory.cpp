@@ -10,6 +10,12 @@
 
 namespace blink {
 
+DEFINE_TRACE(ConsoleMemory)
+{
+    visitor->trace(m_memory);
+    HeapSupplement<Console>::trace(visitor);
+}
+
 // static
 ConsoleMemory& ConsoleMemory::from(Console& console)
 {
@@ -29,7 +35,10 @@ MemoryInfo* ConsoleMemory::memory(Console& console)
 
 MemoryInfo* ConsoleMemory::memory()
 {
-    return MemoryInfo::create();
+    if (!m_memory)
+        m_memory = MemoryInfo::create();
+
+    return m_memory.get();
 }
 
 } // namespace blink

@@ -13,6 +13,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <conio.h>
+#elif defined(WEBRTC_LINUX) || defined(WEBRTC_MAC)
+#include <termios.h>    // tcgetattr
+#endif
+
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_device/test/func_test_manager.h"
 #include "webrtc/system_wrappers/interface/sleep.h"
@@ -37,6 +43,21 @@ const char* RecordedMicrophoneBoostFile =
 const char* RecordedMicrophoneAGCFile = "recorded_microphone_AGC_mono_48.pcm";
 const char* RecordedSpeakerFile = "recorded_speaker_48.pcm";
 
+#if defined(WEBRTC_IOS) || defined(ANDROID)
+#define USE_SLEEP_AS_PAUSE
+#else
+//#define USE_SLEEP_AS_PAUSE
+#endif
+
+// Sets the default pause time if using sleep as pause
+#define DEFAULT_PAUSE_TIME 5000
+
+#if defined(USE_SLEEP_AS_PAUSE)
+#define PAUSE(a) SleepMs(a);
+#else
+#define PAUSE(a) WaitForKey();
+#endif
+
 // Helper functions
 #if !defined(WEBRTC_IOS)
 char* GetFilename(char* filename)
@@ -56,6 +77,35 @@ const char* GetResource(const char* resource)
     return resource;
 }
 #endif
+
+#if !defined(USE_SLEEP_AS_PAUSE)
+static void WaitForKey() {
+#if defined(_WIN32)
+    _getch();
+#elif defined(WEBRTC_LINUX) || defined(WEBRTC_MAC)
+    struct termios oldt, newt;
+
+    tcgetattr( STDIN_FILENO, &oldt );
+
+    // we don't want getchar to echo!
+
+    newt = oldt;
+    newt.c_lflag &= ~( ICANON | ECHO );
+    tcsetattr( STDIN_FILENO, TCSANOW, &newt );
+
+    // catch any newline that's hanging around...
+    // you'll have to hit enter twice if you
+    // choose enter out of all available keys
+
+    if (getc(stdin) == '\n')
+    {
+        getc(stdin);
+    }
+
+    tcsetattr( STDIN_FILENO, TCSANOW, &oldt );
+#endif  // defined(_WIN32)
+}
+#endif  // !defined(USE_SLEEP_AS_PAUSE)
 
 namespace webrtc
 {
@@ -317,8 +367,7 @@ int32_t AudioTransportImpl::NeedMorePlayData(
                 const uint16_t nSamplesIn = packet->nSamples;
                 const uint8_t nChannelsIn = packet->nChannels;
                 const uint32_t samplesPerSecIn = packet->samplesPerSec;
-                const uint16_t nBytesPerSampleIn =
-                    packet->nBytesPerSample;
+                const uint16_t nBytesPerSampleIn = packet->nBytesPerSample;
 
                 int32_t fsInHz(samplesPerSecIn);
                 int32_t fsOutHz(samplesPerSec);
@@ -339,15 +388,14 @@ int32_t AudioTransportImpl::NeedMorePlayData(
                         {
                             _resampler.Push(
                                 (const int16_t*) packet->dataBuffer,
-                                2 * nSamplesIn,
-                                (int16_t*) audioSamples, 2
-                                * nSamples, lenOut);
+                                2 * nSamplesIn, (int16_t*) audioSamples,
+                                2 * nSamples, lenOut);
                         } else
                         {
                             _resampler.Push(
                                 (const int16_t*) packet->dataBuffer,
-                                2 * nSamplesIn, tmpBuf_96kHz, 2
-                                * nSamples, lenOut);
+                                2 * nSamplesIn, tmpBuf_96kHz, 2 * nSamples,
+                                lenOut);
 
                             ptr16In = &tmpBuf_96kHz[0];
                             ptr16Out = (int16_t*) audioSamples;
@@ -379,16 +427,13 @@ int32_t AudioTransportImpl::NeedMorePlayData(
                         if (nChannels == 1)
                         {
                             _resampler.Push(
-                                (const int16_t*) packet->dataBuffer,
-                                nSamplesIn,
-                                (int16_t*) audioSamples,
-                                nSamples, lenOut);
+                                (const int16_t*) packet->dataBuffer, nSamplesIn,
+                                (int16_t*) audioSamples, nSamples, lenOut);
                         } else
                         {
                             _resampler.Push(
-                                (const int16_t*) packet->dataBuffer,
-                                nSamplesIn, tmpBuf_96kHz, nSamples,
-                                lenOut);
+                                (const int16_t*) packet->dataBuffer, nSamplesIn,
+                                tmpBuf_96kHz, nSamples, lenOut);
 
                             ptr16In = &tmpBuf_96kHz[0];
                             ptr16Out = (int16_t*) audioSamples;
@@ -422,8 +467,7 @@ int32_t AudioTransportImpl::NeedMorePlayData(
         int16_t fileBuf[480];
 
         // read mono-file
-        int32_t len = _playFile.Read((int8_t*) fileBuf, 2
-            * nSamples);
+        int32_t len = _playFile.Read((int8_t*) fileBuf, 2 * nSamples);
         if (len != 2 * (int32_t) nSamples)
         {
             _playFile.Rewind();

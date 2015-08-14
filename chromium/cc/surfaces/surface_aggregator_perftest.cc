@@ -13,6 +13,7 @@
 #include "cc/surfaces/surface_manager.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -33,9 +34,8 @@ class SurfaceAggregatorPerfTest : public testing::Test {
     output_surface_->BindToClient(&output_surface_client_);
     shared_bitmap_manager_.reset(new TestSharedBitmapManager);
 
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), shared_bitmap_manager_.get(), nullptr, nullptr,
-        0, false, 1);
+    resource_provider_ = FakeResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get());
     aggregator_.reset(
         new SurfaceAggregator(&manager_, resource_provider_.get()));
   }
@@ -70,8 +70,8 @@ class SurfaceAggregatorPerfTest : public testing::Test {
         bool flipped = false;
         bool nearest_neighbor = false;
         quad->SetAll(sqs, rect, opaque_rect, visible_rect, needs_blending, j,
-                     premultiplied_alpha, uv_top_left, uv_bottom_right,
-                     background_color, vertex_opacity, flipped,
+                     gfx::Size(), false, premultiplied_alpha, uv_top_left,
+                     uv_bottom_right, background_color, vertex_opacity, flipped,
                      nearest_neighbor);
       }
       sqs = pass->CreateAndAppendSharedQuadState();

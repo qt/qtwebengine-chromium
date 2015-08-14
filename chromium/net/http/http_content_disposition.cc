@@ -34,11 +34,11 @@ bool DecodeQEncoding(const std::string& input, std::string* output) {
       temp.push_back(' ');
     } else if (*it == '=') {
       if ((input.end() - it < 3) ||
-          !IsHexDigit(static_cast<unsigned char>(*(it + 1))) ||
-          !IsHexDigit(static_cast<unsigned char>(*(it + 2))))
+          !base::IsHexDigit(static_cast<unsigned char>(*(it + 1))) ||
+          !base::IsHexDigit(static_cast<unsigned char>(*(it + 2))))
         return false;
-      unsigned char ch = HexDigitToInt(*(it + 1)) * 16 +
-                         HexDigitToInt(*(it + 2));
+      unsigned char ch =
+          base::HexDigitToInt(*(it + 1)) * 16 + base::HexDigitToInt(*(it + 2));
       temp.push_back(static_cast<char>(ch));
       ++it;
       ++it;
@@ -359,9 +359,9 @@ std::string::const_iterator HttpContentDisposition::ConsumeDispositionType(
 
   DCHECK(std::find(type_begin, type_end, '=') == type_end);
 
-  if (LowerCaseEqualsASCII(type_begin, type_end, "inline")) {
+  if (base::LowerCaseEqualsASCII(type_begin, type_end, "inline")) {
     type_ = INLINE;
-  } else if (LowerCaseEqualsASCII(type_begin, type_end, "attachment")) {
+  } else if (base::LowerCaseEqualsASCII(type_begin, type_end, "attachment")) {
     type_ = ATTACHMENT;
   } else {
     parse_result_flags_ |= HAS_UNKNOWN_DISPOSITION_TYPE;
@@ -402,16 +402,16 @@ void HttpContentDisposition::Parse(const std::string& header,
 
   HttpUtil::NameValuePairsIterator iter(pos, end, ';');
   while (iter.GetNext()) {
-    if (filename.empty() && LowerCaseEqualsASCII(iter.name_begin(),
-                                                 iter.name_end(),
-                                                 "filename")) {
+    if (filename.empty() &&
+        base::LowerCaseEqualsASCII(iter.name_begin(), iter.name_end(),
+                                   "filename")) {
       DecodeFilenameValue(iter.value(), referrer_charset, &filename,
                           &parse_result_flags_);
       if (!filename.empty())
         parse_result_flags_ |= HAS_FILENAME;
-    } else if (ext_filename.empty() && LowerCaseEqualsASCII(iter.name_begin(),
-                                                            iter.name_end(),
-                                                            "filename*")) {
+    } else if (ext_filename.empty() &&
+               base::LowerCaseEqualsASCII(iter.name_begin(), iter.name_end(),
+                                          "filename*")) {
       DecodeExtValue(iter.raw_value(), &ext_filename);
       if (!ext_filename.empty())
         parse_result_flags_ |= HAS_EXT_FILENAME;

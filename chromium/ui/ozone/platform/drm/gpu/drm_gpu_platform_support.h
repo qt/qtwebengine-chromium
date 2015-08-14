@@ -33,16 +33,19 @@ class DrmGpuDisplayManager;
 class DrmSurfaceFactory;
 class DrmWindow;
 class ScreenManager;
+class ScanoutBufferGenerator;
 
 struct DisplayMode_Params;
 struct DisplaySnapshot_Params;
+struct OverlayCheck_Params;
 struct GammaRampRGBEntry;
 
 class DrmGpuPlatformSupport : public GpuPlatformSupport {
  public:
   DrmGpuPlatformSupport(DrmDeviceManager* drm_device_manager,
                         ScreenManager* screen_manager,
-                        scoped_ptr<DrmGpuDisplayManager> ndd);
+                        ScanoutBufferGenerator* buffer_generator,
+                        scoped_ptr<DrmGpuDisplayManager> display_manager);
   ~DrmGpuPlatformSupport() override;
 
   void AddHandler(scoped_ptr<GpuPlatformSupport> handler);
@@ -56,8 +59,8 @@ class DrmGpuPlatformSupport : public GpuPlatformSupport {
   bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
-  void OnCreateWindowDelegate(gfx::AcceleratedWidget widget);
-  void OnDestroyWindowDelegate(gfx::AcceleratedWidget widget);
+  void OnCreateWindow(gfx::AcceleratedWidget widget);
+  void OnDestroyWindow(gfx::AcceleratedWidget widget);
   void OnWindowBoundsChanged(gfx::AcceleratedWidget widget,
                              const gfx::Rect& bounds);
   void OnCursorSet(gfx::AcceleratedWidget widget,
@@ -65,6 +68,9 @@ class DrmGpuPlatformSupport : public GpuPlatformSupport {
                    const gfx::Point& location,
                    int frame_delay_ms);
   void OnCursorMove(gfx::AcceleratedWidget widget, const gfx::Point& location);
+  void OnCheckOverlayCapabilities(
+      gfx::AcceleratedWidget widget,
+      const std::vector<OverlayCheck_Params>& overlays);
 
   // Display related IPC handlers.
   void OnRefreshNativeDisplays();
@@ -84,11 +90,12 @@ class DrmGpuPlatformSupport : public GpuPlatformSupport {
   void SetIOTaskRunner(
       const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner);
 
-  IPC::Sender* sender_;                   // Not owned.
+  IPC::Sender* sender_ = nullptr;             // Not owned.
   DrmDeviceManager* drm_device_manager_;  // Not owned.
   ScreenManager* screen_manager_;         // Not owned.
+  ScanoutBufferGenerator* buffer_generator_;  // Not owned.
 
-  scoped_ptr<DrmGpuDisplayManager> ndd_;
+  scoped_ptr<DrmGpuDisplayManager> display_manager_;
   ScopedVector<GpuPlatformSupport> handlers_;
   scoped_refptr<IPC::MessageFilter> filter_;
 };

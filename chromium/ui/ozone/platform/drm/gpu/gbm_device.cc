@@ -8,12 +8,8 @@
 
 namespace ui {
 
-GbmDevice::GbmDevice(const base::FilePath& device_path)
-    : DrmDevice(device_path), device_(nullptr) {
-}
-
 GbmDevice::GbmDevice(const base::FilePath& device_path, base::File file)
-    : DrmDevice(device_path, file.Pass()), device_(nullptr) {
+    : DrmDevice(device_path, file.Pass()) {
 }
 
 GbmDevice::~GbmDevice() {
@@ -21,8 +17,8 @@ GbmDevice::~GbmDevice() {
     gbm_device_destroy(device_);
 }
 
-bool GbmDevice::Initialize() {
-  if (!DrmDevice::Initialize())
+bool GbmDevice::Initialize(bool use_atomic) {
+  if (!DrmDevice::Initialize(use_atomic))
     return false;
 
   device_ = gbm_create_device(get_fd());

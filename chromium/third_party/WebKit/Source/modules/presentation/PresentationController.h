@@ -16,6 +16,7 @@
 namespace blink {
 
 class LocalFrame;
+class WebPresentationAvailabilityCallback;
 class WebPresentationSessionClient;
 enum class WebPresentationSessionState;
 
@@ -29,7 +30,7 @@ class MODULES_EXPORT PresentationController final
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PresentationController);
     WTF_MAKE_NONCOPYABLE(PresentationController);
 public:
-    virtual ~PresentationController();
+    ~PresentationController() override;
 
     static PassOwnPtrWillBeRawPtr<PresentationController> create(LocalFrame&, WebPresentationClient*);
 
@@ -38,34 +39,16 @@ public:
 
     static void provideTo(LocalFrame&, WebPresentationClient*);
 
+    WebPresentationClient* client();
+
     // Implementation of HeapSupplement.
     DECLARE_VIRTUAL_TRACE();
 
     // Implementation of WebPresentationController.
-    virtual void didChangeAvailability(bool available) override;
-    virtual bool isAvailableChangeWatched() const override;
-    virtual void didStartDefaultSession(WebPresentationSessionClient*) override;
-    virtual void didChangeSessionState(WebPresentationSessionClient*, WebPresentationSessionState) override;
-    virtual void didReceiveSessionTextMessage(WebPresentationSessionClient*, const WebString&) override;
-
-    // Called when the first listener was added to or the last listener was removed from the
-    // |availablechange| event.
-    void updateAvailableChangeWatched(bool watched);
-
-    // Called when the frame wants to start a new presentation.
-    void startSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks*);
-
-    // Called when the frame wants to join an existing presentation.
-    void joinSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks*);
-
-    // Called when the frame wants to send String message to an existing presentation.
-    void send(const String& presentationUrl, const String& presentationId, const String& message);
-
-    // Called when the frame wants to send ArrayBuffer/View data to an existing presentation.
-    void send(const String& presentationUrl, const String& presentationId, const uint8_t* data, size_t length);
-
-    // Called when the frame wants to close an existing presentation.
-    void closeSession(const String& url, const String& presentationId);
+    void didStartDefaultSession(WebPresentationSessionClient*) override;
+    void didChangeSessionState(WebPresentationSessionClient*, WebPresentationSessionState) override;
+    void didReceiveSessionTextMessage(WebPresentationSessionClient*, const WebString&) override;
+    void didReceiveSessionBinaryMessage(WebPresentationSessionClient*, const uint8_t* data, size_t length) override;
 
     // Connects the |Presentation| object with this controller.
     void setPresentation(Presentation*);
@@ -74,7 +57,7 @@ private:
     PresentationController(LocalFrame&, WebPresentationClient*);
 
     // Implementation of LocalFrameLifecycleObserver.
-    virtual void willDetachFrameHost() override;
+    void willDetachFrameHost() override;
 
     WebPresentationClient* m_client;
     PersistentWillBeMember<Presentation> m_presentation;

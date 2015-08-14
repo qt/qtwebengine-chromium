@@ -61,6 +61,12 @@ Path& Path::operator=(const Path& other)
     return *this;
 }
 
+Path& Path::operator=(const SkPath& other)
+{
+    m_path = other;
+    return *this;
+}
+
 bool Path::operator==(const Path& other) const
 {
     return m_path == other.m_path;
@@ -71,14 +77,25 @@ bool Path::contains(const FloatPoint& point, WindRule rule) const
     return SkPathContainsPoint(m_path, point, static_cast<SkPath::FillType>(rule));
 }
 
-bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData) const
+// FIXME: this method ignores the CTM and may yield inaccurate results for large scales.
+SkPath Path::strokePath(const StrokeData& strokeData) const
 {
     SkPaint paint;
     strokeData.setupPaint(&paint);
-    SkPath strokePath;
-    paint.getFillPath(m_path, &strokePath);
 
-    return SkPathContainsPoint(strokePath, point, SkPath::kWinding_FillType);
+    // Skia stroke resolution scale. This is multiplied by 4 internally
+    // (i.e. 1.0 corresponds to 1/4 pixel res).
+    static const SkScalar kResScale = 0.3f;
+
+    SkPath strokePath;
+    paint.getFillPath(m_path, &strokePath, nullptr, kResScale);
+
+    return strokePath;
+}
+
+bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData) const
+{
+    return SkPathContainsPoint(strokePath(strokeData), point, SkPath::kWinding_FillType);
 }
 
 FloatRect Path::boundingRect() const
@@ -88,12 +105,7 @@ FloatRect Path::boundingRect() const
 
 FloatRect Path::strokeBoundingRect(const StrokeData& strokeData) const
 {
-    SkPaint paint;
-    strokeData.setupPaint(&paint);
-    SkPath boundingPath;
-    paint.getFillPath(m_path, &boundingPath);
-
-    return boundingPath.getBounds();
+    return strokePath(strokeData).getBounds();
 }
 
 static FloatPoint* convertPathPoints(FloatPoint dst[], const SkPoint src[], int count)
@@ -166,14 +178,6 @@ FloatPoint Path::pointAtLength(float length, bool& ok) const
     float normal;
     ok = pointAndNormalAtLength(length, point, normal);
     return point;
-}
-
-float Path::normalAngleAtLength(float length, bool& ok) const
-{
-    FloatPoint point;
-    float normal;
-    ok = pointAndNormalAtLength(length, point, normal);
-    return normal;
 }
 
 static bool calculatePointAndNormalOnPath(SkPathMeasure& measure, SkScalar length, FloatPoint& point, float& normalAngle, SkScalar* accumulatedLength = 0)
@@ -271,13 +275,6 @@ FloatPoint Path::currentPoint() const
     // FIXME: Why does this return quietNaN? Other ports return 0,0.
     float quietNaN = std::numeric_limits<float>::quiet_NaN();
     return FloatPoint(quietNaN, quietNaN);
-}
-
-WindRule Path::windRule() const
-{
-    return m_path.getFillType() == SkPath::kEvenOdd_FillType
-        ? RULE_EVENODD
-        : RULE_NONZERO;
 }
 
 void Path::setWindRule(const WindRule rule)
@@ -492,11 +489,6 @@ void Path::translate(const FloatSize& size)
 bool Path::subtractPath(const Path& other)
 {
     return Op(m_path, other.m_path, kDifference_SkPathOp, &m_path);
-}
-
-bool Path::intersectPath(const Path& other)
-{
-    return Op(m_path, other.m_path, kIntersect_SkPathOp, &m_path);
 }
 
 bool Path::unionPath(const Path& other)

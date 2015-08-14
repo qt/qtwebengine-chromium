@@ -80,17 +80,19 @@ class CONTENT_EXPORT FrameTree {
   RenderFrameHostImpl* AddFrame(FrameTreeNode* parent,
                                 int process_id,
                                 int new_routing_id,
+                                blink::WebTreeScopeType scope,
                                 const std::string& frame_name,
-                                SandboxFlags sandbox_flags);
+                                blink::WebSandboxFlags sandbox_flags);
   void RemoveFrame(FrameTreeNode* child);
 
   // This method walks the entire frame tree and creates a RenderFrameProxyHost
   // for the given |site_instance| in each node except the |source| one --
-  // the source will have a RenderFrameHost. It assumes that no frame tree
-  // nodes already have RenderFrameProxyHost for the given |site_instance|.
-  void CreateProxiesForSiteInstance(
-      FrameTreeNode* source,
-      SiteInstance* site_instance);
+  // the source will have a RenderFrameHost.  |source| may be null if there is
+  // no node navigating in this frame tree (such as when this is called
+  // for an opener's frame tree), in which case no nodes are skipped for
+  // RenderFrameProxyHost creation.
+  void CreateProxiesForSiteInstance(FrameTreeNode* source,
+                                    SiteInstance* site_instance);
 
   // Convenience accessor for the main frame's RenderFrameHostImpl.
   RenderFrameHostImpl* GetMainFrame() const;
@@ -121,10 +123,11 @@ class CONTENT_EXPORT FrameTree {
   // RenderFrameHost for each SiteInstance should be created before subframes.
   RenderViewHostImpl* GetRenderViewHost(SiteInstance* site_instance);
 
-  // Keeps track of which RenderFrameHosts are using each RenderViewHost.  When
-  // the number drops to zero, we call Shutdown on the RenderViewHost.
-  void RegisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
-  void UnregisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
+  // Keeps track of which RenderFrameHosts and RenderFrameProxyHosts are using
+  // each RenderViewHost.  When the number drops to zero, we call Shutdown on
+  // the RenderViewHost.
+  void AddRenderViewHostRef(RenderViewHostImpl* render_view_host);
+  void ReleaseRenderViewHostRef(RenderViewHostImpl* render_view_host);
 
   // This is only meant to be called by FrameTreeNode. Triggers calling
   // the listener installed by SetFrameRemoveListener.

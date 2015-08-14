@@ -41,19 +41,14 @@ class SecurityOrigin;
 class PLATFORM_EXPORT OriginAccessEntry {
 public:
     enum SubdomainSetting {
+        // 'www.example.com' matches an OriginAccessEntry for 'example.com'
         AllowSubdomains,
-        DisallowSubdomains
-    };
 
-    // Note that 'TreatIPAddressAsDomain' MUST only be used for testing, and does not work for IPv6 addresses. It does the
-    // bare minimum necessary to support 'document.domain' layout test expectations, and should not be relied upon for either
-    // robustness or sanity.
-    //
-    // TODO(mkwst): Remove this enum once we rewrite the 'document.domain' layout tests to use '*.example.test' rather than
-    // raw IP addresses.
-    enum IPAddressSetting {
-        TreatIPAddressAsDomain,
-        TreatIPAddressAsIPAddress
+        // 'www.example.com' matches an OriginAccessEntry for 'not-www.example.com'
+        AllowRegisterableDomains,
+
+        // 'www.example.com' does not match an OriginAccessEntry for 'example.com'
+        DisallowSubdomains
     };
 
     enum MatchResult {
@@ -62,22 +57,22 @@ public:
         DoesNotMatchOrigin
     };
 
-    // If host is empty string and SubdomainSetting is AllowSubdomains, the entry will match all domains in the specified protocol.
+    // If host is empty string and SubdomainSetting is not DisallowSubdomains, the entry will match all domains in the specified protocol.
     // IPv6 addresses must include brackets (e.g. '[2001:db8:85a3::8a2e:370:7334]', not '2001:db8:85a3::8a2e:370:7334').
-    OriginAccessEntry(const String& protocol, const String& host, SubdomainSetting, IPAddressSetting);
+    OriginAccessEntry(const String& protocol, const String& host, SubdomainSetting);
     MatchResult matchesOrigin(const SecurityOrigin&) const;
 
     const String& protocol() const { return m_protocol; }
     const String& host() const { return m_host; }
     SubdomainSetting subdomainSettings() const { return m_subdomainSettings; }
-    IPAddressSetting ipAddressSettings() const { return m_ipAddressSettings; }
     bool hostIsIPAddress() const { return m_hostIsIPAddress; }
+    const String& registerable() const { return m_registerableDomain; }
 
 private:
     String m_protocol;
     String m_host;
+    String m_registerableDomain;
     SubdomainSetting m_subdomainSettings;
-    IPAddressSetting m_ipAddressSettings;
     bool m_hostIsIPAddress;
     bool m_hostIsPublicSuffix;
 };
@@ -86,8 +81,7 @@ PLATFORM_EXPORT inline bool operator==(const OriginAccessEntry& a, const OriginA
 {
     return equalIgnoringCase(a.protocol(), b.protocol())
         && equalIgnoringCase(a.host(), b.host())
-        && a.subdomainSettings() == b.subdomainSettings()
-        && a.ipAddressSettings() == b.ipAddressSettings();
+        && a.subdomainSettings() == b.subdomainSettings();
 }
 
 PLATFORM_EXPORT inline bool operator!=(const OriginAccessEntry& a, const OriginAccessEntry& b)

@@ -121,19 +121,19 @@ LayoutRect LayoutSVGInlineText::localCaretRect(InlineBox* box, int caretOffset, 
     if (static_cast<unsigned>(caretOffset) < textBox->start() + textBox->len()) {
         LayoutRect rect = textBox->localSelectionRect(caretOffset, caretOffset + 1);
         LayoutUnit x = box->isLeftToRightDirection() ? rect.x() : rect.maxX();
-        return LayoutRect(x, rect.y(), caretWidth, rect.height());
+        return LayoutRect(x, rect.y(), caretWidth(), rect.height());
     }
 
     LayoutRect rect = textBox->localSelectionRect(caretOffset - 1, caretOffset);
     LayoutUnit x = box->isLeftToRightDirection() ? rect.maxX() : rect.x();
-    return LayoutRect(x, rect.y(), caretWidth, rect.height());
+    return LayoutRect(x, rect.y(), caretWidth(), rect.height());
 }
 
 FloatRect LayoutSVGInlineText::floatLinesBoundingBox() const
 {
     FloatRect boundingBox;
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox())
-        boundingBox.unite(box->calculateBoundaries().toFloatRect());
+        boundingBox.unite(FloatRect(box->calculateBoundaries()));
     return boundingBox;
 }
 
@@ -155,7 +155,7 @@ bool LayoutSVGInlineText::characterStartsNewTextChunk(int position) const
     if (it == m_layoutAttributes.characterDataMap().end())
         return false;
 
-    return it->value.x != SVGTextLayoutAttributes::emptyValue() || it->value.y != SVGTextLayoutAttributes::emptyValue();
+    return !SVGTextLayoutAttributes::isEmptyValue(it->value.x) || !SVGTextLayoutAttributes::isEmptyValue(it->value.y);
 }
 
 PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& point)
@@ -175,8 +175,8 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
 
     float closestDistance = std::numeric_limits<float>::max();
     float closestDistancePosition = 0;
-    const SVGTextFragment* closestDistanceFragment = 0;
-    SVGInlineTextBox* closestDistanceBox = 0;
+    const SVGTextFragment* closestDistanceFragment = nullptr;
+    SVGInlineTextBox* closestDistanceBox = nullptr;
 
     AffineTransform fragmentTransform;
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {

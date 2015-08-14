@@ -10,21 +10,6 @@
 
 namespace blink {
 
-BeginFilterDisplayItem::BeginFilterDisplayItem(const DisplayItemClientWrapper& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds)
-    : PairedBeginDisplayItem(client, BeginFilter)
-    , m_imageFilter(imageFilter)
-    , m_bounds(bounds)
-{
-}
-
-BeginFilterDisplayItem::BeginFilterDisplayItem(const DisplayItemClientWrapper& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds, PassOwnPtr<WebFilterOperations> webFilterOperations)
-    : PairedBeginDisplayItem(client, BeginFilter)
-    , m_imageFilter(imageFilter)
-    , m_webFilterOperations(webFilterOperations)
-    , m_bounds(bounds)
-{
-}
-
 static FloatRect mapImageFilterRect(SkImageFilter* filter, const FloatRect& bounds)
 {
     SkRect filterBounds;
@@ -51,8 +36,9 @@ void BeginFilterDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list
 
 bool BeginFilterDisplayItem::drawsContent() const
 {
-    // A filter with no inputs must produce its own content.
-    return m_imageFilter->countInputs() == 0;
+    // Skia cannot currently tell us if a filter will draw content,
+    // even when no input primitives are drawn.
+    return true;
 }
 
 #ifndef NDEBUG

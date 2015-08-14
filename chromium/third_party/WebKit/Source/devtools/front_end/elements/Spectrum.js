@@ -49,8 +49,15 @@ WebInspector.Spectrum = function()
     this.registerRequiredCSS("elements/spectrum.css");
     this.contentElement.tabIndex = 0;
 
-    this._draggerElement = this.contentElement.createChild("div", "spectrum-color");
-    this._dragHelperElement = this._draggerElement.createChild("div", "spectrum-sat fill").createChild("div", "spectrum-val fill").createChild("div", "spectrum-dragger");
+    this._colorElement = this.contentElement.createChild("div", "spectrum-color");
+    this._colorDragElement = this._colorElement.createChild("div", "spectrum-sat fill").createChild("div", "spectrum-val fill").createChild("div", "spectrum-dragger");
+
+    var toolbar = new WebInspector.Toolbar(this.contentElement);
+    toolbar.element.classList.add("spectrum-eye-dropper");
+    this._colorPickerButton = new WebInspector.ToolbarButton(WebInspector.UIString("Toggle color picker"), "eyedropper-toolbar-item");
+    this._colorPickerButton.setToggled(true);
+    this._colorPickerButton.addEventListener("click", this._toggleColorPicker.bind(this, undefined));
+    toolbar.appendToolbarItem(this._colorPickerButton);
 
     var swatchElement = this.contentElement.createChild("span", "swatch");
     this._swatchInnerElement = swatchElement.createChild("span", "swatch-inner");
@@ -61,7 +68,6 @@ WebInspector.Spectrum = function()
     this._alphaElementBackground = this._alphaElement.createChild("div", "spectrum-alpha-background");
     this._alphaSlider = this._alphaElement.createChild("div", "spectrum-slider");
 
-    this._currentFormat = WebInspector.Color.Format.HEX;
     var displaySwitcher = this.contentElement.createChild("div", "spectrum-display-switcher");
     appendSwitcherIcon(displaySwitcher);
     displaySwitcher.addEventListener("click", this._formatViewSwitch.bind(this));
@@ -70,202 +76,132 @@ WebInspector.Spectrum = function()
     this._displayContainer = this.contentElement.createChild("div", "spectrum-text source-code");
     this._textValues = [];
     for (var i = 0; i < 4; ++i) {
-        var inputValue = this._displayContainer.createChild("span", "spectrum-text-value");
+        var inputValue = this._displayContainer.createChild("input", "spectrum-text-value");
         inputValue.maxLength = 4;
         this._textValues.push(inputValue);
-        inputValue.addEventListener("keydown", this._checkForTabEvent.bind(this));
-        inputValue.addEventListener("keyup", this._inputChanged.bind(this));
-        inputValue.addEventListener("mousewheel", this._inputChanged.bind(this));
+        inputValue.addEventListener("keydown", this._inputChanged.bind(this), false);
+        inputValue.addEventListener("input", this._inputChanged.bind(this), false);
+        inputValue.addEventListener("mousewheel", this._inputChanged.bind(this), false);
     }
 
     this._textLabels = this._displayContainer.createChild("div", "spectrum-text-label");
 
     // HEX display.
     this._hexContainer = this.contentElement.createChild("div", "spectrum-text spectrum-text-hex source-code");
-    this._hexValue = this._hexContainer.createChild("span", "spectrum-text-value");
+    this._hexValue = this._hexContainer.createChild("input", "spectrum-text-value");
     this._hexValue.maxLength = 7;
-    this._hexValue.addEventListener("keyup", this._inputChanged.bind(this));
-    this._hexValue.addEventListener("mousewheel", this._inputChanged.bind(this));
+    this._hexValue.addEventListener("keydown", this._inputChanged.bind(this), false);
+    this._hexValue.addEventListener("mousewheel", this._inputChanged.bind(this), false);
 
     var label = this._hexContainer.createChild("div", "spectrum-text-label");
     label.textContent = "HEX";
 
-    WebInspector.Spectrum.draggable(this._hueElement, hueDrag.bind(this));
-    WebInspector.Spectrum.draggable(this._alphaElement, alphaDrag.bind(this));
-    WebInspector.Spectrum.draggable(this._draggerElement, colorDrag.bind(this), colorDragStart.bind(this));
+    WebInspector.installDragHandle(this._hueElement, dragStart.bind(this, positionHue.bind(this)), positionHue.bind(this), null, "default");
+    WebInspector.installDragHandle(this._alphaElement, dragStart.bind(this, positionAlpha.bind(this)), positionAlpha.bind(this), null, "default");
+    WebInspector.installDragHandle(this._colorElement, dragStart.bind(this, positionColor.bind(this)), positionColor.bind(this), null, "default");
 
     /**
-     * @param {!Element} element
-     * @param {number} dragX
-     * @param {number} dragY
+     * @param {function(!Event)} callback
+     * @param {!Event} event
+     * @return {boolean}
      * @this {WebInspector.Spectrum}
      */
-    function hueDrag(element, dragX, dragY)
+    function dragStart(callback, event)
     {
-        this._hsv[0] = (this._hueAlphaWidth - dragX) / this._hueAlphaWidth;
-        this._onchange();
+        this._hueAlphaLeft = this._hueElement.totalOffsetLeft();
+        this._colorOffset = this._colorElement.totalOffset();
+        callback(event);
+        return true;
     }
 
     /**
-     * @param {!Element} element
-     * @param {number} dragX
-     * @param {number} dragY
+     * @param {!Event} event
      * @this {WebInspector.Spectrum}
      */
-    function alphaDrag(element, dragX, dragY)
+    function positionHue(event)
     {
-        this._hsv[3] = Math.round((dragX / this._hueAlphaWidth) * 100) / 100;
-        if (this._color().hasAlpha() && (this._currentFormat === WebInspector.Color.Format.ShortHEX || this._currentFormat === WebInspector.Color.Format.HEX || this._currentFormat === WebInspector.Color.Format.Nickname))
-            this.setColorFormat(WebInspector.Color.Format.RGB);
-        this._onchange();
-    }
-
-    var initialHelperOffset;
-
-    /**
-     * @this {WebInspector.Spectrum}
-     */
-    function colorDragStart()
-    {
-        initialHelperOffset = { x: this._dragHelperElement.offsetLeft, y: this._dragHelperElement.offsetTop };
+        var hsva = this._hsv.slice();
+        hsva[0] = Number.constrain(1 - (event.x - this._hueAlphaLeft) / this._hueAlphaWidth, 0, 1);
+        this._innerSetColor(hsva,  "", undefined, WebInspector.Spectrum._ChangeSource.Other);
     }
 
     /**
-     * @param {!Element} element
-     * @param {number} dragX
-     * @param {number} dragY
-     * @param {!MouseEvent} event
+     * @param {!Event} event
      * @this {WebInspector.Spectrum}
      */
-    function colorDrag(element, dragX, dragY, event)
+    function positionAlpha(event)
     {
-        if (event.shiftKey) {
-            if (Math.abs(dragX - initialHelperOffset.x) >= Math.abs(dragY - initialHelperOffset.y))
-                dragY = initialHelperOffset.y;
-            else
-                dragX = initialHelperOffset.x;
-        }
-
-        this._hsv[1] = dragX / this.dragWidth;
-        this._hsv[2] = (this.dragHeight - dragY) / this.dragHeight;
-
-        this._onchange();
+        var newAlpha = Math.round((event.x - this._hueAlphaLeft) / this._hueAlphaWidth * 100) / 100;
+        var hsva = this._hsv.slice();
+        hsva[3] = Number.constrain(newAlpha, 0, 1);
+        var colorFormat = undefined;
+        if (this._color().hasAlpha() && (this._colorFormat === WebInspector.Color.Format.ShortHEX || this._colorFormat === WebInspector.Color.Format.HEX || this._colorFormat === WebInspector.Color.Format.Nickname))
+            colorFormat = WebInspector.Color.Format.RGB;
+        this._innerSetColor(hsva, "", colorFormat, WebInspector.Spectrum._ChangeSource.Other);
     }
-};
+
+    /**
+     * @param {!Event} event
+     * @this {WebInspector.Spectrum}
+     */
+    function positionColor(event)
+    {
+        var hsva = this._hsv.slice();
+        hsva[1] = Number.constrain((event.x - this._colorOffset.left) / this.dragWidth, 0, 1);
+        hsva[2] = Number.constrain(1 - (event.y - this._colorOffset.top) / this.dragHeight, 0, 1);
+        this._innerSetColor(hsva,  "", undefined, WebInspector.Spectrum._ChangeSource.Other);
+    }
+}
+
+WebInspector.Spectrum._ChangeSource = {
+    Input: "Input",
+    Model: "Model",
+    Other: "Other"
+}
 
 WebInspector.Spectrum.Events = {
     ColorChanged: "ColorChanged"
 };
 
-/**
- * @param {!Element} element
- * @param {function(!Element, number, number, !MouseEvent)=} onmove
- * @param {function(!Element, !MouseEvent)=} onstart
- * @param {function(!Element, !MouseEvent)=} onstop
- */
-WebInspector.Spectrum.draggable = function(element, onmove, onstart, onstop) {
-
-    var dragging;
-    var offset;
-    var scrollOffset;
-    var maxHeight;
-    var maxWidth;
-
-    /**
-     * @param {!Event} e
-     */
-    function consume(e)
-    {
-        e.consume(true);
-    }
-
-    /**
-     * @param {!Event} e
-     */
-    function move(e)
-    {
-        if (dragging) {
-            var dragX = Math.max(0, Math.min(e.pageX - offset.left + scrollOffset.left, maxWidth));
-            var dragY = Math.max(0, Math.min(e.pageY - offset.top + scrollOffset.top, maxHeight));
-
-            if (onmove)
-                onmove(element, dragX, dragY, /** @type {!MouseEvent} */ (e));
-        }
-    }
-
-    /**
-     * @param {!Event} e
-     */
-    function start(e)
-    {
-        var mouseEvent = /** @type {!MouseEvent} */ (e);
-        var rightClick = mouseEvent.which ? (mouseEvent.which === 3) : (mouseEvent.button === 2);
-
-        if (!rightClick && !dragging) {
-
-            if (onstart)
-                onstart(element, mouseEvent);
-
-            dragging = true;
-            maxHeight = element.clientHeight;
-            maxWidth = element.clientWidth;
-
-            scrollOffset = element.scrollOffset();
-            offset = element.totalOffset();
-
-            element.ownerDocument.addEventListener("selectstart", consume, false);
-            element.ownerDocument.addEventListener("dragstart", consume, false);
-            element.ownerDocument.addEventListener("mousemove", move, false);
-            element.ownerDocument.addEventListener("mouseup", stop, false);
-
-            move(mouseEvent);
-            consume(mouseEvent);
-        }
-    }
-
-    /**
-     * @param {!Event} e
-     */
-    function stop(e)
-    {
-        if (dragging) {
-            element.ownerDocument.removeEventListener("selectstart", consume, false);
-            element.ownerDocument.removeEventListener("dragstart", consume, false);
-            element.ownerDocument.removeEventListener("mousemove", move, false);
-            element.ownerDocument.removeEventListener("mouseup", stop, false);
-
-            if (onstop)
-                onstop(element, /** @type {!MouseEvent} */ (e));
-        }
-
-        dragging = false;
-    }
-
-    element.addEventListener("mousedown", start, false);
-};
-
 WebInspector.Spectrum.prototype = {
     /**
      * @param {!WebInspector.Color} color
+     * @param {string} colorFormat
      */
-    setColor: function(color)
+    setColor: function(color, colorFormat)
     {
-        this._hsv = color.hsva();
-        this._update();
+        this._originalFormat = colorFormat;
+        this._innerSetColor(color.hsva(), "", colorFormat, WebInspector.Spectrum._ChangeSource.Model);
     },
 
     /**
-     * @param {!WebInspector.Color.Format} format
+     * @param {!Array<number>|undefined} hsva
+     * @param {string|undefined} colorString
+     * @param {string|undefined} colorFormat
+     * @param {string} changeSource
      */
-    setColorFormat: function(format)
+    _innerSetColor: function(hsva, colorString, colorFormat, changeSource)
     {
-        console.assert(format !== WebInspector.Color.Format.Original, "Spectrum's color format cannot be Original");
-        if (format === WebInspector.Color.Format.RGBA)
-            format = WebInspector.Color.Format.RGB;
-        else if (format === WebInspector.Color.Format.HSLA)
-            format = WebInspector.Color.Format.HSL;
-        this._originalFormat = format;
-        this._currentFormat = format;
+        if (hsva !== undefined)
+            this._hsv = hsva;
+        if (colorString !== undefined)
+            this._colorString = colorString;
+        if (colorFormat !== undefined) {
+            console.assert(colorFormat !== WebInspector.Color.Format.Original, "Spectrum's color format cannot be Original");
+            if (colorFormat === WebInspector.Color.Format.RGBA)
+                colorFormat = WebInspector.Color.Format.RGB;
+            else if (colorFormat === WebInspector.Color.Format.HSLA)
+                colorFormat = WebInspector.Color.Format.HSL;
+            this._colorFormat = colorFormat;
+        }
+
+        this._updateHelperLocations();
+        this._updateUI();
+
+        if (changeSource !== WebInspector.Spectrum._ChangeSource.Input)
+            this._updateInput();
+        if (changeSource !== WebInspector.Spectrum._ChangeSource.Model)
+            this.dispatchEventToListeners(WebInspector.Spectrum.Events.ColorChanged, this.colorString());
     },
 
     /**
@@ -281,38 +217,22 @@ WebInspector.Spectrum.prototype = {
      */
     colorString: function()
     {
+        if (this._colorString)
+            return this._colorString;
         var cf = WebInspector.Color.Format;
         var color = this._color();
-        var colorString = color.asString(this._currentFormat);
+        var colorString = color.asString(this._colorFormat);
         if (colorString)
             return colorString;
 
-        if (this._currentFormat === cf.Nickname || this._currentFormat === cf.ShortHEX) {
+        if (this._colorFormat === cf.Nickname || this._colorFormat === cf.ShortHEX) {
             colorString = color.asString(cf.HEX);
             if (colorString)
                 return colorString;
         }
 
         console.assert(color.hasAlpha());
-        return this._currentFormat === cf.HSL ? /** @type {string} */(color.asString(cf.HSLA)) : /** @type {string} */(color.asString(cf.RGBA));
-    },
-
-    _onchange: function()
-    {
-        this._update();
-        this._dispatchChangeEvent();
-    },
-
-    _dispatchChangeEvent: function()
-    {
-        this.dispatchEventToListeners(WebInspector.Spectrum.Events.ColorChanged, this.colorString());
-    },
-
-    _update: function()
-    {
-        this._updateHelperLocations();
-        this._updateUI();
-        this._updateInput();
+        return this._colorFormat === cf.HSL ? /** @type {string} */(color.asString(cf.HSLA)) : /** @type {string} */(color.asString(cf.RGBA));
     },
 
     _updateHelperLocations: function()
@@ -326,12 +246,12 @@ WebInspector.Spectrum.prototype = {
         var dragX = s * this.dragWidth;
         var dragY = this.dragHeight - (v * this.dragHeight);
 
-        dragX = Math.max(-this._dragHelperElementHeight,
-                        Math.min(this.dragWidth - this._dragHelperElementHeight, dragX - this._dragHelperElementHeight));
-        dragY = Math.max(-this._dragHelperElementHeight,
-                        Math.min(this.dragHeight - this._dragHelperElementHeight, dragY - this._dragHelperElementHeight));
+        dragX = Math.max(-this._colorDragElementHeight,
+                        Math.min(this.dragWidth - this._colorDragElementHeight, dragX - this._colorDragElementHeight));
+        dragY = Math.max(-this._colorDragElementHeight,
+                        Math.min(this.dragHeight - this._colorDragElementHeight, dragY - this._colorDragElementHeight));
 
-        this._dragHelperElement.positionAt(dragX, dragY);
+        this._colorDragElement.positionAt(dragX, dragY);
 
         // Where to show the bar that displays your current selected hue.
         var hueSlideX = (1 - h) * this._hueAlphaWidth - this.slideHelperWidth;
@@ -343,37 +263,37 @@ WebInspector.Spectrum.prototype = {
     _updateInput: function()
     {
         var cf = WebInspector.Color.Format;
-        if (this._currentFormat === cf.HEX || this._currentFormat === cf.ShortHEX || this._currentFormat === cf.Nickname) {
+        if (this._colorFormat === cf.HEX || this._colorFormat === cf.ShortHEX || this._colorFormat === cf.Nickname) {
             this._hexContainer.hidden = false;
             this._displayContainer.hidden = true;
-            if (this._currentFormat === cf.ShortHEX && this._color().canBeShortHex())
-                this._hexValue.textContent = this._color().asString(cf.ShortHEX);
+            if (this._colorFormat === cf.ShortHEX && this._color().canBeShortHex())
+                this._hexValue.value = this._color().asString(cf.ShortHEX);
             else
-                this._hexValue.textContent = this._color().asString(cf.HEX);
+                this._hexValue.value = this._color().asString(cf.HEX);
         } else {
             // RGBA, HSLA display.
             this._hexContainer.hidden = true;
             this._displayContainer.hidden = false;
-            var isRgb = this._currentFormat === cf.RGB;
+            var isRgb = this._colorFormat === cf.RGB;
             this._textLabels.textContent = isRgb ? "RGBA" : "HSLA";
             var colorValues = isRgb ? this._color().canonicalRGBA() : this._color().canonicalHSLA();
             for (var i = 0; i < 3; ++i) {
-                this._textValues[i].textContent = colorValues[i];
+                this._textValues[i].value = colorValues[i];
                 if (!isRgb && (i === 1 || i === 2))
-                    this._textValues[i].textContent += "%";
+                    this._textValues[i].value += "%";
             }
-            this._textValues[3].textContent = Math.round(colorValues[3] * 100) / 100;
+            this._textValues[3].value= Math.round(colorValues[3] * 100) / 100;
         }
     },
 
     _updateUI: function()
     {
         var h = WebInspector.Color.fromHSVA([this._hsv[0], 1, 1, 1]);
-        this._draggerElement.style.backgroundColor = /** @type {string} */ (h.asString(WebInspector.Color.Format.RGB));
+        this._colorElement.style.backgroundColor = /** @type {string} */ (h.asString(WebInspector.Color.Format.RGB));
         this._swatchInnerElement.style.backgroundColor = /** @type {string} */ (this._color().asString(WebInspector.Color.Format.RGBA));
         // Show border if the swatch is white.
         this._swatchInnerElement.classList.toggle("swatch-inner-white", this._color().hsla()[2] > 0.9);
-        this._dragHelperElement.style.backgroundColor = /** @type {string} */ (this._color().asString(WebInspector.Color.Format.RGBA));
+        this._colorDragElement.style.backgroundColor = /** @type {string} */ (this._color().asString(WebInspector.Color.Format.RGBA));
         var noAlpha = WebInspector.Color.fromHSVA(this._hsv.slice(0,3).concat(1));
         this._alphaElementBackground.style.backgroundImage = String.sprintf("linear-gradient(to right, rgba(0,0,0,0), %s)", noAlpha.asString(WebInspector.Color.Format.RGB));
     },
@@ -381,25 +301,12 @@ WebInspector.Spectrum.prototype = {
     _formatViewSwitch: function()
     {
         var cf = WebInspector.Color.Format;
-        if (this._currentFormat === cf.RGB)
-            this._currentFormat = cf.HSL;
-        else if (this._currentFormat === cf.HSL && !this._color().hasAlpha())
-            this._currentFormat = this._originalFormat === cf.ShortHEX ? cf.ShortHEX : cf.HEX;
-        else
-            this._currentFormat = cf.RGB;
-        this._onchange();
-    },
-
-    /**
-     * @param {!Event} event
-     */
-    _checkForTabEvent: function(event)
-    {
-        var sibling = event.shiftKey ? event.target.previousSibling : event.target.nextSibling;
-        if (event.code !== "Tab" || !sibling || !sibling.classList.contains("spectrum-text-value"))
-            return;
-        sibling.getComponentSelection().setBaseAndExtent(sibling, 0, sibling, 1);
-        event.consume(true);
+        var format = cf.RGB;
+        if (this._colorFormat === cf.RGB)
+            format = cf.HSL;
+        else if (this._colorFormat === cf.HSL && !this._color().hasAlpha())
+            format = this._originalFormat === cf.ShortHEX ? cf.ShortHEX : cf.HEX;
+        this._innerSetColor(undefined, "", format, WebInspector.Spectrum._ChangeSource.Other);
     },
 
     /**
@@ -413,18 +320,28 @@ WebInspector.Spectrum.prototype = {
          */
         function elementValue(element)
         {
-            return element.textContent;
+            return element.value;
         }
 
-        var element = /** @type {!Element} */(event.currentTarget);
-        WebInspector.handleElementValueModifications(event, element);
+        var inputElement = /** @type {!Element} */(event.currentTarget);
+        var arrowKeyOrMouseWheelEvent = (event.keyIdentifier === "Up" || event.keyIdentifier === "Down" || event.type === "mousewheel");
+        var pageKeyPressed = (event.keyIdentifier === "PageUp" || event.keyIdentifier === "PageDown");
+        if (arrowKeyOrMouseWheelEvent || pageKeyPressed) {
+            var newValue = WebInspector.createReplacementString(inputElement.value, event);
+            if (newValue) {
+                inputElement.value = newValue;
+                inputElement.selectionStart = 0;
+                inputElement.selectionEnd = newValue.length;
+            }
+            event.consume(true);
+        }
 
         const cf = WebInspector.Color.Format;
         var colorString;
-        if (this._currentFormat === cf.HEX || this._currentFormat === cf.ShortHEX) {
-            colorString = this._hexValue.textContent;
+        if (this._colorFormat === cf.HEX || this._colorFormat === cf.ShortHEX) {
+            colorString = this._hexValue.value;
         } else {
-            var format = this._currentFormat === cf.RGB ? "rgba" : "hsla";
+            var format = this._colorFormat === cf.RGB ? "rgba" : "hsla";
             var values = this._textValues.map(elementValue).join(",");
             colorString = String.sprintf("%s(%s)", format, values);
         }
@@ -432,24 +349,55 @@ WebInspector.Spectrum.prototype = {
         var color = WebInspector.Color.parse(colorString);
         if (!color)
             return;
-        this._hsv = color.hsva();
-        if (this._currentFormat === cf.HEX || this._currentFormat === cf.ShortHEX)
-            this._currentFormat = color.canBeShortHex() ? cf.ShortHEX : cf.HEX;
-
-        this._dispatchChangeEvent();
-        this._updateHelperLocations();
-        this._updateUI();
+        var hsv = color.hsva();
+        if (this._colorFormat === cf.HEX || this._colorFormat === cf.ShortHEX)
+            this._colorFormat = color.canBeShortHex() ? cf.ShortHEX : cf.HEX;
+        this._innerSetColor(hsv, colorString, undefined, WebInspector.Spectrum._ChangeSource.Input);
     },
 
     wasShown: function()
     {
         this._hueAlphaWidth = this._hueElement.offsetWidth;
         this.slideHelperWidth = this._hueSlider.offsetWidth / 2;
-        this.dragWidth = this._draggerElement.offsetWidth;
-        this.dragHeight = this._draggerElement.offsetHeight;
-        this._dragHelperElementHeight = this._dragHelperElement.offsetHeight / 2;
-        this._update();
+        this.dragWidth = this._colorElement.offsetWidth;
+        this.dragHeight = this._colorElement.offsetHeight;
+        this._colorDragElementHeight = this._colorDragElement.offsetHeight / 2;
+        this._innerSetColor(undefined, undefined, undefined, WebInspector.Spectrum._ChangeSource.Model);
+        this._toggleColorPicker(true);
+        WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.ColorPicked, this._colorPicked, this);
     },
+
+    willHide: function()
+    {
+        this._toggleColorPicker(false);
+        WebInspector.targetManager.removeModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.ColorPicked, this._colorPicked, this);
+    },
+
+    /**
+     * @param {boolean=} enabled
+     * @param {!WebInspector.Event=} event
+     */
+    _toggleColorPicker: function(enabled, event)
+    {
+        if (enabled === undefined)
+            enabled = !this._colorPickerButton.toggled();
+        this._colorPickerButton.setToggled(enabled);
+        for (var target of WebInspector.targetManager.targets())
+            target.pageAgent().setColorPickerEnabled(enabled);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _colorPicked: function(event)
+    {
+        var rgbColor = /** @type {!DOMAgent.RGBA} */ (event.data);
+        var rgba = [rgbColor.r, rgbColor.g, rgbColor.b, (rgbColor.a / 2.55 | 0) / 100];
+        var color = WebInspector.Color.fromRGBA(rgba);
+        this._innerSetColor(color.hsva(), "", undefined, WebInspector.Spectrum._ChangeSource.Other);
+        InspectorFrontendHost.bringToFront();
+    },
+
 
     __proto__: WebInspector.VBox.prototype
 }

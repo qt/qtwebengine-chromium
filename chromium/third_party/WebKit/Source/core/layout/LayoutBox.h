@@ -26,13 +26,14 @@
 #include "core/CoreExport.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/OverflowModel.h"
-#include "core/layout/shapes/ShapeOutsideInfo.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollableArea.h"
 
 namespace blink {
 
+class LayoutBlockFlow;
 class LayoutMultiColumnSpannerPlaceholder;
+class ShapeOutsideInfo;
 
 struct PaintInfo;
 
@@ -52,8 +53,8 @@ struct LayoutBoxRareData {
     WTF_MAKE_NONCOPYABLE(LayoutBoxRareData); WTF_MAKE_FAST_ALLOCATED(LayoutBoxRareData);
 public:
     LayoutBoxRareData()
-        : m_inlineBoxWrapper(0)
-        , m_spannerPlaceholder(0)
+        : m_inlineBoxWrapper(nullptr)
+        , m_spannerPlaceholder(nullptr)
         , m_overrideLogicalContentHeight(-1)
         , m_overrideLogicalContentWidth(-1)
         , m_previousBorderBoxSize(-1, -1)
@@ -69,8 +70,12 @@ public:
     LayoutUnit m_overrideLogicalContentHeight;
     LayoutUnit m_overrideLogicalContentWidth;
 
-    // Set by LayoutBox::updatePreviousBorderBoxSizeIfNeeded().
+    // Set by LayoutBox::savePreviousBoxSizesIfNeeded().
     LayoutSize m_previousBorderBoxSize;
+    LayoutRect m_previousContentBoxRect;
+    LayoutRect m_previousLayoutOverflowRect;
+
+    LayoutUnit m_pageLogicalOffset;
 };
 
 class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
@@ -344,26 +349,26 @@ public:
     LayoutUnit marginLogicalLeft() const { return m_marginBoxOutsets.logicalLeft(style()->writingMode()); }
     LayoutUnit marginLogicalRight() const { return m_marginBoxOutsets.logicalRight(style()->writingMode()); }
 
-    virtual LayoutUnit marginBefore(const ComputedStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.before((overrideStyle ? overrideStyle : style())->writingMode()); }
-    virtual LayoutUnit marginAfter(const ComputedStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.after((overrideStyle ? overrideStyle : style())->writingMode()); }
-    virtual LayoutUnit marginStart(const ComputedStyle* overrideStyle = 0) const override final
+    virtual LayoutUnit marginBefore(const ComputedStyle* overrideStyle = nullptr) const override final { return m_marginBoxOutsets.before((overrideStyle ? overrideStyle : style())->writingMode()); }
+    virtual LayoutUnit marginAfter(const ComputedStyle* overrideStyle = nullptr) const override final { return m_marginBoxOutsets.after((overrideStyle ? overrideStyle : style())->writingMode()); }
+    virtual LayoutUnit marginStart(const ComputedStyle* overrideStyle = nullptr) const override final
     {
         const ComputedStyle* styleToUse = overrideStyle ? overrideStyle : style();
         return m_marginBoxOutsets.start(styleToUse->writingMode(), styleToUse->direction());
     }
-    virtual LayoutUnit marginEnd(const ComputedStyle* overrideStyle = 0) const override final
+    virtual LayoutUnit marginEnd(const ComputedStyle* overrideStyle = nullptr) const override final
     {
         const ComputedStyle* styleToUse = overrideStyle ? overrideStyle : style();
         return m_marginBoxOutsets.end(styleToUse->writingMode(), styleToUse->direction());
     }
-    void setMarginBefore(LayoutUnit value, const ComputedStyle* overrideStyle = 0) { m_marginBoxOutsets.setBefore((overrideStyle ? overrideStyle : style())->writingMode(), value); }
-    void setMarginAfter(LayoutUnit value, const ComputedStyle* overrideStyle = 0) { m_marginBoxOutsets.setAfter((overrideStyle ? overrideStyle : style())->writingMode(), value); }
-    void setMarginStart(LayoutUnit value, const ComputedStyle* overrideStyle = 0)
+    void setMarginBefore(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr) { m_marginBoxOutsets.setBefore((overrideStyle ? overrideStyle : style())->writingMode(), value); }
+    void setMarginAfter(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr) { m_marginBoxOutsets.setAfter((overrideStyle ? overrideStyle : style())->writingMode(), value); }
+    void setMarginStart(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr)
     {
         const ComputedStyle* styleToUse = overrideStyle ? overrideStyle : style();
         m_marginBoxOutsets.setStart(styleToUse->writingMode(), styleToUse->direction(), value);
     }
-    void setMarginEnd(LayoutUnit value, const ComputedStyle* overrideStyle = 0)
+    void setMarginEnd(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr)
     {
         const ComputedStyle* styleToUse = overrideStyle ? overrideStyle : style();
         m_marginBoxOutsets.setEnd(styleToUse->writingMode(), styleToUse->direction(), value);
@@ -423,7 +428,7 @@ public:
     void setExtraBlockOffset(LayoutUnit blockOffest);
     void clearExtraInlineAndBlockOffests();
 
-    virtual LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const override;
+    virtual LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = nullptr) const override;
 
     LayoutUnit adjustBorderBoxLogicalWidthForBoxSizing(LayoutUnit width) const;
     LayoutUnit adjustBorderBoxLogicalHeightForBoxSizing(LayoutUnit height) const;
@@ -452,11 +457,15 @@ public:
     // Used to resolve margins in the containing block's block-flow direction.
     void computeAndSetBlockDirectionMargins(const LayoutBlock* containingBlock);
 
-    virtual LayoutUnit offsetFromLogicalTopOfFirstPage() const;
+    LayoutUnit offsetFromLogicalTopOfFirstPage() const;
+
+    // The page logical offset is the object's offset from the top of the page in the page progression
+    // direction (so an x-offset in vertical text and a y-offset for horizontal text).
+    LayoutUnit pageLogicalOffset() const { return m_rareData ? m_rareData->m_pageLogicalOffset : LayoutUnit(); }
+    void setPageLogicalOffset(LayoutUnit);
 
     void positionLineBox(InlineBox*);
     void moveWithEdgeOfInlineContainerIfNecessary(bool isHorizontal);
-    void markStaticPositionedBoxForLayout(bool isHorizontal, bool isInline);
 
     virtual InlineBox* createInlineBox();
     void dirtyLineBoxes(bool fullLayout);
@@ -472,7 +481,7 @@ public:
     void clearSpannerPlaceholder();
     virtual LayoutMultiColumnSpannerPlaceholder* spannerPlaceholder() const final { return m_rareData ? m_rareData->m_spannerPlaceholder : 0; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
     virtual void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
     virtual void invalidatePaintForOverhangingFloats(bool paintAllDescendants);
 
@@ -529,8 +538,8 @@ public:
     LayoutUnit computePercentageLogicalHeight(const Length& height) const;
 
     // Block flows subclass availableWidth/Height to handle multi column layout (shrinking the width/height available to children when laying out.)
-    virtual LayoutUnit availableLogicalWidth() const { return contentLogicalWidth(); }
-    virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const;
+    LayoutUnit availableLogicalWidth() const { return contentLogicalWidth(); }
+    LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const;
     LayoutUnit availableLogicalHeightUsing(const Length&, AvailableLogicalHeightType) const;
 
     // There are a few cases where we need to refer specifically to the available physical width and available physical height.
@@ -543,7 +552,7 @@ public:
     int intrinsicScrollbarLogicalWidth() const;
     int scrollbarLogicalWidth() const { return style()->isHorizontalWritingMode() ? verticalScrollbarWidth() : horizontalScrollbarHeight(); }
     int scrollbarLogicalHeight() const { return style()->isHorizontalWritingMode() ? horizontalScrollbarHeight() : verticalScrollbarWidth(); }
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
+    virtual ScrollResultOneDimensional scroll(ScrollDirectionPhysical, ScrollGranularity, float delta = 1);
     bool canBeScrolledAndHasScrollableArea() const;
     virtual bool canBeProgramaticallyScrolled() const;
     virtual void autoscroll(const IntPoint&);
@@ -570,17 +579,16 @@ public:
     bool hasUnsplittableScrollingOverflow() const;
     bool isUnsplittableForPagination() const;
 
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
 
-    virtual LayoutRect overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize);
+    virtual LayoutRect overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
     LayoutRect clipRect(const LayoutPoint& location);
     virtual bool hasControlClip() const { return false; }
     virtual LayoutRect controlClipRect(const LayoutPoint&) const { return LayoutRect(); }
 
-    virtual void paintObject(const PaintInfo&, const LayoutPoint&) { ASSERT_NOT_REACHED(); }
     virtual void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&);
     virtual void paintMask(const PaintInfo&, const LayoutPoint&);
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     void logicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& logicalTop, LogicalExtentComputedValues&);
 
@@ -612,22 +620,18 @@ public:
     virtual LayoutUnit offsetTop() const override;
 
     LayoutPoint flipForWritingModeForChild(const LayoutBox* child, const LayoutPoint&) const;
-    LayoutUnit flipForWritingMode(LayoutUnit position) const WARN_UNUSED_RETURN
-    {
+    LayoutUnit flipForWritingMode(LayoutUnit position) const WARN_UNUSED_RETURN {
         // The offset is in the block direction (y for horizontal writing modes, x for vertical writing modes).
         if (!UNLIKELY(hasFlippedBlocksWritingMode()))
             return position;
         return logicalHeight() - position;
     }
-    LayoutPoint flipForWritingMode(const LayoutPoint& position) const WARN_UNUSED_RETURN
-    {
+    LayoutPoint flipForWritingMode(const LayoutPoint& position) const WARN_UNUSED_RETURN {
         if (!UNLIKELY(hasFlippedBlocksWritingMode()))
             return position;
         return isHorizontalWritingMode() ? LayoutPoint(position.x(), m_frameRect.height() - position.y()) : LayoutPoint(m_frameRect.width() - position.x(), position.y());
     }
-    LayoutPoint flipForWritingModeIncludingColumns(const LayoutPoint&) const;
-    LayoutSize flipForWritingMode(const LayoutSize& offset) const WARN_UNUSED_RETURN
-    {
+    LayoutSize flipForWritingMode(const LayoutSize& offset) const WARN_UNUSED_RETURN {
         if (!UNLIKELY(hasFlippedBlocksWritingMode()))
             return offset;
         return isHorizontalWritingMode() ? LayoutSize(offset.width(), m_frameRect.height() - offset.height()) : LayoutSize(m_frameRect.width() - offset.width(), offset.height());
@@ -641,8 +645,7 @@ public:
         else
             rect.setX(m_frameRect.width() - rect.maxX());
     }
-    FloatPoint flipForWritingMode(const FloatPoint& position) const WARN_UNUSED_RETURN
-    {
+    FloatPoint flipForWritingMode(const FloatPoint& position) const WARN_UNUSED_RETURN {
         if (!UNLIKELY(hasFlippedBlocksWritingMode()))
             return position;
         return isHorizontalWritingMode() ? FloatPoint(position.x(), m_frameRect.height() - position.y()) : FloatPoint(m_frameRect.width() - position.x(), position.y());
@@ -701,23 +704,18 @@ public:
     virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject*) const
     {
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 
     bool hasSameDirectionAs(const LayoutBox* object) const { return style()->direction() == object->style()->direction(); }
 
-    ShapeOutsideInfo* shapeOutsideInfo() const
-    {
-        return ShapeOutsideInfo::isEnabledFor(*this) ? ShapeOutsideInfo::info(*this) : 0;
-    }
+    ShapeOutsideInfo* shapeOutsideInfo() const;
 
     void markShapeOutsideDependentsForLayout()
     {
         if (isFloating())
             removeFloatingOrPositionedChildFromBlockLists();
     }
-
-    bool backgroundHasOpaqueTopLayer() const;
 
     void setIntrinsicContentLogicalHeight(LayoutUnit intrinsicContentLogicalHeight) const { m_intrinsicContentLogicalHeight = intrinsicContentLogicalHeight; }
 
@@ -743,7 +741,7 @@ protected:
 
     virtual bool shouldComputeSizeAsReplaced() const { return isReplaced() && !isInlineBlockOrInlineTable(); }
 
-    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
+    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = nullptr, const PaintInvalidationState* = nullptr) const override;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
 
     LayoutObject* splitAnonymousBoxesAroundChild(LayoutObject* beforeChild);
@@ -779,7 +777,7 @@ private:
     LayoutUnit shrinkToFitLogicalWidth(LayoutUnit availableLogicalWidth, LayoutUnit bordersPlusPadding) const;
 
     // Returns true if we queued up a paint invalidation.
-    bool paintInvalidationLayerRectsForImage(WrappedImagePtr, const FillLayer&, bool drawingBackground);
+    bool invalidatePaintOfLayerRectsForImage(WrappedImagePtr, const FillLayer&, bool drawingBackground);
 
     bool skipContainingBlockForPercentHeightCalculation(const LayoutBox* containingBlock) const;
 
@@ -816,7 +814,8 @@ private:
         return *m_rareData.get();
     }
 
-    void savePreviousBorderBoxSizeIfNeeded();
+    bool needToSavePreviousBoxSizes();
+    void savePreviousBoxSizesIfNeeded();
     LayoutSize computePreviousBorderBoxSize(const LayoutSize& previousBoundsSize) const;
 
     bool logicalHeightComputesAsNone(SizeType) const;
@@ -830,6 +829,11 @@ private:
         if (!needsLayout())
             setMayNeedPaintInvalidation();
     }
+
+    // Returns true if the box intersects the viewport visible to the user.
+    bool intersectsVisibleViewport();
+
+    void updateSlowRepaintStatusAfterStyleChange();
 
     // The width/height of the contents + borders + padding.  The x/y location is relative to our container (which is not always our parent).
     LayoutRect m_frameRect;
@@ -905,7 +909,7 @@ inline LayoutBox* LayoutBox::previousSiblingMultiColumnBox() const
     ASSERT(isLayoutMultiColumnSpannerPlaceholder() || isLayoutMultiColumnSet());
     LayoutBox* previousBox = previousSiblingBox();
     if (previousBox->isLayoutFlowThread())
-        return 0;
+        return nullptr;
     return previousBox;
 }
 
@@ -923,7 +927,7 @@ inline void LayoutBox::setInlineBoxWrapper(InlineBox* boxWrapper)
         // Otherwise, there will two line box wrappers keeping the reference to this layoutObject, and
         // only one will be notified when the layoutObject is getting destroyed. The second line box wrapper
         // will keep a stale reference.
-        if (UNLIKELY(inlineBoxWrapper() != 0))
+        if (UNLIKELY(inlineBoxWrapper() != nullptr))
             deleteLineBoxWrapper();
     }
 

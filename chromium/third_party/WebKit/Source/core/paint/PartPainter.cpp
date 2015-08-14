@@ -8,19 +8,17 @@
 #include "core/layout/LayoutPart.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "core/paint/TransformRecorder.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
 void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutPart);
-
     if (!m_layoutPart.shouldPaint(paintInfo, paintOffset))
         return;
 
@@ -45,7 +43,7 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
         return;
 
     {
-        OwnPtr<RoundedInnerRectClipper> clipper;
+        Optional<RoundedInnerRectClipper> clipper;
         if (m_layoutPart.style()->hasBorderRadius()) {
             if (borderRect.isEmpty())
                 return;
@@ -57,7 +55,7 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
                     -(m_layoutPart.paddingBottom() + m_layoutPart.borderBottom()),
                     -(m_layoutPart.paddingLeft() + m_layoutPart.borderLeft())),
                 true, true);
-            clipper = adoptPtr(new RoundedInnerRectClipper(m_layoutPart, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayListIfEnabled));
+            clipper.emplace(m_layoutPart, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayListIfEnabled);
         }
 
         if (m_layoutPart.widget())
@@ -65,13 +63,12 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     }
 
     // Paint a partially transparent wash over selected widgets.
-    if (m_layoutPart.isSelected() && !m_layoutPart.document().printing()) {
+    if (m_layoutPart.isSelected() && !m_layoutPart.document().printing() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutPart, paintInfo.phase)) {
         LayoutRect rect = m_layoutPart.localSelectionRect();
         rect.moveBy(adjustedPaintOffset);
         IntRect selectionRect = pixelSnappedIntRect(rect);
         LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutPart, paintInfo.phase, selectionRect);
-        if (!drawingRecorder.canUseCachedDrawing())
-            paintInfo.context->fillRect(selectionRect, m_layoutPart.selectionBackgroundColor());
+        paintInfo.context->fillRect(selectionRect, m_layoutPart.selectionBackgroundColor());
     }
 
     if (m_layoutPart.canResize())

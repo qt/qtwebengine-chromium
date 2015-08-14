@@ -25,9 +25,12 @@ class GLImageImpl : public gfx::GLImage {
   // implement gfx::GLImage
   void Destroy(bool have_context) override;
   gfx::Size GetSize() override;
+  unsigned GetInternalFormat() override;
   bool BindTexImage(unsigned target) override;
   void ReleaseTexImage(unsigned target) override;
-  bool CopyTexImage(unsigned target) override;
+  bool CopyTexSubImage(unsigned target,
+                       const gfx::Point& offset,
+                       const gfx::Rect& rect) override;
   void WillUseTexImage() override;
   void DidUseTexImage() override {}
   void WillModifyTexImage() override {}
@@ -64,6 +67,10 @@ gfx::Size GLImageImpl::GetSize() {
   return gfx::Size();
 }
 
+unsigned GLImageImpl::GetInternalFormat() {
+  return GL_RGBA;
+}
+
 bool GLImageImpl::BindTexImage(unsigned target) {
   NOTREACHED();
   return false;
@@ -73,7 +80,9 @@ void GLImageImpl::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
-bool GLImageImpl::CopyTexImage(unsigned target) {
+bool GLImageImpl::CopyTexSubImage(unsigned target,
+                                  const gfx::Point& offset,
+                                  const gfx::Rect& rect) {
   return false;
 }
 
@@ -126,17 +135,9 @@ GLuint StreamTextureManagerInProcess::CreateStreamTexture(
 
   gfx::Size size = gl_image->GetSize();
   texture_manager->SetTarget(texture, GL_TEXTURE_EXTERNAL_OES);
-  texture_manager->SetLevelInfo(texture,
-                                GL_TEXTURE_EXTERNAL_OES,
-                                0,
-                                GL_RGBA,
-                                size.width(),
-                                size.height(),
-                                1,
-                                0,
-                                GL_RGBA,
-                                GL_UNSIGNED_BYTE,
-                                true);
+  texture_manager->SetLevelInfo(texture, GL_TEXTURE_EXTERNAL_OES, 0, GL_RGBA,
+                                size.width(), size.height(), 1, 0, GL_RGBA,
+                                GL_UNSIGNED_BYTE, gfx::Rect(size));
   texture_manager->SetLevelImage(
       texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image.get());
 

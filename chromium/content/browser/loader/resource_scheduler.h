@@ -150,7 +150,21 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
 
   bool IsClientVisibleForTesting(int child_id, int route_id);
 
+  // Returns true if at least one client is currently loading.
+  bool HasLoadingClients() const;
+
  private:
+  // Returns true if limiting of outstanding requests is enabled.
+  bool limit_outstanding_requests() const {
+    return limit_outstanding_requests_;
+  }
+
+  // Returns the outstanding request limit.  Only valid if
+  // |IsLimitingOutstandingRequests()|.
+  size_t outstanding_request_limit() const {
+    return outstanding_request_limit_;
+  }
+
   enum ClientState {
     // Observable client.
     ACTIVE,
@@ -222,6 +236,8 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
   ClientMap client_map_;
   size_t active_clients_loading_;
   size_t coalesced_clients_;
+  bool limit_outstanding_requests_;
+  size_t outstanding_request_limit_;
   // This is a repeating timer to initiate requests on COALESCED Clients.
   scoped_ptr<base::Timer> coalescing_timer_;
   RequestSet unowned_requests_;

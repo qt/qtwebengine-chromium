@@ -8,8 +8,9 @@
 #include "GrClipMaskManager.h"
 #include "GrAAConvexPathRenderer.h"
 #include "GrAAHairLinePathRenderer.h"
-#include "GrAARectRenderer.h"
-#include "GrDrawTargetCaps.h"
+#include "GrCaps.h"
+#include "GrDrawContext.h"
+#include "GrDrawTarget.h"
 #include "GrPaint.h"
 #include "GrPathRenderer.h"
 #include "GrRenderTarget.h"
@@ -46,7 +47,8 @@ void setup_drawstate_aaclip(GrPipelineBuilder* pipelineBuilder,
     SkIRect domainTexels = SkIRect::MakeWH(devBound.width(), devBound.height());
     // This could be a long-lived effect that is cached with the alpha-mask.
     pipelineBuilder->addCoverageProcessor(
-        GrTextureDomainEffect::Create(result,
+        GrTextureDomainEffect::Create(pipelineBuilder->getProcessorDataManager(),
+                                      result,
                                       mat,
                                       GrTextureDomain::MakeTexelDomain(result, domainTexels),
                                       GrTextureDomain::kDecal_Mode,
@@ -75,6 +77,15 @@ bool path_needs_SW_renderer(GrContext* context,
                                             false, type);
 }
 }
+
+GrClipMaskManager::GrClipMaskManager(GrClipTarget* clipTarget)
+    : fCurrClipMaskType(kNone_ClipMaskType)
+    , fAACache(clipTarget->getContext()->resourceProvider())
+    , fClipTarget(clipTarget)
+    , fClipMode(kIgnoreClip_StencilClipMode) {
+}
+
+GrContext* GrClipMaskManager::getContext() { return fClipTarget->getContext(); }
 
 /*
  * This method traverses the clip stack to see if the GrSoftwarePathRenderer
@@ -155,7 +166,7 @@ bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
         if (!skip) {
             GrPrimitiveEdgeType edgeType;
             if (iter.get()->isAA()) {
-                if (rt->isMultisampled()) {
+                if (rt->isUnifiedMultisampled()) {
                     // Coverage based AA clips don't place nicely with MSAA.
                     failed = true;
                     break;
@@ -296,7 +307,7 @@ bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
     }
 
     // If MSAA is enabled we can do everything in the stencil buffer.
-    if (0 == rt->numSamples() && requiresAA) {
+    if (0 == rt->numColorSamples() && requiresAA) {
         GrTexture* result = NULL;
 
         // The top-left of the mask corresponds to the top-left corner of the bounds.
@@ -394,14 +405,12 @@ bool GrClipMaskManager::drawElement(GrPipelineBuilder* pipelineBuilder,
             if (element->isAA()) {
                 SkRect devRect = element->getRect();
                 viewMatrix.mapRect(&devRect);
-                this->getContext()->getAARectRenderer()->fillAARect(fClipTarget,
-                                                                    pipelineBuilder,
-                                                                    color,
-                                                                    viewMatrix,
-                                                                    element->getRect(),
-                                                                    devRect);
+
+                fClipTarget->drawAARect(pipelineBuilder, color, viewMatrix,
+                                        element->getRect(), devRect);
             } else {
-                fClipTarget->drawSimpleRect(pipelineBuilder, color, viewMatrix, element->getRect());
+                fClipTarget->drawSimpleRect(pipelineBuilder, color, viewMatrix,
+                                            element->getRect());
             }
             return true;
         default: {
@@ -472,7 +481,8 @@ void GrClipMaskManager::mergeMask(GrPipelineBuilder* pipelineBuilder,
     sampleM.setIDiv(srcMask->width(), srcMask->height());
 
     pipelineBuilder->addCoverageProcessor(
-        GrTextureDomainEffect::Create(srcMask,
+        GrTextureDomainEffect::Create(pipelineBuilder->getProcessorDataManager(),
+                                      srcMask,
                                       sampleM,
                                       GrTextureDomain::MakeTexelDomain(srcMask, srcBound),
                                       GrTextureDomain::kDecal_Mode,
@@ -490,7 +500,7 @@ GrTexture* GrClipMaskManager::createTempMask(int width, int height) {
     desc.fFlags = kRenderTarget_GrSurfaceFlag;
     desc.fWidth = width;
     desc.fHeight = height;
-    if (this->getContext()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
+    if (this->getContext()->caps()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
         desc.fConfig = kAlpha_8_GrPixelConfig;
     } else {
         desc.fConfig = kRGBA_8888_GrPixelConfig;
@@ -527,7 +537,8 @@ GrTexture* GrClipMaskManager::allocMaskTexture(int32_t elementsGenID,
     desc.fWidth = clipSpaceIBounds.width();
     desc.fHeight = clipSpaceIBounds.height();
     desc.fConfig = kRGBA_8888_GrPixelConfig;
-    if (willUpload || this->getContext()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
+    if (willUpload ||
+        this->getContext()->caps()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
         // We would always like A8 but it isn't supported on all platforms
         desc.fConfig = kAlpha_8_GrPixelConfig;
     }
@@ -741,7 +752,7 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
             pipelineBuilder.setDisableColorXPFactory();
 
             // if the target is MSAA then we want MSAA enabled when the clip is soft
-            if (rt->isMultisampled()) {
+            if (rt->isUnifiedMultisampled()) {
                 pipelineBuilder.setState(GrPipelineBuilder::kHWAntialias_Flag, element->isAA());
             }
 
@@ -831,24 +842,23 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
             // element directly or a bounding rect of the entire clip.
             fClipMode = kModifyClip_StencilClipMode;
             for (int p = 0; p < passes; ++p) {
-                GrPipelineBuilder pipelineBuilderCopy(pipelineBuilder);
-                *pipelineBuilderCopy.stencil() = stencilSettings[p];
+                *pipelineBuilder.stencil() = stencilSettings[p];
 
                 if (canDrawDirectToClip) {
                     if (Element::kRect_Type == element->getType()) {
                         // We need this AGP until everything is in GrBatch
-                        fClipTarget->drawSimpleRect(&pipelineBuilderCopy,
+                        fClipTarget->drawSimpleRect(&pipelineBuilder,
                                                     GrColor_WHITE,
                                                     viewMatrix,
                                                     element->getRect());
                     } else {
-                        pr->drawPath(fClipTarget, &pipelineBuilderCopy, GrColor_WHITE,
+                        pr->drawPath(fClipTarget, &pipelineBuilder, GrColor_WHITE,
                                      viewMatrix, clipPath, stroke, false);
                     }
                 } else {
                     // The view matrix is setup to do clip space -> stencil space translation, so
                     // draw rect in clip space.
-                    fClipTarget->drawSimpleRect(&pipelineBuilderCopy,
+                    fClipTarget->drawSimpleRect(&pipelineBuilder,
                                                 GrColor_WHITE,
                                                 viewMatrix,
                                                 SkRect::Make(clipSpaceIBounds));
@@ -1108,11 +1118,6 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t elementsGenID,
 ////////////////////////////////////////////////////////////////////////////////
 void GrClipMaskManager::purgeResources() {
     fAACache.purgeResources();
-}
-
-void GrClipMaskManager::setClipTarget(GrClipTarget* clipTarget) {
-    fClipTarget = clipTarget;
-    fAACache.setContext(clipTarget->getContext());
 }
 
 void GrClipMaskManager::adjustPathStencilParams(const GrStencilAttachment* stencilAttachment,

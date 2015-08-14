@@ -31,7 +31,6 @@
 #include "core/dom/custom/CustomElementDefinition.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/html/ClassList.h"
-#include "core/html/ime/InputMethodContext.h"
 #include "core/style/StyleInheritedData.h"
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
@@ -65,10 +64,6 @@ public:
         m_tabindex = 0;
         clearElementFlag(TabIndexWasSetExplicitly);
     }
-
-    bool tabStop() const { return m_tabStop; }
-
-    void setTabStop(bool flag) { m_tabStop = flag; }
 
     CSSStyleDeclaration& ensureInlineCSSStyleDeclaration(Element* ownerElement);
 
@@ -112,14 +107,6 @@ public:
         m_elementAnimations = elementAnimations;
     }
 
-    bool hasInputMethodContext() const { return m_inputMethodContext; }
-    InputMethodContext& ensureInputMethodContext(HTMLElement* element)
-    {
-        if (!m_inputMethodContext)
-            m_inputMethodContext = InputMethodContext::create(element);
-        return *m_inputMethodContext;
-    }
-
     bool hasPseudoElements() const;
     void clearPseudoElements();
 
@@ -142,8 +129,9 @@ public:
 
 private:
     short m_tabindex;
-    unsigned short m_tabStop : 1;
-    unsigned short m_proxyCount : 10;
+    // As m_proxyCount usually doesn't exceed 10bits (1024), if you want to add some booleans you
+    // can steal some bits from m_proxyCount by using bitfields to prevent ElementRareData bloat.
+    unsigned short m_proxyCount;
 
     LayoutSize m_minimumSizeForResizing;
     IntSize m_savedLayerScrollOffset;
@@ -153,7 +141,6 @@ private:
     OwnPtrWillBeMember<ElementShadow> m_shadow;
     OwnPtrWillBeMember<NamedNodeMap> m_attributeMap;
     OwnPtrWillBeMember<AttrNodeList> m_attrNodeList;
-    OwnPtrWillBeMember<InputMethodContext> m_inputMethodContext;
     OwnPtrWillBeMember<ElementAnimations> m_elementAnimations;
     OwnPtrWillBeMember<InlineCSSStyleDeclaration> m_cssomWrapper;
 
@@ -176,7 +163,6 @@ inline LayoutSize defaultMinimumSizeForResizing()
 inline ElementRareData::ElementRareData(LayoutObject* layoutObject)
     : NodeRareData(layoutObject)
     , m_tabindex(0)
-    , m_tabStop(true)
     , m_proxyCount(0)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {

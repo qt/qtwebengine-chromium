@@ -43,6 +43,7 @@ const (
 	UnexpectedArrayHeader         = "VALIDATION_ERROR_UNEXPECTED_ARRAY_HEADER"
 	UnexpectedInvalidHandle       = "VALIDATION_ERROR_UNEXPECTED_INVALID_HANDLE"
 	UnexpectedNullPointer         = "VALIDATION_ERROR_UNEXPECTED_NULL_POINTER"
+	UnexpectedNullUnion           = "VALIDATION_ERROR_UNEXPECTED_NULL_UNION"
 	UnexpectedStructHeader        = "VALIDATION_ERROR_UNEXPECTED_STRUCT_HEADER"
 )
 
@@ -84,7 +85,7 @@ func (h *MessageHeader) Encode(encoder *Encoder) error {
 	if err := encoder.WriteUint32(h.Flags); err != nil {
 		return err
 	}
-	if h.RequestId != 0 {
+	if h.Flags != MessageNoFlag {
 		if err := encoder.WriteUint64(h.RequestId); err != nil {
 			return err
 		}
@@ -139,14 +140,14 @@ func (h *MessageHeader) Decode(decoder *Decoder) error {
 func (h *MessageHeader) dataSize() uint32 {
 	var size uint32
 	size = 2 * 4
-	if h.RequestId != 0 {
+	if h.Flags != MessageNoFlag {
 		size += 8
 	}
 	return size
 }
 
 func (h *MessageHeader) version() uint32 {
-	if h.RequestId != 0 {
+	if h.Flags != MessageNoFlag {
 		return 1
 	} else {
 		return 0

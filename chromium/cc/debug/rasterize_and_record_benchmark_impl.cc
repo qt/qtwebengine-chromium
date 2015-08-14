@@ -51,7 +51,8 @@ void RunBenchmark(RasterSource* raster_source,
 
       raster_source->PerformSolidColorAnalysis(content_rect, contents_scale,
                                                &analysis);
-      raster_source->PlaybackToCanvas(&canvas, content_rect, contents_scale);
+      raster_source->PlaybackToCanvas(&canvas, content_rect, content_rect,
+                                      contents_scale);
 
       *is_solid_color = analysis.is_solid_color;
 
@@ -90,8 +91,8 @@ class FixedInvalidationPictureLayerTilingClient
     return base_client_->GetPendingOrActiveTwinTiling(tiling);
   }
 
-  TilePriority::PriorityBin GetMaxTilePriorityBin() const override {
-    return base_client_->GetMaxTilePriorityBin();
+  bool HasValidTilePriorities() const override {
+    return base_client_->HasValidTilePriorities();
   }
 
   bool RequiresHighResToDraw() const override {
@@ -134,7 +135,7 @@ void RasterizeAndRecordBenchmarkImpl::DidCompleteCommit(
   result->SetDouble("rasterize_time_ms",
                     rasterize_results_.total_best_time.InMillisecondsF());
   result->SetDouble("total_pictures_in_pile_size",
-                    rasterize_results_.total_memory_usage);
+                    static_cast<int>(rasterize_results_.total_memory_usage));
   result->SetInteger("pixels_rasterized", rasterize_results_.pixels_rasterized);
   result->SetInteger("pixels_rasterized_with_non_solid_color",
                      rasterize_results_.pixels_rasterized_with_non_solid_color);
@@ -157,13 +158,13 @@ void RasterizeAndRecordBenchmarkImpl::RunOnLayer(PictureLayerImpl* layer) {
     rasterize_results_.total_picture_layers_with_no_content++;
     return;
   }
-  if (layer->visible_content_rect().IsEmpty()) {
+  if (layer->visible_layer_rect().IsEmpty()) {
     rasterize_results_.total_picture_layers_off_screen++;
     return;
   }
 
-  FixedInvalidationPictureLayerTilingClient client(
-      layer, gfx::Rect(layer->content_bounds()));
+  FixedInvalidationPictureLayerTilingClient client(layer,
+                                                   gfx::Rect(layer->bounds()));
 
   // In this benchmark, we will create a local tiling set and measure how long
   // it takes to rasterize content. As such, the actual settings used here don't
@@ -174,14 +175,13 @@ void RasterizeAndRecordBenchmarkImpl::RunOnLayer(PictureLayerImpl* layer) {
       settings.skewport_target_time_in_seconds,
       settings.skewport_extrapolation_limit_in_content_pixels);
 
-  PictureLayerTiling* tiling = tiling_set->AddTiling(layer->contents_scale_x(),
-                                                     layer->GetRasterSource());
+  PictureLayerTiling* tiling =
+      tiling_set->AddTiling(1.f, layer->GetRasterSource());
   tiling->CreateAllTilesForTesting();
   RasterSource* raster_source = tiling->raster_source();
-  for (PictureLayerTiling::CoverageIterator it(
-           tiling, layer->contents_scale_x(), layer->visible_content_rect());
-       it;
-       ++it) {
+  for (PictureLayerTiling::CoverageIterator it(tiling, 1.f,
+                                               layer->visible_layer_rect());
+       it; ++it) {
     DCHECK(*it);
 
     gfx::Rect content_rect = (*it)->content_rect();

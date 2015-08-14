@@ -43,12 +43,12 @@ static inline String queryString(WebLocalizedString::Name name)
     return Locale::defaultLocale().queryString(name);
 }
 
-AccessibilityMediaControl::AccessibilityMediaControl(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AccessibilityMediaControl::AccessibilityMediaControl(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AXLayoutObject(layoutObject, axObjectCache)
 {
 }
 
-PassRefPtr<AXObject> AccessibilityMediaControl::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXObject> AccessibilityMediaControl::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
     ASSERT(layoutObject->node());
 
@@ -64,7 +64,7 @@ PassRefPtr<AXObject> AccessibilityMediaControl::create(LayoutObject* layoutObjec
         return AXMediaControlsContainer::create(layoutObject, axObjectCache);
 
     default:
-        return adoptRef(new AccessibilityMediaControl(layoutObject, axObjectCache));
+        return adoptRefWillBeNoop(new AccessibilityMediaControl(layoutObject, axObjectCache));
     }
 }
 
@@ -186,14 +186,14 @@ AccessibilityRole AccessibilityMediaControl::roleValue() const
 //
 // AXMediaControlsContainer
 
-AXMediaControlsContainer::AXMediaControlsContainer(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AXMediaControlsContainer::AXMediaControlsContainer(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AccessibilityMediaControl(layoutObject, axObjectCache)
 {
 }
 
-PassRefPtr<AXObject> AXMediaControlsContainer::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXObject> AXMediaControlsContainer::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXMediaControlsContainer(layoutObject, axObjectCache));
+    return adoptRefWillBeNoop(new AXMediaControlsContainer(layoutObject, axObjectCache));
 }
 
 String AXMediaControlsContainer::deprecatedAccessibilityDescription() const
@@ -221,14 +221,14 @@ static String localizedMediaTimeDescription(float /*time*/)
     return String();
 }
 
-AccessibilityMediaTimeline::AccessibilityMediaTimeline(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AccessibilityMediaTimeline::AccessibilityMediaTimeline(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AXSlider(layoutObject, axObjectCache)
 {
 }
 
-PassRefPtr<AXObject> AccessibilityMediaTimeline::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXObject> AccessibilityMediaTimeline::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AccessibilityMediaTimeline(layoutObject, axObjectCache));
+    return adoptRefWillBeNoop(new AccessibilityMediaTimeline(layoutObject, axObjectCache));
 }
 
 String AccessibilityMediaTimeline::valueDescription() const
@@ -249,14 +249,14 @@ String AccessibilityMediaTimeline::deprecatedHelpText() const
 //
 // AccessibilityMediaTimeDisplay
 
-AccessibilityMediaTimeDisplay::AccessibilityMediaTimeDisplay(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AccessibilityMediaTimeDisplay::AccessibilityMediaTimeDisplay(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AccessibilityMediaControl(layoutObject, axObjectCache)
 {
 }
 
-PassRefPtr<AXObject> AccessibilityMediaTimeDisplay::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXObject> AccessibilityMediaTimeDisplay::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AccessibilityMediaTimeDisplay(layoutObject, axObjectCache));
+    return adoptRefWillBeNoop(new AccessibilityMediaTimeDisplay(layoutObject, axObjectCache));
 }
 
 bool AccessibilityMediaTimeDisplay::computeAccessibilityIsIgnored(IgnoredReasons* ignoredReasons) const

@@ -15,10 +15,11 @@
 #include "cc/output/software_renderer.h"
 #include "cc/output/texture_mailbox_deleter.h"
 #include "cc/surfaces/display_client.h"
+#include "cc/surfaces/display_scheduler.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_aggregator.h"
 #include "cc/surfaces/surface_manager.h"
-#include "cc/trees/blocking_task_runner.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 
 namespace cc {
 
@@ -33,10 +34,9 @@ Display::Display(DisplayClient* client,
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
       settings_(settings),
       device_scale_factor_(1.f),
-      blocking_main_thread_task_runner_(
-          BlockingTaskRunner::Create(base::ThreadTaskRunnerHandle::Get())),
-      texture_mailbox_deleter_(
-          new TextureMailboxDeleter(base::ThreadTaskRunnerHandle::Get())) {
+      swapped_since_resize_(false),
+      scheduler_(nullptr),
+      texture_mailbox_deleter_(new TextureMailboxDeleter(nullptr)) {
   manager_->AddObserver(this);
 }
 
@@ -51,15 +51,23 @@ Display::~Display() {
   }
 }
 
-bool Display::Initialize(scoped_ptr<OutputSurface> output_surface) {
+bool Display::Initialize(scoped_ptr<OutputSurface> output_surface,
+                         DisplayScheduler* scheduler) {
   output_surface_ = output_surface.Pass();
+  scheduler_ = scheduler;
   return output_surface_->BindToClient(this);
 }
 
 void Display::SetSurfaceId(SurfaceId id, float device_scale_factor) {
+  if (current_surface_id_ == id && device_scale_factor_ == device_scale_factor)
+    return;
+
   current_surface_id_ = id;
   device_scale_factor_ = device_scale_factor;
-  client_->DisplayDamaged();
+
+  UpdateRootSurfaceResourcesLocked();
+  if (scheduler_)
+    scheduler_->EntireDisplayDamaged(id);
 }
 
 void Display::Resize(const gfx::Size& size) {
@@ -67,21 +75,34 @@ void Display::Resize(const gfx::Size& size) {
     return;
   // Need to ensure all pending swaps have executed before the window is
   // resized, or D3D11 will scale the swap output.
-  if (renderer_ && settings_.finish_rendering_on_resize)
-    renderer_->Finish();
+  if (settings_.finish_rendering_on_resize) {
+    if (!swapped_since_resize_ && scheduler_)
+      scheduler_->ForceImmediateSwapIfPossible();
+    if (swapped_since_resize_ && output_surface_ &&
+        output_surface_->context_provider())
+      output_surface_->context_provider()->ContextGL()->ShallowFinishCHROMIUM();
+  }
+  swapped_since_resize_ = false;
   current_surface_size_ = size;
-  client_->DisplayDamaged();
+  if (scheduler_)
+    scheduler_->EntireDisplayDamaged(current_surface_id_);
+}
+
+void Display::SetExternalClip(const gfx::Rect& clip) {
+  external_clip_ = clip;
 }
 
 void Display::InitializeRenderer() {
   if (resource_provider_)
     return;
 
+  // Display does not use GpuMemoryBuffers, so persistent map is not relevant.
+  bool use_persistent_map_for_gpu_memory_buffers = false;
   scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
       output_surface_.get(), bitmap_manager_, gpu_memory_buffer_manager_,
-      blocking_main_thread_task_runner_.get(), settings_.highp_threshold_min,
-      settings_.use_rgba_4444_textures,
-      settings_.texture_id_allocation_chunk_size);
+      nullptr, settings_.highp_threshold_min, settings_.use_rgba_4444_textures,
+      settings_.texture_id_allocation_chunk_size,
+      use_persistent_map_for_gpu_memory_buffers);
   if (!resource_provider)
     return;
 
@@ -105,10 +126,21 @@ void Display::InitializeRenderer() {
 }
 
 void Display::DidLoseOutputSurface() {
+  if (scheduler_)
+    scheduler_->OutputSurfaceLost();
+  // WARNING: The client may delete the Display in this method call. Do not
+  // make any additional references to members after this call.
   client_->OutputSurfaceLost();
 }
 
-bool Display::Draw() {
+void Display::UpdateRootSurfaceResourcesLocked() {
+  Surface* surface = manager_->GetSurfaceForId(current_surface_id_);
+  bool root_surface_resources_locked = !surface || !surface->GetEligibleFrame();
+  if (scheduler_)
+    scheduler_->SetRootSurfaceResourcesLocked(root_surface_resources_locked);
+}
+
+bool Display::DrawAndSwap() {
   if (current_surface_id_.is_null())
     return false;
 
@@ -116,15 +148,12 @@ bool Display::Draw() {
   if (!output_surface_)
     return false;
 
-  // TODO(skyostil): We should hold a BlockingTaskRunner::CapturePostTasks
-  // while Aggregate is called to immediately run release callbacks afterward.
   scoped_ptr<CompositorFrame> frame =
       aggregator_->Aggregate(current_surface_id_);
   if (!frame)
     return false;
 
-  TRACE_EVENT0("cc", "Display::Draw");
-  benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
+  TRACE_EVENT0("cc", "Display::DrawAndSwap");
 
   // Run callbacks early to allow pipelining.
   for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
@@ -154,9 +183,18 @@ bool Display::Draw() {
   bool should_draw = !frame->metadata.latency_info.empty() ||
                      have_copy_requests || (have_damage && !avoid_swap);
 
+  // If the surface is suspended then the resources to be used by the draw are
+  // likely destroyed.
+  if (output_surface_->SurfaceIsSuspendForRecycle()) {
+    TRACE_EVENT_INSTANT0("cc", "Surface is suspended for recycle.",
+                         TRACE_EVENT_SCOPE_THREAD);
+    should_draw = false;
+  }
+
   if (should_draw) {
     gfx::Rect device_viewport_rect = gfx::Rect(current_surface_size_);
-    gfx::Rect device_clip_rect = device_viewport_rect;
+    gfx::Rect device_clip_rect =
+        external_clip_.IsEmpty() ? device_viewport_rect : external_clip_;
     bool disable_picture_quad_image_filtering = false;
 
     renderer_->DecideRenderPassAllocationsForFrame(
@@ -167,6 +205,15 @@ bool Display::Draw() {
   }
 
   if (should_draw && !avoid_swap) {
+    swapped_since_resize_ = true;
+    for (auto& latency : frame->metadata.latency_info) {
+      TRACE_EVENT_FLOW_STEP0(
+          "input,benchmark",
+          "LatencyInfo.Flow",
+          TRACE_ID_DONT_MANGLE(latency.trace_id),
+          "Display::DrawAndSwap");
+    }
+    benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
     renderer_->SwapBuffers(frame->metadata);
   } else {
     stored_latency_info_.insert(stored_latency_info_.end(),
@@ -180,11 +227,13 @@ bool Display::Draw() {
 }
 
 void Display::DidSwapBuffers() {
-  client_->DidSwapBuffers();
+  if (scheduler_)
+    scheduler_->DidSwapBuffers();
 }
 
 void Display::DidSwapBuffersComplete() {
-  client_->DidSwapBuffersComplete();
+  if (scheduler_)
+    scheduler_->DidSwapBuffersComplete();
 }
 
 void Display::CommitVSyncParameters(base::TimeTicks timebase,
@@ -234,27 +283,25 @@ void Display::OnSurfaceDamaged(SurfaceId surface_id, bool* changed) {
     if (surface) {
       const CompositorFrame* current_frame = surface->GetEligibleFrame();
       if (!current_frame || !current_frame->delegated_frame_data ||
-          !current_frame->delegated_frame_data->resource_list.size())
+          !current_frame->delegated_frame_data->resource_list.size()) {
         aggregator_->ReleaseResources(surface_id);
+      }
     }
-    client_->DisplayDamaged();
+    if (scheduler_)
+      scheduler_->SurfaceDamaged(surface_id);
     *changed = true;
   } else if (surface_id == current_surface_id_) {
-    client_->DisplayDamaged();
+    if (scheduler_)
+      scheduler_->SurfaceDamaged(surface_id);
     *changed = true;
   }
+
+  if (surface_id == current_surface_id_)
+    UpdateRootSurfaceResourcesLocked();
 }
 
 SurfaceId Display::CurrentSurfaceId() {
   return current_surface_id_;
-}
-
-int Display::GetMaxFramesPending() {
-  int max_frames_pending =
-      output_surface_ ? output_surface_->capabilities().max_frames_pending : 0;
-  if (max_frames_pending <= 0)
-    max_frames_pending = OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
-  return max_frames_pending;
 }
 
 }  // namespace cc

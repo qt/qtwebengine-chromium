@@ -45,6 +45,13 @@ public:
 
     bool activeWinding(SkOpSpanBase* start, SkOpSpanBase* end);
     bool activeWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* sumWinding);
+    void addAlignIntersection(SkOpPtT& endPtT, SkPoint& oldPt,
+        SkOpContourHead* contourList, SkChunkAlloc* allocator);
+
+    void addAlignIntersections(SkOpContourHead* contourList, SkChunkAlloc* allocator) {
+        this->addAlignIntersection(*fHead.ptT(), fOriginal[0], contourList, allocator);
+        this->addAlignIntersection(*fTail.ptT(), fOriginal[1], contourList, allocator);
+    }
 
     SkOpSegment* addConic(SkPoint pts[3], SkScalar weight, SkOpContour* parent) {
         init(pts, weight, parent, SkPath::kConic_Verb);
@@ -231,6 +238,7 @@ public:
         return fPts[SkPathOpsVerbToPoints(fVerb)];
     }
 
+    void markAllDone();
     SkOpSpanBase* markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* end);
     bool markAndChaseWinding(SkOpSpanBase* start, SkOpSpanBase* end, int winding,
             SkOpSpanBase** lastPtr);
@@ -243,7 +251,7 @@ public:
     bool markWinding(SkOpSpan* , int winding);
     bool markWinding(SkOpSpan* , int winding, int oppWinding);
     bool match(const SkOpPtT* span, const SkOpSegment* parent, double t, const SkPoint& pt) const;
-    void missingCoincidence(SkOpCoincidence* coincidences, SkChunkAlloc* allocator);
+    bool missingCoincidence(SkOpCoincidence* coincidences, SkChunkAlloc* allocator);
     void moveMultiples();
     void moveNearby();
 
@@ -345,6 +353,9 @@ public:
         return &fTail;
     }
 
+    bool testForCoincidence(const SkOpPtT* priorPtT, const SkOpPtT* ptT, const SkOpSpanBase* prior,
+            const SkOpSpanBase* spanBase, const SkOpSegment* opp, SkScalar flatnessLimit) const;
+
     void undoneSpan(SkOpSpanBase** start, SkOpSpanBase** end);
     int updateOppWinding(const SkOpSpanBase* start, const SkOpSpanBase* end) const;
     int updateOppWinding(const SkOpAngle* angle) const;
@@ -385,6 +396,7 @@ private:
     SkOpContour* fContour;
     SkOpSegment* fNext;  // forward-only linked list used by contour to walk the segments
     const SkOpSegment* fPrev;
+    SkPoint fOriginal[2];  // if aligned, the original unaligned points are here
     SkPoint* fPts;  // pointer into array of points owned by edge builder that may be tweaked
     SkPathOpsBounds fBounds;  // tight bounds
     SkScalar fWeight;

@@ -36,11 +36,12 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/InspectorOverlayHost.h"
+#include "core/inspector/LayoutEditor.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/page/Chrome.h"
-#include "core/page/EventHandler.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/JSONValues.h"
 #include "platform/ScriptForbiddenScope.h"
@@ -69,17 +70,17 @@ public:
         , m_overlay(overlay)
     { }
 
-    virtual void setCursor(const Cursor& cursor) override
+    void setCursor(const Cursor& cursor) override
     {
         m_client.setCursor(cursor);
     }
 
-    virtual void setToolTip(const String& tooltip, TextDirection direction) override
+    void setToolTip(const String& tooltip, TextDirection direction) override
     {
         m_client.setToolTip(tooltip, direction);
     }
 
-    virtual void invalidateRect(const IntRect&) override
+    void invalidateRect(const IntRect&) override
     {
         m_overlay->invalidate();
     }
@@ -108,6 +109,7 @@ public:
     void suspendUpdates() override { }
     void resumeUpdates() override { }
     void clear() override { }
+    void setLayoutEditor(PassOwnPtrWillBeRawPtr<LayoutEditor>) override { }
 };
 
 DEFINE_TRACE(InspectorOverlayStub)
@@ -134,7 +136,7 @@ InspectorOverlayImpl::InspectorOverlayImpl(WebViewImpl* webViewImpl)
     , m_suspendCount(0)
     , m_updating(false)
 {
-    m_overlayHost->setListener(this);
+    m_overlayHost->setDebuggerListener(this);
 }
 
 InspectorOverlayImpl::~InspectorOverlayImpl()
@@ -149,6 +151,7 @@ DEFINE_TRACE(InspectorOverlayImpl)
     visitor->trace(m_overlayPage);
     visitor->trace(m_overlayHost);
     visitor->trace(m_listener);
+    visitor->trace(m_layoutEditor);
     InspectorOverlay::trace(visitor);
 }
 
@@ -175,8 +178,9 @@ void InspectorOverlayImpl::invalidate()
 
 bool InspectorOverlayImpl::handleInputEvent(const WebInputEvent& inputEvent)
 {
+    bool handled = false;
     if (isEmpty())
-        return false;
+        return handled;
 
     if (WebInputEvent::isGestureEventType(inputEvent.type) && inputEvent.type == WebInputEvent::GestureTap) {
         // Only let GestureTab in (we only need it and we know PlatformGestureEventBuilder supports it).
@@ -187,11 +191,11 @@ bool InspectorOverlayImpl::handleInputEvent(const WebInputEvent& inputEvent)
         // PlatformMouseEventBuilder does not work with MouseEnter type, so we filter it out manually.
         PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(m_webViewImpl->mainFrameImpl()->frameView(), static_cast<const WebMouseEvent&>(inputEvent));
         if (mouseEvent.type() == PlatformEvent::MouseMoved)
-            overlayMainFrame()->eventHandler().handleMouseMoveEvent(mouseEvent);
+            handled = overlayMainFrame()->eventHandler().handleMouseMoveEvent(mouseEvent);
         if (mouseEvent.type() == PlatformEvent::MousePressed)
-            overlayMainFrame()->eventHandler().handleMousePressEvent(mouseEvent);
+            handled = overlayMainFrame()->eventHandler().handleMousePressEvent(mouseEvent);
         if (mouseEvent.type() == PlatformEvent::MouseReleased)
-            overlayMainFrame()->eventHandler().handleMouseReleaseEvent(mouseEvent);
+            handled = overlayMainFrame()->eventHandler().handleMouseReleaseEvent(mouseEvent);
     }
     if (WebInputEvent::isTouchEventType(inputEvent.type)) {
         PlatformTouchEvent touchEvent = PlatformTouchEventBuilder(m_webViewImpl->mainFrameImpl()->frameView(), static_cast<const WebTouchEvent&>(inputEvent));
@@ -202,8 +206,7 @@ bool InspectorOverlayImpl::handleInputEvent(const WebInputEvent& inputEvent)
         overlayMainFrame()->eventHandler().keyEvent(keyboardEvent);
     }
 
-    // Overlay should not consume events.
-    return false;
+    return handled;
 }
 
 void InspectorOverlayImpl::setPausedInDebuggerMessage(const String* message)
@@ -220,6 +223,8 @@ void InspectorOverlayImpl::setInspectModeEnabled(bool enabled)
 
 void InspectorOverlayImpl::hideHighlight()
 {
+    if (m_layoutEditor)
+        m_layoutEditor->setNode(nullptr);
     m_highlightNode.clear();
     m_eventTargetNode.clear();
     m_highlightQuad.clear();
@@ -230,6 +235,8 @@ void InspectorOverlayImpl::highlightNode(Node* node, Node* eventTarget, const In
 {
     m_nodeHighlightConfig = highlightConfig;
     m_highlightNode = node;
+    if (m_layoutEditor && highlightConfig.showLayoutEditor)
+        m_layoutEditor->setNode(node);
     m_eventTargetNode = eventTarget;
     m_omitTooltip = omitTooltip;
     update();
@@ -284,7 +291,7 @@ void InspectorOverlayImpl::update()
         drawPausedInDebuggerMessage();
     drawViewSize();
 
-    toLocalFrame(overlayPage()->mainFrame())->view()->updateLayoutAndStyleForPainting();
+    toLocalFrame(overlayPage()->mainFrame())->view()->updateAllLifecyclePhases();
 
     m_webViewImpl->addPageOverlay(this, OverlayZOrders::highlight);
 }
@@ -306,7 +313,14 @@ void InspectorOverlayImpl::drawNodeHighlight()
     InspectorHighlight highlight(m_highlightNode.get(), m_nodeHighlightConfig, appendElementInfo);
     if (m_eventTargetNode)
         highlight.appendEventTargetQuads(m_eventTargetNode.get(), m_nodeHighlightConfig);
-    evaluateInOverlay("drawHighlight", highlight.asJSONObject());
+
+    RefPtr<JSONObject> highlightJSON = highlight.asJSONObject();
+    evaluateInOverlay("drawHighlight", highlightJSON.release());
+    if (m_layoutEditor) {
+        RefPtr<JSONObject> layoutEditorInfo = m_layoutEditor->buildJSONInfo();
+        if (layoutEditorInfo)
+            evaluateInOverlay("showLayoutEditor", layoutEditorInfo.release());
+    }
 }
 
 void InspectorOverlayImpl::drawQuadHighlight()
@@ -342,7 +356,7 @@ Page* InspectorOverlayImpl::overlayPage()
     Page::PageClients pageClients;
     fillWithEmptyClients(pageClients);
     ASSERT(!m_overlayChromeClient);
-    m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_webViewImpl->page()->chrome().client(), this));
+    m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_webViewImpl->page()->chromeClient(), this));
     pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = adoptPtrWillBeNoop(new Page(pageClients));
 
@@ -471,5 +485,12 @@ void InspectorOverlayImpl::resumeUpdates()
 {
     --m_suspendCount;
 }
+
+void InspectorOverlayImpl::setLayoutEditor(PassOwnPtrWillBeRawPtr<LayoutEditor> layoutEditor)
+{
+    m_layoutEditor = layoutEditor;
+    m_overlayHost->setLayoutEditorListener(m_layoutEditor.get());
+}
+
 
 } // namespace blink

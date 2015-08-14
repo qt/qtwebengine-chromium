@@ -7,6 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("//build/config/arm.gni")
+import("//third_party/protobuf/proto_library.gni")
 import("../../build/webrtc.gni")
 
 config("audio_coding_config") {
@@ -64,7 +65,7 @@ source_set("audio_coding") {
     ":g722",
     ":ilbc",
     ":isac",
-    ":isacfix",
+    ":isac_fix",
     ":neteq",
     ":pcm16b",
     ":red",
@@ -79,6 +80,35 @@ source_set("audio_coding") {
   }
 }
 
+proto_library("acm_dump_proto") {
+  sources = [
+    "main/acm2/dump.proto",
+  ]
+  proto_out_dir = "webrtc/audio_coding"
+}
+
+source_set("acm_dump") {
+  sources = [
+    "main/acm2/acm_dump.cc",
+    "main/acm2/acm_dump.h",
+  ]
+
+  defines = []
+
+  configs += [ "../..:common_config" ]
+
+  public_configs = [ "../..:common_inherited_config" ]
+
+  deps = [
+    ":acm_dump_proto",
+    "../..:webrtc_common",
+  ]
+
+  if (rtc_enable_protobuf) {
+    defines += [ "RTC_AUDIOCODING_DEBUG_DUMP" ]
+  }
+}
+
 source_set("audio_decoder_interface") {
   sources = [
     "codecs/audio_decoder.cc",
@@ -86,7 +116,9 @@ source_set("audio_decoder_interface") {
   ]
   configs += [ "../..:common_config" ]
   public_configs = [ "../..:common_inherited_config" ]
-  deps = [ "../..:webrtc_common" ]
+  deps = [
+    "../..:webrtc_common",
+  ]
 }
 
 source_set("audio_encoder_interface") {
@@ -96,7 +128,9 @@ source_set("audio_encoder_interface") {
   ]
   configs += [ "../..:common_config" ]
   public_configs = [ "../..:common_inherited_config" ]
-  deps = [ "../..:webrtc_common" ]
+  deps = [
+    "../..:webrtc_common",
+  ]
 }
 
 config("cng_config") {
@@ -130,9 +164,7 @@ source_set("cng") {
 }
 
 config("red_config") {
-  include_dirs = [
-    "codecs/red",
-  ]
+  include_dirs = [ "codecs/red" ]
 }
 
 source_set("red") {
@@ -163,12 +195,12 @@ config("g711_config") {
 
 source_set("g711") {
   sources = [
-    "codecs/g711/include/audio_encoder_pcm.h",
-    "codecs/g711/include/g711_interface.h",
     "codecs/g711/audio_encoder_pcm.cc",
-    "codecs/g711/g711_interface.c",
     "codecs/g711/g711.c",
     "codecs/g711/g711.h",
+    "codecs/g711/g711_interface.c",
+    "codecs/g711/include/audio_encoder_pcm.h",
+    "codecs/g711/include/g711_interface.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -178,7 +210,9 @@ source_set("g711") {
     ":g711_config",
   ]
 
-  deps = [ ":audio_encoder_interface" ]
+  deps = [
+    ":audio_encoder_interface",
+  ]
 }
 
 config("g722_config") {
@@ -191,12 +225,12 @@ config("g722_config") {
 source_set("g722") {
   sources = [
     "codecs/g722/audio_encoder_g722.cc",
-    "codecs/g722/include/audio_encoder_g722.h",
-    "codecs/g722/include/g722_interface.h",
-    "codecs/g722/g722_interface.c",
-    "codecs/g722/g722_encode.c",
     "codecs/g722/g722_decode.c",
     "codecs/g722/g722_enc_dec.h",
+    "codecs/g722/g722_encode.c",
+    "codecs/g722/g722_interface.c",
+    "codecs/g722/include/audio_encoder_g722.h",
+    "codecs/g722/include/g722_interface.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -206,7 +240,9 @@ source_set("g722") {
     ":g722_config",
   ]
 
-  deps = [ ":audio_encoder_interface" ]
+  deps = [
+    ":audio_encoder_interface",
+  ]
 }
 
 config("ilbc_config") {
@@ -218,28 +254,27 @@ config("ilbc_config") {
 
 source_set("ilbc") {
   sources = [
-    "codecs/ilbc/audio_encoder_ilbc.cc",
-    "codecs/ilbc/include/audio_encoder_ilbc.h",
     "codecs/ilbc/abs_quant.c",
     "codecs/ilbc/abs_quant.h",
     "codecs/ilbc/abs_quant_loop.c",
     "codecs/ilbc/abs_quant_loop.h",
+    "codecs/ilbc/audio_encoder_ilbc.cc",
     "codecs/ilbc/augmented_cb_corr.c",
     "codecs/ilbc/augmented_cb_corr.h",
     "codecs/ilbc/bw_expand.c",
     "codecs/ilbc/bw_expand.h",
     "codecs/ilbc/cb_construct.c",
     "codecs/ilbc/cb_construct.h",
+    "codecs/ilbc/cb_mem_energy.c",
+    "codecs/ilbc/cb_mem_energy.h",
     "codecs/ilbc/cb_mem_energy_augmentation.c",
     "codecs/ilbc/cb_mem_energy_augmentation.h",
-    "codecs/ilbc/cb_mem_energy.c",
     "codecs/ilbc/cb_mem_energy_calc.c",
     "codecs/ilbc/cb_mem_energy_calc.h",
-    "codecs/ilbc/cb_mem_energy.h",
     "codecs/ilbc/cb_search.c",
+    "codecs/ilbc/cb_search.h",
     "codecs/ilbc/cb_search_core.c",
     "codecs/ilbc/cb_search_core.h",
-    "codecs/ilbc/cb_search.h",
     "codecs/ilbc/cb_update_best_index.c",
     "codecs/ilbc/cb_update_best_index.h",
     "codecs/ilbc/chebyshev.c",
@@ -263,12 +298,12 @@ source_set("ilbc") {
     "codecs/ilbc/encode.h",
     "codecs/ilbc/energy_inverse.c",
     "codecs/ilbc/energy_inverse.h",
+    "codecs/ilbc/enh_upsample.c",
+    "codecs/ilbc/enh_upsample.h",
     "codecs/ilbc/enhancer.c",
     "codecs/ilbc/enhancer.h",
     "codecs/ilbc/enhancer_interface.c",
     "codecs/ilbc/enhancer_interface.h",
-    "codecs/ilbc/enh_upsample.c",
-    "codecs/ilbc/enh_upsample.h",
     "codecs/ilbc/filtered_cb_vecs.c",
     "codecs/ilbc/filtered_cb_vecs.h",
     "codecs/ilbc/frame_classify.c",
@@ -288,6 +323,7 @@ source_set("ilbc") {
     "codecs/ilbc/hp_output.c",
     "codecs/ilbc/hp_output.h",
     "codecs/ilbc/ilbc.c",
+    "codecs/ilbc/include/audio_encoder_ilbc.h",
     "codecs/ilbc/index_conv_dec.c",
     "codecs/ilbc/index_conv_dec.h",
     "codecs/ilbc/index_conv_enc.c",
@@ -397,8 +433,8 @@ source_set("isac") {
     "codecs/isac/main/source/codec.h",
     "codecs/isac/main/source/crc.c",
     "codecs/isac/main/source/crc.h",
-    "codecs/isac/main/source/decode_bwe.c",
     "codecs/isac/main/source/decode.c",
+    "codecs/isac/main/source/decode_bwe.c",
     "codecs/isac/main/source/encode.c",
     "codecs/isac/main/source/encode_lpc_swb.c",
     "codecs/isac/main/source/encode_lpc_swb.h",
@@ -406,10 +442,10 @@ source_set("isac") {
     "codecs/isac/main/source/entropy_coding.h",
     "codecs/isac/main/source/fft.c",
     "codecs/isac/main/source/fft.h",
-    "codecs/isac/main/source/filterbanks.c",
+    "codecs/isac/main/source/filter_functions.c",
     "codecs/isac/main/source/filterbank_tables.c",
     "codecs/isac/main/source/filterbank_tables.h",
-    "codecs/isac/main/source/filter_functions.c",
+    "codecs/isac/main/source/filterbanks.c",
     "codecs/isac/main/source/intialize.c",
     "codecs/isac/main/source/isac.c",
     "codecs/isac/main/source/lattice.c",
@@ -463,7 +499,7 @@ config("isac_fix_config") {
   ]
 }
 
-source_set("isacfix") {
+source_set("isac_fix") {
   sources = [
     "codecs/isac/audio_encoder_isac_t.h",
     "codecs/isac/audio_encoder_isac_t_impl.h",
@@ -477,21 +513,22 @@ source_set("isacfix") {
     "codecs/isac/fix/source/bandwidth_estimator.c",
     "codecs/isac/fix/source/bandwidth_estimator.h",
     "codecs/isac/fix/source/codec.h",
-    "codecs/isac/fix/source/decode_bwe.c",
     "codecs/isac/fix/source/decode.c",
+    "codecs/isac/fix/source/decode_bwe.c",
     "codecs/isac/fix/source/decode_plc.c",
     "codecs/isac/fix/source/encode.c",
     "codecs/isac/fix/source/entropy_coding.c",
     "codecs/isac/fix/source/entropy_coding.h",
     "codecs/isac/fix/source/fft.c",
     "codecs/isac/fix/source/fft.h",
-    "codecs/isac/fix/source/filterbanks.c",
     "codecs/isac/fix/source/filterbank_tables.c",
     "codecs/isac/fix/source/filterbank_tables.h",
+    "codecs/isac/fix/source/filterbanks.c",
     "codecs/isac/fix/source/filters.c",
     "codecs/isac/fix/source/initialize.c",
     "codecs/isac/fix/source/isacfix.c",
     "codecs/isac/fix/source/lattice.c",
+    "codecs/isac/fix/source/lattice_c.c",
     "codecs/isac/fix/source/lpc_masking_model.c",
     "codecs/isac/fix/source/lpc_masking_model.h",
     "codecs/isac/fix/source/lpc_tables.c",
@@ -530,29 +567,17 @@ source_set("isacfix") {
     "../../system_wrappers",
   ]
 
-  if (current_cpu == "arm64") {
+  if (rtc_build_with_neon) {
     deps += [ ":isac_neon" ]
   }
 
-  if (rtc_build_armv7_neon) {
-    deps += [ ":isac_neon" ]
-
-    # Enable compilation for the ARM v7 Neon instruction set. This is needed
-    # since //build/config/arm.gni only enables Neon for iOS, not Android.
-    # This provides the same functionality as webrtc/build/arm_neon.gypi.
-    # TODO(kjellander): Investigate if this can be moved into webrtc.gni or
-    # //build/config/arm.gni instead, to reduce code duplication.
-    # Remove the -mfpu=vfpv3-d16 cflag.
-    configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-    cflags = [
-      "-mfpu=neon",
-    ]
-
+  if (current_cpu == "arm" && arm_version >= 7) {
     sources += [
       "codecs/isac/fix/source/lattice_armv7.S",
       "codecs/isac/fix/source/pitch_filter_armv6.S",
     ]
     sources -= [
+      "codecs/isac/fix/source/lattice_c.c",
       "codecs/isac/fix/source/pitch_filter_c.c",
     ]
   }
@@ -566,30 +591,23 @@ source_set("isacfix") {
       "codecs/isac/fix/source/transform_mips.c",
     ]
     sources -= [
-      "codecs/isac/fix/source/pitch_estimator_c.c"
+      "codecs/isac/fix/source/lattice_c.c",
+      "codecs/isac/fix/source/pitch_estimator_c.c",
     ]
     if (mips_dsp_rev > 0) {
-      sources += [
-        "codecs/isac/fix/source/filterbanks_mips.c"
-      ]
+      sources += [ "codecs/isac/fix/source/filterbanks_mips.c" ]
     }
     if (mips_dsp_rev > 1) {
       sources += [
         "codecs/isac/fix/source/lpc_masking_model_mips.c",
         "codecs/isac/fix/source/pitch_filter_mips.c",
       ]
-      sources -= [
-        "codecs/isac/fix/source/pitch_filter_c.c"
-      ]
+      sources -= [ "codecs/isac/fix/source/pitch_filter_c.c" ]
     }
-  }
-
-  if (!rtc_build_armv7_neon && current_cpu != "mipsel") {
-    sources += [ "codecs/isac/fix/source/lattice_c.c" ]
   }
 }
 
-if (rtc_build_armv7_neon || current_cpu == "arm64") {
+if (rtc_build_with_neon) {
   source_set("isac_neon") {
     sources = [
       "codecs/isac/fix/source/entropy_coding_neon.c",
@@ -597,28 +615,23 @@ if (rtc_build_armv7_neon || current_cpu == "arm64") {
       "codecs/isac/fix/source/lattice_neon.c",
       "codecs/isac/fix/source/transform_neon.c",
     ]
-
-    if (rtc_build_armv7_neon) {
-      # Enable compilation for the ARM v7 Neon instruction set. This is needed
-      # since //build/config/arm.gni only enables Neon for iOS, not Android.
-      # This provides the same functionality as webrtc/build/arm_neon.gypi.
-      # TODO(kjellander): Investigate if this can be moved into webrtc.gni or
-      # //build/config/arm.gni instead, to reduce code duplication.
-      # Remove the -mfpu=vfpv3-d16 cflag.
-      configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-      cflags = [
-        "-mfpu=neon",
-      ]
-    }
-
     if (current_cpu != "arm64" || !is_clang) {
       # Disable AllpassFilter2FixDec16Neon function due to a clang bug.
-      # Refer more details at:
+      # For more details refer to:
       # https://code.google.com/p/webrtc/issues/detail?id=4567
-        sources += [ "codecs/isac/fix/source/filterbanks_neon.c", ]
+      sources += [ "codecs/isac/fix/source/filterbanks_neon.c" ]
     }
 
-    # Disable LTO in audio_processing_neon target due to compiler bug.
+    if (current_cpu != "arm64") {
+      # Enable compilation for the NEON instruction set. This is needed
+      # since //build/config/arm.gni only enables NEON for iOS, not Android.
+      # This provides the same functionality as webrtc/build/arm_neon.gypi.
+      configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+      cflags = [ "-mfpu=neon" ]
+    }
+
+    # Disable LTO on NEON targets due to compiler bug.
+    # TODO(fdegans): Enable this. See crbug.com/408997.
     if (rtc_use_lto) {
       cflags -= [
         "-flto",
@@ -629,7 +642,9 @@ if (rtc_build_armv7_neon || current_cpu == "arm64") {
     configs += [ "../..:common_config" ]
     public_configs = [ "../..:common_inherited_config" ]
 
-    deps = [ "../../common_audio" ]
+    deps = [
+      "../../common_audio",
+    ]
   }
 }
 
@@ -642,9 +657,9 @@ config("pcm16b_config") {
 
 source_set("pcm16b") {
   sources = [
+    "codecs/pcm16b/audio_encoder_pcm16b.cc",
     "codecs/pcm16b/include/audio_encoder_pcm16b.h",
     "codecs/pcm16b/include/pcm16b.h",
-    "codecs/pcm16b/audio_encoder_pcm16b.cc",
     "codecs/pcm16b/pcm16b.c",
   ]
 
@@ -674,7 +689,9 @@ source_set("webrtc_opus") {
     "codecs/opus/opus_interface.c",
   ]
 
-  deps = [ ":audio_encoder_interface" ]
+  deps = [
+    ":audio_encoder_interface",
+  ]
 
   if (rtc_build_opus) {
     configs += [ "../..:common_config" ]
@@ -697,7 +714,6 @@ config("neteq_config") {
 
 source_set("neteq") {
   sources = [
-    "neteq/interface/neteq.h",
     "neteq/accelerate.cc",
     "neteq/accelerate.h",
     "neteq/audio_classifier.cc",
@@ -735,13 +751,12 @@ source_set("neteq") {
     "neteq/dtmf_tone_generator.h",
     "neteq/expand.cc",
     "neteq/expand.h",
+    "neteq/interface/neteq.h",
     "neteq/merge.cc",
     "neteq/merge.h",
+    "neteq/neteq.cc",
     "neteq/neteq_impl.cc",
     "neteq/neteq_impl.h",
-    "neteq/neteq.cc",
-    "neteq/statistics_calculator.cc",
-    "neteq/statistics_calculator.h",
     "neteq/normal.cc",
     "neteq/normal.h",
     "neteq/packet_buffer.cc",
@@ -756,12 +771,14 @@ source_set("neteq") {
     "neteq/random_vector.h",
     "neteq/rtcp.cc",
     "neteq/rtcp.h",
+    "neteq/statistics_calculator.cc",
+    "neteq/statistics_calculator.h",
     "neteq/sync_buffer.cc",
     "neteq/sync_buffer.h",
-    "neteq/timestamp_scaler.cc",
-    "neteq/timestamp_scaler.h",
     "neteq/time_stretch.cc",
     "neteq/time_stretch.h",
+    "neteq/timestamp_scaler.cc",
+    "neteq/timestamp_scaler.h",
   ]
 
   configs += [ "../..:common_config" ]
@@ -778,7 +795,7 @@ source_set("neteq") {
     ":g722",
     ":ilbc",
     ":isac",
-    ":isacfix",
+    ":isac_fix",
     ":pcm16b",
     "../..:webrtc_common",
     "../../common_audio",

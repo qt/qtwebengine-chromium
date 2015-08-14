@@ -121,34 +121,24 @@ void WebURLLoadTiming::setConnectEnd(double end)
     m_private->setConnectEnd(end);
 }
 
-double WebURLLoadTiming::serviceWorkerFetchStart() const
+double WebURLLoadTiming::workerStart() const
 {
-    return m_private->serviceWorkerFetchStart();
+    return m_private->workerStart();
 }
 
-void WebURLLoadTiming::setServiceWorkerFetchStart(double start)
+void WebURLLoadTiming::setWorkerStart(double start)
 {
-    m_private->setServiceWorkerFetchStart(start);
+    m_private->setWorkerStart(start);
 }
 
-double WebURLLoadTiming::serviceWorkerFetchReady() const
+double WebURLLoadTiming::workerReady() const
 {
-    return m_private->serviceWorkerFetchReady();
+    return m_private->workerReady();
 }
 
-void WebURLLoadTiming::setServiceWorkerFetchReady(double time)
+void WebURLLoadTiming::setWorkerReady(double ready)
 {
-    m_private->setServiceWorkerFetchReady(time);
-}
-
-double WebURLLoadTiming::serviceWorkerFetchEnd() const
-{
-    return m_private->serviceWorkerFetchEnd();
-}
-
-void WebURLLoadTiming::setServiceWorkerFetchEnd(double end)
-{
-    m_private->setServiceWorkerFetchEnd(end);
+    m_private->setWorkerReady(ready);
 }
 
 double WebURLLoadTiming::sendStart() const

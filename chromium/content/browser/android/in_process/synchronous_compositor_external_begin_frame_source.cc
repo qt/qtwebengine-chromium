@@ -8,7 +8,6 @@
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_registry.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/gfx/frame_time.h"
 
 namespace content {
 
@@ -39,7 +38,15 @@ void SynchronousCompositorExternalBeginFrameSource::BeginFrame(
 void SynchronousCompositorExternalBeginFrameSource::SetCompositor(
     SynchronousCompositorImpl* compositor) {
   DCHECK(CalledOnValidThread());
+  if (compositor_ == compositor) return;
+
+  if (compositor_)
+    compositor_->OnNeedsBeginFramesChange(false);
+
   compositor_ = compositor;
+
+  if (compositor_)
+    compositor_->OnNeedsBeginFramesChange(needs_begin_frames_);
 }
 
 void SynchronousCompositorExternalBeginFrameSource::OnNeedsBeginFramesChange(

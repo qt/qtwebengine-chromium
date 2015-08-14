@@ -25,97 +25,12 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
-#include "wtf/text/AtomicString.h"
-#include "wtf/text/WTFString.h"
+#include "core/css/parser/CSSParserString.h"
 
 namespace blink {
 
 class QualifiedName;
 class CSSParserTokenRange;
-
-struct CSSParserString {
-    void init(const LChar* characters, unsigned length)
-    {
-        m_data.characters8 = characters;
-        m_length = length;
-        m_is8Bit = true;
-    }
-
-    void init(const UChar* characters, unsigned length)
-    {
-        m_data.characters16 = characters;
-        m_length = length;
-        m_is8Bit = false;
-    }
-
-    void init(const String& string)
-    {
-        m_length = string.length();
-        if (string.isNull()) {
-            m_data.characters8 = 0;
-            m_is8Bit = true;
-            return;
-        }
-        if (string.is8Bit()) {
-            m_data.characters8 = const_cast<LChar*>(string.characters8());
-            m_is8Bit = true;
-        } else {
-            m_data.characters16 = const_cast<UChar*>(string.characters16());
-            m_is8Bit = false;
-        }
-    }
-
-    void clear()
-    {
-        m_data.characters8 = 0;
-        m_length = 0;
-        m_is8Bit = true;
-    }
-
-    bool is8Bit() const { return m_is8Bit; }
-    const LChar* characters8() const { ASSERT(is8Bit()); return m_data.characters8; }
-    const UChar* characters16() const { ASSERT(!is8Bit()); return m_data.characters16; }
-    template <typename CharacterType>
-    const CharacterType* characters() const;
-
-    unsigned length() const { return m_length; }
-    void setLength(unsigned length) { m_length = length; }
-
-    UChar operator[](unsigned i) const
-    {
-        ASSERT_WITH_SECURITY_IMPLICATION(i < m_length);
-        if (is8Bit())
-            return m_data.characters8[i];
-        return m_data.characters16[i];
-    }
-
-    bool equalIgnoringCase(const char* str) const
-    {
-        bool match = is8Bit() ? WTF::equalIgnoringCase(str, characters8(), length()) : WTF::equalIgnoringCase(str, characters16(), length());
-        if (!match)
-            return false;
-        ASSERT(strlen(str) >= length());
-        return str[length()] == '\0';
-    }
-
-    operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : StringImpl::create8BitIfPossible(m_data.characters16, m_length); }
-    operator AtomicString() const { return is8Bit() ? AtomicString(m_data.characters8, m_length) : AtomicString(m_data.characters16, m_length); }
-
-    bool isFunction() const { return length() > 0 && (*this)[length() - 1] == '('; }
-
-    union {
-        const LChar* characters8;
-        const UChar* characters16;
-    } m_data;
-    unsigned m_length;
-    bool m_is8Bit;
-};
-
-template <>
-inline const LChar* CSSParserString::characters<LChar>() const { return characters8(); }
-
-template <>
-inline const UChar* CSSParserString::characters<UChar>() const { return characters16(); }
 
 struct CSSParserFunction;
 class CSSParserValueList;
@@ -129,17 +44,20 @@ struct CSSParserValue {
         CSSParserString string;
         CSSParserFunction* function;
         CSSParserValueList* valueList;
+        struct {
+            UChar32 start;
+            UChar32 end;
+        } m_unicodeRange;
     };
     enum {
         Operator  = 0x100000,
         Function  = 0x100001,
         ValueList = 0x100002,
-        Q_EMS     = 0x100003,
         HexColor = 0x100004,
-        // Represents a dimension as an unparsed string, only used by the Bison parser
-        Dimension = 0x100005,
         // Represents a dimension by a list of two values, a CSS_NUMBER and an CSS_IDENT
         DimensionList = 0x100006,
+        // Represents a unicode range by a pair of UChar32 values
+        UnicodeRange = 0x100007,
     };
     int unit;
 
@@ -160,8 +78,6 @@ public:
     ~CSSParserValueList();
 
     void addValue(const CSSParserValue&);
-    void insertValueAt(unsigned, const CSSParserValue&);
-    void stealValues(CSSParserValueList&);
 
     unsigned size() const { return m_values.size(); }
     unsigned currentIndex() { return m_current; }
@@ -215,21 +131,24 @@ public:
     void setValue(const AtomicString& value) { m_selector->setValue(value); }
     void setAttribute(const QualifiedName& value, CSSSelector::AttributeMatchType matchType) { m_selector->setAttribute(value, matchType); }
     void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
+    void setNth(int a, int b) { m_selector->setNth(a, b); }
     void setMatch(CSSSelector::Match value) { m_selector->setMatch(value); }
     void setRelation(CSSSelector::Relation value) { m_selector->setRelation(value); }
     void setForPage() { m_selector->setForPage(); }
     void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
     bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
 
+    void updatePseudoType(const AtomicString& value, bool hasArguments = false) const { m_selector->updatePseudoType(value, hasArguments); }
+
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
     void setSelectorList(PassOwnPtr<CSSSelectorList>);
 
     bool hasHostPseudoSelector() const;
-    bool isContentPseudoElement() const { return m_selector->isContentPseudoElement(); }
 
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
-    bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
-    bool crossesTreeScopes() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue || pseudoType() == CSSSelector::PseudoShadow; }
+
+    // TODO(esprehn): This set of cases doesn't make sense, why PseudoShadow but not a check for ::content or /deep/ ?
+    bool crossesTreeScopes() const { return pseudoType() == CSSSelector::PseudoWebKitCustomElement || pseudoType() == CSSSelector::PseudoCue || pseudoType() == CSSSelector::PseudoShadow; }
 
     bool isSimple() const;
     bool hasShadowPseudo() const;

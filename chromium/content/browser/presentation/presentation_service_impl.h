@@ -86,8 +86,9 @@ class CONTENT_EXPORT PresentationServiceImpl
                            MaxPendingStartSessionRequests);
   FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
                            MaxPendingJoinSessionRequests);
-
-  // Maximum number of queued StartSession or JoinSession requests.
+  FRIEND_TEST_ALL_PREFIXES(PresentationServiceImplTest,
+                           ListenForSessionStateChange);
+  // Maximum number of pending JoinSession requests at any given time.
   static const int kMaxNumQueuedSessionRequests = 10;
 
   using DefaultSessionMojoCallback =
@@ -158,27 +159,6 @@ class CONTENT_EXPORT PresentationServiceImpl
     DISALLOW_COPY_AND_ASSIGN(NewSessionMojoCallbackWrapper);
   };
 
-  // Context for a queued StartSession request.
-  class CONTENT_EXPORT StartSessionRequest {
-   public:
-    StartSessionRequest(const std::string& presentation_url,
-                        const std::string& presentation_id,
-                        const NewSessionMojoCallback& callback);
-    ~StartSessionRequest();
-
-    scoped_ptr<NewSessionMojoCallbackWrapper> PassCallback();
-
-    const std::string& presentation_url() const { return presentation_url_; }
-    const std::string& presentation_id() const { return presentation_id_; }
-
-   private:
-    const std::string presentation_url_;
-    const std::string presentation_id_;
-    scoped_ptr<NewSessionMojoCallbackWrapper> callback_wrapper_;
-
-    DISALLOW_COPY_AND_ASSIGN(StartSessionRequest);
-  };
-
   // |render_frame_host|: The RFH this instance is associated with.
   // |web_contents|: The WebContents to observe.
   // |delegate|: Where Presentation API requests are delegated to. Not owned
@@ -199,7 +179,6 @@ class CONTENT_EXPORT PresentationServiceImpl
       const DefaultSessionMojoCallback& callback) override;
   void StartSession(
       const mojo::String& presentation_url,
-      const mojo::String& presentation_id,
       const NewSessionMojoCallback& callback) override;
   void JoinSession(
       const mojo::String& presentation_url,
@@ -211,8 +190,7 @@ class CONTENT_EXPORT PresentationServiceImpl
   void CloseSession(
       const mojo::String& presentation_url,
       const mojo::String& presentation_id) override;
-  void ListenForSessionStateChange(
-      const SessionStateCallback& callback) override;
+  void ListenForSessionStateChange() override;
   void ListenForSessionMessages(
       const SessionMessagesCallback& callback) override;
 
@@ -267,10 +245,7 @@ class CONTENT_EXPORT PresentationServiceImpl
   void OnJoinSessionError(
       int request_session_id,
       const PresentationError& error);
-  void OnSendMessageCallback();
-
-  // Requests delegate to start a session.
-  void DoStartSession(scoped_ptr<StartSessionRequest> request);
+  void OnSendMessageCallback(bool sent);
 
   // Passed to embedder's implementation of PresentationServiceDelegate for
   // later invocation when session messages arrive.
@@ -279,16 +254,15 @@ class CONTENT_EXPORT PresentationServiceImpl
   void OnSessionMessages(
       scoped_ptr<ScopedVector<PresentationSessionMessage>> messages);
 
-  // Removes the head of the queue (which represents the request that has just
-  // been processed).
-  // Checks if there are any queued StartSession requests and if so, executes
-  // the first one in the queue.
-  void HandleQueuedStartSessionRequests();
-
   // Associates a JoinSession |callback| with a unique request ID and
   // stores it in a map.
   // Returns a positive value on success.
   int RegisterJoinSessionCallback(const NewSessionMojoCallback& callback);
+
+  // Invoked by the embedder's PresentationServiceDelegate when a
+  // presentation session's state has changed.
+  void OnSessionStateChanged(const PresentationSessionInfo& session_info,
+                             PresentationSessionState session_state);
 
   // Returns true if this object is associated with |render_frame_host|.
   bool FrameMatches(content::RenderFrameHost* render_frame_host) const;
@@ -305,11 +279,6 @@ class CONTENT_EXPORT PresentationServiceImpl
   std::string default_presentation_id_;
 
   scoped_ptr<ScreenAvailabilityListenerImpl> screen_availability_listener_;
-
-  // We only allow one StartSession request to be processed at a time.
-  // StartSession requests are queued here. When a request has been processed,
-  // it is removed from head of the queue.
-  std::deque<linked_ptr<StartSessionRequest>> queued_start_session_requests_;
 
   // For StartSession requests.
   // Set to a positive value when a StartSession request is being processed.

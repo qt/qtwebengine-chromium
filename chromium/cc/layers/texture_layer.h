@@ -86,6 +86,7 @@ class CC_EXPORT TextureLayer : public Layer {
 
   // Used when mailbox names are specified instead of texture IDs.
   static scoped_refptr<TextureLayer> CreateForMailbox(
+      const LayerSettings& settings,
       TextureLayerClient* client);
 
   // Resets the client, which also resets the texture.
@@ -141,13 +142,11 @@ class CC_EXPORT TextureLayer : public Layer {
   void SetNeedsDisplayRect(const gfx::Rect& dirty_rect) override;
 
   void SetLayerTreeHost(LayerTreeHost* layer_tree_host) override;
-  bool Update(ResourceUpdateQueue* queue,
-              const OcclusionTracker<Layer>* occlusion) override;
+  bool Update() override;
   void PushPropertiesTo(LayerImpl* layer) override;
-  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
 
  protected:
-  explicit TextureLayer(TextureLayerClient* client);
+  TextureLayer(const LayerSettings& settings, TextureLayerClient* client);
   ~TextureLayer() override;
   bool HasDrawableContent() const override;
 

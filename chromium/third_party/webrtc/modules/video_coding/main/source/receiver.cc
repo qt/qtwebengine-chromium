@@ -27,14 +27,22 @@ enum { kMaxReceiverDelayMs = 10000 };
 
 VCMReceiver::VCMReceiver(VCMTiming* timing,
                          Clock* clock,
-                         EventFactory* event_factory,
-                         bool master)
+                         EventFactory* event_factory)
+    : VCMReceiver(timing,
+                  clock,
+                  rtc::scoped_ptr<EventWrapper>(event_factory->CreateEvent()),
+                  rtc::scoped_ptr<EventWrapper>(event_factory->CreateEvent())) {
+}
+
+VCMReceiver::VCMReceiver(VCMTiming* timing,
+                         Clock* clock,
+                         rtc::scoped_ptr<EventWrapper> receiver_event,
+                         rtc::scoped_ptr<EventWrapper> jitter_buffer_event)
     : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       clock_(clock),
-      jitter_buffer_(clock_, event_factory),
+      jitter_buffer_(clock_, jitter_buffer_event.Pass()),
       timing_(timing),
-      render_wait_event_(event_factory->CreateEvent()),
-      state_(kPassive),
+      render_wait_event_(receiver_event.Pass()),
       max_video_delay_ms_(kMaxVideoDelayMs) {
   Reset();
 }
@@ -51,7 +59,6 @@ void VCMReceiver::Reset() {
   } else {
     jitter_buffer_.Flush();
   }
-  state_ = kReceiving;
 }
 
 void VCMReceiver::UpdateRtt(int64_t rtt) {
@@ -145,7 +152,7 @@ VCMEncodedFrame* VCMReceiver::FrameForDecoding(uint16_t max_wait_time_ms,
       // We're not allowed to wait until the frame is supposed to be rendered,
       // waiting as long as we're allowed to avoid busy looping, and then return
       // NULL. Next call to this function might return the frame.
-      render_wait_event_->Wait(max_wait_time_ms);
+      render_wait_event_->Wait(new_max_wait_time);
       return NULL;
     }
     // Wait until it's time to render.
@@ -212,25 +219,8 @@ VCMNackMode VCMReceiver::NackMode() const {
   return jitter_buffer_.nack_mode();
 }
 
-VCMNackStatus VCMReceiver::NackList(uint16_t* nack_list,
-                                    uint16_t size,
-                                    uint16_t* nack_list_length) {
-  bool request_key_frame = false;
-  uint16_t* internal_nack_list = jitter_buffer_.GetNackList(
-      nack_list_length, &request_key_frame);
-  assert(*nack_list_length <= size);
-  if (internal_nack_list != NULL && *nack_list_length > 0) {
-    memcpy(nack_list, internal_nack_list, *nack_list_length * sizeof(uint16_t));
-  }
-  if (request_key_frame) {
-    return kNackKeyFrameRequest;
-  }
-  return kNackOk;
-}
-
-VCMReceiverState VCMReceiver::State() const {
-  CriticalSectionScoped cs(crit_sect_);
-  return state_;
+std::vector<uint16_t> VCMReceiver::NackList(bool* request_key_frame) {
+  return jitter_buffer_.GetNackList(request_key_frame);
 }
 
 void VCMReceiver::SetDecodeErrorMode(VCMDecodeErrorMode decode_error_mode) {

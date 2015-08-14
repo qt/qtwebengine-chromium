@@ -68,7 +68,6 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "platform/Language.h"
 #include "platform/PlatformMouseEvent.h"
@@ -85,7 +84,7 @@ class ListAttributeTargetObserver : public IdTargetObserver {
 public:
     static PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
     DECLARE_VIRTUAL_TRACE();
-    virtual void idTargetChanged() override;
+    void idTargetChanged() override;
 
 private:
     ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement*);
@@ -159,7 +158,7 @@ void HTMLInputElement::didAddUserAgentShadowRoot(ShadowRoot&)
     m_inputTypeView->createShadowSubtree();
 }
 
-void HTMLInputElement::willAddFirstOpenShadowRoot()
+void HTMLInputElement::willAddFirstAuthorShadowRoot()
 {
     m_inputTypeView->destroyShadowSubtree();
     m_inputTypeView = InputTypeView::create(*this);
@@ -377,7 +376,7 @@ void HTMLInputElement::endEditing()
 
     LocalFrame* frame = document().frame();
     frame->spellChecker().didEndEditingOnTextField(this);
-    frame->host()->chrome().client().didEndEditingOnTextField(*this);
+    frame->host()->chromeClient().didEndEditingOnTextField(*this);
 }
 
 void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, WebFocusType type)
@@ -898,6 +897,12 @@ bool HTMLInputElement::isTextField() const
     return m_inputType->isTextField();
 }
 
+void HTMLInputElement::dispatchChangeEventIfNeeded()
+{
+    if (inDocument() && m_inputType->shouldSendChangeEventAfterCheckedChanged())
+        dispatchFormControlChangeEvent();
+}
+
 void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventBehavior)
 {
     if (checked() == nowChecked)
@@ -931,7 +936,6 @@ void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventB
         setTextAsOfLastFormControlChangeEvent(String());
         if (eventBehavior == DispatchInputAndChangeEvent)
             dispatchFormControlInputEvent();
-        dispatchFormControlChangeEvent();
     }
 
     pseudoStateChanged(CSSSelector::PseudoChecked);
@@ -1086,7 +1090,7 @@ void HTMLInputElement::setValueInternal(const String& sanitizedValue, TextFieldE
     m_valueIfDirty = sanitizedValue;
     setNeedsValidityCheck();
     if (document().focusedElement() == this)
-        document().frameHost()->chrome().client().didUpdateTextOfFocusedElementByNonUserInput();
+        document().frameHost()->chromeClient().didUpdateTextOfFocusedElementByNonUserInput();
 }
 
 void HTMLInputElement::updateView()

@@ -7,7 +7,9 @@
 #include "base/callback_helpers.h"
 #include "chromecast/public/cast_egl_platform.h"
 #include "chromecast/public/graphics_types.h"
+#include "ui/gfx/geometry/quad_f.h"
 #include "ui/ozone/platform/cast/surface_ozone_egl_cast.h"
+#include "ui/ozone/public/native_pixmap.h"
 
 using chromecast::CastEglPlatform;
 
@@ -15,6 +17,11 @@ namespace ui {
 namespace {
 chromecast::Size FromGfxSize(const gfx::Size& size) {
   return chromecast::Size(size.width(), size.height());
+}
+
+// Initial display size to create, needed before first window is created.
+gfx::Size GetInitialDisplaySize() {
+  return gfx::Size(1280, 720);
 }
 
 // Hard lower bound on display resolution
@@ -30,8 +37,8 @@ SurfaceFactoryCast::SurfaceFactoryCast(scoped_ptr<CastEglPlatform> egl_platform)
       display_type_(0),
       have_display_type_(false),
       window_(0),
-      display_size_(0, 0),
-      new_display_size_(0, 0),
+      display_size_(GetInitialDisplaySize()),
+      new_display_size_(GetInitialDisplaySize()),
       egl_platform_(egl_platform.Pass()) {
 }
 
@@ -79,6 +86,9 @@ void SurfaceFactoryCast::CreateDisplayTypeAndWindowIfNeeded() {
     chromecast::Size create_size = FromGfxSize(display_size_);
     display_type_ = egl_platform_->CreateDisplayType(create_size);
     have_display_type_ = true;
+  }
+  if (!window_) {
+    chromecast::Size create_size = FromGfxSize(display_size_);
     window_ = egl_platform_->CreateWindow(display_type_, create_size);
     if (!window_) {
       DestroyDisplayTypeAndWindow();
@@ -104,11 +114,15 @@ bool SurfaceFactoryCast::ResizeDisplay(gfx::Size size) {
   return true;
 }
 
-void SurfaceFactoryCast::DestroyDisplayTypeAndWindow() {
+void SurfaceFactoryCast::DestroyWindow() {
   if (window_) {
     egl_platform_->DestroyWindow(window_);
     window_ = 0;
   }
+}
+
+void SurfaceFactoryCast::DestroyDisplayTypeAndWindow() {
+  DestroyWindow();
   if (have_display_type_) {
     egl_platform_->DestroyDisplayType(display_type_);
     display_type_ = 0;
@@ -153,6 +167,9 @@ void SurfaceFactoryCast::ChildDestroyed() {
     SendRelinquishResponse();
     destroy_window_pending_state_ = kNoDestroyPending;
   } else {
+    if (egl_platform_->MultipleSurfaceUnsupported()) {
+      DestroyWindow();
+    }
     destroy_window_pending_state_ = kSurfaceDestroyedRecently;
   }
 }
@@ -166,6 +183,41 @@ void SurfaceFactoryCast::SendRelinquishResponse() {
 const int32* SurfaceFactoryCast::GetEGLSurfaceProperties(
     const int32* desired_list) {
   return egl_platform_->GetEGLSurfaceProperties(desired_list);
+}
+
+scoped_refptr<NativePixmap> SurfaceFactoryCast::CreateNativePixmap(
+    gfx::AcceleratedWidget w,
+    gfx::Size size,
+    BufferFormat format,
+    BufferUsage usage) {
+  class CastPixmap : public NativePixmap {
+   public:
+    CastPixmap() {}
+
+    void* GetEGLClientBuffer() override {
+      // TODO(halliwell): try to implement this through CastEglPlatform.
+      return nullptr;
+    }
+    int GetDmaBufFd() override { return 0; }
+    int GetDmaBufPitch() override { return 0; }
+    bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                              int plane_z_order,
+                              gfx::OverlayTransform plane_transform,
+                              const gfx::Rect& display_bounds,
+                              const gfx::RectF& crop_rect) override {
+      return true;
+    }
+    void SetScalingCallback(const ScalingCallback& scaling_callback) override {}
+    scoped_refptr<NativePixmap> GetScaledPixmap(gfx::Size new_size) override {
+      return nullptr;
+    }
+
+   private:
+    ~CastPixmap() override {}
+
+    DISALLOW_COPY_AND_ASSIGN(CastPixmap);
+  };
+  return make_scoped_refptr(new CastPixmap);
 }
 
 bool SurfaceFactoryCast::LoadEGLGLES2Bindings(

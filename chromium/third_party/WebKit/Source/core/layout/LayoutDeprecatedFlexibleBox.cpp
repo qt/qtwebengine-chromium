@@ -32,7 +32,7 @@
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/fonts/Font.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
@@ -81,7 +81,7 @@ public:
                     m_currentOrdinal = m_forward ? 1 : m_largestOrdinal;
                 } else {
                     if (static_cast<size_t>(m_ordinalIteration) >= m_ordinalValues.size() + 1)
-                        return 0;
+                        return nullptr;
 
                     // Only copy+sort the values once per layout even if the iterator is reset.
                     if (m_ordinalValues.size() != m_sortedOrdinalValues.size()) {
@@ -400,12 +400,15 @@ void LayoutDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
 
             SubtreeLayoutScope layoutScope(*child);
 
-            // We need to see if this child's height has changed, since we make block elements
-            // fill the height of a containing box by default.
-            // Now do a layout.
-            LayoutUnit oldChildHeight = child->size().height();
-            child->updateLogicalHeight();
-            if (oldChildHeight != child->size().height())
+            // We need to see if this child's height will change, since we make block elements fill
+            // the height of a containing box by default. We cannot actually *set* the new height
+            // here, though. Need to do that from within layout, or we won't be able to detect the
+            // change and duly notify any positioned descendants that are affected by it.
+            LayoutUnit oldChildHeight = child->logicalHeight();
+            LogicalExtentComputedValues computedValues;
+            child->computeLogicalHeight(child->logicalHeight(), child->logicalTop(), computedValues);
+            LayoutUnit newChildHeight = computedValues.m_extent;
+            if (oldChildHeight != newChildHeight)
                 layoutScope.setChildNeedsLayout(child);
 
             if (!child->needsLayout())
@@ -918,7 +921,7 @@ void LayoutDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         // Let the truncation code kick in.
         // FIXME: the text alignment should be recomputed after the width changes due to truncation.
         LayoutUnit blockLeftEdge = destBlock.logicalLeftOffsetForLine(lastVisibleLine->y(), false);
-        lastVisibleLine->placeEllipsis(ellipsisStr, leftToRight, blockLeftEdge.toFloat(), blockRightEdge.toFloat(), totalWidth);
+        lastVisibleLine->placeEllipsis(ellipsisStr, leftToRight, blockLeftEdge, blockRightEdge, totalWidth);
         destBlock.setHasMarkupTruncation(true);
     }
 }

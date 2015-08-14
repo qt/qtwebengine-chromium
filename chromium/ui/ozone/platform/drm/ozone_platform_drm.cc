@@ -12,19 +12,20 @@
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
-#include "ui/ozone/platform/drm/drm_surface_factory.h"
 #include "ui/ozone/platform/drm/gpu/drm_buffer.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_generator.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_manager.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_display_manager.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_platform_support.h"
+#include "ui/ozone/platform/drm/gpu/drm_surface_factory.h"
 #include "ui/ozone/platform/drm/gpu/drm_window.h"
 #include "ui/ozone/platform/drm/gpu/screen_manager.h"
 #include "ui/ozone/platform/drm/host/drm_cursor.h"
 #include "ui/ozone/platform/drm/host/drm_display_host_manager.h"
 #include "ui/ozone/platform/drm/host/drm_gpu_platform_support_host.h"
 #include "ui/ozone/platform/drm/host/drm_native_display_delegate.h"
+#include "ui/ozone/platform/drm/host/drm_overlay_manager.h"
 #include "ui/ozone/platform/drm/host/drm_window_host.h"
 #include "ui/ozone/platform/drm/host/drm_window_host_manager.h"
 #include "ui/ozone/public/ozone_gpu_test_helper.h"
@@ -56,6 +57,9 @@ class OzonePlatformDrm : public OzonePlatform {
   // OzonePlatform:
   ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
     return surface_factory_ozone_.get();
+  }
+  OverlayManagerOzone* GetOverlayManager() override {
+    return overlay_manager_.get();
   }
   CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
@@ -91,16 +95,6 @@ class OzonePlatformDrm : public OzonePlatform {
         scoped_ptr<DrmDeviceGenerator>(new DrmDeviceGenerator())));
     window_manager_.reset(new DrmWindowHostManager());
     cursor_.reset(new DrmCursor(window_manager_.get()));
-    surface_factory_ozone_.reset(new DrmSurfaceFactory(screen_manager_.get()));
-    scoped_ptr<DrmGpuDisplayManager> ndd(new DrmGpuDisplayManager(
-        screen_manager_.get(), drm_device_manager_.get()));
-    gpu_platform_support_.reset(new DrmGpuPlatformSupport(
-        drm_device_manager_.get(), screen_manager_.get(), ndd.Pass()));
-    gpu_platform_support_host_.reset(
-        new DrmGpuPlatformSupportHost(cursor_.get()));
-    display_manager_.reset(new DrmDisplayHostManager(
-        gpu_platform_support_host_.get(), device_manager_.get()));
-    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
 #if defined(USE_XKBCOMMON)
     KeyboardLayoutEngineManager::SetKeyboardLayoutEngine(make_scoped_ptr(
         new XkbKeyboardLayoutEngine(xkb_evdev_code_converter_)));
@@ -111,6 +105,19 @@ class OzonePlatformDrm : public OzonePlatform {
     event_factory_ozone_.reset(new EventFactoryEvdev(
         cursor_.get(), device_manager_.get(),
         KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()));
+    overlay_manager_.reset(new DrmOverlayManager(false, nullptr));
+    surface_factory_ozone_.reset(new DrmSurfaceFactory(screen_manager_.get()));
+    scoped_ptr<DrmGpuDisplayManager> display_manager(new DrmGpuDisplayManager(
+        screen_manager_.get(), drm_device_manager_.get()));
+    gpu_platform_support_.reset(new DrmGpuPlatformSupport(
+        drm_device_manager_.get(), screen_manager_.get(),
+        buffer_generator_.get(), display_manager.Pass()));
+    gpu_platform_support_host_.reset(
+        new DrmGpuPlatformSupportHost(cursor_.get()));
+    display_manager_.reset(new DrmDisplayHostManager(
+        gpu_platform_support_host_.get(), device_manager_.get(),
+        event_factory_ozone_->input_controller()));
+    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
 
     if (!gpu_helper_.Initialize(base::ThreadTaskRunnerHandle::Get(),
                                 base::ThreadTaskRunnerHandle::Get()))
@@ -127,6 +134,7 @@ class OzonePlatformDrm : public OzonePlatform {
   scoped_ptr<DrmGpuPlatformSupport> gpu_platform_support_;
 
   // Objects in the "Browser" process.
+  scoped_ptr<OverlayManagerOzone> overlay_manager_;
   scoped_ptr<DeviceManager> device_manager_;
   scoped_ptr<BitmapCursorFactoryOzone> cursor_factory_ozone_;
   scoped_ptr<DrmWindowHostManager> window_manager_;

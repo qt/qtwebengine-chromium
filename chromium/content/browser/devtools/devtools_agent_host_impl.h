@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "content/common/content_export.h"
+#include "content/common/devtools_messages.h"
 #include "content/public/browser/devtools_agent_host.h"
 
 namespace IPC {
@@ -18,7 +19,6 @@ class Message;
 namespace content {
 
 class BrowserContext;
-class DevToolsProtocolHandler;
 
 // Describes interface for managing devtools agents from the browser process.
 class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
@@ -28,9 +28,6 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
 
   // Informs the hosted agent that a client host has detached.
   virtual void Detach() = 0;
-
-  // Sends a message to the agent.
-  bool DispatchProtocolMessage(const std::string& message) override;
 
   // Opens the inspector for this host.
   void Inspect(BrowserContext* browser_context);
@@ -50,9 +47,6 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
   DevToolsAgentHostImpl();
   ~DevToolsAgentHostImpl() override;
 
-  scoped_ptr<DevToolsProtocolHandler> protocol_handler_;
-
-  void set_handle_all_protocol_commands() { handle_all_commands_ = true; }
   void HostClosed();
   void SendMessageToClient(const std::string& message);
   static void NotifyCallbacks(DevToolsAgentHostImpl* agent_host, bool attached);
@@ -62,7 +56,25 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
 
   const std::string id_;
   DevToolsAgentHostClient* client_;
-  bool handle_all_commands_;
+};
+
+class DevToolsMessageChunkProcessor {
+ public:
+  using SendMessageCallback = base::Callback<void(const std::string&)>;
+  explicit DevToolsMessageChunkProcessor(const SendMessageCallback& callback);
+  ~DevToolsMessageChunkProcessor();
+
+  std::string state_cookie() const { return state_cookie_; }
+  void set_state_cookie(const std::string& cookie) { state_cookie_ = cookie; }
+  int last_call_id() const { return last_call_id_; }
+  void ProcessChunkedMessageFromAgent(const DevToolsMessageChunk& chunk);
+
+ private:
+  SendMessageCallback callback_;
+  std::string message_buffer_;
+  uint32 message_buffer_size_;
+  std::string state_cookie_;
+  int last_call_id_;
 };
 
 }  // namespace content

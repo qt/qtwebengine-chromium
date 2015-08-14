@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="fi">
 <translation id="2774256287122201187">Voit jatkaa. Jos jatkat sivulle, tätä varoitusta ei näytetä uudelleen viiteen minuuttiin.</translation>
+<translation id="3963721102035795474">Lukijatila</translation>
 <translation id="7485870689360869515">Tietoja ei löydy.</translation>
 <translation id="3884278016824448484">Ristiriitainen laitteen tunnus</translation>
 <translation id="5172758083709347301">Kaikki tietokoneen käyttäjät</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">Pakollinen</translation>
 <translation id="2958431318199492670">Verkkoasetukset eivät noudata ONC-standardia. Kaikkia asetuksia ei välttämättä tuoda.</translation>
 <translation id="3583757800736429874">&amp;Toista siirto</translation>
+<translation id="7887683347370398519">Tarkista CVC ja yritä uudelleen.</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">Laitetallenne puuttuu</translation>
 <translation id="1491151370853475546">Päivitä tämä sivu</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">Käännä <ph name="LANGUAGE"/> aina</translation>
 <translation id="1227633850867390598">Piilota arvo</translation>
 <translation id="6753269504797312559">Käytännön arvo</translation>
+<translation id="3369366829301677151">Päivitä ja vahvista <ph name="CREDIT_CARD"/></translation>
 <translation id="8834246243508017242">Ota käyttöön automaattinen täyttö kontaktien avulla…</translation>
 <translation id="7275334191706090484">Hallinnoidut kirjanmerkit</translation>
 <translation id="7400418766976504921">URL-osoite</translation>
 <translation id="7378627244592794276">Ei</translation>
 <translation id="2704283930420550640">Arvo ei vastaa muotoa.</translation>
 <translation id="1055184225775184556">K&amp;umoa lisäys</translation>
+<translation id="7813600968533626083">Poistetaanko lomake-ehdotus Chromen tiedoista?</translation>
 <translation id="4850886885716139402">Näytä</translation>
 <translation id="8091372947890762290">Aktivointi odottaa palvelimella</translation>
 <translation id="6874604403660855544">&amp;Toista lisäys</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">Alue</translation>
 <translation id="1871208020102129563">Välityspalvelin on asetettu käyttämään kiinteitä välityspalvelimia, ei .pac-URL-osoitetta.</translation>
+<translation id="8988760548304185580">Anna vanhenemispäivä ja kolminumeroinen CVC luottokortin takapuolelta.</translation>
 <translation id="8940229512486821554">Suorita laajennuksessa <ph name="EXTENSION_NAME"/> komento: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">Tuntematon virhe</translation>
 <translation id="112840717907525620">Käytännön välimuisti on OK</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">Todennusvirhe: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">Käännös kielelle <ph name="TARGET_LANGUAGE"/> epäonnistui.</translation>
 <translation id="4103249731201008433">Laitteen sarjanumero on virheellinen</translation>
+<translation id="3219579145727097045">Anna vanhenemispäivä ja nelinumeroinen CVC luottokortin etupuolelta.</translation>
 <translation id="59107663811261420">Google Payments ei tue tämän tyyppisen kortin käyttämistä ostoksien tekemiseen tältä myyjältä. Valitse eri kortti.</translation>
-<translation id="3667681724235208644">Näytä alkuperäinen</translation>
 <translation id="4079302484614802869">Välityspalvelinmääritykset on asetettu käyttämään .pac-URL-osoitteita, ei kiinteitä välityspalvelimia.</translation>
 <translation id="5540224163453853">Pyydettyä artikkelia ei löydy.</translation>
 <translation id="8437238597147034694">K&amp;umoa siirto</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">Käännetäänkö kielestä <ph name="ORIGINAL_LANGUAGE"/> kielelle <ph name="TARGET_LANGUAGE"/>?</translation>
 <translation id="8218327578424803826">Määrätty sijainti:</translation>
 <translation id="3542684924769048008">Käytä salasanaa kohteeseen:</translation>
+<translation id="2855922900409897335">Vahvista <ph name="CREDIT_CARD"/>.</translation>
 <translation id="7186367841673660872">Tämä sivu on käännetty kielestä<ph name="ORIGINAL_LANGUAGE"/>kielelle<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">Poistetaanko osoite Chromen tiedoista?</translation>
 <translation id="7139724024395191329">Emiirikunta</translation>
+<translation id="6646897916597483132">Anna nelinumeroinen CVC luottokortin etupuolelta.</translation>
 <translation id="5145883236150621069">Käytäntövastaus sisältää virhekoodin</translation>
 <translation id="7983301409776629893">Käännä aina kielestä <ph name="ORIGINAL_LANGUAGE"/> kielelle <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="6970216967273061347">Alue</translation>
 <translation id="3427342743765426898">&amp;Toista muokkaus</translation>
 <translation id="3010559122411665027">Luettelokohde &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Poistetaanko luottokortti Chromen tiedoista?</translation>
 <translation id="6445051938772793705">Maa</translation>
 <translation id="5031870354684148875">Tietoja Google-kääntäjästä</translation>
 <translation id="1152921474424827756">Käytä osoitteen <ph name="URL"/> <ph name="BEGIN_LINK"/>välimuistiversiota<ph name="END_LINK"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">Verkkotunnuksen <ph name="DOMAIN"/> kirjanmerkit</translation>
 <translation id="4300246636397505754">Ylätason ehdotukset</translation>
 <translation id="111844081046043029">Haluatko varmasti poistua tältä sivulta?</translation>
+<translation id="2495083838625180221">JSON-jäsentäjä</translation>
 <translation id="1973335181906896915">Sarjaesittämisen virhe</translation>
 <translation id="5989320800837274978">Kiinteitä välityspalvelimia tai .pac-URL-osoitetta ei ole määritetty.</translation>
 <translation id="7805768142964895445">Tila</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">Käytännön asetuksien tallentaminen epäonnistui</translation>
 <translation id="5439770059721715174">Mallin todennusvirhe kohdassa <ph name="ERROR_PATH"/>: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">Kirjanmerkkipalkki</translation>
+<translation id="587701087903783706">Sulje mobiililaitteisiin sopiva näkymä</translation>
 <translation id="7208899522964477531">Haku sivustosta: <ph name="SITE_NAME"/> termillä: <ph name="SEARCH_TERMS"/></translation>
 <translation id="7956713633345437162">Mobiilikirjanmerkit</translation>
 <translation id="5089810972385038852">Osavaltio/alue</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">Virheellinen välityspalvelimen tila.</translation>
 <translation id="3105172416063519923">Laitteen tunnus:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">Tämän ominaisuuden käyttö edellyttää JavaScriptiä.</translation>
 <translation id="2587841377698384444">Hakemistosovellusliittymän tunnus:</translation>
 <translation id="7752995774971033316">Ei hallinnoida</translation>
 <translation id="3712624925041724820">Käyttöluvat ovat lopussa</translation>
 <translation id="4926049483395192435">On määritettävä.</translation>
+<translation id="1455235771979731432">Korttia todennettaessa tapahtui virhe. Tarkista internetyhteys ja yritä uudelleen.</translation>
 <translation id="7542995811387359312">Automaattinen luottokortin tietojen täyttäminen on poistettu käytöstä, koska tämä lomake ei käytä suojattua yhteyttä.</translation>
 <translation id="5179510805599951267">Eikö kieli ole <ph name="ORIGINAL_LANGUAGE"/>? Ilmoita virheestä</translation>
 <translation id="8088680233425245692">Artikkelin näyttäminen epäonnistui.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">Aktiivinen</translation>
 <translation id="7568593326407688803">Tämä sivu on kirjoitettu kielellä<ph name="ORIGINAL_LANGUAGE"/>Haluatko kääntää sen?</translation>
 <translation id="8876793034577346603">Verkkoasetuksia ei voitu jäsentää.</translation>
+<translation id="4800132727771399293">Tarkista vanhenemispäivä ja CVC ja yritä uudelleen.</translation>
 <translation id="4171400957073367226">Virheellinen vahvistusallekirjoitus.</translation>
+<translation id="9125941078353557812">Anna kolminumeroinen CVC luottokortin takapuolelta.</translation>
 <translation id="106701514854093668">Työpöytäkirjanmerkit</translation>
 <translation id="6154808779448689242">Palautettu käytännön tunnus ei vastaa nykyistä tunnusta</translation>
 <translation id="7995512525968007366">Ei määritetty</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">K&amp;umoa uudelleenjärjestely</translation>
 <translation id="20817612488360358">Järjestelmän välityspalvelinasetukset on määritetty käytettäviksi, mutta erilliset välityspalvelimen asetukset on myös määritetty.</translation>
 <translation id="2639739919103226564">Tila:</translation>
+<translation id="8824019021993735287">Chrome ei voinut vahvistaa korttiasi. Yritä myöhemmin uudelleen.</translation>
 <translation id="4968547170521245791">Ei voi lähettää välityspalvelimelle</translation>
 <translation id="385051799172605136">Edellinen</translation>
 <translation id="4196861286325780578">&amp;Toista siirto</translation>

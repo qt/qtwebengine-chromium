@@ -44,6 +44,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/svg/animation/SVGSMILElement.h"
+#include "wtf/ASCIICType.h"
 #include "wtf/HashSet.h"
 #include "wtf/NonCopyingSort.h"
 
@@ -51,13 +52,18 @@ namespace blink {
 
 namespace {
 
+bool svgPrefixed(const String& property)
+{
+    return property.length() >= 4 && property.startsWith("svg") && isASCIIUpper(property[3]);
+}
+
 QualifiedName svgAttributeName(String property)
 {
-    if (property.length() >= 4 && property.startsWith("svg")) {
-        // Replace 'svgTransform' with 'transform', etc.
-        property.remove(0, 3);
-        property = property.lower();
-    }
+    // Replace 'svgTransform' with 'transform', etc.
+    ASSERT(svgPrefixed(property));
+    UChar first = toASCIILower(property[3]);
+    property.remove(0, 4);
+    property.insert(&first, 1, 0);
 
     if (property == "href")
         return XLinkNames::hrefAttr;
@@ -73,7 +79,6 @@ const QualifiedName* supportedSVGAttribute(const String& property, SVGElement* s
         // Fill the set for the first use.
         // Animatable attributes from http://www.w3.org/TR/SVG/attindex.html
         const QualifiedName* attributes[] = {
-            // TODO(ericwilligers): Support all the animatable attributes.
             &HTMLNames::classAttr,
             &SVGNames::amplitudeAttr,
             &SVGNames::azimuthAttr,
@@ -90,7 +95,6 @@ const QualifiedName* supportedSVGAttribute(const String& property, SVGElement* s
             &SVGNames::edgeModeAttr,
             &SVGNames::elevationAttr,
             &SVGNames::exponentAttr,
-            &SVGNames::filterResAttr,
             &SVGNames::filterUnitsAttr,
             &SVGNames::fxAttr,
             &SVGNames::fyAttr,
@@ -191,9 +195,12 @@ const QualifiedName* supportedSVGAttribute(const String& property, SVGElement* s
 
 PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
 {
-    // FIXME: Remove the dependency on element.
     if (!element)
         return nullptr;
+
+    // TODO(alancutter): Remove this once composited animations no longer depend on AnimatableValues.
+    if (element->inActiveDocument())
+        element->document().updateLayoutTreeForNodeIfNeeded(element);
 
     StyleSheetContents* styleSheetContents = element->document().elementSheet().contents();
     StringKeyframeVector keyframes;
@@ -258,7 +265,7 @@ PassRefPtrWillBeRawPtr<EffectModel> EffectInput::convert(Element* element, const
                 continue;
             }
 
-            if (!RuntimeEnabledFeatures::webAnimationsSVGEnabled() || !element->isSVGElement())
+            if (!RuntimeEnabledFeatures::webAnimationsSVGEnabled() || !element->isSVGElement() || !svgPrefixed(property))
                 continue;
 
             SVGElement* svgElement = toSVGElement(element);

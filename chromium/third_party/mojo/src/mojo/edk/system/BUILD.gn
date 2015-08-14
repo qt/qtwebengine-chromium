@@ -33,12 +33,12 @@ component("system") {
     "channel_endpoint_client.h",
     "channel_endpoint_id.cc",
     "channel_endpoint_id.h",
-    "channel_info.cc",
-    "channel_info.h",
+    "channel_id.h",
     "channel_manager.cc",
     "channel_manager.h",
     "configuration.cc",
     "configuration.h",
+    "connection_identifier.h",
     "connection_manager.cc",
     "connection_manager.h",
     "core.cc",
@@ -60,6 +60,8 @@ component("system") {
     "handle_table.h",
     "incoming_endpoint.cc",
     "incoming_endpoint.h",
+    "ipc_support.cc",
+    "ipc_support.h",
     "local_data_pipe_impl.cc",
     "local_data_pipe_impl.h",
     "local_message_pipe_endpoint.cc",
@@ -83,6 +85,7 @@ component("system") {
     "options_validation.h",
     "platform_handle_dispatcher.cc",
     "platform_handle_dispatcher.h",
+    "process_identifier.h",
     "proxy_message_pipe_endpoint.cc",
     "proxy_message_pipe_endpoint.h",
     "raw_channel.cc",
@@ -120,6 +123,7 @@ component("system") {
     "../embedder:delegates",
     "../embedder:platform",
     "../../public/c/system",
+    "../../public/cpp/system",
   ]
 
   deps = [
@@ -146,10 +150,14 @@ mojo_edk_source_set("test_utils") {
     "test_utils.h",
   ]
 
+  mojo_sdk_public_deps = [
+    "mojo/public/c/system",
+    "mojo/public/cpp/system",
+  ]
+
   deps = [
     "//base",
     "//base/test:test_support",
-    "../../public/c/system",
   ]
 }
 
@@ -158,7 +166,10 @@ test("mojo_system_unittests") {
     "../test/multiprocess_test_helper_unittest.cc",
     "awakable_list_unittest.cc",
     "channel_endpoint_id_unittest.cc",
+    "channel_endpoint_unittest.cc",
     "channel_manager_unittest.cc",
+    "channel_test_base.cc",
+    "channel_test_base.h",
     "channel_unittest.cc",
     "connection_manager_unittest.cc",
     "core_test_base.cc",
@@ -167,7 +178,12 @@ test("mojo_system_unittests") {
     "data_pipe_impl_unittest.cc",
     "data_pipe_unittest.cc",
     "dispatcher_unittest.cc",
+    "endpoint_relayer_unittest.cc",
+    "ipc_support_unittest.cc",
     "memory_unittest.cc",
+    "message_in_transit_queue_unittest.cc",
+    "message_in_transit_test_utils.cc",
+    "message_in_transit_test_utils.h",
     "message_pipe_dispatcher_unittest.cc",
     "message_pipe_test_utils.cc",
     "message_pipe_test_utils.h",
@@ -181,6 +197,8 @@ test("mojo_system_unittests") {
     "run_all_unittests.cc",
     "shared_buffer_dispatcher_unittest.cc",
     "simple_dispatcher_unittest.cc",
+    "test_channel_endpoint_client.cc",
+    "test_channel_endpoint_client.h",
     "unique_identifier_unittest.cc",
     "waiter_test_utils.cc",
     "waiter_test_utils.h",

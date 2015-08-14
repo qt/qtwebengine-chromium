@@ -64,7 +64,7 @@ public:
     void addClientLayer(DeprecatedPaintLayer*);
     void removeClientLayer(DeprecatedPaintLayer*);
 
-    void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = 0);
+    void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = nullptr);
 
     static void markForLayoutAndParentResourceInvalidation(LayoutObject*, bool needsLayout = true);
 
@@ -84,6 +84,8 @@ protected:
     void markAllClientLayersForInvalidation();
     void markClientForInvalidation(LayoutObject*, InvalidationMode);
 
+    virtual void willBeDestroyed() override;
+
     bool m_isInLayout;
 
 private:
@@ -91,7 +93,6 @@ private:
     void addClient(LayoutObject*);
     void removeClient(LayoutObject*);
 
-    virtual void willBeDestroyed() override final;
     void registerResource();
 
     AtomicString m_id;
@@ -109,12 +110,12 @@ private:
 inline LayoutSVGResourceContainer* getLayoutSVGResourceContainerById(TreeScope& treeScope, const AtomicString& id)
 {
     if (id.isEmpty())
-        return 0;
+        return nullptr;
 
     if (LayoutSVGResourceContainer* layoutResource = treeScope.document().accessSVGExtensions().resourceById(id))
         return layoutResource;
 
-    return 0;
+    return nullptr;
 }
 
 template<typename Layout>
@@ -124,7 +125,7 @@ Layout* getLayoutSVGResourceById(TreeScope& treeScope, const AtomicString& id)
         if (container->resourceType() == Layout::s_resourceType)
             return static_cast<Layout*>(container);
     }
-    return 0;
+    return nullptr;
 }
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutSVGResourceContainer, isSVGResourceContainer());

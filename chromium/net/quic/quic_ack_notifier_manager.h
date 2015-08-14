@@ -15,6 +15,10 @@ namespace net {
 
 class QuicAckNotifier;
 
+namespace test {
+class AckNotifierManagerPeer;
+}
+
 // The AckNotifierManager is used by the QuicSentPacketManager to keep track of
 // all the AckNotifiers currently active. It owns the AckNotifiers which it gets
 // from the serialized packets passed into OnSerializedPacket. It maintains both
@@ -46,7 +50,13 @@ class NET_EXPORT_PRIVATE AckNotifierManager {
   // inform the AckNotifier of the sequence number which it should track.
   void OnSerializedPacket(const SerializedPacket& serialized_packet);
 
+  // This method is invoked when a packet is removed from the list of unacked
+  // packets, and it is no longer necessary to keep track of the notifier.
+  void OnPacketRemoved(QuicPacketSequenceNumber sequence_number);
+
  private:
+  friend class test::AckNotifierManagerPeer;
+
   typedef std::list<QuicAckNotifier*> AckNotifierList;
   // TODO(ianswett): Further improvement may come from changing this to a deque.
   typedef base::hash_map<QuicPacketSequenceNumber, AckNotifierList>

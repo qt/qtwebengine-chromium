@@ -21,7 +21,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "net/base/net_export.h"
@@ -104,11 +103,6 @@ class NET_EXPORT SdchManager {
 
   static bool sdch_enabled() { return g_sdch_enabled_; }
 
-  // Enables or disables SDCH compression over secure connection.
-  static void EnableSecureSchemeSupport(bool enabled);
-
-  static bool secure_scheme_supported() { return g_secure_scheme_supported_; }
-
   // Briefly prevent further advertising of SDCH on this domain (if SDCH is
   // enabled). After enough calls to IsInSupportedDomain() the blacklisting
   // will be removed. Additional blacklists take exponentially more calls
@@ -184,7 +178,7 @@ class NET_EXPORT SdchManager {
 
   void SetAllowLatencyExperiment(const GURL& url, bool enable);
 
-  base::Value* SdchInfoToValue() const;
+  scoped_ptr<base::Value> SdchInfoToValue() const;
 
   // Add an SDCH dictionary to our list of availible
   // dictionaries. This addition will fail if addition is illegal
@@ -207,9 +201,6 @@ class NET_EXPORT SdchManager {
 
   static scoped_ptr<DictionarySet> CreateEmptyDictionarySetForTesting();
 
-  // For investigation of http://crbug.com/454198; remove when resolved.
-  base::WeakPtr<SdchManager> GetWeakPtr();
-
  private:
   struct BlacklistInfo {
     BlacklistInfo() : count(0), exponential_count(0), reason(SDCH_OK) {}
@@ -231,10 +222,6 @@ class NET_EXPORT SdchManager {
   // Support SDCH compression, by advertising in headers.
   static bool g_sdch_enabled_;
 
-  // Support SDCH compression for HTTPS requests and responses. When supported,
-  // HTTPS applicable dictionaries MUST have been acquired securely via HTTPS.
-  static bool g_secure_scheme_supported_;
-
   // A simple implementation of a RFC 3548 "URL safe" base64 encoder.
   static void UrlSafeBase64Encode(const std::string& input,
                                   std::string* output);
@@ -252,11 +239,9 @@ class NET_EXPORT SdchManager {
   // Assert list is empty on destruction since if there is an observer
   // that hasn't removed itself from the list, that observer probably
   // has a reference to the SdchManager.
-  ObserverList<SdchObserver, true> observers_;
+  base::ObserverList<SdchObserver, true> observers_;
 
   base::ThreadChecker thread_checker_;
-
-  base::WeakPtrFactory<SdchManager> factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SdchManager);
 };

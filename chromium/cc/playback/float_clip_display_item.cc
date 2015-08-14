@@ -20,13 +20,13 @@ FloatClipDisplayItem::~FloatClipDisplayItem() {
 void FloatClipDisplayItem::SetNew(const gfx::RectF& clip_rect) {
   clip_rect_ = clip_rect;
 
-  size_t memory_usage = sizeof(gfx::RectF);
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 1 /* op_count */,
-                      memory_usage);
+                      0 /* external_memory_usage */);
 }
 
 void FloatClipDisplayItem::Raster(SkCanvas* canvas,
-                                  SkDrawPictureCallback* callback) const {
+                                  const gfx::Rect& canvas_target_playback_rect,
+                                  SkPicture::AbortCallback* callback) const {
   canvas->save();
   canvas->clipRect(gfx::RectFToSkRect(clip_rect_));
 }
@@ -39,14 +39,16 @@ void FloatClipDisplayItem::AsValueInto(
 
 EndFloatClipDisplayItem::EndFloatClipDisplayItem() {
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 0 /* op_count */,
-                      0 /* memory_usage */);
+                      0 /* external_memory_usage */);
 }
 
 EndFloatClipDisplayItem::~EndFloatClipDisplayItem() {
 }
 
-void EndFloatClipDisplayItem::Raster(SkCanvas* canvas,
-                                     SkDrawPictureCallback* callback) const {
+void EndFloatClipDisplayItem::Raster(
+    SkCanvas* canvas,
+    const gfx::Rect& canvas_target_playback_rect,
+    SkPicture::AbortCallback* callback) const {
   canvas->restore();
 }
 

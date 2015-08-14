@@ -32,12 +32,14 @@
 
 #include "public/web/WebLeakDetector.h"
 
+#include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8GCController.h"
+#include "core/dom/ActiveDOMObject.h"
 #include "core/dom/Document.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/inspector/InspectorCounters.h"
+#include "core/inspector/InstanceCounters.h"
 #include "core/layout/LayoutObject.h"
 #include "modules/webaudio/AudioNode.h"
 #include "platform/Timer.h"
@@ -65,9 +67,9 @@ public:
         ASSERT(m_client);
     }
 
-    virtual ~WebLeakDetectorImpl() { }
+    ~WebLeakDetectorImpl() override {}
 
-    virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) override;
+    void collectGarbageAndGetDOMCounts(WebLocalFrame*) override;
 
 private:
     void delayedGCAndReport(Timer<WebLeakDetectorImpl>*);
@@ -126,12 +128,16 @@ void WebLeakDetectorImpl::delayedReport(Timer<WebLeakDetectorImpl>*)
     ASSERT(m_client);
 
     WebLeakDetectorClient::Result result;
-    result.numberOfLiveAudioNodes = AudioHandler::instanceCount();
-    result.numberOfLiveDocuments = InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
-    result.numberOfLiveNodes = InspectorCounters::counterValue(InspectorCounters::NodeCounter);
-    result.numberOfLiveLayoutObjects = LayoutObject::instanceCount();
+    result.numberOfLiveAudioNodes = InstanceCounters::counterValue(InstanceCounters::AudioHandlerCounter);
+    result.numberOfLiveDocuments = InstanceCounters::counterValue(InstanceCounters::DocumentCounter);
+    result.numberOfLiveNodes = InstanceCounters::counterValue(InstanceCounters::NodeCounter);
+    result.numberOfLiveLayoutObjects = InstanceCounters::counterValue(InstanceCounters::LayoutObjectCounter);
     result.numberOfLiveRenderObjects = result.numberOfLiveLayoutObjects;
-    result.numberOfLiveResources = Resource::instanceCount();
+    result.numberOfLiveResources = InstanceCounters::counterValue(InstanceCounters::ResourceCounter);
+    result.numberOfLiveActiveDOMObjects = InstanceCounters::counterValue(InstanceCounters::ActiveDOMObjectCounter);
+    result.numberOfLiveScriptPromises = InstanceCounters::counterValue(InstanceCounters::ScriptPromiseCounter);
+    result.numberOfLiveFrames = InstanceCounters::counterValue(InstanceCounters::FrameCounter);
+    result.numberOfLiveV8PerContextData = InstanceCounters::counterValue(InstanceCounters::V8PerContextDataCounter);
 
     m_client->onLeakDetectionComplete(result);
 

@@ -9,11 +9,11 @@
 #include "core/page/Page.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/DeprecatedPaintLayerScrollableArea.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ScrollbarPainter.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
-#include "platform/graphics/paint/DrawingRecorder.h"
 
 namespace blink {
 
@@ -23,18 +23,24 @@ void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoin
         return;
 
     IntRect absRect = m_scrollableArea.resizerCornerRect(m_scrollableArea.box().pixelSnappedBorderBoxRect(), ResizerForPointer);
-    absRect.moveBy(paintOffset);
-    if (!absRect.intersects(damageRect))
+    if (absRect.isEmpty())
         return;
+    absRect.moveBy(paintOffset);
 
     if (m_scrollableArea.resizer()) {
+        if (!absRect.intersects(damageRect))
+            return;
         ScrollbarPainter::paintIntoRect(m_scrollableArea.resizer(), context, paintOffset, LayoutRect(absRect));
         return;
     }
 
-    DrawingRecorder recorder(*context, m_scrollableArea.box(), DisplayItem::Resizer, absRect);
-    if (recorder.canUseCachedDrawing())
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() && !absRect.intersects(damageRect))
         return;
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_scrollableArea.box(), DisplayItem::Resizer))
+        return;
+
+    LayoutObjectDrawingRecorder recorder(*context, m_scrollableArea.box(), DisplayItem::Resizer, absRect);
 
     drawPlatformResizerImage(context, absRect);
 
@@ -167,23 +173,30 @@ bool ScrollableAreaPainter::overflowControlsIntersectRect(const IntRect& localRe
 void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const IntPoint& paintOffset, const IntRect& damageRect)
 {
     IntRect absRect = m_scrollableArea.scrollCornerRect();
-    absRect.moveBy(paintOffset);
-    if (!absRect.intersects(damageRect))
+    if (absRect.isEmpty())
         return;
+    absRect.moveBy(paintOffset);
 
     if (m_scrollableArea.scrollCorner()) {
+        if (!absRect.intersects(damageRect))
+            return;
         ScrollbarPainter::paintIntoRect(m_scrollableArea.scrollCorner(), context, paintOffset, LayoutRect(absRect));
         return;
     }
 
-    DrawingRecorder recorder(*context, m_scrollableArea.box(), DisplayItem::ScrollbarCorner, absRect);
-    if (recorder.canUseCachedDrawing())
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() && !absRect.intersects(damageRect))
         return;
 
     // We don't want to paint white if we have overlay scrollbars, since we need
     // to see what is behind it.
-    if (!m_scrollableArea.hasOverlayScrollbars())
-        context->fillRect(absRect, Color::white);
+    if (m_scrollableArea.hasOverlayScrollbars())
+        return;
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_scrollableArea.box(), DisplayItem::ScrollbarCorner))
+        return;
+
+    LayoutObjectDrawingRecorder recorder(*context, m_scrollableArea.box(), DisplayItem::ScrollbarCorner, absRect);
+    context->fillRect(absRect, Color::white);
 }
 
 } // namespace blink

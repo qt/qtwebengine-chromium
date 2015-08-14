@@ -5,6 +5,7 @@
 #include "net/base/host_mapping_rules.h"
 
 #include "base/logging.h"
+#include "base/strings/pattern.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
@@ -34,7 +35,7 @@ bool HostMappingRules::RewriteHost(HostPortPair* host_port) const {
   for (ExclusionRuleList::const_iterator it = exclusion_rules_.begin();
        it != exclusion_rules_.end(); ++it) {
     const ExclusionRule& rule = *it;
-    if (MatchPattern(host_port->host(), rule.hostname_pattern))
+    if (base::MatchPattern(host_port->host(), rule.hostname_pattern))
       return false;
   }
 
@@ -50,15 +51,15 @@ bool HostMappingRules::RewriteHost(HostPortPair* host_port) const {
     //     *.foo.com:1234
     // First, we'll check for a match just on hostname.
     // If that fails, we'll check for a match with both hostname and port.
-    if (!MatchPattern(host_port->host(), rule.hostname_pattern)) {
+    if (!base::MatchPattern(host_port->host(), rule.hostname_pattern)) {
       std::string host_port_string = host_port->ToString();
-      if (!MatchPattern(host_port_string, rule.hostname_pattern))
+      if (!base::MatchPattern(host_port_string, rule.hostname_pattern))
         continue;  // This rule doesn't apply.
     }
 
     host_port->set_host(rule.replacement_hostname);
     if (rule.replacement_port != -1)
-      host_port->set_port(static_cast<uint16>(rule.replacement_port));
+      host_port->set_port(static_cast<uint16_t>(rule.replacement_port));
     return true;
   }
 
@@ -66,13 +67,12 @@ bool HostMappingRules::RewriteHost(HostPortPair* host_port) const {
 }
 
 bool HostMappingRules::AddRuleFromString(const std::string& rule_string) {
-  std::string trimmed;
-  base::TrimWhitespaceASCII(rule_string, base::TRIM_ALL, &trimmed);
-  std::vector<std::string> parts;
-  base::SplitString(trimmed, ' ', &parts);
+  std::vector<std::string> parts =
+      base::SplitString(base::TrimWhitespaceASCII(rule_string, base::TRIM_ALL),
+                        " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   // Test for EXCLUSION rule.
-  if (parts.size() == 2 && LowerCaseEqualsASCII(parts[0], "exclude")) {
+  if (parts.size() == 2 && base::LowerCaseEqualsASCII(parts[0], "exclude")) {
     ExclusionRule rule;
     rule.hostname_pattern = base::StringToLowerASCII(parts[1]);
     exclusion_rules_.push_back(rule);
@@ -80,7 +80,7 @@ bool HostMappingRules::AddRuleFromString(const std::string& rule_string) {
   }
 
   // Test for MAP rule.
-  if (parts.size() == 3 && LowerCaseEqualsASCII(parts[0], "map")) {
+  if (parts.size() == 3 && base::LowerCaseEqualsASCII(parts[0], "map")) {
     MapRule rule;
     rule.hostname_pattern = base::StringToLowerASCII(parts[1]);
 

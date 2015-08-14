@@ -50,6 +50,7 @@ using namespace HTMLNames;
 
 HitTestResult::HitTestResult()
     : m_hitTestRequest(HitTestRequest::ReadOnly | HitTestRequest::Active)
+    , m_cacheable(true)
     , m_isOverWidget(false)
 {
 }
@@ -57,6 +58,7 @@ HitTestResult::HitTestResult()
 HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& point)
     : m_hitTestLocation(point)
     , m_hitTestRequest(request)
+    , m_cacheable(true)
     , m_pointInInnerNodeFrame(point)
     , m_isOverWidget(false)
 {
@@ -65,6 +67,7 @@ HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& p
 HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
     : m_hitTestLocation(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding)
     , m_hitTestRequest(request)
+    , m_cacheable(true)
     , m_pointInInnerNodeFrame(centerPoint)
     , m_isOverWidget(false)
 {
@@ -73,6 +76,7 @@ HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& c
 HitTestResult::HitTestResult(const HitTestRequest& otherRequest, const HitTestLocation& other)
     : m_hitTestLocation(other)
     , m_hitTestRequest(otherRequest)
+    , m_cacheable(true)
     , m_pointInInnerNodeFrame(m_hitTestLocation.point())
     , m_isOverWidget(false)
 {
@@ -81,6 +85,7 @@ HitTestResult::HitTestResult(const HitTestRequest& otherRequest, const HitTestLo
 HitTestResult::HitTestResult(const HitTestResult& other)
     : m_hitTestLocation(other.m_hitTestLocation)
     , m_hitTestRequest(other.m_hitTestRequest)
+    , m_cacheable(other.m_cacheable)
     , m_innerNode(other.innerNode())
     , m_innerPossiblyPseudoNode(other.m_innerPossiblyPseudoNode)
     , m_pointInInnerNodeFrame(other.m_pointInInnerNodeFrame)
@@ -101,6 +106,43 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
 {
     m_hitTestLocation = other.m_hitTestLocation;
     m_hitTestRequest = other.m_hitTestRequest;
+    populateFromCachedResult(other);
+
+    return *this;
+}
+
+unsigned HitTestResult::equalityScore(const HitTestResult& other) const
+{
+    return (m_hitTestRequest.equalForCacheability(other.m_hitTestRequest) << 7)
+        | ((m_innerNode == other.innerNode()) << 6)
+        | ((m_innerPossiblyPseudoNode == other.innerPossiblyPseudoNode()) << 5)
+        | ((m_pointInInnerNodeFrame == other.m_pointInInnerNodeFrame) << 4)
+        | ((m_localPoint == other.localPoint()) << 3)
+        | ((m_innerURLElement == other.URLElement()) << 2)
+        | ((m_scrollbar == other.scrollbar()) << 1)
+        | (m_isOverWidget == other.isOverWidget());
+}
+
+bool HitTestResult::equalForCacheability(const HitTestResult& other) const
+{
+    return m_hitTestRequest.equalForCacheability(other.m_hitTestRequest)
+        && m_innerNode == other.innerNode()
+        && m_innerPossiblyPseudoNode == other.innerPossiblyPseudoNode()
+        && m_pointInInnerNodeFrame == other.m_pointInInnerNodeFrame
+        && m_localPoint == other.localPoint()
+        && m_innerURLElement == other.URLElement()
+        && m_scrollbar == other.scrollbar()
+        && m_isOverWidget == other.isOverWidget();
+}
+
+void HitTestResult::cacheValues(const HitTestResult& other)
+{
+    *this = other;
+    m_hitTestRequest = other.m_hitTestRequest.type() & ~HitTestRequest::AvoidCache;
+}
+
+void HitTestResult::populateFromCachedResult(const HitTestResult& other)
+{
     m_innerNode = other.innerNode();
     m_innerPossiblyPseudoNode = other.innerPossiblyPseudoNode();
     m_pointInInnerNodeFrame = other.m_pointInInnerNodeFrame;
@@ -108,11 +150,10 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     m_innerURLElement = other.URLElement();
     m_scrollbar = other.scrollbar();
     m_isOverWidget = other.isOverWidget();
+    m_cacheable = other.m_cacheable;
 
     // Only copy the NodeSet in case of list hit test.
     m_listBasedTestResult = adoptPtrWillBeNoop(other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : 0);
-
-    return *this;
 }
 
 DEFINE_TRACE(HitTestResult)
@@ -134,7 +175,7 @@ PositionWithAffinity HitTestResult::position() const
     if (!layoutObject)
         return PositionWithAffinity();
     if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->pseudoId() == BEFORE)
-        return Position(m_innerNode, Position::PositionIsBeforeChildren).downstream();
+        return Position(m_innerNode, PositionAnchorType::BeforeChildren).downstream();
     return layoutObject->positionForPoint(localPoint());
 }
 
@@ -147,7 +188,7 @@ void HitTestResult::setToShadowHostIfInUserAgentShadowRoot()
 {
     if (Node* node = innerNode()) {
         if (ShadowRoot* containingShadowRoot = node->containingShadowRoot()) {
-            if (containingShadowRoot->type() == ShadowRoot::UserAgentShadowRoot)
+            if (containingShadowRoot->type() == ShadowRootType::UserAgent)
                 setInnerNode(node->shadowHost());
         }
     }
@@ -160,13 +201,13 @@ HTMLAreaElement* HitTestResult::imageAreaForImage() const
     if (isHTMLImageElement(m_innerNode)) {
         imageElement = toHTMLImageElement(m_innerNode);
     } else if (m_innerNode->isInShadowTree()) {
-        if (m_innerNode->containingShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot) {
+        if (m_innerNode->containingShadowRoot()->type() == ShadowRootType::UserAgent) {
             if (isHTMLImageElement(m_innerNode->shadowHost()))
                 imageElement = toHTMLImageElement(m_innerNode->shadowHost());
         }
     }
 
-    if (!imageElement || !imageElement->layoutObject())
+    if (!imageElement || !imageElement->layoutObject() || !imageElement->layoutObject()->isBox())
         return nullptr;
 
     HTMLMapElement* map = imageElement->treeScope().getImageMap(imageElement->fastGetAttribute(usemapAttr));
@@ -206,7 +247,7 @@ LocalFrame* HitTestResult::innerNodeFrame() const
 {
     if (m_innerNode)
         return m_innerNode->document().frame();
-    return 0;
+    return nullptr;
 }
 
 bool HitTestResult::isSelected() const
@@ -241,6 +282,8 @@ String HitTestResult::title(TextDirection& dir) const
     dir = LTR;
     // Find the title in the nearest enclosing DOM node.
     // For <area> tags in image maps, walk the tree for the <area>, not the <img> using it.
+    if (m_innerNode.get())
+        m_innerNode->updateDistribution();
     for (Node* titleNode = m_innerNode.get(); titleNode; titleNode = ComposedTreeTraversal::parent(*titleNode)) {
         if (titleNode->isElementNode()) {
             String title = toElement(titleNode)->title();
@@ -330,14 +373,14 @@ KURL HitTestResult::absoluteMediaURL() const
 HTMLMediaElement* HitTestResult::mediaElement() const
 {
     if (!m_innerNode)
-        return 0;
+        return nullptr;
 
     if (!(m_innerNode->layoutObject() && m_innerNode->layoutObject()->isMedia()))
-        return 0;
+        return nullptr;
 
     if (isHTMLMediaElement(*m_innerNode))
         return toHTMLMediaElement(m_innerNode);
-    return 0;
+    return nullptr;
 }
 
 KURL HitTestResult::absoluteLinkURL() const
@@ -495,7 +538,7 @@ Element* HitTestResult::innerElement() const
             return toElement(node);
     }
 
-    return 0;
+    return nullptr;
 }
 
 Node* HitTestResult::innerNodeOrImageMapImage() const

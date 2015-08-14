@@ -152,9 +152,9 @@ PaintInvalidationReason LayoutEmbeddedObject::invalidatePaintIfNeeded(
     return reason;
 }
 
-bool LayoutEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float)
+ScrollResultOneDimensional LayoutEmbeddedObject::scroll(ScrollDirectionPhysical direction, ScrollGranularity granularity, float)
 {
-    return false;
+    return ScrollResultOneDimensional(false);
 }
 
 CompositingReasons LayoutEmbeddedObject::additionalCompositingReasons() const
@@ -167,7 +167,7 @@ CompositingReasons LayoutEmbeddedObject::additionalCompositingReasons() const
 LayoutBox* LayoutEmbeddedObject::embeddedContentBox() const
 {
     if (!node() || !widget() || !widget()->isFrameView())
-        return 0;
+        return nullptr;
     return toFrameView(widget())->embeddedContentBox();
 }
 

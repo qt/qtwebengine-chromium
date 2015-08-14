@@ -27,14 +27,14 @@ void GetFallbackFontForCharacter(int32_t character,
                                  blink::WebFallbackFont* fallbackFont) {
   TRACE_EVENT0("sandbox_ipc", "GetFontFamilyForCharacter");
 
-  Pickle request;
+  base::Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_GET_FALLBACK_FONT_FOR_CHAR);
   request.WriteInt(character);
   request.WriteString(preferred_locale);
 
   uint8_t buf[512];
-  const ssize_t n = UnixDomainSocket::SendRecvMsg(GetSandboxFD(), buf,
-                                                  sizeof(buf), NULL, request);
+  const ssize_t n = base::UnixDomainSocket::SendRecvMsg(
+      GetSandboxFD(), buf, sizeof(buf), NULL, request);
 
   std::string family_name;
   std::string filename;
@@ -43,8 +43,8 @@ void GetFallbackFontForCharacter(int32_t character,
   bool isBold = false;
   bool isItalic = false;
   if (n != -1) {
-    Pickle reply(reinterpret_cast<char*>(buf), n);
-    PickleIterator pickle_iter(reply);
+    base::Pickle reply(reinterpret_cast<char*>(buf), n);
+    base::PickleIterator pickle_iter(reply);
     if (pickle_iter.ReadString(&family_name) &&
         pickle_iter.ReadString(&filename) &&
         pickle_iter.ReadInt(&fontconfigInterfaceId) &&
@@ -77,7 +77,7 @@ void GetRenderStyleForStrike(const char* family,
   if (pixel_size > std::numeric_limits<uint16>::max())
     return;
 
-  Pickle request;
+  base::Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_GET_STYLE_FOR_STRIKE);
   request.WriteString(family);
   request.WriteBool(bold);
@@ -85,13 +85,13 @@ void GetRenderStyleForStrike(const char* family,
   request.WriteUInt16(pixel_size);
 
   uint8_t buf[512];
-  const ssize_t n = UnixDomainSocket::SendRecvMsg(GetSandboxFD(), buf,
-                                                  sizeof(buf), NULL, request);
+  const ssize_t n = base::UnixDomainSocket::SendRecvMsg(
+      GetSandboxFD(), buf, sizeof(buf), NULL, request);
   if (n == -1)
     return;
 
-  Pickle reply(reinterpret_cast<char*>(buf), n);
-  PickleIterator pickle_iter(reply);
+  base::Pickle reply(reinterpret_cast<char*>(buf), n);
+  base::PickleIterator pickle_iter(reply);
   int use_bitmaps, use_autohint, use_hinting, hint_style, use_antialias;
   int use_subpixel_rendering, use_subpixel_positioning;
   if (pickle_iter.ReadInt(&use_bitmaps) &&
@@ -118,7 +118,7 @@ int MatchFontWithFallback(const std::string& face,
                           PP_BrowserFont_Trusted_Family fallback_family) {
   TRACE_EVENT0("sandbox_ipc", "MatchFontWithFallback");
 
-  Pickle request;
+  base::Pickle request;
   request.WriteInt(LinuxSandbox::METHOD_MATCH_WITH_FALLBACK);
   request.WriteString(face);
   request.WriteBool(bold);
@@ -127,8 +127,8 @@ int MatchFontWithFallback(const std::string& face,
   request.WriteUInt32(fallback_family);
   uint8_t reply_buf[64];
   int fd = -1;
-  UnixDomainSocket::SendRecvMsg(GetSandboxFD(), reply_buf, sizeof(reply_buf),
-                                &fd, request);
+  base::UnixDomainSocket::SendRecvMsg(
+      GetSandboxFD(), reply_buf, sizeof(reply_buf), &fd, request);
   return fd;
 }
 

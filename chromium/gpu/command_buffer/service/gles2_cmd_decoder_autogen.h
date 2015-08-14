@@ -1381,11 +1381,9 @@ error::Error GLES2DecoderImpl::HandleGetBooleanv(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetBooleanv(pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetBooleanv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetBooleanv", "");
   }
   return error::kNoError;
 }
@@ -1463,11 +1461,9 @@ error::Error GLES2DecoderImpl::HandleGetFloatv(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetFloatv(pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetFloatv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetFloatv", "");
   }
   return error::kNoError;
 }
@@ -1512,11 +1508,9 @@ error::Error GLES2DecoderImpl::HandleGetFramebufferAttachmentParameteriv(
     return error::kInvalidArguments;
   }
   DoGetFramebufferAttachmentParameteriv(target, attachment, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetFramebufferAttachmentParameteriv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetFramebufferAttachmentParameteriv", "");
   }
   return error::kNoError;
 }
@@ -1544,11 +1538,9 @@ error::Error GLES2DecoderImpl::HandleGetInteger64v(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetInteger64v(pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetInteger64v");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetInteger64v", "");
   }
   return error::kNoError;
 }
@@ -1577,11 +1569,9 @@ error::Error GLES2DecoderImpl::HandleGetIntegeri_v(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   glGetIntegeri_v(pname, index, data);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetIntegeri_v");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetIntegeri_v", "");
   }
   return error::kNoError;
 }
@@ -1611,11 +1601,9 @@ error::Error GLES2DecoderImpl::HandleGetInteger64i_v(
     return error::kInvalidArguments;
   }
   glGetInteger64i_v(pname, index, data);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetInteger64i_v");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetInteger64i_v", "");
   }
   return error::kNoError;
 }
@@ -1645,47 +1633,9 @@ error::Error GLES2DecoderImpl::HandleGetIntegerv(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetIntegerv(pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetIntegerv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetIntegerv", "");
-  }
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderImpl::HandleGetInternalformativ(
-    uint32_t immediate_data_size,
-    const void* cmd_data) {
-  if (!unsafe_es3_apis_enabled())
-    return error::kUnknownCommand;
-  const gles2::cmds::GetInternalformativ& c =
-      *static_cast<const gles2::cmds::GetInternalformativ*>(cmd_data);
-  (void)c;
-  GLenum target = static_cast<GLenum>(c.target);
-  GLenum format = static_cast<GLenum>(c.format);
-  GLenum pname = static_cast<GLenum>(c.pname);
-  GLsizei bufSize = static_cast<GLsizei>(c.bufSize);
-  typedef cmds::GetInternalformativ::Result Result;
-  GLsizei num_values = 0;
-  GetNumValuesReturnedForGLGet(pname, &num_values);
-  Result* result = GetSharedMemoryAs<Result*>(
-      c.params_shm_id, c.params_shm_offset, Result::ComputeSize(num_values));
-  GLint* params = result ? result->GetData() : NULL;
-  if (params == NULL) {
-    return error::kOutOfBounds;
-  }
-  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("GetInternalformativ");
-  // Check that the client initialized the result.
-  if (result->size != 0) {
-    return error::kInvalidArguments;
-  }
-  glGetInternalformativ(target, format, pname, bufSize, params);
-  GLenum error = glGetError();
-  if (error == GL_NO_ERROR) {
-    result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetInternalformativ", "");
   }
   return error::kNoError;
 }
@@ -1716,11 +1666,9 @@ error::Error GLES2DecoderImpl::HandleGetProgramiv(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetProgramiv(program, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetProgramiv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetProgramiv", "");
   }
   return error::kNoError;
 }
@@ -1758,11 +1706,9 @@ error::Error GLES2DecoderImpl::HandleGetRenderbufferParameteriv(
     return error::kInvalidArguments;
   }
   DoGetRenderbufferParameteriv(target, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetRenderbufferParameteriv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetRenderbufferParameteriv", "");
   }
   return error::kNoError;
 }
@@ -1797,11 +1743,9 @@ error::Error GLES2DecoderImpl::HandleGetSamplerParameterfv(
     return error::kNoError;
   }
   glGetSamplerParameterfv(sampler, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetSamplerParameterfv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetSamplerParameterfv", "");
   }
   return error::kNoError;
 }
@@ -1836,11 +1780,9 @@ error::Error GLES2DecoderImpl::HandleGetSamplerParameteriv(
     return error::kNoError;
   }
   glGetSamplerParameteriv(sampler, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetSamplerParameteriv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetSamplerParameteriv", "");
   }
   return error::kNoError;
 }
@@ -1871,11 +1813,9 @@ error::Error GLES2DecoderImpl::HandleGetShaderiv(uint32_t immediate_data_size,
     return error::kInvalidArguments;
   }
   DoGetShaderiv(shader, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetShaderiv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetShaderiv", "");
   }
   return error::kNoError;
 }
@@ -1909,11 +1849,9 @@ error::Error GLES2DecoderImpl::HandleGetSynciv(uint32_t immediate_data_size,
     return error::kNoError;
   }
   glGetSynciv(service_sync, pname, num_values, nullptr, values);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetSynciv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetSynciv", "");
   }
   return error::kNoError;
 }
@@ -1949,11 +1887,9 @@ error::Error GLES2DecoderImpl::HandleGetTexParameterfv(
     return error::kInvalidArguments;
   }
   DoGetTexParameterfv(target, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetTexParameterfv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetTexParameterfv", "");
   }
   return error::kNoError;
 }
@@ -1989,11 +1925,9 @@ error::Error GLES2DecoderImpl::HandleGetTexParameteriv(
     return error::kInvalidArguments;
   }
   DoGetTexParameteriv(target, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetTexParameteriv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetTexParameteriv", "");
   }
   return error::kNoError;
 }
@@ -2025,11 +1959,9 @@ error::Error GLES2DecoderImpl::HandleGetVertexAttribfv(
     return error::kInvalidArguments;
   }
   DoGetVertexAttribfv(index, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetVertexAttribfv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetVertexAttribfv", "");
   }
   return error::kNoError;
 }
@@ -2061,11 +1993,9 @@ error::Error GLES2DecoderImpl::HandleGetVertexAttribiv(
     return error::kInvalidArguments;
   }
   DoGetVertexAttribiv(index, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetVertexAttribiv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetVertexAttribiv", "");
   }
   return error::kNoError;
 }
@@ -2095,11 +2025,9 @@ error::Error GLES2DecoderImpl::HandleGetVertexAttribIiv(
     return error::kInvalidArguments;
   }
   DoGetVertexAttribIiv(index, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetVertexAttribIiv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetVertexAttribIiv", "");
   }
   return error::kNoError;
 }
@@ -2129,11 +2057,9 @@ error::Error GLES2DecoderImpl::HandleGetVertexAttribIuiv(
     return error::kInvalidArguments;
   }
   DoGetVertexAttribIuiv(index, pname, params);
-  GLenum error = glGetError();
+  GLenum error = LOCAL_PEEK_GL_ERROR("GetVertexAttribIuiv");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "GetVertexAttribIuiv", "");
   }
   return error::kNoError;
 }
@@ -4235,7 +4161,7 @@ error::Error GLES2DecoderImpl::HandleTexStorage2DEXT(
   GLenum internalFormat = static_cast<GLenum>(c.internalFormat);
   GLsizei width = static_cast<GLsizei>(c.width);
   GLsizei height = static_cast<GLsizei>(c.height);
-  if (!validators_->texture_target.IsValid(target)) {
+  if (!validators_->texture_bind_target.IsValid(target)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glTexStorage2DEXT", target, "target");
     return error::kNoError;
   }
@@ -4528,6 +4454,11 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
   GLenum dest_id = static_cast<GLenum>(c.dest_id);
   GLint internalformat = static_cast<GLint>(c.internalformat);
   GLenum dest_type = static_cast<GLenum>(c.dest_type);
+  GLboolean unpack_flip_y = static_cast<GLboolean>(c.unpack_flip_y);
+  GLboolean unpack_premultiply_alpha =
+      static_cast<GLboolean>(c.unpack_premultiply_alpha);
+  GLboolean unpack_unmultiply_alpha =
+      static_cast<GLboolean>(c.unpack_unmultiply_alpha);
   if (!validators_->texture_internal_format.IsValid(internalformat)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopyTextureCHROMIUM",
                        "internalformat GL_INVALID_VALUE");
@@ -4538,7 +4469,9 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
                                     "dest_type");
     return error::kNoError;
   }
-  DoCopyTextureCHROMIUM(target, source_id, dest_id, internalformat, dest_type);
+  DoCopyTextureCHROMIUM(target, source_id, dest_id, internalformat, dest_type,
+                        unpack_flip_y, unpack_premultiply_alpha,
+                        unpack_unmultiply_alpha);
   return error::kNoError;
 }
 
@@ -4553,7 +4486,41 @@ error::Error GLES2DecoderImpl::HandleCopySubTextureCHROMIUM(
   GLenum dest_id = static_cast<GLenum>(c.dest_id);
   GLint xoffset = static_cast<GLint>(c.xoffset);
   GLint yoffset = static_cast<GLint>(c.yoffset);
-  DoCopySubTextureCHROMIUM(target, source_id, dest_id, xoffset, yoffset);
+  GLint x = static_cast<GLint>(c.x);
+  GLint y = static_cast<GLint>(c.y);
+  GLsizei width = static_cast<GLsizei>(c.width);
+  GLsizei height = static_cast<GLsizei>(c.height);
+  GLboolean unpack_flip_y = static_cast<GLboolean>(c.unpack_flip_y);
+  GLboolean unpack_premultiply_alpha =
+      static_cast<GLboolean>(c.unpack_premultiply_alpha);
+  GLboolean unpack_unmultiply_alpha =
+      static_cast<GLboolean>(c.unpack_unmultiply_alpha);
+  if (width < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTextureCHROMIUM",
+                       "width < 0");
+    return error::kNoError;
+  }
+  if (height < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTextureCHROMIUM",
+                       "height < 0");
+    return error::kNoError;
+  }
+  DoCopySubTextureCHROMIUM(target, source_id, dest_id, xoffset, yoffset, x, y,
+                           width, height, unpack_flip_y,
+                           unpack_premultiply_alpha, unpack_unmultiply_alpha);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleCompressedCopyTextureCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::CompressedCopyTextureCHROMIUM& c =
+      *static_cast<const gles2::cmds::CompressedCopyTextureCHROMIUM*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum source_id = static_cast<GLenum>(c.source_id);
+  GLenum dest_id = static_cast<GLenum>(c.dest_id);
+  DoCompressedCopyTextureCHROMIUM(target, source_id, dest_id);
   return error::kNoError;
 }
 
@@ -4920,6 +4887,16 @@ error::Error GLES2DecoderImpl::HandleSwapInterval(uint32_t immediate_data_size,
   (void)c;
   GLint interval = static_cast<GLint>(c.interval);
   DoSwapInterval(interval);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleFlushDriverCachesCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::FlushDriverCachesCHROMIUM& c =
+      *static_cast<const gles2::cmds::FlushDriverCachesCHROMIUM*>(cmd_data);
+  (void)c;
+  DoFlushDriverCachesCHROMIUM();
   return error::kNoError;
 }
 

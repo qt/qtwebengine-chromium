@@ -41,7 +41,6 @@ MailboxOutputSurface::MailboxOutputSurface(
       is_backbuffer_discarded_(false),
       format_(format) {
   pending_textures_.push_back(TransferableFrame());
-  capabilities_.max_frames_pending = 1;
   capabilities_.uses_default_gl_framebuffer = false;
 }
 
@@ -199,8 +198,9 @@ void MailboxOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
   DCHECK(!surface_size_.IsEmpty());
   DCHECK(surface_size_ == current_backing_.size);
   DCHECK(frame->gl_frame_data->size == current_backing_.size);
-  DCHECK(!current_backing_.mailbox.IsZero() ||
-         context_provider_->IsContextLost());
+  DCHECK_IMPLIES(current_backing_.mailbox.IsZero(),
+                 context_provider_->ContextGL()->GetGraphicsResetStatusKHR() !=
+                     GL_NO_ERROR);
 
   frame->gl_frame_data->mailbox = current_backing_.mailbox;
   context_provider_->ContextGL()->Flush();

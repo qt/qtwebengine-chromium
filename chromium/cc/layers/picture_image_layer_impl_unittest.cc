@@ -11,7 +11,6 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_picture_pile_impl.h"
-#include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/tiles/tile_priority.h"
@@ -33,11 +32,18 @@ class TestablePictureImageLayerImpl : public PictureImageLayerImpl {
   friend class PictureImageLayerImplTest;
 };
 
+class PictureLayerImplImageTestSettings : public LayerTreeSettings {
+ public:
+  PictureLayerImplImageTestSettings() {
+    layer_transforms_should_scale_layer_contents = true;
+  }
+};
+
 class PictureImageLayerImplTest : public testing::Test {
  public:
   PictureImageLayerImplTest()
       : proxy_(base::ThreadTaskRunnerHandle::Get()),
-        host_impl_(ImplSidePaintingSettings(),
+        host_impl_(PictureLayerImplImageTestSettings(),
                    &proxy_,
                    &shared_bitmap_manager_,
                    &task_graph_runner_) {
@@ -60,7 +66,6 @@ class PictureImageLayerImplTest : public testing::Test {
         new TestablePictureImageLayerImpl(tree, id);
     layer->raster_source_ = FakePicturePileImpl::CreateInfiniteFilledPile();
     layer->SetBounds(layer->raster_source_->GetSize());
-    layer->SetContentBounds(layer->raster_source_->GetSize());
     return make_scoped_ptr(layer);
   }
 
@@ -71,14 +76,15 @@ class PictureImageLayerImplTest : public testing::Test {
                                          float maximum_animation_contents_scale,
                                          bool animating_transform_to_screen,
                                          gfx::Rect viewport_rect) {
-    layer->draw_properties().ideal_contents_scale = ideal_contents_scale;
-    layer->draw_properties().device_scale_factor = device_scale_factor;
-    layer->draw_properties().page_scale_factor = page_scale_factor;
+    gfx::Transform scale_transform;
+    scale_transform.Scale(ideal_contents_scale, ideal_contents_scale);
+    layer->draw_properties().target_space_transform = scale_transform;
+    DCHECK_EQ(layer->GetIdealContentsScale(), ideal_contents_scale);
     layer->draw_properties().maximum_animation_contents_scale =
         maximum_animation_contents_scale;
     layer->draw_properties().screen_space_transform_is_animating =
         animating_transform_to_screen;
-    layer->draw_properties().visible_content_rect = viewport_rect;
+    layer->draw_properties().visible_layer_rect = viewport_rect;
     bool resourceless_software_draw = false;
     layer->UpdateTiles(resourceless_software_draw);
   }
@@ -97,9 +103,6 @@ TEST_F(PictureImageLayerImplTest, CalculateContentsScale) {
   gfx::Rect viewport(100, 200);
   SetupDrawPropertiesAndUpdateTiles(
       layer.get(), 2.f, 3.f, 4.f, 1.f, false, viewport);
-
-  EXPECT_FLOAT_EQ(1.f, layer->contents_scale_x());
-  EXPECT_FLOAT_EQ(1.f, layer->contents_scale_y());
   EXPECT_FLOAT_EQ(1.f, layer->MaximumTilingContentsScale());
 }
 

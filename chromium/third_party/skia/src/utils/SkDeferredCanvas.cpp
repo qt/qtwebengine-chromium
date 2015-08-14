@@ -8,11 +8,12 @@
 
 #include "SkDeferredCanvas.h"
 
-#include "SkBitmapDevice.h"
 #include "SkChunkAlloc.h"
 #include "SkColorFilter.h"
+#include "SkDevice.h"
 #include "SkDrawFilter.h"
 #include "SkGPipe.h"
+#include "SkImage_Base.h"
 #include "SkPaint.h"
 #include "SkPaintPriv.h"
 #include "SkRRect.h"
@@ -43,7 +44,7 @@ static uint64_t image_area(const SkImage* image) {
 // mutable for now (at least for the purposes of deferred canvas)
 //
 static bool should_draw_gpu_image_immediately(const SkImage* image) {
-    return image->getTexture() != NULL;
+    return as_IB(image)->getTexture() != NULL;
 }
 
 static bool should_draw_immediately(const SkBitmap* bitmap, const SkImage* image,
@@ -228,6 +229,9 @@ protected:
     void drawImageRect(const SkDraw&, const SkImage*, const SkRect*, const SkRect&,
                        const SkPaint&) override
         {SkASSERT(0);}
+    void drawImageNine(const SkDraw&, const SkImage*, const SkIRect&, const SkRect&,
+                       const SkPaint&) override
+        {SkASSERT(0);}
     void drawText(const SkDraw&, const void* text, size_t len,
                   SkScalar x, SkScalar y, const SkPaint& paint) override
         {SkASSERT(0);}
@@ -250,12 +254,13 @@ protected:
                    const SkPoint texCoords[4], SkXfermode* xmode,
                    const SkPaint& paint) override
         {SkASSERT(0);}
+    void drawAtlas(const SkDraw&, const SkImage* atlas, const SkRSXform[], const SkRect[],
+                   const SkColor[], int count, SkXfermode::Mode, const SkPaint&) override
+        {SkASSERT(0);}
+
     void drawDevice(const SkDraw&, SkBaseDevice*, int x, int y,
                     const SkPaint&) override
         {SkASSERT(0);}
-
-    void lockPixels() override {}
-    void unlockPixels() override {}
 
     bool canHandleImageFilter(const SkImageFilter*) override {
         return false;
@@ -285,9 +290,12 @@ private:
     bool fIsDrawingToLayer;
     size_t fMaxRecordingStorageBytes;
     size_t fPreviousStorageAllocated;
+
+    typedef SkBaseDevice INHERITED;
 };
 
-SkDeferredDevice::SkDeferredDevice(SkSurface* surface) {
+SkDeferredDevice::SkDeferredDevice(SkSurface* surface) 
+    : INHERITED(surface->props()) {
     fMaxRecordingStorageBytes = kDefaultMaxRecordingStorageBytes;
     fNotificationClient = NULL;
     fImmediateCanvas = NULL;
@@ -355,8 +363,7 @@ bool SkDeferredDevice::hasPendingCommands() {
     return fPipeController.hasPendingCommands();
 }
 
-void SkDeferredDevice::aboutToDraw()
-{
+void SkDeferredDevice::aboutToDraw() {
     if (fNotificationClient) {
         fNotificationClient->prepareForDraw();
     }
@@ -490,7 +497,7 @@ SkBaseDevice* SkDeferredDevice::onCreateDevice(const CreateInfo& cinfo, const Sk
     // will not be used with a deferred canvas (there is no API for that).
     // And connecting a SkDeferredDevice to non-deferred canvas can result
     // in unpredictable behavior.
-    return immediateDevice()->onCreateDevice(cinfo, layerPaint);
+    return this->immediateDevice()->onCreateDevice(cinfo, layerPaint);
 }
 
 SkSurface* SkDeferredDevice::newSurface(const SkImageInfo& info, const SkSurfaceProps& props) {
@@ -539,6 +546,10 @@ private:
 };
 
 SkDeferredCanvas* SkDeferredCanvas::Create(SkSurface* surface) {
+    if (!surface) {
+        return NULL;
+    }
+
     SkAutoTUnref<SkDeferredDevice> deferredDevice(SkNEW_ARGS(SkDeferredDevice, (surface)));
     return SkNEW_ARGS(SkDeferredCanvas, (deferredDevice));
 }
@@ -895,6 +906,19 @@ void SkDeferredCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, 
     this->recordedDrawCommand();
 }
 
+void SkDeferredCanvas::onDrawImageNine(const SkImage* image, const SkIRect& center,
+                                       const SkRect& dst, const SkPaint* paint) {
+    if (fDeferredDrawing &&
+        this->isFullFrame(&dst, paint) &&
+        isPaintOpaque(paint, image)) {
+        this->getDeferredDevice()->skipPendingCommands();
+    }
+    
+    AutoImmediateDrawIfNeeded autoDraw(*this, image, paint);
+    this->drawingCanvas()->drawImageNine(image, center, dst, paint);
+    this->recordedDrawCommand();
+}
+
 void SkDeferredCanvas::onDrawBitmapNine(const SkBitmap& bitmap,
                                         const SkIRect& center, const SkRect& dst,
                                         const SkPaint* paint) {
@@ -981,6 +1005,15 @@ void SkDeferredCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor color
                                    const SkPaint& paint) {
     AutoImmediateDrawIfNeeded autoDraw(*this, &paint);
     this->drawingCanvas()->drawPatch(cubics, colors, texCoords, xmode, paint);
+    this->recordedDrawCommand();
+}
+
+void SkDeferredCanvas::onDrawAtlas(const SkImage* atlas, const SkRSXform xform[],
+                                   const SkRect tex[], const SkColor colors[], int count,
+                                   SkXfermode::Mode mode, const SkRect* cullRect,
+                                   const SkPaint* paint) {
+    AutoImmediateDrawIfNeeded autoDraw(*this, paint);
+    this->drawingCanvas()->drawAtlas(atlas, xform, tex, colors, count, mode, cullRect, paint);
     this->recordedDrawCommand();
 }
 

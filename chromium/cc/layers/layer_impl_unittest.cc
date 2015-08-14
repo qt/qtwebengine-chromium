@@ -88,7 +88,9 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   // Create a simple LayerImpl tree:
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   scoped_ptr<LayerImpl> root_clip =
       LayerImpl::Create(host_impl.active_tree(), 1);
@@ -172,9 +174,6 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetTransform(arbitrary_transform));
 
   // Changing these properties only affects the layer itself.
-  EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetContentBounds(arbitrary_size));
-  EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(
-      root->SetContentsScale(arbitrary_number, arbitrary_number));
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetDrawsContent(true));
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(
       root->SetBackgroundColor(arbitrary_color));
@@ -226,10 +225,6 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->PushScrollOffsetFromMainThread(
           gfx::ScrollOffset(arbitrary_vector2d)));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetContentBounds(arbitrary_size));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetContentsScale(arbitrary_number, arbitrary_number));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetContentsOpaque(true));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetOpacity(arbitrary_number));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
@@ -251,7 +246,9 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
 TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   host_impl.active_tree()->SetRootLayer(
       LayerImpl::Create(host_impl.active_tree(), 1));
@@ -323,9 +320,6 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetContentBounds(arbitrary_size));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetContentsScale(arbitrary_number, arbitrary_number));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetDrawsContent(true));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetBackgroundColor(arbitrary_color));
@@ -347,10 +341,6 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->Set3dSortingContextId(1));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetContentBounds(arbitrary_size));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetContentsScale(arbitrary_number, arbitrary_number));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetDrawsContent(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetBackgroundColor(arbitrary_color));
@@ -369,7 +359,9 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
 
@@ -400,7 +392,9 @@ TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
 TEST(LayerImplTest, TransformInvertibility) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
 
   scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
   EXPECT_TRUE(layer->transform().IsInvertible());
@@ -458,7 +452,6 @@ class LayerImplScrollTest : public testing::Test {
 
   LayerTreeSettings settings() {
     LayerTreeSettings settings;
-    settings.use_pinch_virtual_viewport = true;
     return settings;
   }
 
@@ -682,7 +675,6 @@ class LayerImplScrollbarSyncTest : public testing::Test {
 
   LayerTreeSettings settings() {
     LayerTreeSettings settings;
-    settings.use_pinch_virtual_viewport = true;
     return settings;
   }
 

@@ -4,7 +4,7 @@
 
 #include "net/http/proxy_client_socket.h"
 
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -38,9 +38,10 @@ void ProxyClientSocket::BuildTunnelRequest(
     const std::string& user_agent,
     std::string* request_line,
     HttpRequestHeaders* request_headers) {
-  // RFC 2616 Section 9 says the Host request-header field MUST accompany all
-  // HTTP/1.1 requests.  Add "Proxy-Connection: keep-alive" for compat with
-  // HTTP/1.0 proxies such as Squid (required for NTLM authentication).
+  // RFC 7230 Section 5.4 says a client MUST send a Host header field in all
+  // HTTP/1.1 request messages, and Host SHOULD be the first header field
+  // following the request-line.  Add "Proxy-Connection: keep-alive" for compat
+  // with HTTP/1.0 proxies such as Squid (required for NTLM authentication).
   std::string host_and_port = endpoint.ToString();
   *request_line =
       base::StringPrintf("CONNECT %s HTTP/1.1\r\n", host_and_port.c_str());

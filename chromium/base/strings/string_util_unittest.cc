@@ -494,8 +494,8 @@ TEST(StringUtilTest, ConvertASCII) {
   const char chars_with_nul[] = "test\0string";
   const int length_with_nul = arraysize(chars_with_nul) - 1;
   std::string string_with_nul(chars_with_nul, length_with_nul);
-  base::string16 string16_with_nul = ASCIIToUTF16(string_with_nul);
-  EXPECT_EQ(static_cast<base::string16::size_type>(length_with_nul),
+  string16 string16_with_nul = ASCIIToUTF16(string_with_nul);
+  EXPECT_EQ(static_cast<string16::size_type>(length_with_nul),
             string16_with_nul.length());
   std::string narrow_with_nul = UTF16ToASCII(string16_with_nul);
   EXPECT_EQ(static_cast<std::string::size_type>(length_with_nul),
@@ -667,108 +667,6 @@ TEST(StringUtilTest, HexDigitToInt) {
   EXPECT_EQ(13, HexDigitToInt('d'));
   EXPECT_EQ(14, HexDigitToInt('e'));
   EXPECT_EQ(15, HexDigitToInt('f'));
-}
-
-// Test for Tokenize
-template <typename STR>
-void TokenizeTest() {
-  std::vector<STR> r;
-  size_t size;
-
-  size = Tokenize(STR("This is a string"), STR(" "), &r);
-  EXPECT_EQ(4U, size);
-  ASSERT_EQ(4U, r.size());
-  EXPECT_EQ(r[0], STR("This"));
-  EXPECT_EQ(r[1], STR("is"));
-  EXPECT_EQ(r[2], STR("a"));
-  EXPECT_EQ(r[3], STR("string"));
-  r.clear();
-
-  size = Tokenize(STR("one,two,three"), STR(","), &r);
-  EXPECT_EQ(3U, size);
-  ASSERT_EQ(3U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR("two"));
-  EXPECT_EQ(r[2], STR("three"));
-  r.clear();
-
-  size = Tokenize(STR("one,two:three;four"), STR(",:"), &r);
-  EXPECT_EQ(3U, size);
-  ASSERT_EQ(3U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR("two"));
-  EXPECT_EQ(r[2], STR("three;four"));
-  r.clear();
-
-  size = Tokenize(STR("one,two:three;four"), STR(";,:"), &r);
-  EXPECT_EQ(4U, size);
-  ASSERT_EQ(4U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR("two"));
-  EXPECT_EQ(r[2], STR("three"));
-  EXPECT_EQ(r[3], STR("four"));
-  r.clear();
-
-  size = Tokenize(STR("one, two, three"), STR(","), &r);
-  EXPECT_EQ(3U, size);
-  ASSERT_EQ(3U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR(" two"));
-  EXPECT_EQ(r[2], STR(" three"));
-  r.clear();
-
-  size = Tokenize(STR("one, two, three, "), STR(","), &r);
-  EXPECT_EQ(4U, size);
-  ASSERT_EQ(4U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR(" two"));
-  EXPECT_EQ(r[2], STR(" three"));
-  EXPECT_EQ(r[3], STR(" "));
-  r.clear();
-
-  size = Tokenize(STR("one, two, three,"), STR(","), &r);
-  EXPECT_EQ(3U, size);
-  ASSERT_EQ(3U, r.size());
-  EXPECT_EQ(r[0], STR("one"));
-  EXPECT_EQ(r[1], STR(" two"));
-  EXPECT_EQ(r[2], STR(" three"));
-  r.clear();
-
-  size = Tokenize(STR(), STR(","), &r);
-  EXPECT_EQ(0U, size);
-  ASSERT_EQ(0U, r.size());
-  r.clear();
-
-  size = Tokenize(STR(","), STR(","), &r);
-  EXPECT_EQ(0U, size);
-  ASSERT_EQ(0U, r.size());
-  r.clear();
-
-  size = Tokenize(STR(",;:."), STR(".:;,"), &r);
-  EXPECT_EQ(0U, size);
-  ASSERT_EQ(0U, r.size());
-  r.clear();
-
-  size = Tokenize(STR("\t\ta\t"), STR("\t"), &r);
-  EXPECT_EQ(1U, size);
-  ASSERT_EQ(1U, r.size());
-  EXPECT_EQ(r[0], STR("a"));
-  r.clear();
-
-  size = Tokenize(STR("\ta\t\nb\tcc"), STR("\n"), &r);
-  EXPECT_EQ(2U, size);
-  ASSERT_EQ(2U, r.size());
-  EXPECT_EQ(r[0], STR("\ta\t"));
-  EXPECT_EQ(r[1], STR("b\tcc"));
-  r.clear();
-}
-
-TEST(StringUtilTest, TokenizeStdString) {
-  TokenizeTest<std::string>();
-}
-
-TEST(StringUtilTest, TokenizeStringPiece) {
-  TokenizeTest<base::StringPiece>();
 }
 
 // Test for JoinString
@@ -994,53 +892,14 @@ TEST(StringUtilTest, ReplaceStringPlaceholdersConsecutiveDollarSigns) {
             "$1 $$2 $$$3");
 }
 
-TEST(StringUtilTest, MatchPatternTest) {
-  EXPECT_TRUE(MatchPattern("www.google.com", "*.com"));
-  EXPECT_TRUE(MatchPattern("www.google.com", "*"));
-  EXPECT_FALSE(MatchPattern("www.google.com", "www*.g*.org"));
-  EXPECT_TRUE(MatchPattern("Hello", "H?l?o"));
-  EXPECT_FALSE(MatchPattern("www.google.com", "http://*)"));
-  EXPECT_FALSE(MatchPattern("www.msn.com", "*.COM"));
-  EXPECT_TRUE(MatchPattern("Hello*1234", "He??o\\*1*"));
-  EXPECT_FALSE(MatchPattern("", "*.*"));
-  EXPECT_TRUE(MatchPattern("", "*"));
-  EXPECT_TRUE(MatchPattern("", "?"));
-  EXPECT_TRUE(MatchPattern("", ""));
-  EXPECT_FALSE(MatchPattern("Hello", ""));
-  EXPECT_TRUE(MatchPattern("Hello*", "Hello*"));
-  // Stop after a certain recursion depth.
-  EXPECT_FALSE(MatchPattern("123456789012345678", "?????????????????*"));
-
-  // Test UTF8 matching.
-  EXPECT_TRUE(MatchPattern("heart: \xe2\x99\xa0", "*\xe2\x99\xa0"));
-  EXPECT_TRUE(MatchPattern("heart: \xe2\x99\xa0.", "heart: ?."));
-  EXPECT_TRUE(MatchPattern("hearts: \xe2\x99\xa0\xe2\x99\xa0", "*"));
-  // Invalid sequences should be handled as a single invalid character.
-  EXPECT_TRUE(MatchPattern("invalid: \xef\xbf\xbe", "invalid: ?"));
-  // If the pattern has invalid characters, it shouldn't match anything.
-  EXPECT_FALSE(MatchPattern("\xf4\x90\x80\x80", "\xf4\x90\x80\x80"));
-
-  // Test UTF16 character matching.
-  EXPECT_TRUE(MatchPattern(UTF8ToUTF16("www.google.com"),
-                           UTF8ToUTF16("*.com")));
-  EXPECT_TRUE(MatchPattern(UTF8ToUTF16("Hello*1234"),
-                           UTF8ToUTF16("He??o\\*1*")));
-
-  // This test verifies that consecutive wild cards are collapsed into 1
-  // wildcard (when this doesn't occur, MatchPattern reaches it's maximum
-  // recursion depth).
-  EXPECT_TRUE(MatchPattern(UTF8ToUTF16("Hello"),
-                           UTF8ToUTF16("He********************************o")));
-}
-
 TEST(StringUtilTest, LcpyTest) {
   // Test the normal case where we fit in our buffer.
   {
     char dst[10];
     wchar_t wdst[10];
-    EXPECT_EQ(7U, base::strlcpy(dst, "abcdefg", arraysize(dst)));
+    EXPECT_EQ(7U, strlcpy(dst, "abcdefg", arraysize(dst)));
     EXPECT_EQ(0, memcmp(dst, "abcdefg", 8));
-    EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
+    EXPECT_EQ(7U, wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
     EXPECT_EQ(0, memcmp(wdst, L"abcdefg", sizeof(wchar_t) * 8));
   }
 
@@ -1049,10 +908,10 @@ TEST(StringUtilTest, LcpyTest) {
   {
     char dst[2] = {1, 2};
     wchar_t wdst[2] = {1, 2};
-    EXPECT_EQ(7U, base::strlcpy(dst, "abcdefg", 0));
+    EXPECT_EQ(7U, strlcpy(dst, "abcdefg", 0));
     EXPECT_EQ(1, dst[0]);
     EXPECT_EQ(2, dst[1]);
-    EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", 0));
+    EXPECT_EQ(7U, wcslcpy(wdst, L"abcdefg", 0));
     EXPECT_EQ(static_cast<wchar_t>(1), wdst[0]);
     EXPECT_EQ(static_cast<wchar_t>(2), wdst[1]);
   }
@@ -1061,9 +920,9 @@ TEST(StringUtilTest, LcpyTest) {
   {
     char dst[8];
     wchar_t wdst[8];
-    EXPECT_EQ(7U, base::strlcpy(dst, "abcdefg", arraysize(dst)));
+    EXPECT_EQ(7U, strlcpy(dst, "abcdefg", arraysize(dst)));
     EXPECT_EQ(0, memcmp(dst, "abcdefg", 8));
-    EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
+    EXPECT_EQ(7U, wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
     EXPECT_EQ(0, memcmp(wdst, L"abcdefg", sizeof(wchar_t) * 8));
   }
 
@@ -1071,9 +930,9 @@ TEST(StringUtilTest, LcpyTest) {
   {
     char dst[7];
     wchar_t wdst[7];
-    EXPECT_EQ(7U, base::strlcpy(dst, "abcdefg", arraysize(dst)));
+    EXPECT_EQ(7U, strlcpy(dst, "abcdefg", arraysize(dst)));
     EXPECT_EQ(0, memcmp(dst, "abcdef", 7));
-    EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
+    EXPECT_EQ(7U, wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
     EXPECT_EQ(0, memcmp(wdst, L"abcdef", sizeof(wchar_t) * 7));
   }
 
@@ -1081,9 +940,9 @@ TEST(StringUtilTest, LcpyTest) {
   {
     char dst[3];
     wchar_t wdst[3];
-    EXPECT_EQ(7U, base::strlcpy(dst, "abcdefg", arraysize(dst)));
+    EXPECT_EQ(7U, strlcpy(dst, "abcdefg", arraysize(dst)));
     EXPECT_EQ(0, memcmp(dst, "ab", 3));
-    EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
+    EXPECT_EQ(7U, wcslcpy(wdst, L"abcdefg", arraysize(wdst)));
     EXPECT_EQ(0, memcmp(wdst, L"ab", sizeof(wchar_t) * 3));
   }
 }
@@ -1116,7 +975,7 @@ TEST(StringUtilTest, WprintfFormatPortabilityTest) {
     { L"% 10ls", true }
   };
   for (size_t i = 0; i < arraysize(cases); ++i)
-    EXPECT_EQ(cases[i].portable, base::IsWprintfFormatPortable(cases[i].input));
+    EXPECT_EQ(cases[i].portable, IsWprintfFormatPortable(cases[i].input));
 }
 
 TEST(StringUtilTest, RemoveChars) {

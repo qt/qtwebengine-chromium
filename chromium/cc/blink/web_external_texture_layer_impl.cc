@@ -7,7 +7,6 @@
 #include "cc/blink/web_external_bitmap_impl.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/texture_layer.h"
-#include "cc/resources/resource_update_queue.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayerClient.h"
@@ -18,7 +17,6 @@
 #include "third_party/khronos/GLES2/gl2.h"
 
 using cc::TextureLayer;
-using cc::ResourceUpdateQueue;
 
 namespace cc_blink {
 
@@ -26,7 +24,8 @@ WebExternalTextureLayerImpl::WebExternalTextureLayerImpl(
     blink::WebExternalTextureLayerClient* client)
     : client_(client) {
   cc::TextureLayerClient* cc_client = client_ ? this : nullptr;
-  scoped_refptr<TextureLayer> layer = TextureLayer::CreateForMailbox(cc_client);
+  scoped_refptr<TextureLayer> layer =
+      TextureLayer::CreateForMailbox(WebLayerImpl::LayerSettings(), cc_client);
   layer->SetIsDrawable(true);
   layer_.reset(new WebLayerImpl(layer));
 }
@@ -86,10 +85,10 @@ bool WebExternalTextureLayerImpl::PrepareTextureMailbox(
   if (bitmap) {
     *mailbox = cc::TextureMailbox(bitmap->shared_bitmap(), bitmap->size());
   } else {
-    *mailbox =
-        cc::TextureMailbox(name, GL_TEXTURE_2D, client_mailbox.syncPoint);
+    // TODO(achaulk): pass a valid size here if allowOverlay is set.
+    *mailbox = cc::TextureMailbox(name, GL_TEXTURE_2D, client_mailbox.syncPoint,
+                                  gfx::Size(), client_mailbox.allowOverlay);
   }
-  mailbox->set_allow_overlay(client_mailbox.allowOverlay);
   mailbox->set_nearest_neighbor(client_mailbox.nearestNeighbor);
 
   if (mailbox->IsValid()) {

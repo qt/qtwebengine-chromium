@@ -2,7 +2,8 @@
     "extensions": [
         {
             "title": "Accessibility",
-            "type": "@WebInspector.ElementsSidebarView",
+            "type": "@WebInspector.Widget",
+            "location": "elements-panel",
             "className": "WebInspector.AccessibilitySidebarView"
         }
     ],
@@ -10,7 +11,8 @@
     "experiment": "accessibilityInspection",
     "scripts": [
         "AccessibilityModel.js",
-        "AccessibilitySidebarView.js"
+        "AccessibilitySidebarView.js",
+        "AccessibilityStrings.js"
     ],
     "resources": [
         "accessibilityNode.css"

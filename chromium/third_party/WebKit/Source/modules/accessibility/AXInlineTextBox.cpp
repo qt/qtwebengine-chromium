@@ -31,7 +31,6 @@
 
 #include "core/dom/Range.h"
 #include "core/layout/LayoutText.h"
-#include "core/layout/line/FloatToLayoutUnit.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/LayoutUnit.h"
 
@@ -40,21 +39,15 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXInlineTextBox::AXInlineTextBox(PassRefPtr<AbstractInlineTextBox> inlineTextBox, AXObjectCacheImpl* axObjectCache)
+AXInlineTextBox::AXInlineTextBox(PassRefPtr<AbstractInlineTextBox> inlineTextBox, AXObjectCacheImpl& axObjectCache)
     : AXObject(axObjectCache)
     , m_inlineTextBox(inlineTextBox)
 {
 }
 
-AXInlineTextBox::~AXInlineTextBox()
+PassRefPtrWillBeRawPtr<AXInlineTextBox> AXInlineTextBox::create(PassRefPtr<AbstractInlineTextBox> inlineTextBox, AXObjectCacheImpl& axObjectCache)
 {
-    if (m_axObjectCache && m_inlineTextBox)
-        m_axObjectCache->remove(m_inlineTextBox.get());
-}
-
-PassRefPtr<AXInlineTextBox> AXInlineTextBox::create(PassRefPtr<AbstractInlineTextBox> inlineTextBox, AXObjectCacheImpl* axObjectCache)
-{
-    return adoptRef(new AXInlineTextBox(inlineTextBox, axObjectCache));
+    return adoptRefWillBeNoop(new AXInlineTextBox(inlineTextBox, axObjectCache));
 }
 
 void AXInlineTextBox::init()
@@ -63,9 +56,8 @@ void AXInlineTextBox::init()
 
 void AXInlineTextBox::detach()
 {
-    m_inlineTextBox = nullptr;
-    m_axObjectCache = 0;
     AXObject::detach();
+    m_inlineTextBox = nullptr;
 }
 
 LayoutRect AXInlineTextBox::elementRect() const
@@ -97,15 +89,15 @@ void AXInlineTextBox::textCharacterOffsets(Vector<int>& offsets) const
         return;
 
     unsigned len = m_inlineTextBox->len();
-    Vector<FloatWillBeLayoutUnit> widths;
+    Vector<float> widths;
     m_inlineTextBox->characterWidths(widths);
     ASSERT(widths.size() == len);
     offsets.resize(len);
 
-    FloatWillBeLayoutUnit widthSoFar = 0;
+    float widthSoFar = 0;
     for (unsigned i = 0; i < len; i++) {
         widthSoFar += widths[i];
-        offsets[i] = widthSoFar.round();
+        offsets[i] = roundf(widthSoFar);
     }
 }
 

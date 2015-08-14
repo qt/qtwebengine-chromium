@@ -158,7 +158,6 @@ void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> 
     }
 
     if (rule->isNamespaceRule()) {
-        ASSERT(RuntimeEnabledFeatures::newCSSParserEnabled());
         // Parser enforces that @namespace rules come before anything else
         ASSERT(m_childRules.isEmpty());
         StyleRuleNamespace& namespaceRule = toStyleRuleNamespace(*rule);
@@ -280,8 +279,7 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
 
 void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
-    TRACE_EVENT0("blink", "StyleSheetContents::parseAuthorStyleSheet");
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseAuthorStyleSheet", "data", InspectorParseAuthorStyleSheetEvent::data(cachedStyleSheet));
+    TRACE_EVENT1("blink,devtools.timeline", "ParseAuthorStyleSheet", "data", InspectorParseAuthorStyleSheetEvent::data(cachedStyleSheet));
 
     bool isSameOriginRequest = securityOrigin && securityOrigin->canRequest(baseURL());
     CSSStyleSheetResource::MIMETypeCheck mimeTypeCheck = isQuirksModeBehavior(m_parserContext.mode()) && isSameOriginRequest ? CSSStyleSheetResource::MIMETypeCheck::Lax : CSSStyleSheetResource::MIMETypeCheck::Strict;
@@ -295,18 +293,18 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
     }
 
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
-    CSSParser::parseSheet(context, this, sheetText, TextPosition::minimumPosition(), 0, true);
+    CSSParser::parseSheet(context, this, sheetText);
 }
 
 void StyleSheetContents::parseString(const String& sheetText)
 {
-    parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
+    parseStringAtPosition(sheetText, TextPosition::minimumPosition());
 }
 
-void StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
+void StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition)
 {
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
-    CSSParser::parseSheet(context, this, sheetText, startPosition, 0, createdByParser);
+    CSSParser::parseSheet(context, this, sheetText);
 }
 
 bool StyleSheetContents::isLoading() const
@@ -426,12 +424,6 @@ Document* StyleSheetContents::singleOwnerDocument() const
     return root->clientSingleOwnerDocument();
 }
 
-KURL StyleSheetContents::completeURL(const String& url) const
-{
-    // FIXME: This is only OK when we have a singleOwnerNode, right?
-    return m_parserContext.completeURL(url);
-}
-
 static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
@@ -452,7 +444,6 @@ static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<Re
         case StyleRuleBase::Charset:
         case StyleRuleBase::Import:
         case StyleRuleBase::Namespace:
-        case StyleRuleBase::Unknown:
             ASSERT_NOT_REACHED();
         case StyleRuleBase::Page:
         case StyleRuleBase::Keyframes:
@@ -551,12 +542,6 @@ void StyleSheetContents::removedFromMemoryCache()
     ASSERT(m_isInMemoryCache);
     ASSERT(isCacheable());
     m_isInMemoryCache = false;
-}
-
-void StyleSheetContents::shrinkToFit()
-{
-    m_importRules.shrinkToFit();
-    m_childRules.shrinkToFit();
 }
 
 RuleSet& StyleSheetContents::ensureRuleSet(const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)

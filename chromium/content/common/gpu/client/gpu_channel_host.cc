@@ -14,11 +14,12 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_event.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
+#include "content/common/gpu/client/gpu_jpeg_decode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "url/gurl.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -73,9 +74,9 @@ void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
       factory_->GetIOThreadTaskRunner();
-  channel_ =
-      IPC::SyncChannel::Create(channel_handle, IPC::Channel::MODE_CLIENT, NULL,
-                               io_task_runner.get(), true, shutdown_event);
+  channel_ = IPC::SyncChannel::Create(
+      channel_handle, IPC::Channel::MODE_CLIENT, NULL, io_task_runner.get(),
+      true, shutdown_event, factory_->GetAttachmentBroker());
 
   sync_filter_ = new IPC::SyncMessageFilter(shutdown_event);
 
@@ -258,6 +259,28 @@ scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
   return it->second->CreateVideoEncoder();
 }
 
+scoped_ptr<media::JpegDecodeAccelerator> GpuChannelHost::CreateJpegDecoder(
+    media::JpegDecodeAccelerator::Client* client) {
+  TRACE_EVENT0("gpu", "GpuChannelHost::CreateJpegDecoder");
+
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
+      factory_->GetIOThreadTaskRunner();
+  int32 route_id = GenerateRouteID();
+  scoped_ptr<GpuJpegDecodeAcceleratorHost> decoder(
+      new GpuJpegDecodeAcceleratorHost(this, route_id, io_task_runner));
+  if (!decoder->Initialize(client)) {
+    return nullptr;
+  }
+
+  // The reply message of jpeg decoder should run on IO thread.
+  io_task_runner->PostTask(FROM_HERE,
+                           base::Bind(&GpuChannelHost::MessageFilter::AddRoute,
+                                      channel_filter_.get(), route_id,
+                                      decoder->GetReceiver(), io_task_runner));
+
+  return decoder.Pass();
+}
+
 void GpuChannelHost::DestroyCommandBuffer(
     CommandBufferProxyImpl* command_buffer) {
   TRACE_EVENT0("gpu", "GpuChannelHost::DestroyCommandBuffer");
@@ -303,8 +326,9 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   if (IsLost())
     return base::SharedMemory::NULLHandle();
 
-#if defined(OS_WIN)
-  // Windows needs to explicitly duplicate the handle out to another process.
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  // Windows and Mac need to explicitly duplicate the handle out to another
+  // process.
   base::SharedMemoryHandle target_handle;
   base::ProcessId peer_pid;
   {
@@ -313,22 +337,21 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
       return base::SharedMemory::NULLHandle();
     peer_pid = channel_->GetPeerPID();
   }
-  if (!BrokerDuplicateHandle(source_handle,
-                             peer_pid,
-                             &target_handle,
-                             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
-                             0)) {
+#if defined(OS_WIN)
+  bool success =
+      BrokerDuplicateHandle(source_handle, peer_pid, &target_handle,
+                            FILE_GENERIC_READ | FILE_GENERIC_WRITE, 0);
+#elif defined(OS_MACOSX)
+  bool success = BrokerDuplicateSharedMemoryHandle(source_handle, peer_pid,
+                                                   &target_handle);
+#endif
+  if (!success)
     return base::SharedMemory::NULLHandle();
-  }
 
   return target_handle;
 #else
-  int duped_handle = HANDLE_EINTR(dup(source_handle.fd));
-  if (duped_handle < 0)
-    return base::SharedMemory::NULLHandle();
-
-  return base::FileDescriptor(duped_handle, true);
-#endif
+  return base::SharedMemory::DuplicateHandle(source_handle);
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 }
 
 int32 GpuChannelHost::ReserveTransferBufferId() {

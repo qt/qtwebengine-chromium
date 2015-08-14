@@ -322,44 +322,15 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_servername_callback(
  * callback and returns one. See |SSL_CTX_set_tlsext_servername_callback|. */
 OPENSSL_EXPORT int SSL_CTX_set_tlsext_servername_arg(SSL_CTX *ctx, void *arg);
 
-#define SSL_CTX_get_tlsext_ticket_keys(ctx, keys, keylen) \
-  SSL_CTX_ctrl((ctx), SSL_CTRL_GET_TLSEXT_TICKET_KEYS, (keylen), (keys))
-#define SSL_CTX_set_tlsext_ticket_keys(ctx, keys, keylen) \
-  SSL_CTX_ctrl((ctx), SSL_CTRL_SET_TLSEXT_TICKET_KEYS, (keylen), (keys))
-
-/* SSL_CTX_set_tlsext_ticket_key_cb sets the ticket callback to |callback| and
- * returns one. |callback| will be called when encrypting a new ticket and when
- * decrypting a ticket from the client.
- *
- * In both modes, |ctx| and |hmac_ctx| will already have been initialized with
- * |EVP_CIPHER_CTX_init| and |HMAC_CTX_init|, respectively. |callback|
- * configures |hmac_ctx| with an HMAC digest and key, and configures |ctx|
- * for encryption or decryption, based on the mode.
- *
- * When encrypting a new ticket, |encrypt| will be one. It writes a public
- * 16-byte key name to |key_name| and a fresh IV to |iv|. The output IV length
- * must match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
- * |callback| returns 1 on success and -1 on error.
- *
- * When decrypting a ticket, |encrypt| will be zero. |key_name| will point to a
- * 16-byte key name and |iv| points to an IV. The length of the IV consumed must
- * match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
- * |callback| returns -1 to abort the handshake, 0 if decrypting the ticket
- * failed, and 1 or 2 on success. If it returns 2, the ticket will be renewed.
- * This may be used to re-key the ticket.
- *
- * WARNING: |callback| wildly breaks the usual return value convention and is
- * called in two different modes. */
-OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_key_cb(
-    SSL_CTX *ctx, int (*callback)(SSL *ssl, uint8_t *key_name, uint8_t *iv,
-                                  EVP_CIPHER_CTX *ctx, HMAC_CTX *hmac_ctx,
-                                  int encrypt));
-
 /* PSK ciphersuites from 4279 */
 #define TLS1_CK_PSK_WITH_RC4_128_SHA                    0x0300008A
 #define TLS1_CK_PSK_WITH_3DES_EDE_CBC_SHA               0x0300008B
 #define TLS1_CK_PSK_WITH_AES_128_CBC_SHA                0x0300008C
 #define TLS1_CK_PSK_WITH_AES_256_CBC_SHA                0x0300008D
+
+/* PSK ciphersuites from RFC 5489 */
+#define TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA          0x0300C035
+#define TLS1_CK_ECDHE_PSK_WITH_AES_256_CBC_SHA          0x0300C036
 
 /* Additional TLS ciphersuites from expired Internet Draft
  * draft-ietf-tls-56-bit-ciphersuites-01.txt
@@ -512,9 +483,6 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_key_cb(
 #define TLS1_CK_ECDHE_ECDSA_CHACHA20_POLY1305 0x0300CC14
 #define TLS1_CK_DHE_RSA_CHACHA20_POLY1305 0x0300CC15
 
-/* Non-standard ECDHE PSK ciphersuites */
-#define TLS1_CK_ECDHE_PSK_WITH_AES_128_GCM_SHA256 0x0300CAFE
-
 /* XXX
  * Inconsistency alert:
  * The OpenSSL names of ciphers with ephemeral DH here include the string
@@ -582,6 +550,10 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_key_cb(
 #define TLS1_TXT_PSK_WITH_3DES_EDE_CBC_SHA "PSK-3DES-EDE-CBC-SHA"
 #define TLS1_TXT_PSK_WITH_AES_128_CBC_SHA "PSK-AES128-CBC-SHA"
 #define TLS1_TXT_PSK_WITH_AES_256_CBC_SHA "PSK-AES256-CBC-SHA"
+
+/* PSK ciphersuites from RFC 5489 */
+#define TLS1_TXT_ECDHE_PSK_WITH_AES_128_CBC_SHA "ECDHE-PSK-AES128-CBC-SHA"
+#define TLS1_TXT_ECDHE_PSK_WITH_AES_256_CBC_SHA "ECDHE-PSK-AES256-CBC-SHA"
 
 /* SRP ciphersuite from RFC 5054 */
 #define TLS1_TXT_SRP_SHA_WITH_3DES_EDE_CBC_SHA "SRP-3DES-EDE-CBC-SHA"
@@ -675,10 +647,6 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_key_cb(
 #define TLS1_TXT_ECDHE_ECDSA_WITH_CHACHA20_POLY1305 \
   "ECDHE-ECDSA-CHACHA20-POLY1305"
 #define TLS1_TXT_DHE_RSA_WITH_CHACHA20_POLY1305 "DHE-RSA-CHACHA20-POLY1305"
-
-/* Non-standard ECDHE PSK ciphersuites */
-#define TLS1_TXT_ECDHE_PSK_WITH_AES_128_GCM_SHA256 \
-  "ECDHE-PSK-AES128-GCM-SHA256"
 
 #define TLS_CT_RSA_SIGN 1
 #define TLS_CT_DSS_SIGN 2

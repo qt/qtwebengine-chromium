@@ -31,14 +31,15 @@ void CompositingDisplayItem::SetNew(uint8_t alpha,
   color_filter_ = cf;
 
   // TODO(pdr): Include color_filter's memory here.
-  size_t memory_usage =
-      sizeof(float) + sizeof(bool) + sizeof(SkRect) + sizeof(SkXfermode::Mode);
+  size_t external_memory_usage = 0;
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 1 /* op_count */,
-                      memory_usage);
+                      external_memory_usage);
 }
 
-void CompositingDisplayItem::Raster(SkCanvas* canvas,
-                                    SkDrawPictureCallback* callback) const {
+void CompositingDisplayItem::Raster(
+    SkCanvas* canvas,
+    const gfx::Rect& canvas_target_playback_rect,
+    SkPicture::AbortCallback* callback) const {
   SkPaint paint;
   paint.setXfermodeMode(xfermode_);
   paint.setAlpha(alpha_);
@@ -59,14 +60,16 @@ void CompositingDisplayItem::AsValueInto(
 
 EndCompositingDisplayItem::EndCompositingDisplayItem() {
   DisplayItem::SetNew(true /* suitable_for_gpu_raster */, 0 /* op_count */,
-                      0 /* memory_usage */);
+                      0 /* external_memory_usage */);
 }
 
 EndCompositingDisplayItem::~EndCompositingDisplayItem() {
 }
 
-void EndCompositingDisplayItem::Raster(SkCanvas* canvas,
-                                       SkDrawPictureCallback* callback) const {
+void EndCompositingDisplayItem::Raster(
+    SkCanvas* canvas,
+    const gfx::Rect& canvas_target_playback_rect,
+    SkPicture::AbortCallback* callback) const {
   canvas->restore();
 }
 

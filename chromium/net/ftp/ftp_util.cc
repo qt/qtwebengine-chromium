@@ -108,12 +108,13 @@ std::string FtpUtil::VMSPathToUnix(const std::string& vms_path) {
   std::string result(vms_path);
   if (vms_path[0] == '[') {
     // It's a relative path.
-    ReplaceFirstSubstringAfterOffset(&result, 0, "[.", std::string());
+    base::ReplaceFirstSubstringAfterOffset(
+        &result, 0, "[.", base::StringPiece());
   } else {
     // It's an absolute path.
     result.insert(0, "/");
-    ReplaceSubstringsAfterOffset(&result, 0, ":[000000]", "/");
-    ReplaceSubstringsAfterOffset(&result, 0, ":[", "/");
+    base::ReplaceSubstringsAfterOffset(&result, 0, ":[000000]", "/");
+    base::ReplaceSubstringsAfterOffset(&result, 0, ":[", "/");
   }
   std::replace(result.begin(), result.end(), '.', '/');
   std::replace(result.begin(), result.end(), ']', '/');
@@ -295,8 +296,9 @@ bool FtpUtil::WindowsDateListingToTime(const base::string16& date,
   base::Time::Exploded time_exploded = { 0 };
 
   // Date should be in format MM-DD-YY[YY].
-  std::vector<base::string16> date_parts;
-  base::SplitString(date, '-', &date_parts);
+  std::vector<base::StringPiece16> date_parts =
+      base::SplitStringPiece(date, base::ASCIIToUTF16("-"),
+                             base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (date_parts.size() != 3)
     return false;
   if (!base::StringToInt(date_parts[0], &time_exploded.month))
@@ -318,8 +320,9 @@ bool FtpUtil::WindowsDateListingToTime(const base::string16& date,
   if (time.length() < 5)
     return false;
 
-  std::vector<base::string16> time_parts;
-  base::SplitString(time.substr(0, 5), ':', &time_parts);
+  std::vector<base::StringPiece16> time_parts = base::SplitStringPiece(
+      base::StringPiece16(time).substr(0, 5), base::ASCIIToUTF16(":"),
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (time_parts.size() != 2)
     return false;
   if (!base::StringToInt(time_parts[0], &time_exploded.hour))
@@ -333,10 +336,10 @@ bool FtpUtil::WindowsDateListingToTime(const base::string16& date,
     if (time.length() != 7)
       return false;
     base::string16 am_or_pm(time.substr(5, 2));
-    if (EqualsASCII(am_or_pm, "PM")) {
+    if (base::EqualsASCII(am_or_pm, "PM")) {
       if (time_exploded.hour < 12)
         time_exploded.hour += 12;
-    } else if (EqualsASCII(am_or_pm, "AM")) {
+    } else if (base::EqualsASCII(am_or_pm, "AM")) {
       if (time_exploded.hour == 12)
         time_exploded.hour = 0;
     } else {

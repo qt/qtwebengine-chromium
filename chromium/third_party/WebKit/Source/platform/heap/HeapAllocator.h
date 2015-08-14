@@ -6,6 +6,7 @@
 #define HeapAllocator_h
 
 #include "platform/heap/Heap.h"
+#include "platform/heap/TraceTraits.h"
 #include "wtf/Assertions.h"
 #include "wtf/Atomics.h"
 #include "wtf/Deque.h"
@@ -20,27 +21,19 @@
 
 namespace blink {
 
-class HeapAllocatorQuantizer {
-public:
-    template<typename T>
-    static size_t quantizedSize(size_t count)
-    {
-        RELEASE_ASSERT(count <= kMaxUnquantizedAllocation / sizeof(T));
-        return Heap::roundedAllocationSize(count * sizeof(T));
-    }
-    static const size_t kMaxUnquantizedAllocation = maxHeapObjectSize;
-};
-
-template<bool needsTracing, WTF::WeakHandlingFlag weakHandlingFlag, WTF::ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits> struct CollectionBackingTraceTrait;
-
 // This is a static-only class used as a trait on collections to make them heap
 // allocated.  However see also HeapListHashSetAllocator.
-class HeapAllocator {
+class PLATFORM_EXPORT HeapAllocator {
 public:
-    using Quantizer = HeapAllocatorQuantizer;
     using Visitor = blink::Visitor;
     static const bool isGarbageCollected = true;
 
+    template<typename T>
+    static size_t quantizedSize(size_t count)
+    {
+        RELEASE_ASSERT(count <= maxHeapObjectSize / sizeof(T));
+        return Heap::allocationSizeFromSize(count * sizeof(T)) - sizeof(HeapObjectHeader);
+    }
     template <typename T>
     static T* allocateVectorBacking(size_t size)
     {
@@ -56,51 +49,42 @@ public:
         ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
         ASSERT(state->isAllocationAllowed());
         size_t gcInfoIndex = GCInfoTrait<HeapVectorBacking<T, VectorTraits<T>>>::index();
-        NormalPageHeap* heap = static_cast<NormalPageHeap*>(state->vectorBackingHeap(gcInfoIndex));
+        NormalPageHeap* heap = static_cast<NormalPageHeap*>(state->expandedVectorBackingHeap(gcInfoIndex));
         return reinterpret_cast<T*>(heap->allocateObject(Heap::allocationSizeFromSize(size), gcInfoIndex));
     }
-    PLATFORM_EXPORT static void freeVectorBacking(void*);
-    PLATFORM_EXPORT static bool expandVectorBacking(void*, size_t);
-    static inline bool shrinkVectorBacking(void* address, size_t quantizedCurrentSize, size_t quantizedShrunkSize)
-    {
-        // Returns always true, so the inlining in turn enables call site simplifications.
-        backingShrink(address, quantizedCurrentSize, quantizedShrunkSize);
-        return true;
-    }
+    static void freeVectorBacking(void*);
+    static bool expandVectorBacking(void*, size_t);
+    static bool shrinkVectorBacking(void* address, size_t quantizedCurrentSize, size_t quantizedShrunkSize);
     template <typename T>
     static T* allocateInlineVectorBacking(size_t size)
     {
         size_t gcInfoIndex = GCInfoTrait<HeapVectorBacking<T, VectorTraits<T>>>::index();
         ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
-        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, InlineVectorHeapIndex, gcInfoIndex));
+        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, ThreadState::InlineVectorHeapIndex, gcInfoIndex));
     }
-    PLATFORM_EXPORT static void freeInlineVectorBacking(void*);
-    PLATFORM_EXPORT static bool expandInlineVectorBacking(void*, size_t);
-    static inline bool shrinkInlineVectorBacking(void* address, size_t quantizedCurrentSize, size_t quantizedShrunkSize)
-    {
-        backingShrink(address, quantizedCurrentSize, quantizedShrunkSize);
-        return true;
-    }
+    static void freeInlineVectorBacking(void*);
+    static bool expandInlineVectorBacking(void*, size_t);
+    static bool shrinkInlineVectorBacking(void* address, size_t quantizedCurrentSize, size_t quantizedShrunkSize);
 
     template <typename T, typename HashTable>
     static T* allocateHashTableBacking(size_t size)
     {
         size_t gcInfoIndex = GCInfoTrait<HeapHashTableBacking<HashTable>>::index();
         ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
-        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, HashTableHeapIndex, gcInfoIndex));
+        return reinterpret_cast<T*>(Heap::allocateOnHeapIndex(state, size, ThreadState::HashTableHeapIndex, gcInfoIndex));
     }
     template <typename T, typename HashTable>
     static T* allocateZeroedHashTableBacking(size_t size)
     {
         return allocateHashTableBacking<T, HashTable>(size);
     }
-    PLATFORM_EXPORT static void freeHashTableBacking(void* address);
-    PLATFORM_EXPORT static bool expandHashTableBacking(void*, size_t);
+    static void freeHashTableBacking(void* address);
+    static bool expandHashTableBacking(void*, size_t);
 
     template <typename Return, typename Metadata>
     static Return malloc(size_t size)
     {
-        return reinterpret_cast<Return>(Heap::allocate<Metadata>(size));
+        return reinterpret_cast<Return>(Heap::allocate<Metadata>(size, IsEagerlyFinalizedType<Metadata>::value));
     }
     static void free(void* address) { }
     template<typename T>
@@ -120,13 +104,19 @@ public:
         return ThreadState::current()->isAllocationAllowed();
     }
 
+    template<typename T>
+    static bool isHeapObjectAlive(T* object)
+    {
+        return Heap::isHeapObjectAlive(object);
+    }
+
     template<typename VisitorDispatcher>
     static void markNoTracing(VisitorDispatcher visitor, const void* t) { visitor->markNoTracing(t); }
 
     template<typename VisitorDispatcher, typename T, typename Traits>
     static void trace(VisitorDispatcher visitor, T& t)
     {
-        CollectionBackingTraceTrait<WTF::ShouldBeTraced<Traits>::value, Traits::weakHandlingFlag, WTF::WeakPointersActWeak, T, Traits>::trace(visitor, t);
+        TraceCollectionIfEnabled<WTF::ShouldBeTraced<Traits>::value, Traits::weakHandlingFlag, WTF::WeakPointersActWeak, T, Traits>::trace(visitor, t);
     }
 
     template<typename VisitorDispatcher>
@@ -136,7 +126,7 @@ public:
     }
 
     template<typename VisitorDispatcher>
-    static void registerWeakMembers(VisitorDispatcher visitor, const void* closure, const void* object, WeakPointerCallback callback)
+    static void registerWeakMembers(VisitorDispatcher visitor, const void* closure, const void* object, WeakCallback callback)
     {
         visitor->registerWeakMembers(closure, object, callback);
     }
@@ -198,7 +188,7 @@ public:
 private:
     static void backingFree(void*);
     static bool backingExpand(void*, size_t);
-    PLATFORM_EXPORT static void backingShrink(void*, size_t quantizedCurrentSize, size_t quantizedShrunkSize);
+    static bool backingShrink(void*, size_t quantizedCurrentSize, size_t quantizedShrunkSize);
 
     template<typename T, size_t u, typename V> friend class WTF::Vector;
     template<typename T, typename U, typename V, typename W> friend class WTF::HashSet;
@@ -214,7 +204,7 @@ static void traceListHashSetValue(VisitorDispatcher visitor, Value& value)
     // (there's an assert elsewhere), but we have to specify some value for the
     // strongify template argument, so we specify WTF::WeakPointersActWeak,
     // arbitrarily.
-    CollectionBackingTraceTrait<WTF::ShouldBeTraced<WTF::HashTraits<Value>>::value, WTF::NoWeakHandlingInCollections, WTF::WeakPointersActWeak, Value, WTF::HashTraits<Value>>::trace(visitor, value);
+    TraceCollectionIfEnabled<WTF::ShouldBeTraced<WTF::HashTraits<Value>>::value, WTF::NoWeakHandlingInCollections, WTF::WeakPointersActWeak, Value, WTF::HashTraits<Value>>::trace(visitor, value);
 }
 
 // The inline capacity is just a dummy template argument to match the off-heap
@@ -274,10 +264,11 @@ void HeapVectorBacking<T, Traits>::finalize(void* pointer)
 {
     static_assert(Traits::needsDestruction, "Only vector buffers with items requiring destruction should be finalized");
     // See the comment in HeapVectorBacking::trace.
-    static_assert(Traits::canInitializeWithMemset || WTF::IsPolymorphic<T>::value, "HeapVectorBacking doesn't support objects that cannot be initialized with memset or don't have a vtable");
+    static_assert(Traits::canClearUnusedSlotsWithMemset || WTF::IsPolymorphic<T>::value, "HeapVectorBacking doesn't support objects that cannot be cleared as unused with memset or don't have a vtable");
 
     ASSERT(!WTF::IsTriviallyDestructible<T>::value);
     HeapObjectHeader* header = HeapObjectHeader::fromPayload(pointer);
+    ASSERT(header->checkHeader());
     // Use the payload size as recorded by the heap to determine how many
     // elements to finalize.
     size_t length = header->payloadSize() / sizeof(T);
@@ -299,40 +290,6 @@ void HeapVectorBacking<T, Traits>::finalize(void* pointer)
     }
 }
 
-// CollectionBackingTraceTrait.  Do nothing for things in collections that don't
-// need tracing, or call TraceInCollectionTrait for those that do.
-
-// Specialization for things that don't need marking and have no weak pointers.
-// We do nothing, even if WTF::WeakPointersActStrong.
-template<WTF::ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits>
-struct CollectionBackingTraceTrait<false, WTF::NoWeakHandlingInCollections, strongify, T, Traits> {
-    template<typename VisitorDispatcher>
-    static bool trace(VisitorDispatcher, T&) { return false; }
-};
-
-template<typename T>
-static void verifyGarbageCollectedIfMember(T*)
-{
-}
-
-template<typename T>
-static void verifyGarbageCollectedIfMember(Member<T>* t)
-{
-    static_assert(IsGarbageCollectedType<T>::value, "non garbage collected object in member");
-}
-
-// Specialization for things that either need marking or have weak pointers or
-// both.
-template<bool needsTracing, WTF::WeakHandlingFlag weakHandlingFlag, WTF::ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits>
-struct CollectionBackingTraceTrait {
-    template<typename VisitorDispatcher>
-    static bool trace(VisitorDispatcher visitor, T&t)
-    {
-        verifyGarbageCollectedIfMember(reinterpret_cast<T*>(0));
-        return WTF::TraceInCollectionTrait<weakHandlingFlag, strongify, T, Traits>::trace(visitor, t);
-    }
-};
-
 template<typename Table> class HeapHashTableBacking {
 public:
     static void finalize(void* pointer);
@@ -345,6 +302,7 @@ void HeapHashTableBacking<Table>::finalize(void* pointer)
     using Value = typename Table::ValueType;
     ASSERT(!WTF::IsTriviallyDestructible<Value>::value);
     HeapObjectHeader* header = HeapObjectHeader::fromPayload(pointer);
+    ASSERT(header->checkHeader());
     // Use the payload size as recorded by the heap to determine how many
     // elements to finalize.
     size_t length = header->payloadSize() / sizeof(Value);

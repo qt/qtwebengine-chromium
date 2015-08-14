@@ -8,6 +8,7 @@
         # These file lists are shared with the GN build.
         'libangle_common_sources':
         [
+            'common/Float16ToFloat32.cpp',
             'common/MemoryBuffer.cpp',
             'common/MemoryBuffer.h',
             'common/Optional.h',
@@ -17,7 +18,10 @@
             'common/debug.h',
             'common/mathutil.cpp',
             'common/mathutil.h',
+            'common/matrix_utils.h',
             'common/platform.h',
+            'common/string_utils.cpp',
+            'common/string_utils.h',
             'common/tls.cpp',
             'common/tls.h',
             'common/utilities.cpp',
@@ -71,7 +75,6 @@
             'libANGLE/Error.inl',
             'libANGLE/Fence.cpp',
             'libANGLE/Fence.h',
-            'libANGLE/Float16ToFloat32.cpp',
             'libANGLE/Framebuffer.cpp',
             'libANGLE/Framebuffer.h',
             'libANGLE/FramebufferAttachment.cpp',
@@ -107,6 +110,8 @@
             'libANGLE/TransformFeedback.h',
             'libANGLE/Uniform.cpp',
             'libANGLE/Uniform.h',
+            'libANGLE/Version.h',
+            'libANGLE/Version.inl',
             'libANGLE/VertexArray.cpp',
             'libANGLE/VertexArray.h',
             'libANGLE/VertexAttribute.cpp',
@@ -271,6 +276,8 @@
             'libANGLE/renderer/d3d/d3d11/copyvertex.inl',
             'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.cpp',
             'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h',
+            'libANGLE/renderer/d3d/d3d11/dxgi_support_table.cpp',
+            'libANGLE/renderer/d3d/d3d11/dxgi_support_table.h',
             'libANGLE/renderer/d3d/d3d11/Fence11.cpp',
             'libANGLE/renderer/d3d/d3d11/Fence11.h',
             'libANGLE/renderer/d3d/d3d11/formatutils11.cpp',
@@ -504,10 +511,6 @@
             ],
             'defines':
             [
-                'GL_APICALL=',
-                'GL_GLEXT_PROTOTYPES=',
-                'EGLAPI=',
-                'ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ "d3dcompiler_47.dll", "d3dcompiler_46.dll", "d3dcompiler_43.dll" }',
                 'LIBANGLE_IMPLEMENTATION',
             ],
             'direct_dependent_settings':
@@ -519,13 +522,24 @@
                 ],
                 'defines':
                 [
-                    'GL_APICALL=',
                     'GL_GLEXT_PROTOTYPES=',
-                    'EGLAPI=',
                     'ANGLE_PRELOADED_D3DCOMPILER_MODULE_NAMES={ "d3dcompiler_47.dll", "d3dcompiler_46.dll", "d3dcompiler_43.dll" }',
                 ],
                 'conditions':
                 [
+                    ['OS=="win"', {
+                        'defines':
+                        [
+                            'GL_APICALL=',
+                            'EGLAPI=',
+                        ],
+                    }, {
+                        'defines':
+                        [
+                            'GL_APICALL=__attribute__((visibility("default")))',
+                            'EGLAPI=__attribute__((visibility("default")))',
+                        ],
+                    }],
                     ['angle_enable_d3d9==1',
                     {
                         'defines':
@@ -548,7 +562,7 @@
                         ],
                         'conditions':
                         [
-                            ['use_x11==1',
+                            ['angle_use_glx==1',
                             {
                                 'defines':
                                 [
@@ -666,7 +680,7 @@
                                 '<@(libangle_gl_wgl_sources)',
                             ],
                         }],
-                        ['use_x11==1',
+                        ['angle_use_glx==1',
                         {
                             'defines':
                             [
@@ -693,6 +707,7 @@
                         'NTDDI_VERSION=NTDDI_WINBLUE',
                     ],
                     'msvs_enable_winrt' : '1',
+                    'msvs_application_type_revision' : '<(angle_build_winrt_app_type_revision)',
                     'msvs_requires_importlibrary' : 'true',
                     'msvs_settings':
                     {
@@ -713,6 +728,7 @@
                     {
                         'Debug_Base':
                         {
+                            'abstract': 1,
                             'defines':
                             [
                                 'ANGLE_ENABLE_DEBUG_ANNOTATIONS',
@@ -734,9 +750,6 @@
             ],
             'defines':
             [
-                'GL_APICALL=',
-                'GL_GLEXT_PROTOTYPES=',
-                'EGLAPI=',
                 'LIBGLESV2_IMPLEMENTATION',
             ],
             'conditions':
@@ -744,6 +757,7 @@
                 ['angle_build_winrt==1',
                 {
                     'msvs_enable_winrt' : '1',
+                    'msvs_application_type_revision' : '<(angle_build_winrt_app_type_revision)',
                     'msvs_requires_importlibrary' : 'true',
                     'msvs_settings':
                     {
@@ -758,14 +772,14 @@
                 {
                     'msvs_enable_winphone' : '1',
                 }],
-                ['use_x11==1',
+                ['angle_use_glx==1',
                 {
                     'link_settings': {
                         'ldflags': [
                             '<!@(pkg-config --libs-only-L --libs-only-other x11 xi)',
                         ],
                         'libraries': [
-                            '<!@(pkg-config --libs-only-l x11 xi)',
+                            '<!@(pkg-config --libs-only-l x11 xi) -ldl',
                         ],
                     },
                 }],

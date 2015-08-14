@@ -73,8 +73,10 @@ public:
     {
         return adoptRefWillBeNoop(new LocalDOMWindow(frame));
     }
+
     virtual ~LocalDOMWindow();
-    void dispose();
+
+    DECLARE_VIRTUAL_TRACE();
 
     PassRefPtrWillBeRawPtr<Document> installNewDocument(const String& mimeType, const DocumentInit&, bool forceXHTML = false);
 
@@ -83,7 +85,6 @@ public:
     virtual LocalDOMWindow* toDOMWindow() override;
 
     // DOMWindow overrides:
-    DECLARE_VIRTUAL_TRACE();
     bool isLocalDOMWindow() const override { return true; }
     virtual LocalFrame* frame() const override;
     Screen* screen() const override;
@@ -116,11 +117,9 @@ public:
     ApplicationCache* applicationCache() const override;
     int orientation() const override;
     Console* console() const override;
-    DOMWindowCSS* css() const override;
     DOMSelection* getSelection() override;
     void focus(ExecutionContext*) override;
     void blur() override;
-    void close(ExecutionContext*) override;
     void print() override;
     void stop() override;
     void alert(const String& message = String()) override;
@@ -135,10 +134,10 @@ public:
     void scrollTo(double x, double y) const override;
     void scrollTo(const ScrollToOptions&) const override;
 
-    void moveBy(int x, int y, bool hasX, bool hasY) const override;
-    void moveTo(int x, int y, bool hasX, bool hasY) const override;
-    void resizeBy(int x, int y, bool hasX, bool hasY) const override;
-    void resizeTo(int width, int height, bool hasWidth, bool hasHeight) const override;
+    void moveBy(int x, int y) const override;
+    void moveTo(int x, int y) const override;
+    void resizeBy(int x, int y) const override;
+    void resizeTo(int width, int height) const override;
     PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
     PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
     PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;
@@ -167,6 +166,7 @@ public:
     void printErrorMessage(const String&);
 
     void postMessageTimerFired(PostMessageTimer*);
+    void removePostMessageTimer(PostMessageTimer*);
     void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event>, PassRefPtrWillBeRawPtr<ScriptCallStack>);
 
     // Events
@@ -233,6 +233,7 @@ private:
     friend WTF::OwnedPtrDeleter<WindowFrameObserver>;
 
     explicit LocalDOMWindow(LocalFrame&);
+    void dispose();
 
     Page* page();
 
@@ -267,9 +268,7 @@ private:
     String m_status;
     String m_defaultStatus;
 
-    mutable RefPtrWillBeMember<ApplicationCache> m_applicationCache;
-
-    mutable RefPtrWillBeMember<DOMWindowCSS> m_css;
+    mutable PersistentWillBeMember<ApplicationCache> m_applicationCache;
 
     RefPtrWillBeMember<DOMWindowEventQueue> m_eventQueue;
     RefPtr<SerializedScriptValue> m_pendingStateObject;

@@ -263,7 +263,8 @@ WebInspector.JavaScriptSourceFrame.prototype = {
 
     populateLineGutterContextMenu: function(contextMenu, lineNumber)
     {
-        contextMenu.appendItem(WebInspector.UIString.capitalize("Continue to ^here"), this._continueToLine.bind(this, lineNumber));
+        var uiLocation = new WebInspector.UILocation(this._uiSourceCode, lineNumber, 0);
+        this._scriptsPanel.appendUILocationItems(contextMenu, uiLocation);
         var breakpoint = this._breakpointManager.findBreakpointOnLine(this._uiSourceCode, lineNumber);
         if (!breakpoint) {
             // This row doesn't have a breakpoint: We want to show Add Breakpoint and Add and Edit Breakpoint.
@@ -280,7 +281,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
         }
     },
 
-    populateTextAreaContextMenu: function(contextMenu, lineNumber)
+    populateTextAreaContextMenu: function(contextMenu, lineNumber, columnNumber)
     {
         var textSelection = this.textEditor.selection();
         if (textSelection && !textSelection.isEmpty()) {
@@ -312,7 +313,7 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             scriptFile.addSourceMapURL(url);
         }
 
-        WebInspector.UISourceCodeFrame.prototype.populateTextAreaContextMenu.call(this, contextMenu, lineNumber);
+        WebInspector.UISourceCodeFrame.prototype.populateTextAreaContextMenu.call(this, contextMenu, lineNumber, columnNumber);
 
         if (this._uiSourceCode.project().type() === WebInspector.projectTypes.Network && WebInspector.moduleSetting("jsSourceMapsEnabled").get()) {
             if (this._scriptFileForTarget.size) {
@@ -720,8 +721,10 @@ WebInspector.JavaScriptSourceFrame.prototype = {
             return;
 
         this.textEditor.setExecutionLocation(uiLocation.lineNumber, uiLocation.columnNumber);
-        if (this.isShowing())
-            this._generateValuesInSource();
+        if (this.isShowing()) {
+            // We need CodeMirrorTextEditor to be initialized prior to this call. @see crbug.com/506566
+            setImmediate(this._generateValuesInSource.bind(this));
+        }
     },
 
     _generateValuesInSource: function()
@@ -1110,20 +1113,6 @@ WebInspector.JavaScriptSourceFrame.prototype = {
     _setBreakpoint: function(lineNumber, columnNumber, condition, enabled)
     {
         this._breakpointManager.setBreakpoint(this._uiSourceCode, lineNumber, columnNumber, condition, enabled);
-    },
-
-    /**
-     * @param {number} lineNumber
-     */
-    _continueToLine: function(lineNumber)
-    {
-        var executionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
-        if (!executionContext)
-            return;
-        var rawLocation = WebInspector.debuggerWorkspaceBinding.uiLocationToRawLocation(executionContext.target(), this._uiSourceCode, lineNumber, 0);
-        if (!rawLocation)
-            return;
-        this._scriptsPanel.continueToLocation(rawLocation);
     },
 
     dispose: function()

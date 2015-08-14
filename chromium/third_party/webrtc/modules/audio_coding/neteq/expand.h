@@ -54,12 +54,6 @@ class Expand {
   // a period of expands.
   virtual void SetParametersForMergeAfterExpand();
 
-  // Sets the mute factor for |channel| to |value|.
-  void SetMuteFactor(int16_t value, size_t channel) {
-    assert(channel < num_channels_);
-    channel_parameters_[channel].mute_factor = value;
-  }
-
   // Returns the mute factor for |channel|.
   int16_t MuteFactor(size_t channel) {
     assert(channel < num_channels_);
@@ -72,13 +66,13 @@ class Expand {
 
  protected:
   static const int kMaxConsecutiveExpands = 200;
-  void GenerateRandomVector(int seed_increment,
+  void GenerateRandomVector(int16_t seed_increment,
                             size_t length,
                             int16_t* random_vector);
 
   void GenerateBackgroundNoise(int16_t* random_vector,
                                size_t channel,
-                               int16_t mute_slope,
+                               int mute_slope,
                                bool too_many_expands,
                                size_t num_noise_samples,
                                int16_t* buffer);
@@ -119,15 +113,17 @@ class Expand {
     AudioVector expand_vector0;
     AudioVector expand_vector1;
     bool onset;
-    int16_t mute_slope; /* Q20 */
+    int mute_slope; /* Q20 */
   };
 
   // Calculate the auto-correlation of |input|, with length |input_length|
   // samples. The correlation is calculated from a downsampled version of
   // |input|, and is written to |output|. The scale factor is written to
-  // |output_scale|. Returns the length of the correlation vector.
-  int16_t Correlation(const int16_t* input, size_t input_length,
-                      int16_t* output, int16_t* output_scale) const;
+  // |output_scale|.
+  void Correlation(const int16_t* input,
+                   size_t input_length,
+                   int16_t* output,
+                   int* output_scale) const;
 
   void UpdateLagIndex();
 

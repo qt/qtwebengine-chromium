@@ -47,11 +47,6 @@ void BluetoothSocketThread::OnSocketActivate() {
 void BluetoothSocketThread::OnSocketDeactivate() {
   DCHECK(thread_checker_.CalledOnValidThread());
   active_socket_count_--;
-  if (active_socket_count_ == 0 && thread_) {
-    thread_->Stop();
-    thread_.reset(NULL);
-    task_runner_ = NULL;
-  }
 }
 
 void BluetoothSocketThread::EnsureStarted() {
@@ -63,7 +58,7 @@ void BluetoothSocketThread::EnsureStarted() {
   thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
   thread_.reset(new base::Thread("BluetoothSocketThread"));
   thread_->StartWithOptions(thread_options);
-  task_runner_ = thread_->message_loop_proxy();
+  task_runner_ = thread_->task_runner();
 }
 
 scoped_refptr<base::SequencedTaskRunner> BluetoothSocketThread::task_runner()

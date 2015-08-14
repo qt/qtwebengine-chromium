@@ -33,9 +33,7 @@ GrTargetCommands::Cmd* GrCommandBuilder::recordClear(const SkIRect* rect,
         rect = &r;
     }
 
-    SkASSERT(color == GrColor_ILLEGAL ||
-             canIgnoreRect ||
-             (rect->fLeft <= rect->fRight && rect->fTop <= rect->fBottom));
+    SkASSERT(canIgnoreRect || (rect->fLeft <= rect->fRight && rect->fTop <= rect->fBottom));
 
     Clear* clr = GrNEW_APPEND_TO_RECORDER(*this->cmdBuffer(), Clear, (renderTarget));
     GrColorIsPMAssert(color);
@@ -78,7 +76,7 @@ GrTargetCommands::Cmd* GrCommandBuilder::recordCopySurface(GrSurface* dst,
 
 GrTargetCommands::Cmd*
 GrCommandBuilder::recordXferBarrierIfNecessary(const GrPipeline& pipeline,
-                                               const GrDrawTargetCaps& caps) {
+                                               const GrCaps& caps) {
     const GrXferProcessor& xp = *pipeline.getXferProcessor();
     GrRenderTarget* rt = pipeline.getRenderTarget();
 

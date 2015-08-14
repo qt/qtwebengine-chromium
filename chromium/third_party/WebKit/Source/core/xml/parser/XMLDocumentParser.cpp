@@ -42,6 +42,7 @@
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/TransformSource.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
 #include "core/frame/ConsoleTypes.h"
@@ -70,7 +71,7 @@
 #include "wtf/TemporaryChange.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
-#include "wtf/unicode/UTF8.h"
+#include "wtf/text/UTF8.h"
 #include <libxml/catalog.h>
 #include <libxml/parser.h>
 #include <libxml/parserInternals.h>
@@ -146,7 +147,7 @@ public:
         }
     }
 
-    virtual ~PendingStartElementNSCallback()
+    ~PendingStartElementNSCallback() override
     {
         for (int i = 0; i < m_namespaceCount * 2; ++i)
             xmlFree(m_namespaces[i]);
@@ -157,7 +158,7 @@ public:
         xmlFree(m_attributes);
     }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->startElementNs(m_localName, m_prefix, m_uri,
             m_namespaceCount, const_cast<const xmlChar**>(m_namespaces),
@@ -177,7 +178,7 @@ private:
 
 class PendingEndElementNSCallback final : public XMLDocumentParser::PendingCallback {
 public:
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->endElementNs();
     }
@@ -191,12 +192,12 @@ public:
     {
     }
 
-    virtual ~PendingCharactersCallback()
+    ~PendingCharactersCallback() override
     {
         xmlFree(m_chars);
     }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->characters(m_chars, m_length);
     }
@@ -214,7 +215,7 @@ public:
     {
     }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->processingInstruction(m_target, m_data);
     }
@@ -228,7 +229,7 @@ class PendingCDATABlockCallback final : public XMLDocumentParser::PendingCallbac
 public:
     explicit PendingCDATABlockCallback(const String& text) : m_text(text) { }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->cdataBlock(m_text);
     }
@@ -241,7 +242,7 @@ class PendingCommentCallback final : public XMLDocumentParser::PendingCallback {
 public:
     explicit PendingCommentCallback(const String& text) : m_text(text) { }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->comment(m_text);
     }
@@ -259,7 +260,7 @@ public:
     {
     }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->internalSubset(m_name, m_externalID, m_systemID);
     }
@@ -280,12 +281,12 @@ public:
     {
     }
 
-    virtual ~PendingErrorCallback()
+    ~PendingErrorCallback() override
     {
         xmlFree(m_message);
     }
 
-    virtual void call(XMLDocumentParser* parser) override
+    void call(XMLDocumentParser* parser) override
     {
         parser->handleError(m_type, reinterpret_cast<char*>(m_message), TextPosition(m_lineNumber, m_columnNumber));
     }
@@ -653,7 +654,7 @@ static void* openFunc(const char* uri)
         XMLDocumentParserScope scope(0);
         // FIXME: We should restore the original global error handler as well.
         FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, ResourceFetcher::defaultResourceOptions());
-        ResourcePtr<Resource> resource = document->fetcher()->fetchSynchronously(request);
+        ResourcePtr<Resource> resource = RawResource::fetchSynchronously(request, document->fetcher());
         if (resource && !resource->errorOccurred()) {
             data = resource->resourceBuffer();
             finalURL = resource->response().url();

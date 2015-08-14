@@ -11,6 +11,7 @@
 #include "base/threading/thread_checker.h"
 #include "chromecast/media/cma/pipeline/video_pipeline.h"
 #include "chromecast/media/cma/pipeline/video_pipeline_client.h"
+#include "chromecast/public/media/stream_id.h"
 
 namespace gfx {
 class Size;
@@ -43,7 +44,7 @@ class VideoPipelineImpl : public VideoPipeline {
 
   // Functions to control the state of the audio pipeline.
   void Initialize(
-      const ::media::VideoDecoderConfig& config,
+      const std::vector<::media::VideoDecoderConfig>& configs,
       scoped_ptr<CodedFrameProvider> frame_provider,
       const ::media::PipelineStatusCB& status_cb);
   bool StartPlayingFrom(base::TimeDelta time,
@@ -59,7 +60,8 @@ class VideoPipelineImpl : public VideoPipeline {
 
  private:
   void OnFlushDone(const ::media::PipelineStatusCB& status_cb);
-  void OnUpdateConfig(const ::media::AudioDecoderConfig& audio_config,
+  void OnUpdateConfig(StreamId id,
+                      const ::media::AudioDecoderConfig& audio_config,
                       const ::media::VideoDecoderConfig& video_config);
   void OnNaturalSizeChanged(const gfx::Size& size);
 

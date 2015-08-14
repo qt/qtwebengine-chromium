@@ -185,13 +185,27 @@ class SelectorCrossesTreeScopes {
 public:
     bool operator()(const CSSSelector& selector)
     {
-        return selector.relation() == CSSSelector::ShadowDeep || selector.isShadowPseudoElement();
+        return selector.relation() == CSSSelector::ShadowDeep || selector.pseudoType() == CSSSelector::PseudoShadow;
     }
 };
 
 bool CSSSelectorList::selectorCrossesTreeScopes(size_t index) const
 {
     SelectorCrossesTreeScopes functor;
+    return forEachTagSelector(functor, selectorAt(index));
+}
+
+class SelectorNeedsUpdatedDistribution {
+public:
+    bool operator()(const CSSSelector& selector)
+    {
+        return selector.relationIsAffectedByPseudoContent() || selector.pseudoType() == CSSSelector::PseudoHostContext;
+    }
+};
+
+bool CSSSelectorList::selectorNeedsUpdatedDistribution(size_t index) const
+{
+    SelectorNeedsUpdatedDistribution functor;
     return forEachTagSelector(functor, selectorAt(index));
 }
 

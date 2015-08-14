@@ -529,10 +529,6 @@ static const GLES2Util::EnumToString enum_to_string_table[] = {
      "GL_UNIFORM_BLOCK_DATA_SIZE",
     },
     {
-     0x9242,
-     "GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM",
-    },
-    {
      0x821D,
      "GL_NUM_EXTENSIONS",
     },
@@ -2197,10 +2193,6 @@ static const GLES2Util::EnumToString enum_to_string_table[] = {
      "GL_RG8UI",
     },
     {
-     0x9240,
-     "GL_UNPACK_FLIP_Y_CHROMIUM",
-    },
-    {
      0x8DF6,
      "GL_UNSIGNED_INT_10_10_10_2_OES",
     },
@@ -3463,10 +3455,6 @@ static const GLES2Util::EnumToString enum_to_string_table[] = {
     {
      0x8B65,
      "GL_FLOAT_MAT2x3_NV",
-    },
-    {
-     0x9241,
-     "GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM",
     },
     {
      0x00010000,
@@ -4774,11 +4762,6 @@ std::string GLES2Util::GetStringGLState(uint32_t value) {
       {GL_TEXTURE_BINDING_2D, "GL_TEXTURE_BINDING_2D"},
       {GL_TEXTURE_BINDING_CUBE_MAP, "GL_TEXTURE_BINDING_CUBE_MAP"},
       {GL_UNPACK_ALIGNMENT, "GL_UNPACK_ALIGNMENT"},
-      {GL_UNPACK_FLIP_Y_CHROMIUM, "GL_UNPACK_FLIP_Y_CHROMIUM"},
-      {GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-       "GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM"},
-      {GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM,
-       "GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM"},
       {GL_BIND_GENERATES_RESOURCE_CHROMIUM,
        "GL_BIND_GENERATES_RESOURCE_CHROMIUM"},
       {GL_VERTEX_ARRAY_BINDING_OES, "GL_VERTEX_ARRAY_BINDING_OES"},
@@ -5055,11 +5038,6 @@ std::string GLES2Util::GetStringPixelStore(uint32_t value) {
   static const EnumToString string_table[] = {
       {GL_PACK_ALIGNMENT, "GL_PACK_ALIGNMENT"},
       {GL_UNPACK_ALIGNMENT, "GL_UNPACK_ALIGNMENT"},
-      {GL_UNPACK_FLIP_Y_CHROMIUM, "GL_UNPACK_FLIP_Y_CHROMIUM"},
-      {GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-       "GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM"},
-      {GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM,
-       "GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM"},
       {GL_PACK_ROW_LENGTH, "GL_PACK_ROW_LENGTH"},
       {GL_PACK_SKIP_PIXELS, "GL_PACK_SKIP_PIXELS"},
       {GL_PACK_SKIP_ROWS, "GL_PACK_SKIP_ROWS"},
@@ -5546,6 +5524,7 @@ std::string GLES2Util::GetStringTextureInternalFormatStorage(uint32_t value) {
       {GL_RG16I, "GL_RG16I"},
       {GL_RG32UI, "GL_RG32UI"},
       {GL_RG32I, "GL_RG32I"},
+      {GL_RGB8, "GL_RGB8"},
       {GL_SRGB8, "GL_SRGB8"},
       {GL_RGB8_SNORM, "GL_RGB8_SNORM"},
       {GL_R11F_G11F_B10F, "GL_R11F_G11F_B10F"},
@@ -5558,6 +5537,7 @@ std::string GLES2Util::GetStringTextureInternalFormatStorage(uint32_t value) {
       {GL_RGB16I, "GL_RGB16I"},
       {GL_RGB32UI, "GL_RGB32UI"},
       {GL_RGB32I, "GL_RGB32I"},
+      {GL_RGBA8, "GL_RGBA8"},
       {GL_SRGB8_ALPHA8, "GL_SRGB8_ALPHA8"},
       {GL_RGBA8_SNORM, "GL_RGBA8_SNORM"},
       {GL_RGB10_A2, "GL_RGB10_A2"},

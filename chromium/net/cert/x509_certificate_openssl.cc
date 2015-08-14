@@ -21,8 +21,8 @@
 #include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
 #include "crypto/scoped_openssl_types.h"
+#include "net/base/ip_address_number.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/cert/x509_util_openssl.h"
 
 #if defined(OS_ANDROID)
@@ -203,7 +203,7 @@ void X509Certificate::Initialize() {
     // value.
     int bytes_required = i2c_ASN1_INTEGER(serial_num, NULL);
     unsigned char* buffer = reinterpret_cast<unsigned char*>(
-        WriteInto(&serial_number_, bytes_required + 1));
+        base::WriteInto(&serial_number_, bytes_required + 1));
     int bytes_written = i2c_ASN1_INTEGER(serial_num, &buffer);
     DCHECK_EQ(static_cast<size_t>(bytes_written), serial_number_.size());
   }
@@ -343,8 +343,8 @@ bool X509Certificate::IsSameOSCert(X509Certificate::OSCertHandle a,
 }
 
 // static
-X509Certificate::OSCertHandle
-X509Certificate::ReadOSCertHandleFromPickle(PickleIterator* pickle_iter) {
+X509Certificate::OSCertHandle X509Certificate::ReadOSCertHandleFromPickle(
+    base::PickleIterator* pickle_iter) {
   const char* data;
   int length;
   if (!pickle_iter->ReadData(&data, &length))
@@ -355,7 +355,7 @@ X509Certificate::ReadOSCertHandleFromPickle(PickleIterator* pickle_iter) {
 
 // static
 bool X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
-                                                Pickle* pickle) {
+                                                base::Pickle* pickle) {
   base::StringPiece der;
   if (!x509_util::GetDER(cert_handle, &der))
     return false;

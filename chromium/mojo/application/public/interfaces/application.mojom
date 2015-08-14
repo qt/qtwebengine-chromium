@@ -23,7 +23,7 @@ interface Application {
   // mappings, resolution, and redirects. And it will not include the
   // querystring, since the querystring is not part of an application's
   // identity.
-  Initialize(Shell shell, array<string>? args, string url);
+  Initialize(Shell shell, string url);
 
   // Called when another application (identified by |requestor_url|) attempts to
   // open a connection to this application.
@@ -54,6 +54,8 @@ interface Application {
                    ServiceProvider? exposed_services,
                    string resolved_url);
 
-  // Called to request the application shut itself down gracefully.
-  RequestQuit();
+  // Called by the shell in response to calling Shell's QuitApplication. The
+  // application should run the callback with true if shutdown can proceed.
+  // See Shell::QuitApplication for details about shutdown workflow.
+  OnQuitRequested() => (bool can_quit);
 };

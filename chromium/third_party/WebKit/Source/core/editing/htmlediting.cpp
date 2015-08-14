@@ -68,6 +68,111 @@ bool isAtomicNode(const Node *node)
     return node && (!node->hasChildren() || editingIgnoresContent(node));
 }
 
+template <typename Traversal>
+static int comparePositions(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected)
+{
+    ASSERT(containerA);
+    ASSERT(containerB);
+
+    if (disconnected)
+        *disconnected = false;
+
+    if (!containerA)
+        return -1;
+    if (!containerB)
+        return 1;
+
+    // see DOM2 traversal & range section 2.5
+
+    // case 1: both points have the same container
+    if (containerA == containerB) {
+        if (offsetA == offsetB)
+            return 0; // A is equal to B
+        if (offsetA < offsetB)
+            return -1; // A is before B
+        return 1; // A is after B
+    }
+
+    // case 2: node C (container B or an ancestor) is a child node of A
+    Node* c = containerB;
+    while (c && Traversal::parent(*c) != containerA)
+        c = Traversal::parent(*c);
+    if (c) {
+        int offsetC = 0;
+        Node* n = Traversal::firstChild(*containerA);
+        while (n != c && offsetC < offsetA) {
+            offsetC++;
+            n = Traversal::nextSibling(*n);
+        }
+
+        if (offsetA <= offsetC)
+            return -1; // A is before B
+        return 1; // A is after B
+    }
+
+    // case 3: node C (container A or an ancestor) is a child node of B
+    c = containerA;
+    while (c && Traversal::parent(*c) != containerB)
+        c = Traversal::parent(*c);
+    if (c) {
+        int offsetC = 0;
+        Node* n = Traversal::firstChild(*containerB);
+        while (n != c && offsetC < offsetB) {
+            offsetC++;
+            n = Traversal::nextSibling(*n);
+        }
+
+        if (offsetC < offsetB)
+            return -1; // A is before B
+        return 1; // A is after B
+    }
+
+    // case 4: containers A & B are siblings, or children of siblings
+    // ### we need to do a traversal here instead
+    Node* commonAncestor = Traversal::commonAncestor(*containerA, *containerB);
+    if (!commonAncestor) {
+        if (disconnected)
+            *disconnected = true;
+        return 0;
+    }
+    Node* childA = containerA;
+    while (childA && Traversal::parent(*childA) != commonAncestor)
+        childA = Traversal::parent(*childA);
+    if (!childA)
+        childA = commonAncestor;
+    Node* childB = containerB;
+    while (childB && Traversal::parent(*childB) != commonAncestor)
+        childB = Traversal::parent(*childB);
+    if (!childB)
+        childB = commonAncestor;
+
+    if (childA == childB)
+        return 0; // A is equal to B
+
+    Node* n = Traversal::firstChild(*commonAncestor);
+    while (n) {
+        if (n == childA)
+            return -1; // A is before B
+        if (n == childB)
+            return 1; // A is after B
+        n = Traversal::nextSibling(*n);
+    }
+
+    // Should never reach this point.
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+int comparePositionsInDOMTree(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected)
+{
+    return comparePositions<NodeTraversal>(containerA, offsetA, containerB, offsetB, disconnected);
+}
+
+int comparePositionsInComposedTree(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected)
+{
+    return comparePositions<ComposedTreeTraversal>(containerA, offsetA, containerB, offsetB, disconnected);
+}
+
 // Compare two positions, taking into account the possibility that one or both
 // could be inside a shadow tree. Only works for non-null values.
 int comparePositions(const Position& a, const Position& b)
@@ -98,7 +203,7 @@ int comparePositions(const Position& a, const Position& b)
             bias = 1;
     }
 
-    int result = EditingStrategy::comparePositions(nodeA, offsetA, nodeB, offsetB);
+    int result = comparePositionsInDOMTree(nodeA, offsetA, nodeB, offsetB);
     return result ? result : bias;
 }
 
@@ -136,6 +241,11 @@ ContainerNode* highestEditableRoot(const Position& position, EditableType editab
     return highestRoot;
 }
 
+ContainerNode* highestEditableRoot(const PositionInComposedTree& position, EditableType editableType)
+{
+    return highestEditableRoot(toPositionInDOMTree(position), editableType);
+}
+
 Element* lowestEditableAncestor(Node* node)
 {
     while (node) {
@@ -163,6 +273,11 @@ bool isEditablePosition(const Position& p, EditableType editableType, EUpdateSty
         node = node->parentNode();
 
     return node->hasEditableStyle(editableType);
+}
+
+bool isEditablePosition(const PositionInComposedTree& p, EditableType editableType, EUpdateStyle updateStyle)
+{
+    return isEditablePosition(toPositionInDOMTree(p), editableType, updateStyle);
 }
 
 bool isAtUnsplittableElement(const Position& pos)
@@ -196,6 +311,11 @@ Element* editableRootForPosition(const Position& p, EditableType editableType)
     return node->rootEditableElement(editableType);
 }
 
+Element* editableRootForPosition(const PositionInComposedTree& p, EditableType editableType)
+{
+    return editableRootForPosition(toPositionInDOMTree(p), editableType);
+}
+
 // Finds the enclosing element until which the tree can be split.
 // When a user hits ENTER, he/she won't expect this element to be split into two.
 // You may pass it as the second argument of splitTreeToNode.
@@ -210,15 +330,27 @@ Element* unsplittableElementForPosition(const Position& p)
     return editableRootForPosition(p);
 }
 
-Position nextCandidate(const Position& position)
+template <typename Strategy>
+typename Strategy::PositionType nextCandidateAlgorithm(const typename Strategy::PositionType& position)
 {
-    PositionIterator p(position);
+    using PositionType = typename Strategy::PositionType;
+    PositionIteratorAlgorithm<Strategy> p(position);
     while (!p.atEnd()) {
         p.increment();
         if (p.isCandidate())
             return p;
     }
-    return Position();
+    return PositionType();
+}
+
+Position nextCandidate(const Position& position)
+{
+    return nextCandidateAlgorithm<EditingStrategy>(position);
+}
+
+PositionInComposedTree nextCandidate(const PositionInComposedTree& position)
+{
+    return nextCandidateAlgorithm<EditingInComposedTreeStrategy>(position);
 }
 
 Position nextVisuallyDistinctCandidate(const Position& position)
@@ -233,27 +365,50 @@ Position nextVisuallyDistinctCandidate(const Position& position)
     return Position();
 }
 
-Position previousCandidate(const Position& position)
+template <typename Strategy>
+typename Strategy::PositionType previousCandidateAlgorithm(const typename Strategy::PositionType& position)
 {
-    PositionIterator p(position);
+    using PositionType = typename Strategy::PositionType;
+    PositionIteratorAlgorithm<Strategy> p(position);
     while (!p.atStart()) {
         p.decrement();
         if (p.isCandidate())
             return p;
     }
-    return Position();
+    return PositionType();
 }
 
-Position previousVisuallyDistinctCandidate(const Position& position)
+Position previousCandidate(const Position& position)
 {
-    Position p = position;
-    Position downstreamStart = p.downstream();
+    return previousCandidateAlgorithm<EditingStrategy>(position);
+}
+
+PositionInComposedTree previousCandidate(const PositionInComposedTree& position)
+{
+    return previousCandidateAlgorithm<EditingInComposedTreeStrategy>(position);
+}
+
+template <typename PositionType>
+PositionType previousVisuallyDistinctCandidateAlgorithm(const PositionType& position)
+{
+    PositionType p = position;
+    PositionType downstreamStart = p.downstream();
     while (!p.atStartOfTree()) {
         p = p.previous(Character);
         if (p.isCandidate() && p.downstream() != downstreamStart)
             return p;
     }
-    return Position();
+    return PositionType();
+}
+
+Position previousVisuallyDistinctCandidate(const Position& position)
+{
+    return previousVisuallyDistinctCandidateAlgorithm<Position>(position);
+}
+
+PositionInComposedTree previousVisuallyDistinctCandidate(const PositionInComposedTree& position)
+{
+    return previousVisuallyDistinctCandidateAlgorithm<PositionInComposedTree>(position);
 }
 
 VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& position, ContainerNode* highestRoot)
@@ -286,28 +441,39 @@ VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position& 
     return VisiblePosition(lastEditablePositionBeforePositionInRoot(position, highestRoot));
 }
 
-Position lastEditablePositionBeforePositionInRoot(const Position& position, Node* highestRoot)
+template <typename PositionType>
+PositionType lastEditablePositionBeforePositionInRootAlgorithm(const PositionType& position, Node* highestRoot)
 {
     // When position falls after highestRoot, the result is easy to compute.
-    if (comparePositions(position, lastPositionInNode(highestRoot)) == 1)
-        return lastPositionInNode(highestRoot);
+    if (position.compareTo(PositionType::lastPositionInNode(highestRoot)) == 1)
+        return PositionType::lastPositionInNode(highestRoot);
 
-    Position editablePosition = position;
+    PositionType editablePosition = position;
 
     if (position.deprecatedNode()->treeScope() != highestRoot->treeScope()) {
         Node* shadowAncestor = highestRoot->treeScope().ancestorInThisScope(editablePosition.deprecatedNode());
         if (!shadowAncestor)
-            return Position();
+            return PositionType();
 
-        editablePosition = firstPositionInOrBeforeNode(shadowAncestor);
+        editablePosition = PositionType::firstPositionInOrBeforeNode(shadowAncestor);
     }
 
     while (editablePosition.deprecatedNode() && !isEditablePosition(editablePosition) && editablePosition.deprecatedNode()->isDescendantOf(highestRoot))
-        editablePosition = isAtomicNode(editablePosition.deprecatedNode()) ? positionInParentBeforeNode(*editablePosition.deprecatedNode()) : previousVisuallyDistinctCandidate(editablePosition);
+        editablePosition = isAtomicNode(editablePosition.deprecatedNode()) ? PositionType::inParentBeforeNode(*editablePosition.deprecatedNode()) : previousVisuallyDistinctCandidate(editablePosition);
 
     if (editablePosition.deprecatedNode() && editablePosition.deprecatedNode() != highestRoot && !editablePosition.deprecatedNode()->isDescendantOf(highestRoot))
-        return Position();
+        return PositionType();
     return editablePosition;
+}
+
+Position lastEditablePositionBeforePositionInRoot(const Position& position, Node* highestRoot)
+{
+    return lastEditablePositionBeforePositionInRootAlgorithm<Position>(position, highestRoot);
+}
+
+PositionInComposedTree lastEditablePositionBeforePositionInRoot(const PositionInComposedTree& position, Node* highestRoot)
+{
+    return lastEditablePositionBeforePositionInRootAlgorithm<PositionInComposedTree>(position, highestRoot);
 }
 
 // FIXME: The method name, comment, and code say three different things here!
@@ -507,6 +673,53 @@ Element* isLastPositionBeforeTable(const VisiblePosition& visiblePosition)
         return toElement(downstream.deprecatedNode());
 
     return 0;
+}
+
+static Node* previousNodeConsideringAtomicNodes(const Node& start)
+{
+    if (start.previousSibling()) {
+        Node* node = start.previousSibling();
+        while (!isAtomicNode(node) && node->lastChild())
+            node = node->lastChild();
+        return node;
+    }
+    return start.parentNode();
+}
+
+static Node* nextNodeConsideringAtomicNodes(const Node& start)
+{
+    if (!isAtomicNode(&start) && start.hasChildren())
+        return start.firstChild();
+    if (start.nextSibling())
+        return start.nextSibling();
+    const Node* node = &start;
+    while (node && !node->nextSibling())
+        node = node->parentNode();
+    if (node)
+        return node->nextSibling();
+    return nullptr;
+}
+
+Node* previousAtomicLeafNode(const Node& start)
+{
+    Node* node = previousNodeConsideringAtomicNodes(start);
+    while (node) {
+        if (isAtomicNode(node))
+            return node;
+        node = previousNodeConsideringAtomicNodes(*node);
+    }
+    return nullptr;
+}
+
+Node* nextAtomicLeafNode(const Node& start)
+{
+    Node* node = nextNodeConsideringAtomicNodes(start);
+    while (node) {
+        if (isAtomicNode(node))
+            return node;
+        node = nextNodeConsideringAtomicNodes(*node);
+    }
+    return nullptr;
 }
 
 // Returns the visible position at the beginning of a node
@@ -957,25 +1170,25 @@ void updatePositionForNodeRemoval(Position& position, Node& node)
     if (position.isNull())
         return;
     switch (position.anchorType()) {
-    case Position::PositionIsBeforeChildren:
+    case PositionAnchorType::BeforeChildren:
         if (node.containsIncludingShadowDOM(position.containerNode()))
             position = positionInParentBeforeNode(node);
         break;
-    case Position::PositionIsAfterChildren:
+    case PositionAnchorType::AfterChildren:
         if (node.containsIncludingShadowDOM(position.containerNode()))
             position = positionInParentAfterNode(node);
         break;
-    case Position::PositionIsOffsetInAnchor:
+    case PositionAnchorType::OffsetInAnchor:
         if (position.containerNode() == node.parentNode() && static_cast<unsigned>(position.offsetInContainerNode()) > node.nodeIndex())
             position.moveToOffset(position.offsetInContainerNode() - 1);
         else if (node.containsIncludingShadowDOM(position.containerNode()))
             position = positionInParentBeforeNode(node);
         break;
-    case Position::PositionIsAfterAnchor:
+    case PositionAnchorType::AfterAnchor:
         if (node.containsIncludingShadowDOM(position.anchorNode()))
             position = positionInParentAfterNode(node);
         break;
-    case Position::PositionIsBeforeAnchor:
+    case PositionAnchorType::BeforeAnchor:
         if (node.containsIncludingShadowDOM(position.anchorNode()))
             position = positionInParentBeforeNode(node);
         break;
@@ -1102,8 +1315,7 @@ VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope)
 // Call this function to determine whether a node is visibly fit inside selectedRange
 bool isNodeVisiblyContainedWithin(Node& node, const Range& selectedRange)
 {
-    // If the node is inside the range, then it surely is contained within
-    if (selectedRange.compareNode(&node, IGNORE_EXCEPTION) == Range::NODE_INSIDE)
+    if (selectedRange.isNodeFullyContained(node))
         return true;
 
     bool startIsVisuallySame = visiblePositionBeforeNode(node) == VisiblePosition(selectedRange.startPosition());

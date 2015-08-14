@@ -40,7 +40,6 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageFallbackHelper.h"
 #include "core/html/HTMLSourceElement.h"
-#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -63,7 +62,7 @@ public:
         return adoptRefWillBeNoop(new ViewportChangeListener(element));
     }
 
-    virtual void notifyMediaQueryChanged() override
+    void notifyMediaQueryChanged() override
     {
         if (m_element)
             m_element->notifyViewportChanged();
@@ -176,24 +175,25 @@ bool HTMLImageElement::isPresentationAttribute(const QualifiedName& name) const
 
 void HTMLImageElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (name == widthAttr)
+    if (name == widthAttr) {
         addHTMLLengthToStyle(style, CSSPropertyWidth, value);
-    else if (name == heightAttr)
+    } else if (name == heightAttr) {
         addHTMLLengthToStyle(style, CSSPropertyHeight, value);
-    else if (name == borderAttr)
+    } else if (name == borderAttr) {
         applyBorderAttributeToStyle(value, style);
-    else if (name == vspaceAttr) {
+    } else if (name == vspaceAttr) {
         addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
         addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
     } else if (name == hspaceAttr) {
         addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
         addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
-    } else if (name == alignAttr)
+    } else if (name == alignAttr) {
         applyAlignmentAttributeToStyle(value, style);
-    else if (name == valignAttr)
+    } else if (name == valignAttr) {
         addPropertyToPresentationAttributeStyle(style, CSSPropertyVerticalAlign, value);
-    else
+    } else {
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+    }
 }
 
 const AtomicString HTMLImageElement::imageSourceURL() const
@@ -448,7 +448,7 @@ int HTMLImageElement::naturalWidth() const
     if (!imageLoader().image())
         return 0;
 
-    return imageLoader().image()->imageSizeForLayoutObject(layoutObject(), 1.0f, ImageResource::IntrinsicSize).width();
+    return imageLoader().image()->imageSizeForLayoutObject(layoutObject(), m_imageDevicePixelRatio, ImageResource::IntrinsicCorrectedToDPR).width();
 }
 
 int HTMLImageElement::naturalHeight() const
@@ -456,7 +456,7 @@ int HTMLImageElement::naturalHeight() const
     if (!imageLoader().image())
         return 0;
 
-    return imageLoader().image()->imageSizeForLayoutObject(layoutObject(), 1.0f, ImageResource::IntrinsicSize).height();
+    return imageLoader().image()->imageSizeForLayoutObject(layoutObject(), m_imageDevicePixelRatio, ImageResource::IntrinsicCorrectedToDPR).height();
 }
 
 const String& HTMLImageElement::currentSrc() const
@@ -630,12 +630,30 @@ FloatSize HTMLImageElement::defaultDestinationSize() const
     return FloatSize(size);
 }
 
-float HTMLImageElement::sourceSize(Element& element)
+static bool sourceSizeValue(Element& element, Document& currentDocument, float& sourceSize)
 {
     String sizes = element.fastGetAttribute(sizesAttr);
-    if (!sizes.isNull())
-        UseCounter::count(document(), UseCounter::Sizes);
-    return SizesAttributeParser(MediaValuesDynamic::create(document()), sizes).length();
+    bool exists = !sizes.isNull();
+    if (exists)
+        UseCounter::count(currentDocument, UseCounter::Sizes);
+    sourceSize = SizesAttributeParser(MediaValuesDynamic::create(currentDocument), sizes).length();
+    return exists;
+}
+
+FetchRequest::ResourceWidth HTMLImageElement::resourceWidth()
+{
+    FetchRequest::ResourceWidth resourceWidth;
+    resourceWidth.isSet = sourceSizeValue(*this, document(), resourceWidth.width);
+    return resourceWidth;
+}
+
+float HTMLImageElement::sourceSize(Element& element)
+{
+    float value;
+    // We don't care here if the sizes attribute exists, so we ignore the return value.
+    // If it doesn't exist, we just return the default.
+    sourceSizeValue(element, document(), value);
+    return value;
 }
 
 void HTMLImageElement::forceReload() const

@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "base/containers/hash_tables.h"
-#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 
@@ -49,11 +49,11 @@ class MOJO_SYSTEM_IMPL_EXPORT MappingTable {
  private:
   friend bool internal::ShutdownCheckNoLeaks(Core*);
 
-  typedef base::hash_map<uintptr_t, embedder::PlatformSharedBufferMapping*>
-      AddressToMappingMap;
+  using AddressToMappingMap =
+      base::hash_map<uintptr_t, embedder::PlatformSharedBufferMapping*>;
   AddressToMappingMap address_to_mapping_map_;
 
-  DISALLOW_COPY_AND_ASSIGN(MappingTable);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(MappingTable);
 };
 
 }  // namespace system

@@ -10,6 +10,7 @@
 #include "core/paint/BoxPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace blink {
 
@@ -19,9 +20,12 @@ void FieldsetPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, c
         return;
 
     LayoutRect paintRect(paintOffset, m_layoutFieldset.size());
-    LayoutBox* legend = m_layoutFieldset.findLegend();
+    LayoutBox* legend = m_layoutFieldset.findInFlowLegend();
     if (!legend)
         return BoxPainter(m_layoutFieldset).paintBoxDecorationBackground(paintInfo, paintOffset);
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutFieldset, paintInfo.phase))
+        return;
 
     // FIXME: We need to work with "rl" and "bt" block flow directions.  In those
     // cases the legend is embedded in the right and bottom borders respectively.
@@ -36,10 +40,7 @@ void FieldsetPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, c
         paintRect.setX(paintRect.x() + xOff);
     }
 
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFieldset, paintInfo.phase, pixelSnappedIntRect(paintOffset, paintRect.size()));
-    if (recorder.canUseCachedDrawing())
-        return;
-
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFieldset, paintInfo.phase, pixelSnappedIntRect(paintRect));
     BoxDecorationData boxDecorationData(m_layoutFieldset);
 
     if (boxDecorationData.bleedAvoidance == BackgroundBleedNone)
@@ -47,7 +48,7 @@ void FieldsetPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, c
     BoxPainter(m_layoutFieldset).paintFillLayers(paintInfo, boxDecorationData.backgroundColor, m_layoutFieldset.style()->backgroundLayers(), paintRect);
     BoxPainter::paintBoxShadow(paintInfo, paintRect, m_layoutFieldset.styleRef(), Inset);
 
-    if (!boxDecorationData.hasBorder)
+    if (!boxDecorationData.hasBorderDecoration)
         return;
 
     // Create a clipping region around the legend and paint the border as normal
@@ -76,9 +77,12 @@ void FieldsetPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& p
         return;
 
     LayoutRect paintRect = LayoutRect(paintOffset, m_layoutFieldset.size());
-    LayoutBox* legend = m_layoutFieldset.findLegend();
+    LayoutBox* legend = m_layoutFieldset.findInFlowLegend();
     if (!legend)
         return BoxPainter(m_layoutFieldset).paintMask(paintInfo, paintOffset);
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutFieldset, paintInfo.phase))
+        return;
 
     // FIXME: We need to work with "rl" and "bt" block flow directions.  In those
     // cases the legend is embedded in the right and bottom borders respectively.
@@ -93,6 +97,7 @@ void FieldsetPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& p
         paintRect.move(xOff, 0);
     }
 
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFieldset, paintInfo.phase, paintRect);
     BoxPainter(m_layoutFieldset).paintMaskImages(paintInfo, paintRect);
 }
 

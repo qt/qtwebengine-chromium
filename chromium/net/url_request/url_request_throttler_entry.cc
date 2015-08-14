@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
@@ -16,7 +16,6 @@
 #include "net/log/net_log.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_throttler_header_interface.h"
 #include "net/url_request/url_request_throttler_manager.h"
 
 namespace net {
@@ -46,13 +45,9 @@ const double URLRequestThrottlerEntry::kDefaultMultiplyFactor = 1.4;
 const double URLRequestThrottlerEntry::kDefaultJitterFactor = 0.4;
 const int URLRequestThrottlerEntry::kDefaultMaximumBackoffMs = 15 * 60 * 1000;
 const int URLRequestThrottlerEntry::kDefaultEntryLifetimeMs = 2 * 60 * 1000;
-const char URLRequestThrottlerEntry::kExponentialThrottlingHeader[] =
-    "X-Chrome-Exponential-Throttling";
-const char URLRequestThrottlerEntry::kExponentialThrottlingDisableValue[] =
-    "disable";
 
 // Returns NetLog parameters when a request is rejected by throttling.
-base::Value* NetLogRejectedRequestCallback(
+scoped_ptr<base::Value> NetLogRejectedRequestCallback(
     const std::string* url_id,
     int num_failures,
     const base::TimeDelta& release_after,
@@ -62,7 +57,7 @@ base::Value* NetLogRejectedRequestCallback(
   dict->SetInteger("num_failures", num_failures);
   dict->SetInteger("release_after_ms",
                    static_cast<int>(release_after.InMilliseconds()));
-  return dict.release();
+  return dict.Pass();
 }
 
 URLRequestThrottlerEntry::URLRequestThrottlerEntry(
@@ -152,11 +147,9 @@ void URLRequestThrottlerEntry::DetachManager() {
 }
 
 bool URLRequestThrottlerEntry::ShouldRejectRequest(
-    const URLRequest& request,
-    NetworkDelegate* network_delegate) const {
+    const URLRequest& request) const {
   bool reject_request = false;
   if (!is_backoff_disabled_ && !ExplicitUserRequest(request.load_flags()) &&
-      (!network_delegate || network_delegate->CanThrottleRequest(request)) &&
       GetBackoffEntry()->ShouldRejectRequest()) {
     net_log_.AddEvent(
         NetLog::TYPE_THROTTLING_REJECTED_REQUEST,
@@ -222,19 +215,8 @@ base::TimeTicks
   return GetBackoffEntry()->GetReleaseTime();
 }
 
-void URLRequestThrottlerEntry::UpdateWithResponse(
-    const std::string& host,
-    const URLRequestThrottlerHeaderInterface* response) {
-  if (IsConsideredError(response->GetResponseCode())) {
-    GetBackoffEntry()->InformOfRequest(false);
-  } else {
-    GetBackoffEntry()->InformOfRequest(true);
-
-    std::string throttling_header = response->GetNormalizedValue(
-        kExponentialThrottlingHeader);
-    if (!throttling_header.empty())
-      HandleThrottlingHeader(throttling_header, host);
-  }
+void URLRequestThrottlerEntry::UpdateWithResponse(int status_code) {
+  GetBackoffEntry()->InformOfRequest(IsConsideredSuccess(status_code));
 }
 
 void URLRequestThrottlerEntry::ReceivedContentWasMalformed(int response_code) {
@@ -247,7 +229,7 @@ void URLRequestThrottlerEntry::ReceivedContentWasMalformed(int response_code) {
   //
   // We do nothing for a response that is already being considered an error
   // based on its status code (otherwise we would count 3 errors instead of 1).
-  if (!IsConsideredError(response_code)) {
+  if (IsConsideredSuccess(response_code)) {
     GetBackoffEntry()->InformOfRequest(false);
     GetBackoffEntry()->InformOfRequest(false);
   }
@@ -267,7 +249,7 @@ void URLRequestThrottlerEntry::Initialize() {
   backoff_policy_.always_use_initial_delay = false;
 }
 
-bool URLRequestThrottlerEntry::IsConsideredError(int response_code) {
+bool URLRequestThrottlerEntry::IsConsideredSuccess(int response_code) {
   // We throttle only for the status codes most likely to indicate the server
   // is failing because it is too busy or otherwise are likely to be
   // because of DDoS.
@@ -285,23 +267,12 @@ bool URLRequestThrottlerEntry::IsConsideredError(int response_code) {
   // have not made it to the destination server and so we do not actually
   // know that it is down or busy.  One degenerate case could be a proxy on
   // localhost, where you are not actually connected to the network.
-  return (response_code == 500 ||
-          response_code == 503 ||
-          response_code == 509);
+  return !(response_code == 500 || response_code == 503 ||
+           response_code == 509);
 }
 
 base::TimeTicks URLRequestThrottlerEntry::ImplGetTimeNow() const {
   return base::TimeTicks::Now();
-}
-
-void URLRequestThrottlerEntry::HandleThrottlingHeader(
-    const std::string& header_value,
-    const std::string& host) {
-  if (header_value == kExponentialThrottlingDisableValue) {
-    DisableBackoffThrottling();
-    if (manager_)
-      manager_->AddToOptOutList(host);
-  }
 }
 
 const BackoffEntry* URLRequestThrottlerEntry::GetBackoffEntry() const {

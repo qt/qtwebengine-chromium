@@ -36,6 +36,7 @@
 #include "core/dom/Document.h"
 #include "core/loader/DocumentThreadableLoader.h"
 #include "core/loader/WorkerLoaderClientBridgeSyncHelper.h"
+#include "core/timing/WorkerGlobalScopePerformance.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
@@ -57,10 +58,12 @@ WorkerThreadableLoader::WorkerThreadableLoader(WorkerGlobalScope& workerGlobalSc
     , m_workerClientWrapper(clientWrapper)
     , m_bridge(*(new MainThreadBridge(m_workerClientWrapper, clientBridge, workerGlobalScope.thread()->workerLoaderProxy(), request, options, resourceLoaderOptions, workerGlobalScope.referrerPolicy(), workerGlobalScope.url().strippedForUseAsReferrer())))
 {
+    m_workerClientWrapper->setResourceTimingClient(this);
 }
 
 WorkerThreadableLoader::~WorkerThreadableLoader()
 {
+    m_workerClientWrapper->clearResourceTimingClient();
     m_bridge.destroy();
 }
 
@@ -76,7 +79,7 @@ void WorkerThreadableLoader::loadResourceSynchronously(WorkerGlobalScope& worker
     events.append(loaderDone.get());
 
     RefPtr<ThreadableLoaderClientWrapper> clientWrapper(ThreadableLoaderClientWrapper::create(&client));
-    OwnPtr<WorkerLoaderClientBridgeSyncHelper> clientBridge(WorkerLoaderClientBridgeSyncHelper::create(client, loaderDone.release()));
+    OwnPtr<WorkerLoaderClientBridgeSyncHelper> clientBridge(WorkerLoaderClientBridgeSyncHelper::create(clientWrapper.get(), loaderDone.release()));
 
     // This must be valid while loader is around.
     WorkerLoaderClientBridgeSyncHelper* clientBridgePtr = clientBridge.get();
@@ -104,6 +107,11 @@ void WorkerThreadableLoader::overrideTimeout(unsigned long timeoutMilliseconds)
 void WorkerThreadableLoader::cancel()
 {
     m_bridge.cancel();
+}
+
+void WorkerThreadableLoader::didReceiveResourceTiming(const ResourceTimingInfo& info)
+{
+    WorkerGlobalScopePerformance::performance(*m_workerGlobalScope)->addResourceTiming(info);
 }
 
 WorkerThreadableLoader::MainThreadBridge::MainThreadBridge(
@@ -193,7 +201,7 @@ void WorkerThreadableLoader::MainThreadBridge::cancel()
 {
     m_loaderProxy->postTaskToLoader(
         createCrossThreadTask(&MainThreadBridge::mainThreadCancel, this));
-    ThreadableLoaderClientWrapper* clientWrapper = m_workerClientWrapper.get();
+    RefPtr<ThreadableLoaderClientWrapper> clientWrapper = m_workerClientWrapper;
     if (!clientWrapper->done()) {
         // If the client hasn't reached a termination state, then transition it by sending a cancellation error.
         // Note: no more client callbacks will be done after this method -- the clearClientWrapper() call ensures that.
@@ -201,7 +209,12 @@ void WorkerThreadableLoader::MainThreadBridge::cancel()
         error.setIsCancellation(true);
         clientWrapper->didFail(error);
     }
-    clearClientWrapper();
+    // |this| might be already destructed here because didFail() might
+    // clear a reference to ThreadableLoader, which might destruct
+    // WorkerThreadableLoader and then MainThreadBridge.
+    // Therefore we call clearClient() directly, rather than calling
+    // this->clearClientWrapper().
+    clientWrapper->clearClient();
 }
 
 void WorkerThreadableLoader::MainThreadBridge::clearClientWrapper()
@@ -252,6 +265,11 @@ void WorkerThreadableLoader::MainThreadBridge::didFailAccessControlCheck(const R
 void WorkerThreadableLoader::MainThreadBridge::didFailRedirectCheck()
 {
     m_clientBridge->didFailRedirectCheck();
+}
+
+void WorkerThreadableLoader::MainThreadBridge::didReceiveResourceTiming(const ResourceTimingInfo& info)
+{
+    m_clientBridge->didReceiveResourceTiming(info);
 }
 
 } // namespace blink

@@ -94,6 +94,10 @@ class RecordInfo {
   bool IsNonNewable();
   bool IsOnlyPlacementNewable();
   bool IsGCMixinInstance();
+  bool IsEagerlyFinalized();
+
+  bool HasDefinition();
+
   clang::CXXMethodDecl* DeclaresNewOperator();
 
   bool RequiresTraceMethod();
@@ -132,6 +136,7 @@ class RecordInfo {
   CachedBool does_need_finalization_;
   CachedBool has_gc_mixin_methods_;
   CachedBool is_declaring_local_trace_;
+  CachedBool is_eagerly_finalized_;
 
   bool determined_trace_methods_;
   clang::CXXMethodDecl* trace_method_;

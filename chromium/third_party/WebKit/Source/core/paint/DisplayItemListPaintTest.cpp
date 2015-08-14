@@ -26,12 +26,13 @@ namespace blink {
 class DisplayItemListPaintTest : public RenderingTest {
 public:
     DisplayItemListPaintTest()
-        : m_layoutView(nullptr) { }
+        : m_layoutView(nullptr)
+        , m_originalSlimmingPaintEnabled(RuntimeEnabledFeatures::slimmingPaintEnabled()) { }
 
 protected:
     LayoutView& layoutView() { return *m_layoutView; }
     DisplayItemList& rootDisplayItemList() { return *layoutView().layer()->graphicsLayerBacking()->displayItemList(); }
-    const Vector<OwnPtr<DisplayItem>>& newPaintListBeforeUpdate() { return rootDisplayItemList().m_newDisplayItems; }
+    const DisplayItems& newPaintListBeforeUpdate() { return rootDisplayItemList().m_newDisplayItems; }
 
 private:
     virtual void SetUp() override
@@ -47,10 +48,11 @@ private:
 
     virtual void TearDown() override
     {
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(false);
+        RuntimeEnabledFeatures::setSlimmingPaintEnabled(m_originalSlimmingPaintEnabled);
     }
 
     LayoutView* m_layoutView;
+    bool m_originalSlimmingPaintEnabled;
 };
 
 class TestDisplayItem : public DisplayItem {
@@ -76,9 +78,9 @@ public:
             break; \
         const TestDisplayItem expected[] = { __VA_ARGS__ }; \
         for (size_t index = 0; index < std::min<size_t>(actual.size(), expectedSize); index++) { \
-            TRACE_DISPLAY_ITEMS(index, expected[index], *actual[index]); \
-            EXPECT_EQ(expected[index].client(), actual[index]->client()); \
-            EXPECT_EQ(expected[index].type(), actual[index]->type()); \
+            TRACE_DISPLAY_ITEMS(index, expected[index], *actual.elementAt(index)); \
+            EXPECT_EQ(expected[index].client(), actual.elementAt(index)->client()); \
+            EXPECT_EQ(expected[index].type(), actual.elementAt(index)->type()); \
         } \
     } while (false);
 
@@ -89,7 +91,6 @@ TEST_F(DisplayItemListPaintTest, FullDocumentPaintingWithCaret)
     document().page()->focusController().setFocused(true);
     LayoutView& layoutView = *document().layoutView();
     DeprecatedPaintLayer& rootLayer = *layoutView.layer();
-    LayoutObject& htmlLayoutObject = *document().documentElement()->layoutObject();
     Element& div = *toElement(document().body()->firstChild());
     LayoutObject& divLayoutObject = *document().body()->firstChild()->layoutObject();
     InlineTextBox& textInlineBox = *toLayoutText(div.firstChild()->layoutObject())->firstTextBox();
@@ -100,19 +101,19 @@ TEST_F(DisplayItemListPaintTest, FullDocumentPaintingWithCaret)
     rootDisplayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(rootDisplayItemList().displayItems(), 2,
-        TestDisplayItem(htmlLayoutObject, DisplayItem::BoxDecorationBackground),
+        TestDisplayItem(layoutView, DisplayItem::BoxDecorationBackground),
         TestDisplayItem(textInlineBox, DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground)));
 
     div.focus();
-    document().view()->updateLayoutAndStyleForPainting();
-    EXPECT_TRUE(rootDisplayItemList().clientCacheIsValid(htmlLayoutObject.displayItemClient()));
+    document().view()->updateAllLifecyclePhases();
+    EXPECT_TRUE(rootDisplayItemList().clientCacheIsValid(layoutView.displayItemClient()));
     EXPECT_FALSE(rootDisplayItemList().clientCacheIsValid(divLayoutObject.displayItemClient()));
     EXPECT_TRUE(rootDisplayItemList().clientCacheIsValid(textInlineBox.displayItemClient()));
     DeprecatedPaintLayerPainter(rootLayer).paintLayerContents(&context, paintingInfo, PaintLayerPaintingCompositingAllPhases);
     rootDisplayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(rootDisplayItemList().displayItems(), 3,
-        TestDisplayItem(htmlLayoutObject, DisplayItem::BoxDecorationBackground),
+        TestDisplayItem(layoutView, DisplayItem::BoxDecorationBackground),
         TestDisplayItem(textInlineBox, DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground)),
         TestDisplayItem(divLayoutObject, DisplayItem::Caret)); // New!
 }
@@ -122,7 +123,6 @@ TEST_F(DisplayItemListPaintTest, InlineRelayout)
     setBodyInnerHTML("<div id='div' style='width:100px; height: 200px'>AAAAAAAAAA BBBBBBBBBB</div>");
     LayoutView& layoutView = *document().layoutView();
     DeprecatedPaintLayer& rootLayer = *layoutView.layer();
-    LayoutObject& htmlObject = *document().documentElement()->layoutObject();
     Element& div = *toElement(document().body()->firstChild());
     LayoutBlock& divBlock = *toLayoutBlock(document().body()->firstChild()->layoutObject());
     LayoutText& text = *toLayoutText(divBlock.firstChild());
@@ -135,12 +135,12 @@ TEST_F(DisplayItemListPaintTest, InlineRelayout)
     rootDisplayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(rootDisplayItemList().displayItems(), 2,
-        TestDisplayItem(htmlObject, DisplayItem::BoxDecorationBackground),
+        TestDisplayItem(layoutView, DisplayItem::BoxDecorationBackground),
         TestDisplayItem(firstTextBox, DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground)));
 
     div.setAttribute(HTMLNames::styleAttr, "width: 10px; height: 200px");
-    document().view()->updateLayoutAndStyleForPainting();
-    EXPECT_TRUE(rootDisplayItemList().clientCacheIsValid(htmlObject.displayItemClient()));
+    document().view()->updateAllLifecyclePhases();
+    EXPECT_TRUE(rootDisplayItemList().clientCacheIsValid(layoutView.displayItemClient()));
     EXPECT_FALSE(rootDisplayItemList().clientCacheIsValid(divBlock.displayItemClient()));
     EXPECT_FALSE(rootDisplayItemList().clientCacheIsValid(firstTextBoxDisplayItemClient));
     DeprecatedPaintLayerPainter(rootLayer).paintLayerContents(&context, paintingInfo, PaintLayerPaintingCompositingAllPhases);
@@ -151,7 +151,7 @@ TEST_F(DisplayItemListPaintTest, InlineRelayout)
     InlineTextBox& secondTextBox = *newText.firstTextBox()->nextTextBox();
 
     EXPECT_DISPLAY_LIST(rootDisplayItemList().displayItems(), 3,
-        TestDisplayItem(htmlObject, DisplayItem::BoxDecorationBackground),
+        TestDisplayItem(layoutView, DisplayItem::BoxDecorationBackground),
         TestDisplayItem(newFirstTextBox, DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground)),
         TestDisplayItem(secondTextBox, DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground)));
 }

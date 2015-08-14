@@ -189,7 +189,8 @@ struct MidiDeviceInfo final {
         product_name(AsString16(caps.szPname)),
         usb_vendor_id(ExtractUsbVendorIdIfExists(caps)),
         usb_product_id(ExtractUsbProductIdIfExists(caps)),
-        is_usb_device(IsUsbDevice(caps)) {}
+        is_usb_device(IsUsbDevice(caps)),
+        is_software_synth(false) {}
   explicit MidiDeviceInfo(const MIDIOUTCAPS2W& caps)
       : manufacturer_id(caps.wMid),
         product_id(caps.wPid),
@@ -197,7 +198,8 @@ struct MidiDeviceInfo final {
         product_name(AsString16(caps.szPname)),
         usb_vendor_id(ExtractUsbVendorIdIfExists(caps)),
         usb_product_id(ExtractUsbProductIdIfExists(caps)),
-        is_usb_device(IsUsbDevice(caps)) {}
+        is_usb_device(IsUsbDevice(caps)),
+        is_software_synth(IsSoftwareSynth(caps)) {}
   explicit MidiDeviceInfo(const MidiDeviceInfo& info)
       : manufacturer_id(info.manufacturer_id),
         product_id(info.product_id),
@@ -205,7 +207,8 @@ struct MidiDeviceInfo final {
         product_name(info.product_name),
         usb_vendor_id(info.usb_vendor_id),
         usb_product_id(info.usb_product_id),
-        is_usb_device(info.is_usb_device) {}
+        is_usb_device(info.is_usb_device),
+        is_software_synth(info.is_software_synth) {}
   // Currently only following entities are considered when testing the equality
   // of two MIDI devices.
   // TODO(toyoshim): Consider to calculate MIDIPort.id here and use it as the
@@ -217,6 +220,7 @@ struct MidiDeviceInfo final {
   const uint16 usb_vendor_id;
   const uint16 usb_product_id;
   const bool is_usb_device;
+  const bool is_software_synth;
 
   // Required to be used as the key of base::hash_map.
   bool operator==(const MidiDeviceInfo& that) const {
@@ -260,6 +264,9 @@ struct MidiDeviceInfo final {
     return IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid) &&
            IS_COMPATIBLE_USBAUDIO_PID(&caps.ProductGuid);
   }
+  static bool IsSoftwareSynth(const MIDIOUTCAPS2W& caps) {
+    return caps.wTechnology == MOD_SWSYNTH;
+  }
   static uint16 ExtractUsbVendorIdIfExists(const MIDIINCAPS2W& caps) {
     if (!IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid))
       return 0;
@@ -298,7 +305,7 @@ std::string GetManufacturerName(const MidiDeviceInfo& info) {
 }
 
 bool IsUnsupportedDevice(const MidiDeviceInfo& info) {
-  return info.manufacturer_id == MM_MICROSOFT &&
+  return info.is_software_synth && info.manufacturer_id == MM_MICROSOFT &&
          (info.product_id == MM_MSFT_WDMAUDIO_MIDIOUT ||
           info.product_id == MM_MSFT_GENERIC_MIDISYNTH);
 }
@@ -489,7 +496,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
     task_thread_.message_loop()->PostTask(
         FROM_HERE,
         base::Bind(&MidiServiceWinImpl::CompleteInitializationOnTaskThread,
-                   base::Unretained(this), MIDI_OK));
+                   base::Unretained(this), Result::OK));
   }
 
   void SendMidiDataAsync(uint32 port_number,
@@ -1033,7 +1040,7 @@ class MidiServiceWinImpl : public MidiServiceWin,
     state->start_time_initialized = true;
   }
 
-  void CompleteInitializationOnTaskThread(MidiResult result) {
+  void CompleteInitializationOnTaskThread(Result result) {
     AssertOnTaskThread();
     delegate_->OnCompleteInitialization(result);
   }
@@ -1139,7 +1146,7 @@ void MidiManagerWin::DispatchSendMidiData(MidiManagerClient* client,
   client->AccumulateMidiBytesSent(data.size());
 }
 
-void MidiManagerWin::OnCompleteInitialization(MidiResult result) {
+void MidiManagerWin::OnCompleteInitialization(Result result) {
   CompleteInitialization(result);
 }
 

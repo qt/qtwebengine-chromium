@@ -36,6 +36,7 @@
 #include "core/dom/Range.h"
 #include "core/dom/RenderedDocumentMarker.h"
 #include "core/dom/Text.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include "wtf/PassRefPtr.h"
@@ -43,13 +44,11 @@
 #include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class DocumentMarkerControllerTest : public ::testing::Test {
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
 
     Document& document() const { return *m_document; }
     DocumentMarkerController& markerController() const { return m_document->markers(); }
@@ -80,8 +79,8 @@ void DocumentMarkerControllerTest::markNodeContents(PassRefPtrWillBeRawPtr<Node>
     // Force layoutObjects to be created; TextIterator, which is used in
     // DocumentMarkerControllerTest::addMarker(), needs them.
     document().updateLayout();
-    RefPtrWillBeRawPtr<Range> range = rangeOfContents(node.get());
-    markerController().addMarker(range.get(), DocumentMarker::Spelling);
+    auto range = EphemeralRange::rangeOfContents(*node);
+    markerController().addMarker(range.startPosition(), range.endPosition(), DocumentMarker::Spelling);
 }
 
 void DocumentMarkerControllerTest::setBodyInnerHTML(const char* bodyContent)
@@ -219,4 +218,4 @@ TEST_F(DocumentMarkerControllerTest, UpdateRenderedRects)
     EXPECT_NE(renderedRects[0], newRenderedRects[0]);
 }
 
-}
+} // namespace blink

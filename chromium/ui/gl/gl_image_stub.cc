@@ -4,6 +4,8 @@
 
 #include "ui/gl/gl_image_stub.h"
 
+#include <GL/gl.h>
+
 namespace gfx {
 
 GLImageStub::GLImageStub() {}
@@ -12,9 +14,15 @@ GLImageStub::~GLImageStub() {}
 
 gfx::Size GLImageStub::GetSize() { return gfx::Size(1, 1); }
 
+unsigned GLImageStub::GetInternalFormat() { return GL_RGBA; }
+
 bool GLImageStub::BindTexImage(unsigned target) { return true; }
 
-bool GLImageStub::CopyTexImage(unsigned target) { return true; }
+bool GLImageStub::CopyTexSubImage(unsigned target,
+                                  const Point& offset,
+                                  const Rect& rect) {
+  return true;
+}
 
 bool GLImageStub::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                        int z_order,

@@ -13,6 +13,7 @@
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/scoped_make_current.h"
 
 namespace content {
@@ -41,17 +42,9 @@ bool StreamTexture::Create(
         new StreamTexture(owner_stub, stream_id, texture->service_id()));
     gfx::Size size = gl_image->GetSize();
     texture_manager->SetTarget(texture, GL_TEXTURE_EXTERNAL_OES);
-    texture_manager->SetLevelInfo(texture,
-                                  GL_TEXTURE_EXTERNAL_OES,
-                                  0,
-                                  GL_RGBA,
-                                  size.width(),
-                                  size.height(),
-                                  1,
-                                  0,
-                                  GL_RGBA,
-                                  GL_UNSIGNED_BYTE,
-                                  true);
+    texture_manager->SetLevelInfo(texture, GL_TEXTURE_EXTERNAL_OES, 0, GL_RGBA,
+                                  size.width(), size.height(), 1, 0, GL_RGBA,
+                                  GL_UNSIGNED_BYTE, gfx::Rect(size));
     texture_manager->SetLevelImage(
         texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image.get());
     return true;
@@ -165,6 +158,10 @@ gfx::Size StreamTexture::GetSize() {
   return size_;
 }
 
+unsigned StreamTexture::GetInternalFormat() {
+  return GL_RGBA;
+}
+
 bool StreamTexture::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(StreamTexture, message)
@@ -202,7 +199,9 @@ void StreamTexture::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
-bool StreamTexture::CopyTexImage(unsigned target) {
+bool StreamTexture::CopyTexSubImage(unsigned target,
+                                    const gfx::Point& offset,
+                                    const gfx::Rect& rect) {
   return false;
 }
 

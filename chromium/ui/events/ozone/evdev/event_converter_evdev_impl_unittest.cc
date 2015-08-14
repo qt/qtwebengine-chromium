@@ -36,9 +36,9 @@ class MockEventConverterEvdevImpl : public EventConverterEvdevImpl {
                                 EventDeviceInfo(),
                                 cursor,
                                 dispatcher) {
-    Start();
+    SetEnabled(true);
   }
-  ~MockEventConverterEvdevImpl() override {}
+  ~MockEventConverterEvdevImpl() override { SetEnabled(false); }
 
   // EventConverterEvdevImpl:
   bool HasKeyboard() const override { return true; }
@@ -141,7 +141,7 @@ class EventConverterEvdevImplTest : public testing::Test {
  private:
   void DispatchEventForTest(ui::Event* event) {
     scoped_ptr<ui::Event> cloned_event = ui::Event::Clone(*event);
-    dispatched_events_.push_back(cloned_event.release());
+    dispatched_events_.push_back(cloned_event.Pass());
   }
 
   base::MessageLoopForUI ui_loop_;
@@ -541,6 +541,30 @@ TEST_F(EventConverterEvdevImplTest, ShouldReleaseKeysOnSynDropped) {
   EXPECT_EQ(ui::VKEY_A, event->key_code());
 }
 
+TEST_F(EventConverterEvdevImplTest, ShouldReleaseKeysOnDisable) {
+  ui::MockEventConverterEvdevImpl* dev = device();
+
+  struct input_event mock_kernel_queue[] = {
+      {{0, 0}, EV_KEY, KEY_A, 1},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+  };
+
+  dev->ProcessEvents(mock_kernel_queue, arraysize(mock_kernel_queue));
+  EXPECT_EQ(1u, size());
+
+  dev->SetEnabled(false);
+  EXPECT_EQ(2u, size());
+
+  ui::KeyEvent* event = dispatched_event(0);
+  EXPECT_EQ(ui::ET_KEY_PRESSED, event->type());
+  EXPECT_EQ(ui::VKEY_A, event->key_code());
+
+  event = dispatched_event(1);
+  EXPECT_EQ(ui::ET_KEY_RELEASED, event->type());
+  EXPECT_EQ(ui::VKEY_A, event->key_code());
+}
+
+
 // Test that SetAllowedKeys() causes events for non-allowed keys to be dropped.
 TEST_F(EventConverterEvdevImplTest, SetAllowedKeys) {
   ui::MockEventConverterEvdevImpl* dev = device();
@@ -575,9 +599,9 @@ TEST_F(EventConverterEvdevImplTest, SetAllowedKeys) {
   EXPECT_EQ(ui::VKEY_POWER, event->key_code());
 
   ClearDispatchedEvents();
-  scoped_ptr<std::set<ui::DomCode>> allowed_keys(new std::set<ui::DomCode>);
-  allowed_keys->insert(ui::DomCode::POWER);
-  dev->SetAllowedKeys(allowed_keys.Pass());
+  std::vector<ui::DomCode> allowed_keys;
+  allowed_keys.push_back(ui::DomCode::POWER);
+  dev->SetKeyFilter(true /* enable_filter */, allowed_keys);
   dev->ProcessEvents(mock_kernel_queue, arraysize(mock_kernel_queue));
 
   ASSERT_EQ(2u, size());
@@ -589,7 +613,7 @@ TEST_F(EventConverterEvdevImplTest, SetAllowedKeys) {
   EXPECT_EQ(ui::VKEY_POWER, event->key_code());
 
   ClearDispatchedEvents();
-  dev->AllowAllKeys();
+  dev->SetKeyFilter(false /* enable_filter */, std::vector<ui::DomCode>());
   dev->ProcessEvents(mock_kernel_queue, arraysize(mock_kernel_queue));
 
   event = dispatched_event(0);
@@ -628,8 +652,8 @@ TEST_F(EventConverterEvdevImplTest, SetAllowedKeysBlockedKeyPressed) {
   // Block all key events. Calling SetAllowKeys() should dispatch a synthetic
   // key release for VKEY_A.
   ClearDispatchedEvents();
-  scoped_ptr<std::set<ui::DomCode>> allowed_keys(new std::set<ui::DomCode>);
-  dev->SetAllowedKeys(allowed_keys.Pass());
+  std::vector<ui::DomCode> allowed_keys;
+  dev->SetKeyFilter(true /* enable_filter */, allowed_keys);
   ASSERT_EQ(1u, size());
   event = dispatched_event(0);
   EXPECT_EQ(ui::ET_KEY_RELEASED, event->type());

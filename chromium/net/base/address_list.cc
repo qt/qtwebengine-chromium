@@ -14,8 +14,9 @@ namespace net {
 
 namespace {
 
-base::Value* NetLogAddressListCallback(const AddressList* address_list,
-                                       NetLogCaptureMode capture_mode) {
+scoped_ptr<base::Value> NetLogAddressListCallback(
+    const AddressList* address_list,
+    NetLogCaptureMode capture_mode) {
   scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   scoped_ptr<base::ListValue> list(new base::ListValue());
 
@@ -25,7 +26,7 @@ base::Value* NetLogAddressListCallback(const AddressList* address_list,
   }
 
   dict->Set("address_list", list.Pass());
-  return dict.release();
+  return dict.Pass();
 }
 
 }  // namespace
@@ -40,7 +41,7 @@ AddressList::AddressList(const IPEndPoint& endpoint) {
 
 // static
 AddressList AddressList::CreateFromIPAddress(const IPAddressNumber& address,
-                                             uint16 port) {
+                                             uint16_t port) {
   return AddressList(IPEndPoint(address, port));
 }
 
@@ -75,7 +76,7 @@ AddressList AddressList::CreateFromAddrinfo(const struct addrinfo* head) {
 }
 
 // static
-AddressList AddressList::CopyWithPort(const AddressList& list, uint16 port) {
+AddressList AddressList::CopyWithPort(const AddressList& list, uint16_t port) {
   AddressList out;
   out.set_canonical_name(list.canonical_name());
   for (size_t i = 0; i < list.size(); ++i)

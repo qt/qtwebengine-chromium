@@ -28,8 +28,8 @@ void WebRtcIlbcfix_CbMemEnergyCalc(
     int16_t *ppo,   /* (i) input pointer 2 */
     int16_t *energyW16,  /* (o) Energy in the CB vectors */
     int16_t *energyShifts, /* (o) Shift value of the energy */
-    int16_t scale,   /* (i) The scaling of all energy values */
-    int16_t base_size  /* (i) Index to where the energy values should be stored */
+    int scale,   /* (i) The scaling of all energy values */
+    int16_t base_size  /* (i) Index to where energy values should be stored */
                                    )
 {
   int16_t j,shft;
@@ -41,7 +41,7 @@ void WebRtcIlbcfix_CbMemEnergyCalc(
   eSh_ptr  = &energyShifts[1+base_size];
   eW16_ptr = &energyW16[1+base_size];
 
-  for(j=0;j<range-1;j++) {
+  for (j = 0; j + 1 < range; j++) {
 
     /* Calculate next energy by a +/-
        operation on the edge samples */

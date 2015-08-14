@@ -29,37 +29,26 @@ enum class WebPresentationSessionState;
 class Presentation final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>
     , public DOMWindowProperty {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<Presentation>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Presentation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Presentation);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static Presentation* create(LocalFrame*);
-    virtual ~Presentation();
+    ~Presentation() override;
 
     // EventTarget implementation.
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     DECLARE_VIRTUAL_TRACE();
 
     PresentationSession* session() const;
 
-    ScriptPromise startSession(ScriptState*, const String& presentationUrl, const String& presentationId);
+    ScriptPromise startSession(ScriptState*, const String& presentationUrl);
     ScriptPromise joinSession(ScriptState*, const String& presentationUrl, const String& presentationId);
+    ScriptPromise getAvailability(ScriptState*, const String& presentationUrl);
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(availablechange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(defaultsessionstart);
-
-    // The embedder needs to keep track if anything is listening to the event so it could stop the
-    // might be expensive screen discovery process.
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture) override;
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture) override;
-    virtual void removeAllEventListeners() override;
-
-    // Called when the |availablechange| event needs to be fired.
-    void didChangeAvailability(bool available);
-    // Queried by the controller if |availablechange| event has any listeners.
-    bool isAvailableChangeWatched() const;
 
     // Called when the |defaultsessionstart| event needs to be fired.
     void didStartDefaultSession(PresentationSession*);
@@ -69,16 +58,13 @@ public:
 
     // Called when the |onmessage| event needs to be fired to the right session.
     void didReceiveSessionTextMessage(WebPresentationSessionClient*, const String& message);
+    void didReceiveSessionBinaryMessage(WebPresentationSessionClient*, const uint8_t* data, size_t length);
 
     // Adds a session to the open sessions list.
     void registerSession(PresentationSession*);
 
 private:
     explicit Presentation(LocalFrame*);
-
-    // Returns the |PresentationController| object associated with the frame |Presentation| corresponds to.
-    // Can return |nullptr| if the frame is detached from the document.
-    PresentationController* presentationController();
 
     // Returns the session that matches the WebPresentationSessionClient or null.
     PresentationSession* findSession(WebPresentationSessionClient*);

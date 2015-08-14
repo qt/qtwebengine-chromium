@@ -49,6 +49,7 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/FormController.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutListBox.h"
@@ -56,7 +57,6 @@
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/AutoscrollController.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "platform/PlatformMouseEvent.h"
@@ -85,6 +85,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     , m_suggestedIndex(-1)
     , m_isAutofilledByPreview(false)
 {
+    setHasCustomStyleCallbacks();
 }
 
 PassRefPtrWillBeRawPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document)
@@ -180,9 +181,9 @@ bool HTMLSelectElement::valueMissing() const
 
 void HTMLSelectElement::listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow)
 {
-    if (!multiple())
+    if (!multiple()) {
         optionSelectedByUser(listToOptionIndex(listIndex), fireOnChangeNow, false);
-    else {
+    } else {
         updateSelectedState(listIndex, allowMultiplySelections, shift);
         setNeedsValidityCheck();
         if (fireOnChangeNow)
@@ -328,17 +329,17 @@ bool HTMLSelectElement::isPresentationAttribute(const QualifiedName& name) const
 void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == sizeAttr) {
-        int oldSize = m_size;
+        unsigned oldSize = m_size;
         // Set the attribute value to a number.
         // This is important since the style rules for this attribute can determine the appearance property.
-        int size = value.toInt();
+        unsigned size = value.string().toUInt();
         AtomicString attrSize = AtomicString::number(size);
         if (attrSize != value) {
             // FIXME: This is horribly factored.
             if (Attribute* sizeAttribute = ensureUniqueElementData().attributes().find(sizeAttr))
                 sizeAttribute->setValue(attrSize);
         }
-        size = std::max(size, 0);
+        size = std::max(size, 0u);
 
         // Ensure that we've determined selectedness of the items at least once prior to changing the size.
         if (oldSize != size)
@@ -350,9 +351,9 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
             lazyReattachIfAttached();
             setRecalcListItems();
         }
-    } else if (name == multipleAttr)
+    } else if (name == multipleAttr) {
         parseMultipleAttribute(value);
-    else if (name == accesskeyAttr) {
+    } else if (name == accesskeyAttr) {
         // FIXME: ignore for the moment.
         //
     } else if (name == disabledAttr) {
@@ -364,8 +365,9 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
             }
         }
 
-    } else
+    } else {
         HTMLFormControlElementWithState::parseAttribute(name, value);
+    }
 }
 
 bool HTMLSelectElement::shouldShowFocusRingOnMouseFocus() const
@@ -442,9 +444,9 @@ void HTMLSelectElement::setMultiple(bool multiple)
         setSelectedIndex(oldSelectedIndex);
 }
 
-void HTMLSelectElement::setSize(int size)
+void HTMLSelectElement::setSize(unsigned size)
 {
-    setIntegralAttribute(sizeAttr, size);
+    setUnsignedIntegralAttribute(sizeAttr, size);
 }
 
 Element* HTMLSelectElement::namedItem(const AtomicString& name)
@@ -644,10 +646,7 @@ void HTMLSelectElement::setActiveSelectionAnchorIndex(int index)
 
 void HTMLSelectElement::setActiveSelectionEndIndex(int index)
 {
-    if (index == m_activeSelectionEndIndex)
-        return;
     m_activeSelectionEndIndex = index;
-    setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Control));
 }
 
 void HTMLSelectElement::updateListBoxSelection(bool deselectOtherOptions, bool scroll)
@@ -743,9 +742,9 @@ void HTMLSelectElement::setOptionsChangedOnLayoutObject()
 
 const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& HTMLSelectElement::listItems() const
 {
-    if (m_shouldRecalcListItems)
+    if (m_shouldRecalcListItems) {
         recalcListItems();
-    else {
+    } else {
 #if ENABLE(ASSERT)
         WillBeHeapVector<RawPtrWillBeMember<HTMLElement>> items = m_listItems;
         recalcListItems(false);
@@ -1170,8 +1169,9 @@ void HTMLSelectElement::resetImpl()
                 selectedOption->setSelectedState(false);
             toHTMLOptionElement(element)->setSelectedState(true);
             selectedOption = toHTMLOptionElement(element);
-        } else
+        } else {
             toHTMLOptionElement(element)->setSelectedState(false);
+        }
 
         if (!firstOption)
             firstOption = toHTMLOptionElement(element);
@@ -1181,7 +1181,6 @@ void HTMLSelectElement::resetImpl()
         firstOption->setSelectedState(true);
 
     setOptionsChangedOnLayoutObject();
-    setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ControlValue));
     setNeedsValidityCheck();
 }
 
@@ -1307,9 +1306,9 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         focus();
         if (layoutObject() && layoutObject()->isMenuList() && !isDisabledFormControl()) {
             if (LayoutMenuList* menuList = toLayoutMenuList(layoutObject())) {
-                if (menuList->popupIsVisible())
+                if (menuList->popupIsVisible()) {
                     menuList->hidePopup();
-                else {
+                } else {
                     // Save the selection so it can be compared to the new
                     // selection when we call onChange during selectOption,
                     // which gets called from LayoutMenuList::valueChanged,
@@ -1537,10 +1536,11 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             handled = true;
         }
 
-        if (isSpatialNavigationEnabled(document().frame()))
+        if (isSpatialNavigationEnabled(document().frame())) {
             // Check if the selection moves to the boundary.
             if (keyIdentifier == "Left" || keyIdentifier == "Right" || ((keyIdentifier == "Down" || keyIdentifier == "Up") && endIndex == m_activeSelectionEndIndex))
                 return;
+        }
 
         if (endIndex >= 0 && handled) {
             // Save the selection so it can be compared to the new selection
@@ -1567,8 +1567,9 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             if (selectNewItem) {
                 updateListBoxSelection(deselectOthers);
                 listBoxOnChange();
-            } else
+            } else {
                 scrollToSelection();
+            }
 
             event->setDefaultHandled();
         }
@@ -1749,6 +1750,16 @@ DEFINE_TRACE(HTMLSelectElement)
     visitor->trace(m_listItems);
 #endif
     HTMLFormControlElementWithState::trace(visitor);
+}
+
+void HTMLSelectElement::willRecalcStyle(StyleRecalcChange change)
+{
+    // recalcListItems will update the selected state of the <option> elements
+    // in this <select> so we need to do it before we recalc their style so they
+    // match the right selectors (ex. :checked).
+    // TODO(esprehn): Find a way to avoid needing a willRecalcStyle callback.
+    if (m_shouldRecalcListItems)
+        recalcListItems();
 }
 
 void HTMLSelectElement::didAddUserAgentShadowRoot(ShadowRoot& root)

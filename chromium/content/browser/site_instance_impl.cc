@@ -341,12 +341,19 @@ void SiteInstanceImpl::RenderProcessHostDestroyed(RenderProcessHost* host) {
 }
 
 void SiteInstanceImpl::LockToOrigin() {
-  // We currently only restrict this process to a particular site if the
-  // --enable-strict-site-isolation or --site-per-process flags are present.
+  // We currently only restrict this process to a particular site if --site-per-
+  // process flag is present.
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableStrictSiteIsolation) ||
-      command_line.HasSwitch(switches::kSitePerProcess)) {
+  if (command_line.HasSwitch(switches::kSitePerProcess)) {
+    // Guest processes cannot be locked to its site because guests always have
+    // a fixed SiteInstance. The site of GURLs a guest loads doesn't match that
+    // SiteInstance. So we skip locking the guest process to the site.
+    // TODO(ncarter): Remove this exclusion once we can make origin lock per
+    // RenderFrame routing id.
+    if (site_.SchemeIs(content::kGuestScheme))
+      return;
+
     ChildProcessSecurityPolicyImpl* policy =
         ChildProcessSecurityPolicyImpl::GetInstance();
     policy->LockToOrigin(process_->GetID(), site_);

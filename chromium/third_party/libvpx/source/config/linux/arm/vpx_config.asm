@@ -23,7 +23,6 @@
 .equ HAVE_AVX2 ,  0
 .equ HAVE_VPX_PORTS ,  1
 .equ HAVE_STDINT_H ,  1
-.equ HAVE_ALT_TREE_LAYOUT ,  0
 .equ HAVE_PTHREAD_H ,  1
 .equ HAVE_SYS_MMAN_H ,  1
 .equ HAVE_UNISTD_H ,  0

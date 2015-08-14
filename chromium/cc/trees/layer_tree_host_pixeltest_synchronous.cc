@@ -21,6 +21,8 @@ class LayerTreeHostSynchronousPixelTest : public LayerTreePixelTest {
   void InitializeSettings(LayerTreeSettings* settings) override {
     LayerTreePixelTest::InitializeSettings(settings);
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void BeginTest() override {
@@ -36,7 +38,8 @@ TEST_F(LayerTreeHostSynchronousPixelTest, OneContentLayer) {
   SkPaint green_paint;
   green_paint.setColor(SkColorSetARGB(255, 0, 255, 0));
   client.add_draw_rect(gfx::RectF(bounds), green_paint);
-  scoped_refptr<PictureLayer> root = PictureLayer::Create(&client);
+  scoped_refptr<PictureLayer> root =
+      PictureLayer::Create(layer_settings(), &client);
   root->SetBounds(bounds);
   root->SetIsDrawable(true);
 
@@ -66,7 +69,8 @@ TEST_F(LayerTreeHostSynchronousGPUPixelTest, OneContentLayer) {
   SkPaint green_paint;
   green_paint.setColor(SkColorSetARGB(255, 0, 255, 0));
   client.add_draw_rect(gfx::RectF(bounds), green_paint);
-  scoped_refptr<PictureLayer> root = PictureLayer::Create(&client);
+  scoped_refptr<PictureLayer> root =
+      PictureLayer::Create(layer_settings(), &client);
   root->SetBounds(bounds);
   root->SetIsDrawable(true);
 

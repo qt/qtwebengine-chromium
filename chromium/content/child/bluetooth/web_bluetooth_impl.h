@@ -27,13 +27,23 @@ class CONTENT_EXPORT WebBluetoothImpl
 
   // blink::WebBluetooth interface:
   void requestDevice(
+      const blink::WebRequestDeviceOptions& options,
       blink::WebBluetoothRequestDeviceCallbacks* callbacks) override;
-
   void connectGATT(const blink::WebString& device_instance_id,
       blink::WebBluetoothConnectGATTCallbacks* callbacks) override;
-
-  // Testing interface:
-  void SetBluetoothMockDataSetForTesting(const std::string& name);
+  void getPrimaryService(
+      const blink::WebString& device_instance_id,
+      const blink::WebString& service_uuid,
+      blink::WebBluetoothGetPrimaryServiceCallbacks* callbacks) override;
+  void getCharacteristic(
+      const blink::WebString& service_instance_id,
+      const blink::WebString& characteristic_uuid,
+      blink::WebBluetoothGetCharacteristicCallbacks* callbacks) override;
+  void readValue(const blink::WebString& characteristic_instance_id,
+                 blink::WebBluetoothReadValueCallbacks* callbacks) override;
+  void writeValue(const blink::WebString& characteristic_instance_id,
+                  const std::vector<uint8_t>& value,
+                  blink::WebBluetoothWriteValueCallbacks*) override;
 
  private:
   BluetoothDispatcher* GetDispatcher();

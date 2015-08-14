@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/observer_list.h"
 #include "ui/aura/window_observer.h"
+#include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_client.h"
 #include "ui/wm/wm_export.h"
 
@@ -51,6 +52,10 @@ class WM_EXPORT DefaultActivationClient : public aura::client::ActivationClient,
   ~DefaultActivationClient() override;
   void RemoveActiveWindow(aura::Window* window);
 
+  void ActivateWindowImpl(
+      aura::client::ActivationChangeObserver::ActivationReason reason,
+      aura::Window* window);
+
   // This class explicitly does NOT store the active window in a window property
   // to make sure that ActivationChangeObserver is not treated as part of the
   // aura API. Assumptions to that end will cause tests that use this client to
@@ -60,7 +65,7 @@ class WM_EXPORT DefaultActivationClient : public aura::client::ActivationClient,
   // The window which was active before the currently active one.
   aura::Window* last_active_;
 
-  ObserverList<aura::client::ActivationChangeObserver> observers_;
+  base::ObserverList<aura::client::ActivationChangeObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultActivationClient);
 };

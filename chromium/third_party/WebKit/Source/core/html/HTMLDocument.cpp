@@ -55,8 +55,8 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "core/HTMLNames.h"
-#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/page/FocusController.h"
@@ -269,24 +269,6 @@ bool HTMLDocument::isCaseSensitiveAttribute(const QualifiedName& attributeName)
     static HashSet<StringImpl*>* htmlCaseInsensitiveAttributesSet = createHtmlCaseInsensitiveAttributesSet();
     bool isPossibleHTMLAttr = !attributeName.hasPrefix() && (attributeName.namespaceURI() == nullAtom);
     return !isPossibleHTMLAttr || !htmlCaseInsensitiveAttributesSet->contains(attributeName.localName().impl());
-}
-
-void HTMLDocument::write(LocalDOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
-{
-    ASSERT(callingWindow);
-    StringBuilder builder;
-    for (const String& string : text)
-        builder.append(string);
-    write(builder.toString(), callingWindow->document(), exceptionState);
-}
-
-void HTMLDocument::writeln(LocalDOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
-{
-    ASSERT(callingWindow);
-    StringBuilder builder;
-    for (const String& string : text)
-        builder.append(string);
-    writeln(builder.toString(), callingWindow->document(), exceptionState);
 }
 
 }

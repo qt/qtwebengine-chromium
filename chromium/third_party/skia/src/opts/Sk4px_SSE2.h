@@ -5,7 +5,9 @@
  * found in the LICENSE file.
  */
 
-inline Sk4px::Sk4px(SkPMColor px) : INHERITED(_mm_set1_epi32(px)) {}
+namespace { // See Sk4px.h
+
+inline Sk4px Sk4px::DupPMColor(SkPMColor px) { return Sk16b(_mm_set1_epi32(px)); }
 
 inline Sk4px Sk4px::Load4(const SkPMColor px[4]) {
     return Sk16b(_mm_loadu_si128((const __m128i*)px));
@@ -85,3 +87,5 @@ inline Sk4px Sk4px::zeroAlphas() const {
     // andnot(a,b) == ~a & b
     return Sk16b(_mm_andnot_si128(_mm_set1_epi32(0xFF << SK_A32_SHIFT), this->fVec));
 }
+
+}  // namespace

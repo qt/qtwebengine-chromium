@@ -95,7 +95,7 @@ class AudioRendererImplTest : public ::testing::Test {
     ScopedVector<AudioDecoder> decoders;
     decoders.push_back(decoder_);
     sink_ = new FakeAudioRendererSink();
-    renderer_.reset(new AudioRendererImpl(message_loop_.message_loop_proxy(),
+    renderer_.reset(new AudioRendererImpl(message_loop_.task_runner(),
                                           sink_.get(),
                                           decoders.Pass(),
                                           hardware_config_,
@@ -110,8 +110,7 @@ class AudioRendererImplTest : public ::testing::Test {
 
   void ExpectUnsupportedAudioDecoder() {
     EXPECT_CALL(*decoder_, Initialize(_, _, _))
-        .WillOnce(DoAll(SaveArg<2>(&output_cb_),
-                        RunCallback<1>(DECODER_ERROR_NOT_SUPPORTED)));
+        .WillOnce(DoAll(SaveArg<2>(&output_cb_), RunCallback<1>(false)));
   }
 
   MOCK_METHOD1(OnStatistics, void(const PipelineStatistics&));
@@ -135,8 +134,7 @@ class AudioRendererImplTest : public ::testing::Test {
 
   void Initialize() {
     EXPECT_CALL(*decoder_, Initialize(_, _, _))
-        .WillOnce(DoAll(SaveArg<2>(&output_cb_),
-                        RunCallback<1>(PIPELINE_OK)));
+        .WillOnce(DoAll(SaveArg<2>(&output_cb_), RunCallback<1>(true)));
     InitializeWithStatus(PIPELINE_OK);
 
     next_timestamp_.reset(new AudioTimestampHelper(kInputSamplesPerSecond));
@@ -154,8 +152,7 @@ class AudioRendererImplTest : public ::testing::Test {
   }
 
   void InitializeAndDestroy() {
-    EXPECT_CALL(*decoder_, Initialize(_, _, _))
-        .WillOnce(RunCallback<1>(PIPELINE_OK));
+    EXPECT_CALL(*decoder_, Initialize(_, _, _)).WillOnce(RunCallback<1>(true));
 
     WaitableMessageLoopEvent event;
     InitializeRenderer(event.GetPipelineStatusCB());
@@ -180,7 +177,7 @@ class AudioRendererImplTest : public ::testing::Test {
     event.RunAndWaitForStatus(PIPELINE_ERROR_ABORT);
   }
 
-  void EnterPendingDecoderInitState(PipelineStatusCB cb) {
+  void EnterPendingDecoderInitState(const AudioDecoder::InitCB& cb) {
     init_decoder_cb_ = cb;
   }
 
@@ -423,7 +420,7 @@ class AudioRendererImplTest : public ::testing::Test {
   // Run during DecodeDecoder() to unblock WaitForPendingRead().
   base::Closure wait_for_pending_decode_cb_;
 
-  PipelineStatusCB init_decoder_cb_;
+  AudioDecoder::InitCB init_decoder_cb_;
   bool ended_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererImplTest);

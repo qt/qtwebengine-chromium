@@ -47,7 +47,7 @@ namespace blink {
 
 class FontDescription;
 
-enum FontDataVariant { AutoVariant, NormalVariant, SmallCapsVariant, EmphasisMarkVariant, BrokenIdeographVariant };
+enum FontDataVariant { AutoVariant, NormalVariant, SmallCapsVariant, EmphasisMarkVariant };
 
 class PLATFORM_EXPORT SimpleFontData : public FontData {
 public:
@@ -57,14 +57,13 @@ public:
         return adoptRef(new SimpleFontData(platformData, customData, isTextOrientationFallback));
     }
 
-    virtual ~SimpleFontData();
+    ~SimpleFontData() override;
 
     const FontPlatformData& platformData() const { return m_platformData; }
     const OpenTypeVerticalData* verticalData() const { return m_verticalData.get(); }
 
     PassRefPtr<SimpleFontData> smallCapsFontData(const FontDescription&) const;
     PassRefPtr<SimpleFontData> emphasisMarkFontData(const FontDescription&) const;
-    PassRefPtr<SimpleFontData> brokenIdeographFontData() const;
 
     PassRefPtr<SimpleFontData> variantFontData(const FontDescription& description, FontDataVariant variant) const
     {
@@ -73,8 +72,6 @@ public:
             return smallCapsFontData(description);
         case EmphasisMarkVariant:
             return emphasisMarkFontData(description);
-        case BrokenIdeographVariant:
-            return brokenIdeographFontData();
         case AutoVariant:
         case NormalVariant:
             break;
@@ -115,15 +112,15 @@ public:
     Glyph zeroGlyph() const { return m_zeroGlyph; }
     void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
-    virtual const SimpleFontData* fontDataForCharacter(UChar32) const override;
+    const SimpleFontData* fontDataForCharacter(UChar32) const override;
 
     Glyph glyphForCharacter(UChar32) const;
 
-    virtual bool isCustomFont() const override { return m_customFontData; }
-    virtual bool isLoading() const override { return m_customFontData ? m_customFontData->isLoading() : false; }
-    virtual bool isLoadingFallback() const override { return m_customFontData ? m_customFontData->isLoadingFallback() : false; }
-    virtual bool isSegmented() const override;
-    virtual bool shouldSkipDrawing() const override { return m_customFontData && m_customFontData->shouldSkipDrawing(); }
+    bool isCustomFont() const override { return m_customFontData; }
+    bool isLoading() const override { return m_customFontData ? m_customFontData->isLoading() : false; }
+    bool isLoadingFallback() const override { return m_customFontData ? m_customFontData->isLoadingFallback() : false; }
+    bool isSegmented() const override;
+    bool shouldSkipDrawing() const override { return m_customFontData && m_customFontData->shouldSkipDrawing(); }
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }
@@ -157,7 +154,6 @@ private:
     mutable GlyphMetricsMap<float> m_glyphToWidthMap;
 
     bool m_isTextOrientationFallback;
-    bool m_isBrokenIdeographFallback;
     RefPtr<OpenTypeVerticalData> m_verticalData;
     bool m_hasVerticalGlyphs;
 
@@ -176,7 +172,6 @@ private:
         bool forCustomFont;
         RefPtr<SimpleFontData> smallCaps;
         RefPtr<SimpleFontData> emphasisMark;
-        RefPtr<SimpleFontData> brokenIdeograph;
         RefPtr<SimpleFontData> verticalRightOrientation;
         RefPtr<SimpleFontData> uprightOrientation;
 

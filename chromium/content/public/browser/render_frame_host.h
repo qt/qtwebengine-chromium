@@ -9,6 +9,7 @@
 
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
+#include "content/public/common/console_message_level.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
@@ -67,6 +68,10 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns the associated widget's native view.
   virtual gfx::NativeView GetNativeView() = 0;
 
+  // Adds |message| to the DevTools console.
+  virtual void AddMessageToConsole(ConsoleMessageLevel level,
+                                   const std::string& message) = 0;
+
   // Runs some JavaScript in this frame's context. If a callback is provided, it
   // will be used to return the result, when the result is available.
   typedef base::Callback<void(const base::Value*)> JavaScriptResultCallback;
@@ -89,6 +94,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual void AccessibilityDoDefaultAction(int acc_obj_id) = 0;
   virtual void AccessibilityScrollToMakeVisible(
       int acc_obj_id, const gfx::Rect& subfocus) = 0;
+  virtual void AccessibilityShowContextMenu(int acc_obj_id) = 0;
   virtual void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset) = 0;
 
@@ -117,6 +123,10 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns the visibility state of the frame. The different visibility states
   // of a frame are defined in Blink.
   virtual blink::WebPageVisibilityState GetVisibilityState() = 0;
+
+  // Returns whether the RenderFrame in the renderer process has been created
+  // and still has a connection.  This is valid for all frames.
+  virtual bool IsRenderFrameLive() = 0;
 
  private:
   // This interface should only be implemented inside content.

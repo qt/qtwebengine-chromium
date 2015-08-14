@@ -52,6 +52,23 @@ function onNavigateInNewTab(url) {
 }
 
 /**
+ * Whether keydown events should currently be ignored. Events are ignored when
+ * an editable element has focus, to allow for proper editing controls.
+ * @param {HTMLElement} activeElement The currently selected DOM node.
+ * @return {boolean} True if keydown events should be ignored.
+ */
+function shouldIgnoreKeyEvents(activeElement) {
+  while (activeElement.shadowRoot != null &&
+         activeElement.shadowRoot.activeElement != null) {
+    activeElement = activeElement.shadowRoot.activeElement;
+  }
+
+  return (activeElement.isContentEditable ||
+          activeElement.tagName == 'INPUT' ||
+          activeElement.tagName == 'TEXTAREA');
+}
+
+/**
  * The minimum number of pixels to offset the toolbar by from the bottom and
  * right side of the screen.
  */
@@ -149,15 +166,14 @@ function PDFViewer(browserApi) {
 
   if (this.isMaterial_) {
     this.zoomToolbar_ = $('zoom-toolbar');
-    this.zoomToolbar_.zoomMin = Viewport.ZOOM_FACTOR_RANGE.min * 100;
-    this.zoomToolbar_.zoomMax = Viewport.ZOOM_FACTOR_RANGE.max * 100;
-    this.zoomToolbar_.addEventListener('zoom', function(e) {
-      this.viewport_.setZoom(e.detail.zoom);
-    }.bind(this));
     this.zoomToolbar_.addEventListener('fit-to-width',
         this.viewport_.fitToWidth.bind(this.viewport_));
     this.zoomToolbar_.addEventListener('fit-to-page',
         this.viewport_.fitToPage.bind(this.viewport_));
+    this.zoomToolbar_.addEventListener('zoom-in',
+        this.viewport_.zoomIn.bind(this.viewport_));
+    this.zoomToolbar_.addEventListener('zoom-out',
+        this.viewport_.zoomOut.bind(this.viewport_));
 
     this.materialToolbar_ = $('material-toolbar');
     this.materialToolbar_.docTitle = document.title;
@@ -165,6 +181,8 @@ function PDFViewer(browserApi) {
     this.materialToolbar_.addEventListener('print', this.print_.bind(this));
     this.materialToolbar_.addEventListener('rotate-right',
         this.rotateClockwise_.bind(this));
+    this.materialToolbar_.addEventListener('rotate-left',
+        this.rotateCounterClockwise_.bind(this));
 
     document.body.addEventListener('change-page', function(e) {
       this.viewport_.goToPage(e.detail.page);
@@ -205,6 +223,9 @@ PDFViewer.prototype = {
     var position = this.viewport_.position;
     // Certain scroll events may be sent from outside of the extension.
     var fromScriptingAPI = e.fromScriptingAPI;
+
+    if (shouldIgnoreKeyEvents(document.activeElement) || e.defaultPrevented)
+      return;
 
     var pageUpHandler = function() {
       // Go to the previous page if we are fit-to-page.
@@ -535,10 +556,8 @@ PDFViewer.prototype = {
         break;
       case 'bookmarks':
         this.bookmarks_ = message.data.bookmarks;
-        if (this.isMaterial_ && this.bookmarks_.length !== 0) {
-          $('bookmarks-container').bookmarks = this.bookmarks;
-          this.materialToolbar_.hasBookmarks = true;
-        }
+        if (this.isMaterial_ && this.bookmarks_.length !== 0)
+          this.materialToolbar_.bookmarks = this.bookmarks;
         break;
       case 'setIsSelecting':
         this.viewportScroller_.setEnableScrolling(message.data.isSelecting);
@@ -623,7 +642,7 @@ PDFViewer.prototype = {
     // Update the page indicator.
     var visiblePage = this.viewport_.getMostVisiblePage();
     if (this.isMaterial_) {
-      this.materialToolbar_.pageIndex = visiblePage;
+      this.materialToolbar_.pageNo = visiblePage + 1;
     } else {
       this.pageIndicator_.index = visiblePage;
       if (this.documentDimensions_.pageDimensions.length > 1 &&

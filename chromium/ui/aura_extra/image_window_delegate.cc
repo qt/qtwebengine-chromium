@@ -45,10 +45,6 @@ void ImageWindowDelegate::OnBoundsChanged(const gfx::Rect& old_bounds,
     size_mismatch_ = window_size_ != image_.AsImageSkia().size();
 }
 
-ui::TextInputClient* ImageWindowDelegate::GetFocusedTextInputClient() {
-  return nullptr;
-}
-
 gfx::NativeCursor ImageWindowDelegate::GetCursor(const gfx::Point& point) {
   return gfx::kNullCursor;
 }
@@ -71,7 +67,7 @@ void ImageWindowDelegate::OnCaptureLost() {
 }
 
 void ImageWindowDelegate::OnPaint(const ui::PaintContext& context) {
-  ui::PaintRecorder recorder(context);
+  ui::PaintRecorder recorder(context, window_size_);
   if (background_color_ != SK_ColorTRANSPARENT &&
       (image_.IsEmpty() || size_mismatch_ || !offset_.IsZero())) {
     recorder.canvas()->DrawColor(background_color_);

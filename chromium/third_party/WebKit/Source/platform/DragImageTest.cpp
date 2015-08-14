@@ -29,7 +29,6 @@
  */
 
 #include "config.h"
-
 #include "platform/DragImage.h"
 
 #include "platform/fonts/FontDescription.h"
@@ -45,12 +44,9 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class TestImage : public Image {
 public:
@@ -68,12 +64,12 @@ public:
         m_bitmap.eraseColor(SK_ColorTRANSPARENT);
     }
 
-    virtual IntSize size() const override
+    IntSize size() const override
     {
         return m_size;
     }
 
-    virtual bool bitmapForCurrentFrame(SkBitmap* bitmap) override
+    bool bitmapForCurrentFrame(SkBitmap* bitmap) override
     {
         if (m_size.isZero())
             return false;
@@ -83,23 +79,21 @@ public:
     }
 
     // Stub implementations of pure virtual Image functions.
-    virtual void destroyDecodedData(bool) override
+    void destroyDecodedData(bool) override
     {
     }
 
-    virtual bool currentFrameKnownToBeOpaque() override
+    bool currentFrameKnownToBeOpaque() override
     {
         return false;
     }
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect&, SkXfermode::Mode, RespectImageOrientationEnum) override
+    void draw(SkCanvas*, const SkPaint&, const FloatRect&, const FloatRect&, RespectImageOrientationEnum, ImageClampingMode) override
     {
     }
 
 private:
-
     IntSize m_size;
-
     SkBitmap m_bitmap;
 };
 
@@ -246,4 +240,4 @@ TEST(DragImageTest, InterpolationNone)
     }
 }
 
-} // anonymous namespace
+} // namespace blink

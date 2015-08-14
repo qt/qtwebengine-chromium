@@ -54,6 +54,7 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLPlugInElement.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -62,7 +63,6 @@
 #include "core/page/DragData.h"
 #include "core/page/DragSession.h"
 #include "core/page/DragState.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 #include "core/layout/HitTestRequest.h"
@@ -333,7 +333,7 @@ bool DragController::tryDocumentDrag(DragData* dragData, DragDestinationAction a
     if (!m_documentUnderMouse)
         return false;
 
-    if (m_dragInitiator && !m_documentUnderMouse->securityOrigin()->canReceiveDragData(m_dragInitiator->securityOrigin()))
+    if (m_dragInitiator && !m_documentUnderMouse->securityOrigin()->canAccess(m_dragInitiator->securityOrigin()))
         return false;
 
     bool isHandlingDrag = false;

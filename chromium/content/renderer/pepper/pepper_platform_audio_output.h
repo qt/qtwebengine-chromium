@@ -15,7 +15,7 @@ class AudioParameters;
 }
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace content {
@@ -47,10 +47,12 @@ class PepperPlatformAudioOutput
   void ShutDown();
 
   // media::AudioOutputIPCDelegate implementation.
-  void OnStateChanged(media::AudioOutputIPCDelegate::State state) override;
+  void OnStateChanged(media::AudioOutputIPCDelegateState state) override;
   void OnStreamCreated(base::SharedMemoryHandle handle,
                        base::SyncSocket::Handle socket_handle,
                        int length) override;
+  void OnOutputDeviceSwitched(int request_id,
+                              media::SwitchOutputDeviceResult result) override;
   void OnIPCClosed() override;
 
  protected:
@@ -80,8 +82,8 @@ class PepperPlatformAudioOutput
   // I/O thread except to send messages and get the message loop.
   scoped_ptr<media::AudioOutputIPC> ipc_;
 
-  scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperPlatformAudioOutput);
 };

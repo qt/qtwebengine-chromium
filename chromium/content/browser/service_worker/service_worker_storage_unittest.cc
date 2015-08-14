@@ -76,16 +76,31 @@ ServiceWorkerStorage::FindRegistrationCallback MakeFindCallback(
 
 void GetAllCallback(
     bool* was_called,
+    std::vector<scoped_refptr<ServiceWorkerRegistration>>* all_out,
+    const std::vector<scoped_refptr<ServiceWorkerRegistration>>& all) {
+  *was_called = true;
+  *all_out = all;
+}
+
+void GetAllInfosCallback(
+    bool* was_called,
     std::vector<ServiceWorkerRegistrationInfo>* all_out,
     const std::vector<ServiceWorkerRegistrationInfo>& all) {
   *was_called = true;
   *all_out = all;
 }
 
-ServiceWorkerStorage::GetRegistrationsInfosCallback
-MakeGetRegistrationsCallback(bool* was_called,
-                             std::vector<ServiceWorkerRegistrationInfo>* all) {
+ServiceWorkerStorage::GetRegistrationsCallback MakeGetRegistrationsCallback(
+    bool* was_called,
+    std::vector<scoped_refptr<ServiceWorkerRegistration>>* all) {
   return base::Bind(&GetAllCallback, was_called, all);
+}
+
+ServiceWorkerStorage::GetRegistrationsInfosCallback
+MakeGetRegistrationsInfosCallback(
+    bool* was_called,
+    std::vector<ServiceWorkerRegistrationInfo>* all) {
+  return base::Bind(&GetAllInfosCallback, was_called, all);
 }
 
 void GetUserDataCallback(
@@ -108,13 +123,6 @@ void GetUserDataForAllRegistrationsCallback(
   *was_called = true;
   *data_out = data;
   *status_out = status;
-}
-
-void OnCompareComplete(
-    ServiceWorkerStatusCode* status_out, bool* are_equal_out,
-    ServiceWorkerStatusCode status, bool are_equal) {
-  *status_out = status;
-  *are_equal_out = are_equal;
 }
 
 void WriteResponse(
@@ -201,15 +209,6 @@ bool VerifyBasicResponse(ServiceWorkerStorage* storage, int64 id,
   EXPECT_TRUE(status_match);
   EXPECT_TRUE(data_match);
   return status_match && data_match;
-}
-
-void WriteResponseOfSize(ServiceWorkerStorage* storage, int64 id,
-                         char val, int size) {
-  const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\00";
-  std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
-  scoped_refptr<net::IOBuffer> buffer = new net::IOBuffer(size);
-  memset(buffer->data(), val, size);
-  WriteResponse(storage, id, headers, buffer.get(), size);
 }
 
 int WriteResponseMetadata(ServiceWorkerStorage* storage,
@@ -337,11 +336,11 @@ class ServiceWorkerStorageTest : public testing::Test {
     return result;
   }
 
-  void GetAllRegistrations(
+  void GetAllRegistrationsInfos(
       std::vector<ServiceWorkerRegistrationInfo>* registrations) {
     bool was_called = false;
-    storage()->GetAllRegistrations(
-        MakeGetRegistrationsCallback(&was_called, registrations));
+    storage()->GetAllRegistrationsInfos(
+        MakeGetRegistrationsInfosCallback(&was_called, registrations));
     EXPECT_FALSE(was_called);  // always async
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(was_called);
@@ -349,11 +348,10 @@ class ServiceWorkerStorageTest : public testing::Test {
 
   void GetRegistrationsForOrigin(
       const GURL& origin,
-      std::vector<ServiceWorkerRegistrationInfo>* registrations) {
+      std::vector<scoped_refptr<ServiceWorkerRegistration>>* registrations) {
     bool was_called = false;
     storage()->GetRegistrationsForOrigin(
-        origin,
-        MakeGetRegistrationsCallback(&was_called, registrations));
+        origin, MakeGetRegistrationsCallback(&was_called, registrations));
     EXPECT_FALSE(was_called);  // always async
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(was_called);
@@ -587,22 +585,22 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   EXPECT_EQ(kResource1Size + kResource2Size,
             found_registration->resources_total_size_bytes());
   std::vector<ServiceWorkerRegistrationInfo> all_registrations;
-  GetAllRegistrations(&all_registrations);
+  GetAllRegistrationsInfos(&all_registrations);
   EXPECT_EQ(1u, all_registrations.size());
   ServiceWorkerRegistrationInfo info = all_registrations[0];
   EXPECT_EQ(kResource1Size + kResource2Size, info.stored_version_size_bytes);
   all_registrations.clear();
 
-  // Finding by origin should provide the same result iif origin is kScope.
-  std::vector<ServiceWorkerRegistrationInfo> registrations_origin;
-  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_origin);
-  EXPECT_EQ(1u, registrations_origin.size());
-  registrations_origin.clear();
+  // Finding by origin should provide the same result if origin is kScope.
+  std::vector<scoped_refptr<ServiceWorkerRegistration>>
+      registrations_for_origin;
+  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_for_origin);
+  EXPECT_EQ(1u, registrations_for_origin.size());
+  registrations_for_origin.clear();
 
-  GetRegistrationsForOrigin(
-      GURL("http://example.com/").GetOrigin(),
-      &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  GetRegistrationsForOrigin(GURL("http://example.com/").GetOrigin(),
+                            &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 
   found_registration = NULL;
 
@@ -693,7 +691,7 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   live_version->SetStatus(ServiceWorkerVersion::INSTALLING);
   live_registration->SetWaitingVersion(live_version);
 
-  // Should not be findable, including by GetAllRegistrations.
+  // Should not be findable, including by GetAllRegistrationsInfos.
   EXPECT_EQ(SERVICE_WORKER_ERROR_NOT_FOUND,
             FindRegistrationForId(
                 kRegistrationId, kScope.GetOrigin(), &found_registration));
@@ -712,17 +710,17 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   EXPECT_FALSE(found_registration.get());
 
   std::vector<ServiceWorkerRegistrationInfo> all_registrations;
-  GetAllRegistrations(&all_registrations);
+  GetAllRegistrationsInfos(&all_registrations);
   EXPECT_TRUE(all_registrations.empty());
 
-  std::vector<ServiceWorkerRegistrationInfo> registrations_origin;
-  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  std::vector<scoped_refptr<ServiceWorkerRegistration>>
+      registrations_for_origin;
+  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 
-  GetRegistrationsForOrigin(
-      GURL("http://example.com/").GetOrigin(),
-      &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  GetRegistrationsForOrigin(GURL("http://example.com/").GetOrigin(),
+                            &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 
   // Notify storage of it being installed.
   storage()->NotifyInstallingRegistration(live_registration.get());
@@ -749,19 +747,18 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   EXPECT_EQ(live_registration, found_registration);
   found_registration = NULL;
 
-  GetAllRegistrations(&all_registrations);
+  GetAllRegistrationsInfos(&all_registrations);
   EXPECT_EQ(1u, all_registrations.size());
   all_registrations.clear();
 
-  // Finding by origin should provide the same result iif origin is kScope.
-  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_origin);
-  EXPECT_EQ(1u, registrations_origin.size());
-  registrations_origin.clear();
+  // Finding by origin should provide the same result if origin is kScope.
+  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_for_origin);
+  EXPECT_EQ(1u, registrations_for_origin.size());
+  registrations_for_origin.clear();
 
-  GetRegistrationsForOrigin(
-      GURL("http://example.com/").GetOrigin(),
-      &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  GetRegistrationsForOrigin(GURL("http://example.com/").GetOrigin(),
+                            &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 
   // Notify storage of installation no longer happening.
   storage()->NotifyDoneInstallingRegistration(
@@ -785,16 +782,15 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
             FindRegistrationForPattern(kScope, &found_registration));
   EXPECT_FALSE(found_registration.get());
 
-  GetAllRegistrations(&all_registrations);
+  GetAllRegistrationsInfos(&all_registrations);
   EXPECT_TRUE(all_registrations.empty());
 
-  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  GetRegistrationsForOrigin(kScope.GetOrigin(), &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 
-  GetRegistrationsForOrigin(
-      GURL("http://example.com/").GetOrigin(),
-      &registrations_origin);
-  EXPECT_TRUE(registrations_origin.empty());
+  GetRegistrationsForOrigin(GURL("http://example.com/").GetOrigin(),
+                            &registrations_for_origin);
+  EXPECT_TRUE(registrations_for_origin.empty());
 }
 
 TEST_F(ServiceWorkerStorageTest, StoreUserData) {
@@ -1475,68 +1471,6 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kDocumentUrl, &found_registration));
   EXPECT_EQ(live_registration2, found_registration);
-}
-
-TEST_F(ServiceWorkerStorageTest, CompareResources) {
-  // Compare two small responses containing the same data.
-  WriteBasicResponse(storage(), 1);
-  WriteBasicResponse(storage(), 2);
-  ServiceWorkerStatusCode status = static_cast<ServiceWorkerStatusCode>(-1);
-  bool are_equal = false;
-  storage()->CompareScriptResources(
-      1, 2,
-      base::Bind(&OnCompareComplete, &status, &are_equal));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_TRUE(are_equal);
-
-  // Compare two small responses with different data.
-  const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\0\0";
-  const char kHttpBody[] = "Goodbye";
-  std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
-  WriteStringResponse(storage(), 3, headers, std::string(kHttpBody));
-  status = static_cast<ServiceWorkerStatusCode>(-1);
-  are_equal = true;
-  storage()->CompareScriptResources(
-      1, 3,
-      base::Bind(&OnCompareComplete, &status, &are_equal));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_FALSE(are_equal);
-
-  // Compare two large responses with the same data.
-  const int k32K = 32 * 1024;
-  WriteResponseOfSize(storage(), 4, 'a', k32K);
-  WriteResponseOfSize(storage(), 5, 'a', k32K);
-  status = static_cast<ServiceWorkerStatusCode>(-1);
-  are_equal = false;
-  storage()->CompareScriptResources(
-      4, 5,
-      base::Bind(&OnCompareComplete, &status, &are_equal));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_TRUE(are_equal);
-
-  // Compare a large and small response.
-  status = static_cast<ServiceWorkerStatusCode>(-1);
-  are_equal = true;
-  storage()->CompareScriptResources(
-      1, 5,
-      base::Bind(&OnCompareComplete, &status, &are_equal));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_FALSE(are_equal);
-
-  // Compare two large responses with different data.
-  WriteResponseOfSize(storage(), 6, 'b', k32K);
-  status = static_cast<ServiceWorkerStatusCode>(-1);
-  are_equal = true;
-  storage()->CompareScriptResources(
-      5, 6,
-      base::Bind(&OnCompareComplete, &status, &are_equal));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_FALSE(are_equal);
 }
 
 }  // namespace content

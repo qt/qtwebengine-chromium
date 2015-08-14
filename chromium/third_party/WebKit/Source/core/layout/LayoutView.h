@@ -25,6 +25,8 @@
 #include "core/CoreExport.h"
 #include "core/dom/Position.h"
 #include "core/frame/FrameView.h"
+#include "core/layout/HitTestCache.h"
+#include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutState.h"
 #include "core/layout/PaintInvalidationState.h"
@@ -50,11 +52,15 @@ public:
     virtual ~LayoutView();
     void willBeDestroyed() override;
 
+    // hitTest() will update layout, style and compositing first while hitTestNoLifecycleUpdate() does not.
     bool hitTest(HitTestResult&);
-    bool hitTest(const HitTestRequest&, const HitTestLocation&, HitTestResult&);
+    bool hitTestNoLifecycleUpdate(HitTestResult&);
 
     // Returns the total count of calls to HitTest, for testing.
     unsigned hitTestCount() const { return m_hitTestCount; }
+    unsigned hitTestCacheHits() const { return m_hitTestCacheHits; }
+
+    void clearHitTestCache() { m_hitTestCache->clear(); }
 
     virtual const char* name() const override { return "LayoutView"; }
 
@@ -68,16 +74,18 @@ public:
     virtual void updateLogicalWidth() override;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
 
-    virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const override;
+    // Based on FrameView::layoutSize, but:
+    // - checks for null FrameView
+    // - returns 0x0 if using printing layout
+    // - scrollbar exclusion is compatible with root layer scrolling
+    IntSize layoutSize(IncludeScrollbarsInRect = ExcludeScrollbars) const;
 
-    // The same as the FrameView's layoutHeight/layoutWidth but with null check guards.
-    int viewHeight(IncludeScrollbarsInRect = ExcludeScrollbars) const;
-    int viewWidth(IncludeScrollbarsInRect = ExcludeScrollbars) const;
-    int viewLogicalWidth() const
-    {
-        return style()->isHorizontalWritingMode() ? viewWidth(ExcludeScrollbars) : viewHeight(ExcludeScrollbars);
-    }
-    int viewLogicalHeight() const;
+    int viewHeight(IncludeScrollbarsInRect scrollbarInclusion = ExcludeScrollbars) const { return layoutSize(scrollbarInclusion).height(); }
+    int viewWidth(IncludeScrollbarsInRect scrollbarInclusion = ExcludeScrollbars) const { return layoutSize(scrollbarInclusion).width(); }
+
+    int viewLogicalWidth(IncludeScrollbarsInRect = ExcludeScrollbars) const;
+    int viewLogicalHeight(IncludeScrollbarsInRect = ExcludeScrollbars) const;
+
     LayoutUnit viewLogicalHeightForPercentages() const;
 
     float zoomFactor() const;
@@ -141,6 +149,8 @@ public:
     DeprecatedPaintLayerCompositor* compositor();
     bool usesCompositing() const;
 
+    // TODO(trchen): All pinch-zoom implementation should now use compositor raster scale based zooming,
+    // instead of LayoutView transform. Check whether we can now unify unscaledDocumentRect and documentRect.
     IntRect unscaledDocumentRect() const;
     LayoutRect backgroundRect(LayoutBox* backgroundLayoutObject) const;
 
@@ -171,8 +181,18 @@ public:
     void popLayoutState() { ASSERT(m_layoutState); m_layoutState = m_layoutState->next(); }
     virtual void invalidateTreeIfNeeded(PaintInvalidationState&) override final;
 
+    virtual LayoutRect visualOverflowRect() const override;
+
+    // Invalidates paint for the entire view, including composited descendants, but not including child frames.
+    // It is very likely you do not want to call this method.
+    void setShouldDoFullPaintInvalidationForViewAndAllDescendants();
+
 private:
-    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
+    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = nullptr, const PaintInvalidationState* = nullptr) const override;
+
+    template <typename Strategy>
+    void commitPendingSelectionAlgorithm();
+
     virtual const LayoutObject* pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&) const override;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
@@ -186,7 +206,8 @@ private:
 
     bool shouldUsePrintingLayout() const;
 
-    LayoutObject* backgroundLayoutObject() const;
+    int viewLogicalWidthForBoxSizing() const;
+    int viewLogicalHeightForBoxSizing() const;
 
     FrameView* m_frameView;
 
@@ -206,6 +227,8 @@ private:
     unsigned m_layoutCounterCount;
 
     unsigned m_hitTestCount;
+    unsigned m_hitTestCacheHits;
+    OwnPtrWillBePersistent<HitTestCache> m_hitTestCache;
 
     OwnPtrWillBePersistent<PendingSelection> m_pendingSelection;
 };

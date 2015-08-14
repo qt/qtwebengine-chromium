@@ -162,7 +162,7 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
     header.fec_flag = false;
     header.is_in_fec_group = NOT_IN_FEC_GROUP;
     header.fec_group = 0;
-    QuicStreamFrame stream_frame(1, false, 0, MakeIOVector("data"));
+    QuicStreamFrame stream_frame(1, false, 0, StringPiece("data"));
     QuicFrame frame(&stream_frame);
     QuicFrames frames;
     frames.push_back(frame);
@@ -170,7 +170,7 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
         BuildUnsizedDataPacket(&framer_, header, frames));
     EXPECT_TRUE(packet != nullptr);
     char buffer[kMaxPacketSize];
-    scoped_ptr<QuicEncryptedPacket> encrypted(framer_.EncryptPacket(
+    scoped_ptr<QuicEncryptedPacket> encrypted(framer_.EncryptPayload(
         ENCRYPTION_NONE, sequence_number, *packet, buffer, kMaxPacketSize));
     EXPECT_TRUE(encrypted != nullptr);
     return encrypted->Clone();

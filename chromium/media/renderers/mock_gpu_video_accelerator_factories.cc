@@ -47,6 +47,10 @@ MockGpuVideoAcceleratorFactories::MockGpuVideoAcceleratorFactories() {}
 
 MockGpuVideoAcceleratorFactories::~MockGpuVideoAcceleratorFactories() {}
 
+bool MockGpuVideoAcceleratorFactories::IsGpuVideoAcceleratorEnabled() {
+  return true;
+}
+
 scoped_ptr<gfx::GpuMemoryBuffer>
 MockGpuVideoAcceleratorFactories::AllocateGpuMemoryBuffer(
     const gfx::Size& size,
@@ -69,6 +73,10 @@ MockGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator() {
 scoped_ptr<VideoEncodeAccelerator>
 MockGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   return scoped_ptr<VideoEncodeAccelerator>(DoCreateVideoEncodeAccelerator());
+}
+
+unsigned MockGpuVideoAcceleratorFactories::ImageTextureTarget() {
+  return GL_TEXTURE_2D;
 }
 
 }  // namespace media

@@ -5,23 +5,32 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_PROTOCOL_INSPECTOR_HANDLER_H_
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_INSPECTOR_HANDLER_H_
 
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 
 namespace content {
+
+class RenderFrameHostImpl;
+
 namespace devtools {
 namespace inspector {
 
 class InspectorHandler {
  public:
+  using Response = DevToolsProtocolClient::Response;
+
   InspectorHandler();
   virtual ~InspectorHandler();
 
   void SetClient(scoped_ptr<Client> client);
+  void SetRenderFrameHost(RenderFrameHostImpl* host);
 
   void TargetCrashed();
 
+  Response Enable();
+
  private:
   scoped_ptr<Client> client_;
+  RenderFrameHostImpl* host_;
 
   DISALLOW_COPY_AND_ASSIGN(InspectorHandler);
 };

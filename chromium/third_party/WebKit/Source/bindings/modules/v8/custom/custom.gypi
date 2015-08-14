@@ -6,14 +6,9 @@
     'variables': {
         # Note: list duplicated in custom.gni.
         'bindings_modules_v8_custom_files': [
-            'V8ClientCustom.cpp',
-            'V8CompositorWorkerGlobalScopeCustom.cpp',
-            'V8CompositorWorkerCustom.cpp',
-            'V8CrossOriginServiceWorkerClientCustom.cpp',
             'V8CustomSQLStatementErrorCallback.cpp',
             'V8DeviceMotionEventCustom.cpp',
-            'V8DeviceOrientationEventCustom.cpp',
-            'V8ServiceWorkerCustom.cpp',
+            'V8ServiceWorkerMessageEventCustom.cpp',
         ],
     },
 }

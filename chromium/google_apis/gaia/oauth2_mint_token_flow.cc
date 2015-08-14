@@ -13,6 +13,7 @@
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -41,8 +42,11 @@ const char kOAuth2IssueTokenBodyFormat[] =
     "&scope=%s"
     "&client_id=%s"
     "&origin=%s";
+// TODO(pavely): lib_ver is passed to differentiate IssueToken requests from
+// different code locations. Remove once device_id mismatch is understood.
+// (crbug.com/481596)
 const char kOAuth2IssueTokenBodyFormatDeviceIdAddendum[] =
-    "&device_id=%s&device_type=chrome";
+    "&device_id=%s&device_type=chrome&lib_ver=extension";
 const char kIssueAdviceKey[] = "issueAdvice";
 const char kIssueAdviceValueConsent[] = "consent";
 const char kAccessTokenKey[] = "token";
@@ -67,7 +71,7 @@ static GoogleServiceAuthError CreateAuthError(const net::URLFetcher* source) {
 
   std::string response_body;
   source->GetResponseAsString(&response_body);
-  scoped_ptr<base::Value> value(base::JSONReader::Read(response_body));
+  scoped_ptr<base::Value> value = base::JSONReader::Read(response_body);
   base::DictionaryValue* response;
   if (!value.get() || !value->GetAsDictionary(&response)) {
     return GoogleServiceAuthError::FromUnexpectedServiceResponse(
@@ -178,7 +182,7 @@ void OAuth2MintTokenFlow::ProcessApiCallSuccess(
     const net::URLFetcher* source) {
   std::string response_body;
   source->GetResponseAsString(&response_body);
-  scoped_ptr<base::Value> value(base::JSONReader::Read(response_body));
+  scoped_ptr<base::Value> value = base::JSONReader::Read(response_body);
   base::DictionaryValue* dict = NULL;
   if (!value.get() || !value->GetAsDictionary(&dict)) {
     ReportFailure(GoogleServiceAuthError::FromUnexpectedServiceResponse(
@@ -259,11 +263,9 @@ bool OAuth2MintTokenFlow::ParseIssueAdviceResponse(
     }
 
     base::TrimWhitespace(entry.description, base::TRIM_ALL, &entry.description);
-    static const base::string16 detail_separators =
-        base::ASCIIToUTF16(kDetailSeparators);
-    Tokenize(detail, detail_separators, &entry.details);
-    for (size_t i = 0; i < entry.details.size(); i++)
-      base::TrimWhitespace(entry.details[i], base::TRIM_ALL, &entry.details[i]);
+    entry.details = base::SplitString(
+        detail, base::ASCIIToUTF16(kDetailSeparators),
+        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
     issue_advice->push_back(entry);
   }
 

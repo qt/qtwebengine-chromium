@@ -5,6 +5,8 @@
 // IPC messages for the audio.
 // Multiply-included message file, hence no include guard.
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
@@ -14,16 +16,25 @@
 #include "media/audio/audio_input_ipc.h"
 #include "media/audio/audio_output_ipc.h"
 #include "media/audio/audio_parameters.h"
+#include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START AudioMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(media::AudioInputIPCDelegate::State,
-                          media::AudioInputIPCDelegate::kStateLast)
+IPC_ENUM_TRAITS_MAX_VALUE(media::AudioInputIPCDelegateState,
+                          media::AUDIO_INPUT_IPC_DELEGATE_STATE_LAST)
 
-IPC_ENUM_TRAITS_MAX_VALUE(media::AudioOutputIPCDelegate::State,
-                          media::AudioOutputIPCDelegate::kStateLast)
+IPC_ENUM_TRAITS_MAX_VALUE(media::AudioOutputIPCDelegateState,
+                          media::AUDIO_OUTPUT_IPC_DELEGATE_STATE_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(media::SwitchOutputDeviceResult,
+                          media::SWITCH_OUTPUT_DEVICE_RESULT_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(media::AudioParameters::Format,
+                          media::AudioParameters::AUDIO_FORMAT_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(media::ChannelLayout, media::CHANNEL_LAYOUT_MAX)
 
 IPC_STRUCT_BEGIN(AudioInputHostMsg_CreateStream_Config)
   IPC_STRUCT_MEMBER(media::AudioParameters, params)
@@ -60,16 +71,23 @@ IPC_MESSAGE_CONTROL5(
 // update after the renderer has requested a Create/Start/Close.
 IPC_MESSAGE_CONTROL2(AudioMsg_NotifyStreamStateChanged,
                      int /* stream id */,
-                     media::AudioOutputIPCDelegate::State /* new state */)
+                     media::AudioOutputIPCDelegateState /* new state */)
 
 // Notification message sent from browser to renderer for state update.
 IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyStreamStateChanged,
                      int /* stream id */,
-                     media::AudioInputIPCDelegate::State /* new state */)
+                     media::AudioInputIPCDelegateState /* new state */)
 
 IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyStreamVolume,
                      int /* stream id */,
                      double /* volume */)
+
+// Notification message sent from AudioRendererHost to renderer for state
+// update after the renderer has requested a SwitchOutputDevice.
+IPC_MESSAGE_CONTROL3(AudioMsg_NotifyOutputDeviceSwitched,
+                     int /* stream id */,
+                     int /* request id */,
+                     media::SwitchOutputDeviceResult /* result */)
 
 // Messages sent from the renderer to the browser.
 
@@ -121,3 +139,11 @@ IPC_MESSAGE_CONTROL2(AudioHostMsg_SetVolume,
 IPC_MESSAGE_CONTROL2(AudioInputHostMsg_SetVolume,
                      int /* stream_id */,
                      double /* volume */)
+
+// Switch the output device of the stream specified by stream_id.
+IPC_MESSAGE_CONTROL5(AudioHostMsg_SwitchOutputDevice,
+                     int /* stream_id */,
+                     int /* render_frame_id */,
+                     std::string /* device_id */,
+                     GURL /* security_origin */,
+                     int /* request_id */)

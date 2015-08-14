@@ -17,7 +17,7 @@
 #include "media/base/video_capture_types.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace gpu {
@@ -109,15 +109,13 @@ class CONTENT_EXPORT VideoCaptureImpl
                        int buffer_id) override;
   void OnBufferDestroyed(int buffer_id) override;
   void OnBufferReceived(int buffer_id,
+                        base::TimeTicks timestamp,
+                        const base::DictionaryValue& metadata,
+                        media::VideoFrame::Format pixel_format,
+                        media::VideoFrame::StorageType storage_type,
                         const gfx::Size& coded_size,
                         const gfx::Rect& visible_rect,
-                        base::TimeTicks timestamp,
-                        const base::DictionaryValue& metadata) override;
-  void OnMailboxBufferReceived(int buffer_id,
-                               const gpu::MailboxHolder& mailbox_holder,
-                               const gfx::Size& packed_frame_size,
-                               base::TimeTicks timestamp,
-                               const base::DictionaryValue& metadata) override;
+                        const gpu::MailboxHolder& mailbox_holder) override;
   void OnStateChanged(VideoCaptureState state) override;
   void OnDeviceSupportedFormatsEnumerated(
       const media::VideoCaptureFormats& supported_formats) override;
@@ -129,7 +127,8 @@ class CONTENT_EXPORT VideoCaptureImpl
   // buffer.
   void OnClientBufferFinished(int buffer_id,
                               const scoped_refptr<ClientBuffer>& buffer,
-                              uint32 release_sync_point);
+                              uint32 release_sync_point,
+                              double consumer_resource_utilization);
 
   void StopDevice();
   void RestartCapture();
@@ -139,6 +138,15 @@ class CONTENT_EXPORT VideoCaptureImpl
 
   // Helpers.
   bool RemoveClient(int client_id, ClientInfoMap* clients);
+
+  // Called (by an unknown thread) when all consumers are done with a VideoFrame
+  // and its ref-count has gone to zero.  This helper function grabs the
+  // RESOURCE_UTILIZATION value from the |metadata| and then runs the given
+  // callback, to trampoline back to the IO thread with the values.
+  static void DidFinishConsumingFrame(
+    const media::VideoFrameMetadata* metadata,
+    uint32* release_sync_point_storage,  // Takes ownership.
+    const base::Callback<void(uint32, double)>& callback_to_io_thread);
 
   const scoped_refptr<VideoCaptureMessageFilter> message_filter_;
   int device_id_;
@@ -170,7 +178,7 @@ class CONTENT_EXPORT VideoCaptureImpl
   VideoCaptureState state_;
 
   // IO message loop reference for checking correct class operation.
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   // WeakPtrFactory pointing back to |this| object, for use with
   // media::VideoFrames constructed in OnBufferReceived() from buffers cached

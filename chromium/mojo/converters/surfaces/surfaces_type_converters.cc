@@ -7,6 +7,8 @@
 #include "base/macros.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/delegated_frame_data.h"
+#include "cc/quads/checkerboard_draw_quad.h"
+#include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/render_pass_draw_quad.h"
@@ -51,11 +53,10 @@ namespace {
 cc::SharedQuadState* ConvertSharedQuadState(const SharedQuadStatePtr& input,
                                             cc::RenderPass* render_pass) {
   cc::SharedQuadState* state = render_pass->CreateAndAppendSharedQuadState();
-  state->SetAll(input->content_to_target_transform.To<gfx::Transform>(),
-                input->content_bounds.To<gfx::Size>(),
-                input->visible_content_rect.To<gfx::Rect>(),
-                input->clip_rect.To<gfx::Rect>(),
-                input->is_clipped,
+  state->SetAll(input->quad_to_target_transform.To<gfx::Transform>(),
+                input->quad_layer_bounds.To<gfx::Size>(),
+                input->visible_quad_layer_rect.To<gfx::Rect>(),
+                input->clip_rect.To<gfx::Rect>(), input->is_clipped,
                 input->opacity,
                 static_cast<::SkXfermode::Mode>(input->blend_mode),
                 input->sorting_context_id);
@@ -66,6 +67,32 @@ bool ConvertDrawQuad(const QuadPtr& input,
                      cc::SharedQuadState* sqs,
                      cc::RenderPass* render_pass) {
   switch (input->material) {
+    case MATERIAL_CHECKERBOARD: {
+      cc::CheckerboardDrawQuad* checkerboard_quad =
+          render_pass->CreateAndAppendDrawQuad<cc::CheckerboardDrawQuad>();
+      checkerboard_quad->SetAll(
+          sqs,
+          input->rect.To<gfx::Rect>(),
+          input->opaque_rect.To<gfx::Rect>(),
+          input->visible_rect.To<gfx::Rect>(),
+          input->needs_blending,
+          input->checkerboard_quad_state->color.To<SkColor>(),
+          input->checkerboard_quad_state->scale);
+      break;
+    }
+    case MATERIAL_DEBUG_BORDER: {
+      cc::DebugBorderDrawQuad* debug_border_quad =
+          render_pass->CreateAndAppendDrawQuad<cc::DebugBorderDrawQuad>();
+      debug_border_quad->SetAll(
+          sqs,
+          input->rect.To<gfx::Rect>(),
+          input->opaque_rect.To<gfx::Rect>(),
+          input->visible_rect.To<gfx::Rect>(),
+          input->needs_blending,
+          input->debug_border_quad_state->color.To<SkColor>(),
+          input->debug_border_quad_state->width);
+      break;
+    }
     case MATERIAL_RENDER_PASS: {
       cc::RenderPassDrawQuad* render_pass_quad =
           render_pass->CreateAndAppendDrawQuad<cc::RenderPassDrawQuad>();
@@ -129,19 +156,15 @@ bool ConvertDrawQuad(const QuadPtr& input,
       cc::TextureDrawQuad* texture_quad =
           render_pass->CreateAndAppendDrawQuad<cc::TextureDrawQuad>();
       texture_quad->SetAll(
-          sqs,
-          input->rect.To<gfx::Rect>(),
-          input->opaque_rect.To<gfx::Rect>(),
-          input->visible_rect.To<gfx::Rect>(),
-          input->needs_blending,
-          texture_quad_state->resource_id,
+          sqs, input->rect.To<gfx::Rect>(), input->opaque_rect.To<gfx::Rect>(),
+          input->visible_rect.To<gfx::Rect>(), input->needs_blending,
+          texture_quad_state->resource_id, gfx::Size(), false,
           texture_quad_state->premultiplied_alpha,
           texture_quad_state->uv_top_left.To<gfx::PointF>(),
           texture_quad_state->uv_bottom_right.To<gfx::PointF>(),
           texture_quad_state->background_color.To<SkColor>(),
           &texture_quad_state->vertex_opacity.storage()[0],
-          texture_quad_state->y_flipped,
-          texture_quad_state->nearest_neighbor);
+          texture_quad_state->y_flipped, texture_quad_state->nearest_neighbor);
       break;
     }
     case MATERIAL_TILED_CONTENT: {
@@ -171,10 +194,10 @@ bool ConvertDrawQuad(const QuadPtr& input,
       yuv_quad->SetAll(
           sqs, input->rect.To<gfx::Rect>(), input->opaque_rect.To<gfx::Rect>(),
           input->visible_rect.To<gfx::Rect>(), input->needs_blending,
-          gfx::RectF(),  // TODO(sky): ya tex coord rect
-          gfx::RectF(),  // TODO(sky): uv tex coord rect
-          gfx::Size(),   // TODO(sky): ya texture size
-          gfx::Size(),   // TODO(sky): uv texture size
+          yuv_state->ya_tex_coord_rect.To<gfx::RectF>(),
+          yuv_state->uv_tex_coord_rect.To<gfx::RectF>(),
+          yuv_state->ya_tex_size.To<gfx::Size>(),
+          yuv_state->uv_tex_size.To<gfx::Size>(),
           yuv_state->y_plane_resource_id, yuv_state->u_plane_resource_id,
           yuv_state->v_plane_resource_id, yuv_state->a_plane_resource_id,
           static_cast<cc::YUVVideoDrawQuad::ColorSpace>(
@@ -225,7 +248,9 @@ RenderPassIdPtr TypeConverter<RenderPassIdPtr, cc::RenderPassId>::Convert(
     const cc::RenderPassId& input) {
   RenderPassIdPtr pass_id(RenderPassId::New());
   pass_id->layer_id = input.layer_id;
-  pass_id->index = input.index;
+  DCHECK_LE(input.index,
+            static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
+  pass_id->index = static_cast<uint32_t>(input.index);
   return pass_id.Pass();
 }
 
@@ -249,13 +274,33 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
   // state list.
   quad->shared_quad_state_index = UINT32_MAX;
   switch (input.material) {
+    case cc::DrawQuad::CHECKERBOARD: {
+      const cc::CheckerboardDrawQuad* checkerboard_quad =
+          cc::CheckerboardDrawQuad::MaterialCast(&input);
+      CheckerboardQuadStatePtr checkerboard_state =
+          CheckerboardQuadState::New();
+      checkerboard_state->color = Color::From(checkerboard_quad->color);
+      checkerboard_state->scale = checkerboard_quad->scale;
+      quad->checkerboard_quad_state = checkerboard_state.Pass();
+      break;
+    }
+    case cc::DrawQuad::DEBUG_BORDER: {
+      const cc::DebugBorderDrawQuad* debug_border_quad =
+          cc::DebugBorderDrawQuad::MaterialCast(&input);
+      DebugBorderQuadStatePtr debug_border_state =
+          DebugBorderQuadState::New();
+      debug_border_state->color = Color::From(debug_border_quad->color);
+      debug_border_state->width = debug_border_quad->width;
+      quad->debug_border_quad_state = debug_border_state.Pass();
+      break;
+    }
     case cc::DrawQuad::RENDER_PASS: {
       const cc::RenderPassDrawQuad* render_pass_quad =
           cc::RenderPassDrawQuad::MaterialCast(&input);
       RenderPassQuadStatePtr pass_state = RenderPassQuadState::New();
       pass_state->render_pass_id =
           RenderPassId::From(render_pass_quad->render_pass_id);
-      pass_state->mask_resource_id = render_pass_quad->mask_resource_id;
+      pass_state->mask_resource_id = render_pass_quad->mask_resource_id();
       pass_state->mask_uv_scale = PointF::From(
           gfx::PointAtOffsetFromOrigin(render_pass_quad->mask_uv_scale));
       pass_state->mask_texture_size =
@@ -290,7 +335,7 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
       const cc::TextureDrawQuad* texture_quad =
           cc::TextureDrawQuad::MaterialCast(&input);
       TextureQuadStatePtr texture_state = TextureQuadState::New();
-      texture_state->resource_id = texture_quad->resource_id;
+      texture_state->resource_id = texture_quad->resource_id();
       texture_state->premultiplied_alpha = texture_quad->premultiplied_alpha;
       texture_state->uv_top_left = PointF::From(texture_quad->uv_top_left);
       texture_state->uv_bottom_right =
@@ -314,7 +359,7 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
       tile_state->texture_size = Size::From(tile_quad->texture_size);
       tile_state->swizzle_contents = tile_quad->swizzle_contents;
       tile_state->nearest_neighbor = tile_quad->nearest_neighbor;
-      tile_state->resource_id = tile_quad->resource_id;
+      tile_state->resource_id = tile_quad->resource_id();
       quad->tile_quad_state = tile_state.Pass();
       break;
     }
@@ -322,14 +367,14 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
       const cc::YUVVideoDrawQuad* yuv_quad =
           cc::YUVVideoDrawQuad::MaterialCast(&input);
       YUVVideoQuadStatePtr yuv_state = YUVVideoQuadState::New();
-      // TODO(sky): ya_tex_coord_rect
-      // TODO(sky): uv_tex_coord_rect
-      // TODO(sky): ya_texture_size
-      // TODO(sky): uv_texture_size
-      yuv_state->y_plane_resource_id = yuv_quad->y_plane_resource_id;
-      yuv_state->u_plane_resource_id = yuv_quad->u_plane_resource_id;
-      yuv_state->v_plane_resource_id = yuv_quad->v_plane_resource_id;
-      yuv_state->a_plane_resource_id = yuv_quad->a_plane_resource_id;
+      yuv_state->ya_tex_coord_rect = RectF::From(yuv_quad->ya_tex_coord_rect);
+      yuv_state->uv_tex_coord_rect = RectF::From(yuv_quad->uv_tex_coord_rect);
+      yuv_state->ya_tex_size = Size::From(yuv_quad->ya_tex_size);
+      yuv_state->uv_tex_size = Size::From(yuv_quad->uv_tex_size);
+      yuv_state->y_plane_resource_id = yuv_quad->y_plane_resource_id();
+      yuv_state->u_plane_resource_id = yuv_quad->u_plane_resource_id();
+      yuv_state->v_plane_resource_id = yuv_quad->v_plane_resource_id();
+      yuv_state->a_plane_resource_id = yuv_quad->a_plane_resource_id();
       yuv_state->color_space =
           static_cast<YUVColorSpace>(yuv_quad->color_space);
       quad->yuv_video_quad_state = yuv_state.Pass();
@@ -347,10 +392,10 @@ SharedQuadStatePtr
 TypeConverter<SharedQuadStatePtr, cc::SharedQuadState>::Convert(
     const cc::SharedQuadState& input) {
   SharedQuadStatePtr state = SharedQuadState::New();
-  state->content_to_target_transform =
-      Transform::From(input.content_to_target_transform);
-  state->content_bounds = Size::From(input.content_bounds);
-  state->visible_content_rect = Rect::From(input.visible_content_rect);
+  state->quad_to_target_transform =
+      Transform::From(input.quad_to_target_transform);
+  state->quad_layer_bounds = Size::From(input.quad_layer_bounds);
+  state->visible_quad_layer_rect = Rect::From(input.visible_quad_layer_rect);
   state->clip_rect = Rect::From(input.clip_rect);
   state->is_clipped = input.is_clipped;
   state->opacity = input.opacity;

@@ -57,12 +57,12 @@ public:
 private:
     explicit ImageDocument(const DocumentInit&);
 
-    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
+    PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
 #if !ENABLE(OILPAN)
-    virtual void dispose() override;
+    void dispose() override;
 #endif
 
-    void createDocumentStructure();
+    void createDocumentStructure(bool loadingMultipartContent);
 
     // These methods are for m_shrinkToFitMode == Desktop.
     void resizeImageToFit(ScaleType);

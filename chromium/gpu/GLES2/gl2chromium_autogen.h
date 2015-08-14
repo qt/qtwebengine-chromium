@@ -251,6 +251,7 @@
 #define glEndTransformFeedback GLES2_GET_FUN(EndTransformFeedback)
 #define glGetQueryivEXT GLES2_GET_FUN(GetQueryivEXT)
 #define glGetQueryObjectuivEXT GLES2_GET_FUN(GetQueryObjectuivEXT)
+#define glGetQueryObjectui64vEXT GLES2_GET_FUN(GetQueryObjectui64vEXT)
 #define glInsertEventMarkerEXT GLES2_GET_FUN(InsertEventMarkerEXT)
 #define glPushGroupMarkerEXT GLES2_GET_FUN(PushGroupMarkerEXT)
 #define glPopGroupMarkerEXT GLES2_GET_FUN(PopGroupMarkerEXT)
@@ -291,6 +292,8 @@
 #define glTexImageIOSurface2DCHROMIUM GLES2_GET_FUN(TexImageIOSurface2DCHROMIUM)
 #define glCopyTextureCHROMIUM GLES2_GET_FUN(CopyTextureCHROMIUM)
 #define glCopySubTextureCHROMIUM GLES2_GET_FUN(CopySubTextureCHROMIUM)
+#define glCompressedCopyTextureCHROMIUM \
+  GLES2_GET_FUN(CompressedCopyTextureCHROMIUM)
 #define glDrawArraysInstancedANGLE GLES2_GET_FUN(DrawArraysInstancedANGLE)
 #define glDrawElementsInstancedANGLE GLES2_GET_FUN(DrawElementsInstancedANGLE)
 #define glVertexAttribDivisorANGLE GLES2_GET_FUN(VertexAttribDivisorANGLE)
@@ -328,8 +331,10 @@
 #define glScheduleOverlayPlaneCHROMIUM \
   GLES2_GET_FUN(ScheduleOverlayPlaneCHROMIUM)
 #define glSwapInterval GLES2_GET_FUN(SwapInterval)
+#define glFlushDriverCachesCHROMIUM GLES2_GET_FUN(FlushDriverCachesCHROMIUM)
 #define glMatrixLoadfCHROMIUM GLES2_GET_FUN(MatrixLoadfCHROMIUM)
 #define glMatrixLoadIdentityCHROMIUM GLES2_GET_FUN(MatrixLoadIdentityCHROMIUM)
+#define glGetGraphicsResetStatusKHR GLES2_GET_FUN(GetGraphicsResetStatusKHR)
 #define glBlendBarrierKHR GLES2_GET_FUN(BlendBarrierKHR)
 
 #endif  // GPU_GLES2_GL2CHROMIUM_AUTOGEN_H_

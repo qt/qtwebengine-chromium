@@ -108,10 +108,11 @@ int Merge::Process(int16_t* input, size_t input_length,
       // Set a suitable muting slope (Q20). 0.004 for NB, 0.002 for WB,
       // and so on.
       int increment = 4194 / fs_mult_;
-      *external_mute_factor = DspHelper::RampSignal(input_channel,
-                                                    interpolation_length,
-                                                    *external_mute_factor,
-                                                    increment);
+      *external_mute_factor =
+          static_cast<int16_t>(DspHelper::RampSignal(input_channel,
+                                                     interpolation_length,
+                                                     *external_mute_factor,
+                                                     increment));
       DspHelper::UnmuteSignal(&input_channel[interpolation_length],
                               input_length_per_channel - interpolation_length,
                               external_mute_factor, increment,
@@ -125,7 +126,8 @@ int Merge::Process(int16_t* input, size_t input_length,
     }
 
     // Do overlap and mix linearly.
-    int increment = 16384 / (interpolation_length + 1);  // In Q14.
+    int16_t increment =
+        static_cast<int16_t>(16384 / (interpolation_length + 1));  // In Q14.
     int16_t mute_factor = 16384 - increment;
     memmove(temp_data, expanded_channel,
             sizeof(int16_t) * best_correlation_index);
@@ -175,7 +177,7 @@ int Merge::GetExpandedSignal(int* old_length, int* expand_period) {
     // This is the truncated length.
   }
   // This assert should always be true thanks to the if statement above.
-  assert(210 * kMaxSampleRate / 8000 - *old_length >= 0);
+  assert(210 * kMaxSampleRate / 8000 >= *old_length);
 
   AudioMultiVector expanded_temp(num_channels_);
   expand_->Process(&expanded_temp);
@@ -246,7 +248,8 @@ int16_t Merge::SignalScaling(const int16_t* input, int input_length,
     // energy_expanded / energy_input is in Q14.
     energy_expanded = WEBRTC_SPL_SHIFT_W32(energy_expanded, temp_shift + 14);
     // Calculate sqrt(energy_expanded / energy_input) in Q14.
-    mute_factor = WebRtcSpl_SqrtFloor((energy_expanded / energy_input) << 14);
+    mute_factor = static_cast<int16_t>(
+        WebRtcSpl_SqrtFloor((energy_expanded / energy_input) << 14));
   } else {
     // Set to 1 (in Q14) when |expanded| has higher energy than |input|.
     mute_factor = 16384;
@@ -309,9 +312,9 @@ int16_t Merge::CorrelateAndPeakSearch(int16_t expanded_max, int16_t input_max,
                                       int expand_period) const {
   // Calculate correlation without any normalization.
   const int max_corr_length = kMaxCorrelationLength;
-  int stop_position_downsamp = std::min(
-      max_corr_length, expand_->max_lag() / (fs_mult_ * 2) + 1);
-  int16_t correlation_shift = 0;
+  int stop_position_downsamp =
+      std::min(max_corr_length, expand_->max_lag() / (fs_mult_ * 2) + 1);
+  int correlation_shift = 0;
   if (expanded_max * input_max > 26843546) {
     correlation_shift = 3;
   }
@@ -330,7 +333,7 @@ int16_t Merge::CorrelateAndPeakSearch(int16_t expanded_max, int16_t input_max,
   int16_t* correlation_ptr = &correlation16[pad_length];
   int32_t max_correlation = WebRtcSpl_MaxAbsValueW32(correlation,
                                                      stop_position_downsamp);
-  int16_t norm_shift = std::max(0, 17 - WebRtcSpl_NormW32(max_correlation));
+  int norm_shift = std::max(0, 17 - WebRtcSpl_NormW32(max_correlation));
   WebRtcSpl_VectorBitShiftW32ToW16(correlation_ptr, stop_position_downsamp,
                                    correlation, norm_shift);
 
@@ -342,7 +345,7 @@ int16_t Merge::CorrelateAndPeakSearch(int16_t expanded_max, int16_t input_max,
   int start_index = timestamps_per_call_ +
       static_cast<int>(expand_->overlap_length());
   start_index = std::max(start_position, start_index);
-  start_index = std::max(start_index - input_length, 0);
+  start_index = (input_length > start_index) ? 0 : (start_index - input_length);
   // Downscale starting index to 4kHz domain. (fs_mult_ * 2 = fs_hz_ / 4000.)
   int start_index_downsamp = start_index / (fs_mult_ * 2);
 
@@ -364,9 +367,9 @@ int16_t Merge::CorrelateAndPeakSearch(int16_t expanded_max, int16_t input_max,
   // Ensure that underrun does not occur for 10ms case => we have to get at
   // least 10ms + overlap . (This should never happen thanks to the above
   // modification of peak-finding starting point.)
-  while ((best_correlation_index + input_length) <
-      static_cast<int>(timestamps_per_call_ + expand_->overlap_length()) ||
-      best_correlation_index + input_length < start_position) {
+  while (((best_correlation_index + input_length) <
+      static_cast<int>(timestamps_per_call_ + expand_->overlap_length())) ||
+      ((best_correlation_index + input_length) < start_position)) {
     assert(false);  // Should never happen.
     best_correlation_index += expand_period;  // Jump one lag ahead.
   }

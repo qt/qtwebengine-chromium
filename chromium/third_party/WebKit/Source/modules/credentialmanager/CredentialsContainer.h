@@ -11,6 +11,7 @@
 namespace blink {
 
 class Credential;
+class CredentialRequestOptions;
 class Dictionary;
 class ScriptPromise;
 class ScriptState;
@@ -21,10 +22,9 @@ public:
     static CredentialsContainer* create();
 
     // CredentialsContainer.h
-    ScriptPromise request(ScriptState*, const Dictionary&);
+    ScriptPromise request(ScriptState*, const CredentialRequestOptions&);
     ScriptPromise notifySignedIn(ScriptState*, Credential* = 0);
-    ScriptPromise notifyFailedSignIn(ScriptState*, Credential* = 0);
-    ScriptPromise notifySignedOut(ScriptState*);
+    ScriptPromise requireUserMediation(ScriptState*);
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 

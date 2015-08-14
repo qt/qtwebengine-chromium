@@ -36,21 +36,10 @@
 #include "bindings/core/v8/ToV8.h"
 #include "bindings/core/v8/V8ThrowException.h"
 #include "core/dom/DOMException.h"
+#include "core/inspector/InstanceCounters.h"
 #include <v8.h>
 
 namespace blink {
-
-namespace {
-
-struct WithScriptState {
-    // Used by ToV8Value<WithScriptState, ScriptState*>.
-    static v8::Local<v8::Object> getCreationContext(ScriptState* scriptState)
-    {
-        return scriptState->context()->Global();
-    }
-};
-
-} // namespace
 
 ScriptPromise::InternalResolver::InternalResolver(ScriptState* scriptState)
     : m_resolver(scriptState, v8::Promise::Resolver::New(scriptState->context())) { }
@@ -85,9 +74,16 @@ void ScriptPromise::InternalResolver::reject(v8::Local<v8::Value> value)
     clear();
 }
 
+ScriptPromise::ScriptPromise()
+{
+    increaseInstanceCount();
+}
+
 ScriptPromise::ScriptPromise(ScriptState* scriptState, v8::Local<v8::Value> value)
     : m_scriptState(scriptState)
 {
+    increaseInstanceCount();
+
     if (value.IsEmpty())
         return;
 
@@ -97,6 +93,19 @@ ScriptPromise::ScriptPromise(ScriptState* scriptState, v8::Local<v8::Value> valu
         return;
     }
     m_promise = ScriptValue(scriptState, value);
+}
+
+ScriptPromise::ScriptPromise(const ScriptPromise& other)
+{
+    increaseInstanceCount();
+
+    this->m_scriptState = other.m_scriptState;
+    this->m_promise = other.m_promise;
+}
+
+ScriptPromise::~ScriptPromise()
+{
+    decreaseInstanceCount();
 }
 
 ScriptPromise ScriptPromise::then(v8::Local<v8::Function> onFulfilled, v8::Local<v8::Function> onRejected)
@@ -172,6 +181,21 @@ v8::Local<v8::Promise> ScriptPromise::rejectRaw(ScriptState* scriptState, v8::Lo
     v8::Local<v8::Promise> promise = resolver->GetPromise();
     resolver->Reject(scriptState->context(), value);
     return promise;
+}
+
+void ScriptPromise::increaseInstanceCount()
+{
+    // An instance is only counted only on the main thread. This is because the
+    // leak detector can detect leaks on the main thread so far. We plan to fix
+    // the leak detector to work on worker threads (crbug.com/507224).
+    if (isMainThread())
+        InstanceCounters::incrementCounter(InstanceCounters::ScriptPromiseCounter);
+}
+
+void ScriptPromise::decreaseInstanceCount()
+{
+    if (isMainThread())
+        InstanceCounters::decrementCounter(InstanceCounters::ScriptPromiseCounter);
 }
 
 } // namespace blink

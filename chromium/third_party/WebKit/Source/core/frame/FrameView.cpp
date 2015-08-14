@@ -36,7 +36,6 @@
 #include "core/dom/Fullscreen.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/RenderedPosition.h"
-#include "core/events/OverflowEvent.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
 #include "core/frame/FrameHost.h"
@@ -46,6 +45,7 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/TextResourceDecoder.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/layout/LayoutAnalyzer.h"
@@ -69,9 +69,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/AutoscrollController.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
@@ -91,7 +89,6 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/GraphicsLayerDebugInfo.h"
 #include "platform/scroll/ScrollAnimator.h"
@@ -120,12 +117,10 @@ FrameView::FrameView(LocalFrame* frame)
     , m_isTransparent(false)
     , m_baseBackgroundColor(Color::white)
     , m_mediaType(MediaTypeNames::screen)
-    , m_overflowStatusDirty(true)
     , m_wasScrolledByUser(false)
     , m_safeToPropagateScrollToParent(true)
     , m_isTrackingPaintInvalidations(false)
     , m_scrollCorner(nullptr)
-    , m_visibleContentScaleFactor(1)
     , m_inputEventsScaleFactorForEmulation(1)
     , m_layoutSizeFixedToFrameSize(true)
     , m_didScrollTimer(this, &FrameView::didScrollTimerFired)
@@ -141,7 +136,6 @@ FrameView::FrameView(LocalFrame* frame)
     , m_scrollbarsAvoidingResizer(0)
     , m_scrollbarsSuppressed(false)
     , m_inUpdateScrollbars(false)
-    , m_shouldDrawPanScrollIcon(false)
     , m_clipsRepaints(true)
 {
     ASSERT(m_frame);
@@ -167,9 +161,7 @@ PassRefPtrWillBeRawPtr<FrameView> FrameView::create(LocalFrame* frame, const Int
 
 FrameView::~FrameView()
 {
-#if ENABLE(ASSERT)
     ASSERT(m_hasBeenDisposed);
-#endif
 #if !ENABLE(OILPAN)
     // Verify that the LocalFrame has a different FrameView or
     // that it is being detached and destructed.
@@ -183,12 +175,16 @@ DEFINE_TRACE(FrameView)
     visitor->trace(m_frame);
     visitor->trace(m_nodeToDraw);
     visitor->trace(m_maintainScrollPositionAnchor);
+    visitor->trace(m_scrollableAreas);
+    visitor->trace(m_animatingScrollableAreas);
     visitor->trace(m_autoSizeInfo);
     visitor->trace(m_horizontalScrollbar);
     visitor->trace(m_verticalScrollbar);
     visitor->trace(m_children);
+    visitor->trace(m_viewportScrollableArea);
 #endif
     Widget::trace(visitor);
+    ScrollableArea::trace(visitor);
 }
 
 void FrameView::reset()
@@ -219,7 +215,7 @@ void FrameView::reset()
     m_firstVisuallyNonEmptyLayoutCallbackPending = true;
     m_maintainScrollPositionAnchor = nullptr;
     m_viewportConstrainedObjects.clear();
-    m_layoutSubtreeRoots.clear();
+    m_layoutSubtreeRootList.clear();
 }
 
 void FrameView::removeFromAXObjectCache()
@@ -407,7 +403,7 @@ void FrameView::setFrameRect(const IntRect& newRect)
             layoutView->compositor()->frameViewDidChangeSize();
     }
 
-    viewportConstrainedVisibleContentSizeChanged(newRect.width() != oldRect.width(), newRect.height() != oldRect.height());
+    viewportSizeChanged(newRect.width() != oldRect.width(), newRect.height() != oldRect.height());
 
     if (oldRect.size() != newRect.size() && m_frame->isMainFrame())
         page()->frameHost().pinchViewport().mainFrameDidChangeSize();
@@ -511,13 +507,13 @@ void FrameView::setContentsSize(const IntSize& size)
 
     updateScrollableAreaSet();
 
-    page->chrome().contentsSizeChanged(m_frame.get(), size);
+    page->chromeClient().contentsSizeChanged(m_frame.get(), size);
 }
 
 IntPoint FrameView::clampOffsetAtScale(const IntPoint& offset, float scale) const
 {
     IntPoint maxScrollExtent(contentsSize().width() - scrollOrigin().x(), contentsSize().height() - scrollOrigin().y());
-    FloatSize scaledSize = unscaledVisibleContentSize();
+    FloatSize scaledSize = visibleContentSize();
     if (scale)
         scaledSize.scale(1 / scale);
 
@@ -721,31 +717,15 @@ bool FrameView::isEnclosedInCompositingLayer() const
     return frameOwnerLayoutObject && frameOwnerLayoutObject->enclosingLayer()->enclosingLayerForPaintInvalidationCrossingFrameBoundaries();
 }
 
-static inline void countObjectsNeedingLayoutInRoot(const LayoutObject* root, unsigned& needsLayoutObjects, unsigned& totalObjects)
-{
-    for (const LayoutObject* o = root; o; o = o->nextInPreOrder(root)) {
-        ++totalObjects;
-        if (o->needsLayout())
-            ++needsLayoutObjects;
-    }
-}
-
 void FrameView::countObjectsNeedingLayout(unsigned& needsLayoutObjects, unsigned& totalObjects, bool& isSubtree)
 {
     needsLayoutObjects = 0;
     totalObjects = 0;
     isSubtree = isSubtreeLayout();
-    if (isSubtree) {
-        for (auto& subtreeRoot : m_layoutSubtreeRoots)
-            countObjectsNeedingLayoutInRoot(subtreeRoot, needsLayoutObjects, totalObjects);
-    } else {
-        countObjectsNeedingLayoutInRoot(layoutView(), needsLayoutObjects, totalObjects);
-    }
-}
-
-bool FrameView::isLayoutRoot(const LayoutObject& object) const
-{
-    return m_layoutSubtreeRoots.contains(const_cast<LayoutObject*>(&object));
+    if (isSubtree)
+        m_layoutSubtreeRootList.countObjectsNeedingLayout(needsLayoutObjects, totalObjects);
+    else
+        LayoutSubtreeRootList::countObjectsNeedingLayoutInRoot(layoutView(), needsLayoutObjects, totalObjects);
 }
 
 inline void FrameView::forceLayoutParentViewIfNeeded()
@@ -848,7 +828,7 @@ PassRefPtr<TracedValue> FrameView::analyzerCounters()
 
 void FrameView::performLayout(bool inSubtreeLayout)
 {
-    ASSERT(inSubtreeLayout || m_layoutSubtreeRoots.isEmpty());
+    ASSERT(inSubtreeLayout || m_layoutSubtreeRootList.isEmpty());
 
     TRACE_EVENT_BEGIN0(PERFORM_LAYOUT_TRACE_CATEGORIES, "FrameView::performLayout");
     prepareLayoutAnalyzer();
@@ -868,17 +848,16 @@ void FrameView::performLayout(bool inSubtreeLayout)
 
     if (inSubtreeLayout) {
         if (m_analyzer)
-            m_analyzer->increment(LayoutAnalyzer::PerformLayoutRootLayoutObjects, m_layoutSubtreeRoots.size());
-        while (m_layoutSubtreeRoots.size()) {
-            LayoutObject& root = *m_layoutSubtreeRoots.takeAny();
-            if (!root.needsLayout())
+            m_analyzer->increment(LayoutAnalyzer::PerformLayoutRootLayoutObjects, m_layoutSubtreeRootList.size());
+        while (LayoutObject* root = m_layoutSubtreeRootList.takeDeepestRoot()) {
+            if (!root->needsLayout())
                 continue;
-            layoutFromRootObject(root);
+            layoutFromRootObject(*root);
 
             // We need to ensure that we mark up all layoutObjects up to the LayoutView
             // for paint invalidation. This simplifies our code as we just always
             // do a full tree walk.
-            if (LayoutObject* container = root.container())
+            if (LayoutObject* container = root->container())
                 container->setMayNeedPaintInvalidation();
         }
     } else {
@@ -942,7 +921,7 @@ void FrameView::layout()
 
     RELEASE_ASSERT(!isPainting());
 
-    TRACE_EVENT_BEGIN1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Layout", "beginData", InspectorLayoutEvent::beginData(this));
+    TRACE_EVENT_BEGIN1("devtools.timeline", "Layout", "beginData", InspectorLayoutEvent::beginData(this));
 
     performPreLayoutTasks();
 
@@ -959,11 +938,12 @@ void FrameView::layout()
     // to clear the roots and do the layout from the layoutView.
     if (layoutView()->needsLayout())
         clearLayoutSubtreeRootsAndMarkContainingBlocks();
+    layoutView()->clearHitTestCache();
 
     bool inSubtreeLayout = isSubtreeLayout();
 
     // FIXME: The notion of a single root for layout is no longer applicable. Remove or update this code. crbug.com/460596
-    LayoutObject* rootForThisLayout = inSubtreeLayout ? *(m_layoutSubtreeRoots.begin()) : layoutView();
+    LayoutObject* rootForThisLayout = inSubtreeLayout ? m_layoutSubtreeRootList.randomRoot() : layoutView();
     if (!rootForThisLayout) {
         // FIXME: Do we need to set m_size here?
         ASSERT_NOT_REACHED();
@@ -1049,7 +1029,7 @@ void FrameView::layout()
         TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("blink.debug.layout"), "LayoutTree",
             this, TracedLayoutObject::create(*layoutView()));
 
-        ASSERT(m_layoutSubtreeRoots.isEmpty());
+        ASSERT(m_layoutSubtreeRootList.isEmpty());
     } // Reset m_layoutSchedulingEnabled to its previous value.
 
     if (!inSubtreeLayout && !document->printing())
@@ -1069,13 +1049,10 @@ void FrameView::layout()
     }
     updateAnnotatedRegions();
 
-    if (document->hasListenerType(Document::OVERFLOWCHANGED_LISTENER))
-        updateOverflowStatus(layoutSize().width() < contentsWidth(), layoutSize().height() < contentsHeight());
-
     scheduleOrPerformPostLayoutTasks();
 
     // FIXME: The notion of a single root for layout is no longer applicable. Remove or update this code. crbug.com/460596
-    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Layout", "endData", InspectorLayoutEvent::endData(rootForThisLayout));
+    TRACE_EVENT_END1("devtools.timeline", "Layout", "endData", InspectorLayoutEvent::endData(rootForThisLayout));
     InspectorInstrumentation::didLayout(m_frame.get());
 
     m_nestedLayoutCount--;
@@ -1094,30 +1071,30 @@ void FrameView::layout()
     // necessitating this check here.
     // ASSERT(frame()->page());
     if (frame().page())
-        frame().page()->chrome().client().layoutUpdated(m_frame.get());
+        frame().page()->chromeClient().layoutUpdated(m_frame.get());
 
-    frame().document()->markers().updateRenderedRectsForMarkers();
+    frame().document()->layoutUpdated();
 }
 
 // The plan is to move to compositor-queried paint invalidation, in which case this
 // method would setNeedsRedraw on the GraphicsLayers with invalidations and
 // let the compositor pick which to actually draw.
 // See http://crbug.com/306706
-void FrameView::invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations)
+void FrameView::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
 {
+    lifecycle().advanceTo(DocumentLifecycle::InPaintInvalidation);
+
     ASSERT(layoutView());
     LayoutView& rootForPaintInvalidation = *layoutView();
     ASSERT(!rootForPaintInvalidation.needsLayout());
 
     TRACE_EVENT1("blink", "FrameView::invalidateTree", "root", rootForPaintInvalidation.debugName().ascii());
 
-    PaintInvalidationState rootPaintInvalidationState(rootForPaintInvalidation, pendingDelayedPaintInvalidations);
-
     // In slimming paint mode we do per-object invalidation.
     if (m_doFullPaintInvalidation && !RuntimeEnabledFeatures::slimmingPaintEnabled())
         layoutView()->compositor()->fullyInvalidatePaint();
 
-    rootForPaintInvalidation.invalidateTreeIfNeeded(rootPaintInvalidationState);
+    rootForPaintInvalidation.invalidateTreeIfNeeded(paintInvalidationState);
 
     // Invalidate the paint of the frameviews scrollbars if needed
     if (hasVerticalBarDamage())
@@ -1132,6 +1109,9 @@ void FrameView::invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPain
 
     if (m_frame->selection().isCaretBoundsDirty())
         m_frame->selection().invalidateCaretRect();
+
+    m_doFullPaintInvalidation = false;
+    lifecycle().advanceTo(DocumentLifecycle::PaintInvalidationClean);
 }
 
 DocumentLifecycle& FrameView::lifecycle() const
@@ -1275,14 +1255,7 @@ void FrameView::removeViewportConstrainedObject(LayoutObject* object)
     }
 }
 
-LayoutRect FrameView::viewportConstrainedVisibleContentRect() const
-{
-    LayoutRect viewportRect = LayoutRect(visibleContentRect());
-    viewportRect.setLocation(clampScrollPosition(scrollPosition()));
-    return viewportRect;
-}
-
-void FrameView::viewportConstrainedVisibleContentSizeChanged(bool widthChanged, bool heightChanged)
+void FrameView::viewportSizeChanged(bool widthChanged, bool heightChanged)
 {
     if (!hasViewportConstrainedObjects())
         return;
@@ -1305,11 +1278,6 @@ void FrameView::viewportConstrainedVisibleContentSizeChanged(bool widthChanged, 
     }
 }
 
-IntSize FrameView::scrollOffsetForViewportConstrainedObjects() const
-{
-    return roundedIntSize(viewportConstrainedVisibleContentRect().location());
-}
-
 IntPoint FrameView::lastKnownMousePosition() const
 {
     return m_frame->eventHandler().lastKnownMousePosition();
@@ -1330,20 +1298,6 @@ void FrameView::scrollContentsIfNeededRecursive()
             continue;
         if (FrameView* view = toLocalFrame(child)->view())
             view->scrollContentsIfNeededRecursive();
-    }
-}
-
-// FIXME: If we had a flag to force invalidations in a whole subtree, we could get rid of this function (crbug.com/410097).
-static void setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants(const DeprecatedPaintLayer* layer)
-{
-    layer->layoutObject()->setShouldDoFullPaintInvalidation();
-
-    for (DeprecatedPaintLayer* child = layer->firstChild(); child; child = child->nextSibling()) {
-        // Don't include paint invalidation rects for composited child layers; they will paint themselves and have a different origin.
-        if (child->isPaintInvalidationContainer())
-            continue;
-
-        setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants(child);
     }
 }
 
@@ -1373,7 +1327,7 @@ bool FrameView::invalidateViewportConstrainedObjects()
             "data",
             InspectorScrollInvalidationTrackingEvent::data(*layoutObject));
 
-        setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants(layer);
+        layoutObject->setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
     }
     return true;
 }
@@ -1406,7 +1360,7 @@ void FrameView::scrollContentsSlowPath(const IntRect& updateRect)
         if (contentsInCompositedLayer())
             layoutView()->layer()->compositedDeprecatedPaintLayerMapping()->setContentsNeedDisplay();
         else
-            setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants(layoutView()->layer());
+            layoutView()->setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
     }
 
     if (contentsInCompositedLayer()) {
@@ -1436,7 +1390,7 @@ void FrameView::restoreScrollbar()
     setScrollbarsSuppressed(false);
 }
 
-bool FrameView::scrollToFragment(const KURL& url)
+bool FrameView::processUrlFragment(const KURL& url, UrlFragmentBehavior behavior)
 {
     // If our URL has no ref, then we have no place we need to jump to.
     // OTOH If CSS target was set previously, we want to set it to 0, recalc
@@ -1448,21 +1402,21 @@ bool FrameView::scrollToFragment(const KURL& url)
         return false;
 
     String fragmentIdentifier = url.fragmentIdentifier();
-    if (scrollToAnchor(fragmentIdentifier))
+    if (processUrlFragmentHelper(fragmentIdentifier, behavior))
         return true;
 
     // Try again after decoding the ref, based on the document's encoding.
     if (m_frame->document()->encoding().isValid())
-        return scrollToAnchor(decodeURLEscapeSequences(fragmentIdentifier, m_frame->document()->encoding()));
+        return processUrlFragmentHelper(decodeURLEscapeSequences(fragmentIdentifier, m_frame->document()->encoding()), behavior);
 
     return false;
 }
 
-bool FrameView::scrollToAnchor(const String& name)
+bool FrameView::processUrlFragmentHelper(const String& name, UrlFragmentBehavior behavior)
 {
     ASSERT(m_frame->document());
 
-    if (!m_frame->document()->isRenderingReady()) {
+    if (behavior == UrlFragmentScroll && !m_frame->document()->isRenderingReady()) {
         m_frame->document()->setGotoAnchorNeededAfterStylesheetsLoad(true);
         return false;
     }
@@ -1486,7 +1440,8 @@ bool FrameView::scrollToAnchor(const String& name)
     if (!anchorNode && !(name.isEmpty() || equalIgnoringCase(name, "top")))
         return false;
 
-    maintainScrollPositionAtAnchor(anchorNode ? static_cast<Node*>(anchorNode) : m_frame->document());
+    if (behavior == UrlFragmentScroll)
+        maintainScrollPositionAtAnchor(anchorNode ? static_cast<Node*>(anchorNode) : m_frame->document());
 
     // If the anchor accepts keyboard focus, move focus there to aid users relying on keyboard navigation.
     // If anchorNode is not focusable, setFocusedElement() will still clear focus, which matches the behavior of other browsers.
@@ -1513,29 +1468,26 @@ void FrameView::maintainScrollPositionAtAnchor(Node* anchorNode)
         scrollToAnchor();
 }
 
-void FrameView::setScrollPosition(const DoublePoint& scrollPoint, ScrollBehavior scrollBehavior)
+void FrameView::setScrollPosition(const DoublePoint& scrollPoint, ScrollType scrollType, ScrollBehavior scrollBehavior)
 {
-    cancelProgrammaticScrollAnimation();
     m_maintainScrollPositionAnchor = nullptr;
 
-    DoublePoint newScrollPosition = adjustScrollPositionWithinRange(scrollPoint);
+    DoublePoint newScrollPosition = clampScrollPosition(scrollPoint);
     if (newScrollPosition == scrollPositionDouble())
         return;
 
     if (scrollBehavior == ScrollBehaviorAuto)
         scrollBehavior = scrollBehaviorStyle();
 
-    if (scrollBehavior == ScrollBehaviorInstant) {
-        DoubleSize newOffset(newScrollPosition.x(), newScrollPosition.y());
-        updateScrollbars(newOffset);
-    } else {
-        programmaticallyScrollSmoothlyToOffset(toFloatPoint(newScrollPosition));
-    }
+    ScrollableArea::setScrollPosition(newScrollPosition, scrollType, scrollBehavior);
 }
 
-void FrameView::setElasticOverscroll(const FloatSize& elasticOverscroll)
+void FrameView::didUpdateElasticOverscroll()
 {
-    m_elasticOverscroll = elasticOverscroll;
+    Page* page = frame().page();
+    if (!page)
+        return;
+    FloatSize elasticOverscroll = page->chromeClient().elasticOverscroll();
     if (m_horizontalScrollbar) {
         float delta = elasticOverscroll.width() - m_horizontalScrollbar->elasticOverscroll();
         if (delta != 0) {
@@ -1587,6 +1539,7 @@ void FrameView::scrollPositionChanged()
     if (AXObjectCache* cache = m_frame->document()->existingAXObjectCache())
         cache->handleScrollPositionChanged(this);
 
+    layoutView()->clearHitTestCache();
     frame().loader().saveScrollState();
 }
 
@@ -1667,11 +1620,11 @@ void FrameView::updateCompositedSelectionIfNeeded()
     CompositedSelection selection;
     LocalFrame* frame = toLocalFrame(page->focusController().focusedOrMainFrame());
     if (!frame || !computeCompositedSelection(*frame, selection)) {
-        page->chrome().client().clearCompositedSelection();
+        page->chromeClient().clearCompositedSelection();
         return;
     }
 
-    page->chrome().client().updateCompositedSelection(selection);
+    page->chromeClient().updateCompositedSelection(selection);
 }
 
 HostWindow* FrameView::hostWindow() const
@@ -1679,7 +1632,7 @@ HostWindow* FrameView::hostWindow() const
     Page* page = frame().page();
     if (!page)
         return nullptr;
-    return &page->chrome();
+    return &page->chromeClient();
 }
 
 void FrameView::contentRectangleForPaintInvalidation(const IntRect& rectInContent)
@@ -1750,14 +1703,12 @@ void FrameView::handleLoadCompleted()
 
 void FrameView::clearLayoutSubtreeRoot(const LayoutObject& root)
 {
-    m_layoutSubtreeRoots.remove(const_cast<LayoutObject*>(&root));
+    m_layoutSubtreeRootList.removeRoot(const_cast<LayoutObject&>(root));
 }
 
 void FrameView::clearLayoutSubtreeRootsAndMarkContainingBlocks()
 {
-    for (auto& iter : m_layoutSubtreeRoots)
-        iter->markContainerChainForLayout(false);
-    m_layoutSubtreeRoots.clear();
+    m_layoutSubtreeRootList.clearAndMarkContainingBlocksForLayout();
 }
 
 void FrameView::scheduleRelayout()
@@ -1798,9 +1749,10 @@ void FrameView::scheduleRelayoutOfSubtree(LayoutObject* relayoutRoot)
     }
 
     if (relayoutRoot == layoutView)
-        clearLayoutSubtreeRootsAndMarkContainingBlocks();
+        m_layoutSubtreeRootList.clearAndMarkContainingBlocksForLayout();
     else
-        m_layoutSubtreeRoots.add(relayoutRoot);
+        m_layoutSubtreeRootList.addRoot(*relayoutRoot);
+
     if (m_layoutSchedulingEnabled) {
         m_hasPendingLayout = true;
 
@@ -1905,7 +1857,7 @@ void FrameView::scrollToAnchor()
     LayoutRect rect;
     if (anchorNode != m_frame->document()) {
         rect = anchorNode->boundingBox();
-    } else if (m_frame->settings()->rootLayerScrolls()) {
+    } else if (m_frame->settings() && m_frame->settings()->rootLayerScrolls()) {
         if (Element* documentElement = m_frame->document()->documentElement())
             rect = documentElement->boundingBox();
     }
@@ -2030,6 +1982,11 @@ void FrameView::performPostLayoutTasks()
     }
 
     FontFaceSet::didLayout(*m_frame->document());
+    // Cursor update scheduling is done by the local root, which is the main frame if there
+    // are no RemoteFrame ancestors in the frame tree. Use of localFrameRoot() is
+    // discouraged but will change when cursor update scheduling is moved from EventHandler
+    // to PageEventHandler.
+    frame().localFrameRoot()->eventHandler().scheduleCursorUpdate();
 
     updateWidgetPositions();
 
@@ -2094,33 +2051,6 @@ void FrameView::updateCounters()
 
         toLayoutCounter(layoutObject)->updateCounter();
     }
-}
-
-void FrameView::updateOverflowStatus(bool horizontalOverflow, bool verticalOverflow)
-{
-    LayoutObject* viewport = viewportLayoutObject();
-    if (!viewport)
-        return;
-
-    if (m_overflowStatusDirty) {
-        m_horizontalOverflow = horizontalOverflow;
-        m_verticalOverflow = verticalOverflow;
-        m_overflowStatusDirty = false;
-        return;
-    }
-
-    bool horizontalOverflowChanged = (m_horizontalOverflow != horizontalOverflow);
-    bool verticalOverflowChanged = (m_verticalOverflow != verticalOverflow);
-
-    if (horizontalOverflowChanged || verticalOverflowChanged) {
-        m_horizontalOverflow = horizontalOverflow;
-        m_verticalOverflow = verticalOverflow;
-
-        RefPtrWillBeRawPtr<OverflowEvent> event = OverflowEvent::create(horizontalOverflowChanged, horizontalOverflow, verticalOverflowChanged, verticalOverflow);
-        event->setTarget(viewport->node());
-        m_frame->document()->enqueueAnimationFrameEvent(event.release());
-    }
-
 }
 
 IntRect FrameView::windowClipRect(IncludeScrollbarsInRect scrollbarInclusion) const
@@ -2243,19 +2173,9 @@ void FrameView::getTickmarks(Vector<IntRect>& tickmarks) const
 
 IntRect FrameView::windowResizerRect() const
 {
-    Page* page = frame().page();
-    if (!page)
-        return IntRect();
-    return page->chrome().windowResizerRect();
-}
-
-void FrameView::setVisibleContentScaleFactor(float visibleContentScaleFactor)
-{
-    if (m_visibleContentScaleFactor == visibleContentScaleFactor)
-        return;
-
-    m_visibleContentScaleFactor = visibleContentScaleFactor;
-    updateScrollbars(scrollOffsetDouble());
+    if (Page* page = frame().page())
+        return page->chromeClient().windowResizerRect();
+    return IntRect();
 }
 
 void FrameView::setInputEventsTransformForEmulation(const IntSize& offset, float contentScaleFactor)
@@ -2399,7 +2319,7 @@ void FrameView::updateAnnotatedRegions()
         return;
     document->setAnnotatedRegions(newRegions);
     if (Page* page = m_frame->page())
-        page->chrome().client().annotatedRegionsChanged();
+        page->chromeClient().annotatedRegionsChanged();
 }
 
 void FrameView::updateScrollCorner()
@@ -2522,12 +2442,24 @@ void FrameView::updateWidgetPositionsIfNeeded()
     updateWidgetPositions();
 }
 
-void FrameView::updateLayoutAndStyleForPainting()
+void FrameView::updateAllLifecyclePhases()
 {
-    frame().localFrameRoot()->view()->updateLayoutAndStyleForPaintingInternal();
+    frame().localFrameRoot()->view()->updateAllLifecyclePhasesInternal();
 }
 
-void FrameView::updateLayoutAndStyleForPaintingInternal()
+// TODO(chrishtr): add a scrolling update lifecycle phase, after compositing and before invalidation.
+void FrameView::updateLifecycleToCompositingCleanPlusScrolling()
+{
+    frame().localFrameRoot()->view()->updateStyleAndLayoutIfNeededRecursive();
+    LayoutView* view = layoutView();
+    if (view)
+        view->compositor()->updateIfNeededRecursive();
+    scrollContentsIfNeededRecursive();
+
+    ASSERT(lifecycle().state() >= DocumentLifecycle::CompositingClean);
+}
+
+void FrameView::updateAllLifecyclePhasesInternal()
 {
     // This must be called from the root frame, since it recurses down, not up. Otherwise the lifecycles of the frames might be out of sync.
     ASSERT(frame() == page()->mainFrame() || (!frame().tree().parent()->isLocalFrame()));
@@ -2535,30 +2467,34 @@ void FrameView::updateLayoutAndStyleForPaintingInternal()
     // Updating layout can run script, which can tear down the FrameView.
     RefPtrWillBeRawPtr<FrameView> protector(this);
 
-    updateLayoutAndStyleIfNeededRecursive();
+    updateStyleAndLayoutIfNeededRecursive();
 
     LayoutView* view = layoutView();
     if (view) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateLayerTree", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateLayerTreeEvent::data(m_frame.get()));
+        TRACE_EVENT1("devtools.timeline", "UpdateLayerTree", "data", InspectorUpdateLayerTreeEvent::data(m_frame.get()));
 
         view->compositor()->updateIfNeededRecursive();
-
-        if (view->compositor()->inCompositingMode() && m_frame->isLocalRoot())
-            scrollingCoordinator()->updateAfterCompositingChangeIfNeeded();
-
-        updateCompositedSelectionIfNeeded();
-
-        if (RuntimeEnabledFeatures::frameTimingSupportEnabled())
-            updateFrameTimingRequestsIfNeeded();
-
         scrollContentsIfNeededRecursive();
-
         invalidateTreeIfNeededRecursive();
+        updatePostLifecycleData();
 
         ASSERT(!view->hasPendingSelection());
     }
 
     ASSERT(lifecycle().state() == DocumentLifecycle::PaintInvalidationClean);
+}
+
+void FrameView::updatePostLifecycleData()
+{
+    LayoutView* view = layoutView();
+    ASSERT(view);
+
+    if (view->compositor()->inCompositingMode() && m_frame->isLocalRoot())
+        scrollingCoordinator()->updateAfterCompositingChangeIfNeeded();
+
+    updateCompositedSelectionIfNeeded();
+    if (RuntimeEnabledFeatures::frameTimingSupportEnabled())
+        updateFrameTimingRequestsIfNeeded();
 }
 
 void FrameView::updateFrameTimingRequestsIfNeeded()
@@ -2573,7 +2509,7 @@ void FrameView::updateFrameTimingRequestsIfNeeded()
     }
 }
 
-void FrameView::updateLayoutAndStyleIfNeededRecursive()
+void FrameView::updateStyleAndLayoutIfNeededRecursive()
 {
     // We have to crawl our entire subtree looking for any FrameViews that need
     // layout and make sure they are up to date.
@@ -2600,7 +2536,7 @@ void FrameView::updateLayoutAndStyleIfNeededRecursive()
     }
 
     for (const auto& frameView : frameViews)
-        frameView->updateLayoutAndStyleIfNeededRecursive();
+        frameView->updateStyleAndLayoutIfNeededRecursive();
 
     // When an <iframe> gets composited, it triggers an extra style recalc in its containing FrameView.
     // To avoid pushing an invalid tree for display, we have to check for this case and do another
@@ -2625,22 +2561,26 @@ void FrameView::updateLayoutAndStyleIfNeededRecursive()
 
 void FrameView::invalidateTreeIfNeededRecursive()
 {
-    // FIXME: We should be more aggressive at cutting tree traversals.
-    lifecycle().advanceTo(DocumentLifecycle::InPaintInvalidation);
+    ASSERT(layoutView());
+    TRACE_EVENT1("blink", "FrameView::invalidateTreeIfNeededRecursive", "root", layoutView()->debugName().ascii());
 
     Vector<LayoutObject*> pendingDelayedPaintInvalidations;
+    PaintInvalidationState rootPaintInvalidationState(*layoutView(), pendingDelayedPaintInvalidations);
 
-    invalidateTreeIfNeeded(pendingDelayedPaintInvalidations);
+    invalidateTreeIfNeeded(rootPaintInvalidationState);
 
+    // Some frames may be not reached during the above invalidateTreeIfNeeded because
+    // - the frame is a detached frame; or
+    // - it didn't need paint invalidation.
+    // We need to call invalidateTreeIfNeededRecursive() for such frames to finish required
+    // paint invalidation and advance their life cycle state.
     for (Frame* child = m_frame->tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (!child->isLocalFrame())
             continue;
-
-        toLocalFrame(child)->view()->invalidateTreeIfNeededRecursive();
+        FrameView* childFrameView = toLocalFrame(child)->view();
+        if (childFrameView->lifecycle().state() < DocumentLifecycle::PaintInvalidationClean)
+            childFrameView->invalidateTreeIfNeededRecursive();
     }
-
-    m_doFullPaintInvalidation = false;
-    lifecycle().advanceTo(DocumentLifecycle::PaintInvalidationClean);
 
     // Process objects needing paint invalidation on the next frame. See the definition of PaintInvalidationDelayedFull for more details.
     for (auto& target : pendingDelayedPaintInvalidations)
@@ -2902,7 +2842,7 @@ void FrameView::addScrollableArea(ScrollableArea* scrollableArea)
 {
     ASSERT(scrollableArea);
     if (!m_scrollableAreas)
-        m_scrollableAreas = adoptPtr(new ScrollableAreaSet);
+        m_scrollableAreas = adoptPtrWillBeNoop(new ScrollableAreaSet);
     m_scrollableAreas->add(scrollableArea);
 
     if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
@@ -2923,7 +2863,7 @@ void FrameView::addAnimatingScrollableArea(ScrollableArea* scrollableArea)
 {
     ASSERT(scrollableArea);
     if (!m_animatingScrollableAreas)
-        m_animatingScrollableAreas = adoptPtr(new ScrollableAreaSet);
+        m_animatingScrollableAreas = adoptPtrWillBeNoop(new ScrollableAreaSet);
     m_animatingScrollableAreas->add(scrollableArea);
 }
 
@@ -2964,10 +2904,10 @@ void FrameView::removeChild(Widget* child)
 ScrollResult FrameView::wheelEvent(const PlatformWheelEvent& wheelEvent)
 {
     if (!isScrollable())
-        return ScrollResult(false);
+        return ScrollResult();
 
     if (m_frame->settings()->rootLayerScrolls())
-        return ScrollResult(false);
+        return ScrollResult();
 
     return ScrollableArea::handleWheel(wheelEvent);
 }
@@ -3015,7 +2955,7 @@ void FrameView::setCursor(const Cursor& cursor)
     Page* page = frame().page();
     if (!page || !page->settings().deviceSupportsMouse())
         return;
-    page->chrome().setCursor(cursor);
+    page->chromeClient().setCursor(cursor);
 }
 
 void FrameView::frameRectsChanged()
@@ -3050,15 +2990,6 @@ void FrameView::didAddScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orien
         cache->handleScrollbarUpdate(this);
 }
 
-void FrameView::willRemoveScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orientation)
-{
-    ScrollableArea::willRemoveScrollbar(scrollbar, orientation);
-    if (AXObjectCache* cache = axObjectCache()) {
-        cache->remove(scrollbar);
-        cache->handleScrollbarUpdate(this);
-    }
-}
-
 void FrameView::setTopControlsViewportAdjustment(float adjustment)
 {
     m_topControlsViewportAdjustment = adjustment;
@@ -3068,17 +2999,13 @@ IntPoint FrameView::maximumScrollPosition() const
 {
     // Make the same calculation as in CC's LayerImpl::MaxScrollOffset()
     // FIXME: We probably shouldn't be storing the bounds in a float. crbug.com/422331.
-    FloatSize visibleSize = unscaledVisibleContentSize(ExcludeScrollbars);
+    FloatSize visibleSize = visibleContentSize(ExcludeScrollbars);
     visibleSize.expand(0, m_topControlsViewportAdjustment);
 
     FloatSize contentBounds = contentsSize();
-    contentBounds.scale(visibleContentScaleFactor());
     contentBounds = flooredIntSize(contentBounds);
 
     FloatSize maximumOffset = contentBounds - visibleSize - toIntSize(scrollOrigin());
-
-    // Convert back to CSS pixels.
-    maximumOffset.scale(1 / visibleContentScaleFactor());
 
     IntPoint snappedMaximumOffset = flooredIntPoint(maximumOffset);
     snappedMaximumOffset.clampNegativeToZero();
@@ -3105,12 +3032,17 @@ void FrameView::setHasHorizontalScrollbar(bool hasBar)
         m_horizontalScrollbar->styleChanged();
     } else {
         willRemoveScrollbar(m_horizontalScrollbar.get(), HorizontalScrollbar);
+        if (AXObjectCache* cache = axObjectCache())
+            cache->remove(m_horizontalScrollbar.get());
         // If the scrollbar has been marked as overlapping the window resizer,
         // then its removal should reduce the count.
         if (m_horizontalScrollbar->overlapsResizer())
             adjustScrollbarsAvoidingResizerCount(-1);
         removeChild(m_horizontalScrollbar.get());
+        m_horizontalScrollbar->disconnectFromScrollableArea();
         m_horizontalScrollbar = nullptr;
+        if (AXObjectCache* cache = axObjectCache())
+            cache->handleScrollbarUpdate(this);
     }
 
     if (RuntimeEnabledFeatures::slimmingPaintEnabled())
@@ -3129,12 +3061,17 @@ void FrameView::setHasVerticalScrollbar(bool hasBar)
         m_verticalScrollbar->styleChanged();
     } else {
         willRemoveScrollbar(m_verticalScrollbar.get(), VerticalScrollbar);
+        if (AXObjectCache* cache = axObjectCache())
+            cache->remove(m_verticalScrollbar.get());
         // If the scrollbar has been marked as overlapping the window resizer,
         // then its removal should reduce the count.
         if (m_verticalScrollbar->overlapsResizer())
             adjustScrollbarsAvoidingResizerCount(-1);
         removeChild(m_verticalScrollbar.get());
+        m_verticalScrollbar->disconnectFromScrollableArea();
         m_verticalScrollbar = nullptr;
+        if (AXObjectCache* cache = axObjectCache())
+            cache->handleScrollbarUpdate(this);
     }
 
     if (RuntimeEnabledFeatures::slimmingPaintEnabled())
@@ -3190,31 +3127,14 @@ void FrameView::setClipsRepaints(bool clipsRepaints)
     m_clipsRepaints = clipsRepaints;
 }
 
-IntSize FrameView::unscaledVisibleContentSize(IncludeScrollbarsInRect scrollbarInclusion) const
+IntSize FrameView::visibleContentSize(IncludeScrollbarsInRect scrollbarInclusion) const
 {
     return scrollbarInclusion == ExcludeScrollbars ? excludeScrollbars(frameRect().size()) : frameRect().size();
 }
 
-IntSize FrameView::excludeScrollbars(const IntSize& size) const
+IntRect FrameView::visibleContentRect(IncludeScrollbarsInRect scrollbarInclusion) const
 {
-    int verticalScrollbarWidth = 0;
-    int horizontalScrollbarHeight = 0;
-
-    if (Scrollbar* verticalBar = verticalScrollbar())
-        verticalScrollbarWidth = !verticalBar->isOverlayScrollbar() ? verticalBar->width() : 0;
-    if (Scrollbar* horizontalBar = horizontalScrollbar())
-        horizontalScrollbarHeight = !horizontalBar->isOverlayScrollbar() ? horizontalBar->height() : 0;
-
-    return IntSize(std::max(0, size.width() - verticalScrollbarWidth),
-        std::max(0, size.height() - horizontalScrollbarHeight));
-
-}
-
-IntRect FrameView::visibleContentRect(IncludeScrollbarsInRect scollbarInclusion) const
-{
-    FloatSize visibleContentSize = unscaledVisibleContentSize(scollbarInclusion);
-    visibleContentSize.scale(1 / visibleContentScaleFactor());
-    return IntRect(flooredIntPoint(m_scrollPosition), expandedIntSize(visibleContentSize));
+    return IntRect(flooredIntPoint(m_scrollPosition), visibleContentSize(scrollbarInclusion));
 }
 
 IntSize FrameView::contentsSize() const
@@ -3253,22 +3173,14 @@ int FrameView::scrollSize(ScrollbarOrientation orientation) const
     return scrollbar->totalSize() - scrollbar->visibleSize();
 }
 
-void FrameView::setScrollOffset(const IntPoint& offset)
+void FrameView::setScrollOffset(const IntPoint& offset, ScrollType)
 {
-    scrollTo(DoublePoint(adjustScrollPositionWithinRange(offset)));
+    scrollTo(clampScrollPosition(offset));
 }
 
-void FrameView::setScrollOffset(const DoublePoint& offset)
+void FrameView::setScrollOffset(const DoublePoint& offset, ScrollType)
 {
-    scrollTo(adjustScrollPositionWithinRange(offset));
-}
-
-bool FrameView::scroll(ScrollDirection direction, ScrollGranularity granularity, float delta)
-{
-    ScrollDirection physicalDirection =
-        toPhysicalDirection(direction, isVerticalDocument(), isFlippedDocument());
-
-    return ScrollableArea::scroll(physicalDirection, granularity, delta);
+    scrollTo(clampScrollPosition(offset));
 }
 
 void FrameView::windowResizerRectChanged()
@@ -3461,7 +3373,7 @@ void FrameView::updateScrollbars(const DoubleSize& desiredOffset)
         return;
     InUpdateScrollbarsScope inUpdateScrollbarsScope(this);
 
-    IntSize oldVisibleSize = visibleSize();
+    IntSize oldVisibleSize = visibleContentSize();
 
     bool scrollbarExistenceChanged = false;
 
@@ -3488,7 +3400,7 @@ void FrameView::updateScrollbars(const DoubleSize& desiredOffset)
     }
 
     // FIXME: We don't need to do this if we are composited.
-    IntSize newVisibleSize = visibleSize();
+    IntSize newVisibleSize = visibleContentSize();
     if (newVisibleSize.width() > oldVisibleSize.width()) {
         if (shouldPlaceVerticalScrollbarOnLeft())
             invalidateRect(IntRect(0, 0, newVisibleSize.width() - oldVisibleSize.width(), newVisibleSize.height()));
@@ -3503,17 +3415,13 @@ void FrameView::updateScrollbars(const DoubleSize& desiredOffset)
 
 void FrameView::setScrollOffsetFromUpdateScrollbars(const DoubleSize& offset)
 {
-    DoublePoint adjustedScrollPosition = DoublePoint(offset);
-
-    adjustedScrollPosition = adjustScrollPositionWithinRange(adjustedScrollPosition);
+    DoublePoint adjustedScrollPosition = clampScrollPosition(DoublePoint(offset));
 
     if (adjustedScrollPosition != scrollPositionDouble() || scrollOriginChanged()) {
-        ScrollableArea::scrollToOffsetWithoutAnimation(toFloatPoint(adjustedScrollPosition));
+        ScrollableArea::setScrollPosition(adjustedScrollPosition, ProgrammaticScroll);
         resetScrollOriginChanged();
     }
 }
-
-const int panIconSizeLength = 16;
 
 IntRect FrameView::rectToCopyOnScroll() const
 {
@@ -3549,16 +3457,6 @@ void FrameView::scrollContents(const IntSize& scrollDelta)
     IntRect clipRect = windowClipRect();
     IntRect updateRect = clipRect;
     updateRect.intersect(rectToCopyOnScroll());
-
-    if (m_shouldDrawPanScrollIcon) {
-        // FIXME: the pan icon is broken when accelerated compositing is on, since it will draw under the compositing layers.
-        // https://bugs.webkit.org/show_bug.cgi?id=47837
-        int panIconDirtySquareSizeLength = 2 * (panIconSizeLength + std::max(abs(scrollDelta.width()), abs(scrollDelta.height()))); // We only want to repaint what's necessary
-        IntPoint panIconDirtySquareLocation = IntPoint(m_panScrollIconPoint.x() - (panIconDirtySquareSizeLength / 2), m_panScrollIconPoint.y() - (panIconDirtySquareSizeLength / 2));
-        IntRect panScrollIconDirtyRect = IntRect(panIconDirtySquareLocation, IntSize(panIconDirtySquareSizeLength, panIconDirtySquareSizeLength));
-        panScrollIconDirtyRect.intersect(clipRect);
-        window->invalidateRect(panScrollIconDirtyRect);
-    }
 
     if (!scrollContentsFastPath(-scrollDelta))
         scrollContentsSlowPath(updateRect);
@@ -3794,7 +3692,7 @@ LayoutRect FrameView::scrollIntoView(const LayoutRect& rectInContent, const Scro
     double xOffset = exposeRect.x();
     double yOffset = exposeRect.y();
 
-    setScrollPosition(DoublePoint(xOffset, yOffset));
+    setScrollPosition(DoublePoint(xOffset, yOffset), ProgrammaticScroll);
 
     // Scrolling the FrameView cannot change the input rect's location relative to the document.
     return rectInContent;
@@ -3844,15 +3742,6 @@ ScrollBehavior FrameView::scrollBehaviorStyle() const
         return ScrollBehaviorSmooth;
 
     return ScrollBehaviorInstant;
-}
-
-void FrameView::paintPanScrollIcon(GraphicsContext* context)
-{
-    DEFINE_STATIC_REF(Image, panScrollIcon, (Image::loadPlatformResource("panIcon")));
-    IntPoint iconGCPoint = m_panScrollIconPoint;
-    if (parent())
-        iconGCPoint = toFrameView(parent())->rootFrameToContents(iconGCPoint);
-    context->drawImage(panScrollIcon, iconGCPoint);
 }
 
 void FrameView::paint(GraphicsContext* context, const IntRect& rect)
@@ -3966,25 +3855,6 @@ void FrameView::hide()
     }
 
     Widget::hide();
-}
-
-void FrameView::addPanScrollIcon(const IntPoint& iconPosition)
-{
-    HostWindow* window = hostWindow();
-    if (!window)
-        return;
-    m_shouldDrawPanScrollIcon = true;
-    m_panScrollIconPoint = IntPoint(iconPosition.x() - panIconSizeLength / 2 , iconPosition.y() - panIconSizeLength / 2);
-    window->invalidateRect(IntRect(m_panScrollIconPoint, IntSize(panIconSizeLength, panIconSizeLength)));
-}
-
-void FrameView::removePanScrollIcon()
-{
-    HostWindow* window = hostWindow();
-    if (!window)
-        return;
-    m_shouldDrawPanScrollIcon = false;
-    window->invalidateRect(IntRect(m_panScrollIconPoint, IntSize(panIconSizeLength, panIconSizeLength)));
 }
 
 void FrameView::setScrollOrigin(const IntPoint& origin, bool updatePositionAtAll, bool updatePositionSynchronously)

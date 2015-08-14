@@ -43,8 +43,6 @@
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
 
-using namespace blink;
-
 namespace blink {
 
 TEST(RawResourceTest, DontIgnoreAcceptForCacheReuse)
@@ -86,8 +84,8 @@ TEST(RawResourceTest, RevalidationSucceeded)
 
 class DummyClient : public RawResourceClient {
 public:
-    DummyClient() : m_called(false) { }
-    virtual ~DummyClient() { }
+    DummyClient() : m_called(false) {}
+    ~DummyClient() override {}
 
     // ResourceClient implementation.
     virtual void notifyFinished(Resource* resource)
@@ -106,9 +104,9 @@ public:
     AddingClient(DummyClient* client, Resource* resource)
         : m_dummyClient(client)
         , m_resource(resource)
-        , m_removeClientTimer(this, &AddingClient::removeClient) { }
+        , m_removeClientTimer(this, &AddingClient::removeClient) {}
 
-    virtual ~AddingClient() { }
+    ~AddingClient() override {}
 
     // ResourceClient implementation.
     virtual void notifyFinished(Resource* resource)
@@ -152,9 +150,9 @@ TEST(RawResourceTest, AddClientDuringCallback)
 class RemovingClient : public RawResourceClient {
 public:
     RemovingClient(DummyClient* client)
-        : m_dummyClient(client) { }
+        : m_dummyClient(client) {}
 
-    virtual ~RemovingClient() { }
+    ~RemovingClient() override {}
 
     // ResourceClient implementation.
     virtual void notifyFinished(Resource* resource)

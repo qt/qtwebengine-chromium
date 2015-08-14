@@ -71,7 +71,17 @@ void CommandBufferProxyImpl::OnChannelError() {
   scoped_ptr<base::AutoLock> lock;
   if (lock_)
     lock.reset(new base::AutoLock(*lock_));
-  OnDestroyed(gpu::error::kGpuChannelLost, gpu::error::kLostContext);
+
+  gpu::error::ContextLostReason context_lost_reason =
+      gpu::error::kGpuChannelLost;
+  if (shared_state_shm_ && shared_state_shm_->memory()) {
+    TryUpdateState();
+    // The GPU process might have intentionally been crashed
+    // (exit_on_context_lost), so try to find out the original reason.
+    if (last_state_.error == gpu::error::kLostContext)
+      context_lost_reason = last_state_.context_lost_reason;
+  }
+  OnDestroyed(context_lost_reason, gpu::error::kLostContext);
 }
 
 void CommandBufferProxyImpl::OnDestroyed(gpu::error::ContextLostReason reason,
@@ -446,6 +456,10 @@ void CommandBufferProxyImpl::SetLock(base::Lock* lock) {
   lock_ = lock;
 }
 
+bool CommandBufferProxyImpl::IsGpuChannelLost() {
+  return !channel_ || channel_->IsLost();
+}
+
 uint32 CommandBufferProxyImpl::InsertSyncPoint() {
   CheckLock();
   if (last_state_.error != gpu::error::kNoError)
@@ -598,14 +612,16 @@ gpu::CommandBufferSharedState* CommandBufferProxyImpl::shared_state() const {
 }
 
 void CommandBufferProxyImpl::OnSwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info,
+    gfx::SwapResult result) {
   if (!swap_buffers_completion_callback_.is_null()) {
     if (!ui::LatencyInfo::Verify(
             latency_info, "CommandBufferProxyImpl::OnSwapBuffersCompleted")) {
-      swap_buffers_completion_callback_.Run(std::vector<ui::LatencyInfo>());
+      swap_buffers_completion_callback_.Run(std::vector<ui::LatencyInfo>(),
+                                            result);
       return;
     }
-    swap_buffers_completion_callback_.Run(latency_info);
+    swap_buffers_completion_callback_.Run(latency_info, result);
   }
 }
 

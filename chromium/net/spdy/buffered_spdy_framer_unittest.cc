@@ -61,6 +61,8 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
   void OnHeaders(SpdyStreamId stream_id,
                  bool has_priority,
                  SpdyPriority priority,
+                 SpdyStreamId parent_stream_id,
+                 bool exclusive,
                  bool fin,
                  const SpdyHeaderBlock& headers) override {
     header_stream_id_ = stream_id;
@@ -112,8 +114,7 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
   void OnRstStream(const SpdyFrame& frame) {}
   void OnGoAway(const SpdyFrame& frame) {}
   void OnPing(const SpdyFrame& frame) {}
-  void OnWindowUpdate(SpdyStreamId stream_id,
-                      uint32 delta_window_size) override {}
+  void OnWindowUpdate(SpdyStreamId stream_id, int delta_window_size) override {}
 
   void OnPushPromise(SpdyStreamId stream_id,
                      SpdyStreamId promised_stream_id,
@@ -212,8 +213,8 @@ class BufferedSpdyFramerTest
 INSTANTIATE_TEST_CASE_P(NextProto,
                         BufferedSpdyFramerTest,
                         testing::Values(kProtoSPDY31,
-                                        kProtoSPDY4_14,
-                                        kProtoSPDY4));
+                                        kProtoHTTP2_14,
+                                        kProtoHTTP2));
 
 TEST_P(BufferedSpdyFramerTest, OnSetting) {
   SpdyFramer framer(spdy_version());
@@ -281,7 +282,7 @@ TEST_P(BufferedSpdyFramerTest, ReadSynReplyHeaderBlock) {
   EXPECT_EQ(0, visitor.error_count_);
   EXPECT_EQ(0, visitor.syn_frame_count_);
   EXPECT_EQ(0, visitor.push_promise_frame_count_);
-  if (spdy_version() < SPDY4) {
+  if (spdy_version() < HTTP2) {
     EXPECT_EQ(1, visitor.syn_reply_frame_count_);
     EXPECT_EQ(0, visitor.headers_frame_count_);
   } else {
@@ -316,7 +317,7 @@ TEST_P(BufferedSpdyFramerTest, ReadHeadersHeaderBlock) {
 }
 
 TEST_P(BufferedSpdyFramerTest, ReadPushPromiseHeaderBlock) {
-  if (spdy_version() < SPDY4)
+  if (spdy_version() < HTTP2)
     return;
   SpdyHeaderBlock headers;
   headers["alpha"] = "beta";

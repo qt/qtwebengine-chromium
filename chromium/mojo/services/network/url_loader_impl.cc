@@ -13,6 +13,7 @@
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/redirect_info.h"
@@ -21,22 +22,58 @@
 namespace mojo {
 namespace {
 
+GURL GetSiteForURL(const GURL& url) {
+  // If the url has a host, then determine the site.
+  if (url.has_host()) {
+    // Only keep the scheme and registered domain as given by GetOrigin.  This
+    // may also include a port, which we need to drop.
+    GURL site = url.GetOrigin();
+
+    // Remove port, if any.
+    if (site.has_port()) {
+      GURL::Replacements rep;
+      rep.ClearPort();
+      site = site.ReplaceComponents(rep);
+    }
+
+    // If this URL has a registered domain, we only want to remember that part.
+    std::string domain = net::registry_controlled_domains::GetDomainAndRegistry(
+        url, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+    if (!domain.empty()) {
+      GURL::Replacements rep;
+      rep.SetHostStr(domain);
+      site = site.ReplaceComponents(rep);
+    }
+    return site;
+  }
+
+  // If there is no host but there is a scheme, return the scheme.
+  // This is useful for cases like file URLs.
+  if (url.has_scheme())
+    return GURL(url.scheme() + ":");
+
+  // Otherwise the URL should be invalid; return an empty site.
+  DCHECK(!url.is_valid());
+  return GURL();
+}
+
 // Generates an URLResponsePtr from the response state of a net::URLRequest.
 URLResponsePtr MakeURLResponse(const net::URLRequest* url_request) {
   URLResponsePtr response(URLResponse::New());
   response->url = String::From(url_request->url());
+  response->site = GetSiteForURL(url_request->url()).spec();
 
   const net::HttpResponseHeaders* headers = url_request->response_headers();
   if (headers) {
     response->status_code = headers->response_code();
     response->status_line = headers->GetStatusLine();
 
-    response->headers = Array<HTTPHeaderPtr>::New(0);
+    response->headers = Array<HttpHeaderPtr>::New(0);
     std::vector<String> header_lines;
     void* iter = nullptr;
     std::string name, value;
     while (headers->EnumerateHeaderLines(&iter, &name, &value)) {
-      HTTPHeaderPtr header = HTTPHeader::New();
+      HttpHeaderPtr header = HttpHeader::New();
       header->name = name;
       header->value = value;
       response->headers.push_back(header.Pass());
@@ -96,12 +133,14 @@ class UploadDataPipeElementReader : public net::UploadElementReader {
 }  // namespace
 
 URLLoaderImpl::URLLoaderImpl(NetworkContext* context,
-                             InterfaceRequest<URLLoader> request)
+                             InterfaceRequest<URLLoader> request,
+                             scoped_ptr<mojo::AppRefCount> app_refcount)
     : context_(context),
       response_body_buffer_size_(0),
       auto_follow_redirects_(true),
       connected_(true),
       binding_(this, request.Pass()),
+      app_refcount_(app_refcount.Pass()),
       weak_ptr_factory_(this) {
   binding_.set_error_handler(this);
   context_->RegisterURLLoader(this);

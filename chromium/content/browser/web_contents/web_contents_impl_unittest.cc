@@ -9,6 +9,7 @@
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/media/audio_state_provider.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -39,6 +40,7 @@
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace content {
 namespace {
@@ -244,7 +246,8 @@ class WebContentsImplTest : public RenderViewHostImplTestHarness {
 class TestWebContentsObserver : public WebContentsObserver {
  public:
   explicit TestWebContentsObserver(WebContents* contents)
-      : WebContentsObserver(contents) {
+      : WebContentsObserver(contents),
+        last_theme_color_(SK_ColorTRANSPARENT) {
   }
   ~TestWebContentsObserver() override {}
 
@@ -255,14 +258,21 @@ class TestWebContentsObserver : public WebContentsObserver {
   void DidFailLoad(RenderFrameHost* render_frame_host,
                    const GURL& validated_url,
                    int error_code,
-                   const base::string16& error_description) override {
+                   const base::string16& error_description,
+                   bool was_ignored_by_handler) override {
     last_url_ = validated_url;
   }
 
+  void DidChangeThemeColor(SkColor theme_color) override {
+    last_theme_color_ = theme_color;
+  }
+
   const GURL& last_url() const { return last_url_; }
+  SkColor last_theme_color() const { return last_theme_color_; }
 
  private:
   GURL last_url_;
+  SkColor last_theme_color_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWebContentsObserver);
 };
@@ -515,9 +525,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_EQ(url2, contents()->GetVisibleURL());
   EXPECT_NE(instance1, instance2);
   EXPECT_EQ(nullptr, contents()->GetPendingMainFrame());
-  // We keep the original RFH around, swapped out.
-  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->IsOnSwappedOutList(
-      orig_rfh));
+  // We keep a proxy for the original RFH's SiteInstance.
+  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->GetRenderFrameProxyHost(
+      orig_rfh->GetSiteInstance()));
   EXPECT_EQ(orig_rvh_delete_count, 0);
 
   // Going back should switch SiteInstances again.  The first SiteInstance is
@@ -530,7 +540,10 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
     contents()->GetMainFrame()->PrepareForCommit();
   }
   TestRenderFrameHost* goback_rfh = contents()->GetPendingMainFrame();
-  EXPECT_EQ(orig_rfh, goback_rfh);
+  if (!RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+    // Recycling the rfh is a behavior specific to swappedout://
+    EXPECT_EQ(orig_rfh, goback_rfh);
+  }
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
 
   // Navigations should be suspended in goback_rfh until BeforeUnloadACK.
@@ -547,9 +560,9 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(goback_rfh, contents()->GetMainFrame());
   EXPECT_EQ(instance1, contents()->GetSiteInstance());
-  // The pending RFH should now be swapped out, not deleted.
+  // There should be a proxy for the pending RFH SiteInstance.
   EXPECT_TRUE(contents()->GetRenderManagerForTesting()->
-      IsOnSwappedOutList(pending_rfh));
+      GetRenderFrameProxyHost(pending_rfh->GetSiteInstance()));
   EXPECT_EQ(pending_rvh_delete_count, 0);
   pending_rfh->OnSwappedOut();
 
@@ -768,9 +781,9 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   EXPECT_EQ(url2, contents()->GetVisibleURL());
   EXPECT_NE(new_instance, orig_instance);
   EXPECT_FALSE(contents()->GetPendingMainFrame());
-  // We keep the original RFH around, swapped out.
-  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->IsOnSwappedOutList(
-      orig_rfh));
+  // We keep a proxy for the original RFH's SiteInstance.
+  EXPECT_TRUE(contents()->GetRenderManagerForTesting()->GetRenderFrameProxyHost(
+      orig_rfh->GetSiteInstance()));
   EXPECT_EQ(orig_rvh_delete_count, 0);
   orig_rfh->OnSwappedOut();
 
@@ -793,20 +806,22 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredSitelessUrl) {
   // SiteInstance.
   browser_client.set_assign_site_for_url(false);
   const GURL native_url("non-site-url://stuffandthings");
-  std::vector<NavigationEntry*> entries;
-  NavigationEntry* entry = NavigationControllerImpl::CreateNavigationEntry(
-      native_url, Referrer(), ui::PAGE_TRANSITION_LINK, false, std::string(),
-      browser_context());
-  entry->SetPageID(0);
-  entries.push_back(entry);
+  ScopedVector<NavigationEntry> entries;
+  scoped_ptr<NavigationEntry> new_entry =
+      NavigationControllerImpl::CreateNavigationEntry(
+          native_url, Referrer(), ui::PAGE_TRANSITION_LINK, false,
+          std::string(), browser_context());
+  new_entry->SetPageID(0);
+  entries.push_back(new_entry.Pass());
   controller().Restore(
       0,
       NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
       &entries);
   ASSERT_EQ(0u, entries.size());
   ASSERT_EQ(1, controller().GetEntryCount());
+
   controller().GoToIndex(0);
-  entry = controller().GetPendingEntry();
+  NavigationEntry* entry = controller().GetPendingEntry();
   orig_rfh->PrepareForCommit();
   contents()->TestDidNavigate(orig_rfh, 0, entry->GetUniqueID(), false,
                               native_url, ui::PAGE_TRANSITION_RELOAD);
@@ -841,20 +856,22 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredRegularUrl) {
   // ShouldAssignSiteForUrl override is disabled (i.e. returns true).
   browser_client.set_assign_site_for_url(true);
   const GURL regular_url("http://www.yahoo.com");
-  std::vector<NavigationEntry*> entries;
-  NavigationEntry* entry = NavigationControllerImpl::CreateNavigationEntry(
-      regular_url, Referrer(), ui::PAGE_TRANSITION_LINK, false, std::string(),
-      browser_context());
-  entry->SetPageID(0);
-  entries.push_back(entry);
+  ScopedVector<NavigationEntry> entries;
+  scoped_ptr<NavigationEntry> new_entry =
+      NavigationControllerImpl::CreateNavigationEntry(
+          regular_url, Referrer(), ui::PAGE_TRANSITION_LINK, false,
+          std::string(), browser_context());
+  new_entry->SetPageID(0);
+  entries.push_back(new_entry.Pass());
   controller().Restore(
       0,
       NavigationController::RESTORE_LAST_SESSION_EXITED_CLEANLY,
       &entries);
   ASSERT_EQ(0u, entries.size());
+
   ASSERT_EQ(1, controller().GetEntryCount());
   controller().GoToIndex(0);
-  entry = controller().GetPendingEntry();
+  NavigationEntry* entry = controller().GetPendingEntry();
   orig_rfh->PrepareForCommit();
   contents()->TestDidNavigate(orig_rfh, 0, entry->GetUniqueID(), false,
                               regular_url, ui::PAGE_TRANSITION_RELOAD);
@@ -896,16 +913,37 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   orig_rfh->PrepareForCommit();
   TestRenderFrameHost* pending_rfh = contents()->GetPendingMainFrame();
+  SiteInstance* instance = pending_rfh->GetSiteInstance();
 
   // While it is still pending, simulate opening a new tab with the first tab
-  // as its opener.  This will call WebContentsImpl::CreateOpenerRenderViews
-  // on the opener to ensure that an RVH exists.
-  int opener_routing_id =
-      contents()->CreateOpenerRenderViews(pending_rfh->GetSiteInstance());
+  // as its opener.  This will call CreateOpenerProxies on the opener to ensure
+  // that an RVH exists.
+  scoped_ptr<TestWebContents> popup(
+      TestWebContents::Create(browser_context(), instance));
+  popup->SetOpener(contents());
+  contents()->GetRenderManager()->CreateOpenerProxies(instance);
 
-  // We should find the pending RVH and not create a new one.
-  EXPECT_EQ(pending_rfh->GetRenderViewHost()->GetRoutingID(),
-            opener_routing_id);
+  // If swapped out is forbidden, a new proxy should be created for the opener
+  // in |instance|, and we should ensure that its routing ID is returned here.
+  // Otherwise, we should find the pending RFH and not create a new proxy.
+  int opener_frame_routing_id =
+      popup->GetRenderManager()->GetOpenerRoutingID(instance);
+  RenderFrameProxyHost* proxy =
+      contents()->GetRenderManager()->GetRenderFrameProxyHost(instance);
+  if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+    EXPECT_TRUE(proxy);
+    EXPECT_EQ(proxy->GetRoutingID(), opener_frame_routing_id);
+
+    // Ensure that committing the navigation removes the proxy.
+    int entry_id = controller().GetPendingEntry()->GetUniqueID();
+    contents()->TestDidNavigate(pending_rfh, 2, entry_id, true, url2,
+                                ui::PAGE_TRANSITION_TYPED);
+    EXPECT_FALSE(
+        contents()->GetRenderManager()->GetRenderFrameProxyHost(instance));
+  } else {
+    EXPECT_FALSE(proxy);
+    EXPECT_EQ(pending_rfh->GetRoutingID(), opener_frame_routing_id);
+  }
 }
 
 // Tests that WebContentsImpl uses the current URL, not the SiteInstance's site,
@@ -988,11 +1026,11 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
   const GURL url2("http://www.yahoo.com");
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
-  EXPECT_TRUE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
   orig_rfh->OnMessageReceived(
       FrameHostMsg_BeforeUnload_ACK(0, false, now, now));
-  EXPECT_FALSE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_FALSE(orig_rfh->is_waiting_for_beforeunload_ack());
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(orig_rfh, contents()->GetMainFrame());
 
@@ -1000,10 +1038,10 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   entry_id = controller().GetPendingEntry()->GetUniqueID();
-  EXPECT_TRUE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_ack());
   now = base::TimeTicks::Now();
   orig_rfh->PrepareForCommit();
-  EXPECT_FALSE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_FALSE(orig_rfh->is_waiting_for_beforeunload_ack());
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   TestRenderFrameHost* pending_rfh = contents()->GetPendingMainFrame();
 
@@ -1041,7 +1079,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
   const GURL url2("http://www.yahoo.com");
   controller().LoadURL(
       url2, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
-  EXPECT_TRUE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_ack());
   orig_rfh->PrepareForCommit();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
 
@@ -1049,7 +1087,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
   orig_rfh->SendNavigate(2, 0, true, GURL("http://www.google.com/foo"));
 
   // Verify that the pending navigation is cancelled.
-  EXPECT_FALSE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_FALSE(orig_rfh->is_waiting_for_beforeunload_ack());
   SiteInstance* instance2 = contents()->GetSiteInstance();
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(orig_rfh, contents()->GetMainFrame());
@@ -1087,7 +1125,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
   TestRenderFrameHost* google_rfh = contents()->GetPendingMainFrame();
 
   // Simulate beforeunload approval.
-  EXPECT_TRUE(ntp_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(ntp_rfh->is_waiting_for_beforeunload_ack());
   base::TimeTicks now = base::TimeTicks::Now();
   ntp_rfh->PrepareForCommit();
 
@@ -1140,7 +1178,7 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
   EXPECT_EQ(entry1, controller().GetPendingEntry());
 
   // Simulate beforeunload approval.
-  EXPECT_TRUE(google_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(google_rfh->is_waiting_for_beforeunload_ack());
   now = base::TimeTicks::Now();
   google_rfh->PrepareForCommit();
   google_rfh->OnMessageReceived(
@@ -1193,13 +1231,19 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
   child_rfh->SendNavigateWithTransition(1, 0, false,
                                         GURL("http://google.com/frame"),
                                         ui::PAGE_TRANSITION_AUTO_SUBFRAME);
-  EXPECT_TRUE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_ack());
 
   // Now simulate the onbeforeunload approval and verify the navigation is
   // not canceled.
   orig_rfh->PrepareForCommit();
-  EXPECT_FALSE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_FALSE(orig_rfh->is_waiting_for_beforeunload_ack());
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
+}
+
+namespace {
+void SetAsNonUserGesture(FrameHostMsg_DidCommitProvisionalLoad_Params* params) {
+  params->gesture = NavigationGestureAuto;
+}
 }
 
 // Test that a cross-site navigation is not preempted if the previous
@@ -1222,21 +1266,27 @@ TEST_F(WebContentsImplTest, CrossSiteNotPreemptedDuringBeforeUnload) {
   int entry2_id = controller().GetPendingEntry()->GetUniqueID();
   TestRenderFrameHost* pending_rfh = contents()->GetPendingMainFrame();
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
-  EXPECT_TRUE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_TRUE(orig_rfh->is_waiting_for_beforeunload_ack());
+  EXPECT_NE(orig_rfh, pending_rfh);
 
   // Suppose the first navigation tries to commit now, with a
   // FrameMsg_Stop in flight.  This should not cancel the pending navigation,
   // but it should act as if the beforeunload ack arrived.
-  orig_rfh->SendNavigate(1, entry1_id, true, GURL("chrome://gpu"));
+  orig_rfh->SendNavigateWithModificationCallback(
+      1, entry1_id, true, url, base::Bind(SetAsNonUserGesture));
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(orig_rfh, contents()->GetMainFrame());
-  EXPECT_FALSE(orig_rfh->IsWaitingForBeforeUnloadACK());
+  EXPECT_FALSE(orig_rfh->is_waiting_for_beforeunload_ack());
+  // It should commit.
+  ASSERT_EQ(1, controller().GetEntryCount());
+  EXPECT_EQ(url, controller().GetLastCommittedEntry()->GetURL());
 
   // The pending navigation should be able to commit successfully.
   contents()->TestDidNavigate(pending_rfh, 1, entry2_id, true, url2,
                               ui::PAGE_TRANSITION_TYPED);
   EXPECT_FALSE(contents()->CrossProcessNavigationPending());
   EXPECT_EQ(pending_rfh, contents()->GetMainFrame());
+  EXPECT_EQ(2, controller().GetEntryCount());
 }
 
 // Test that NavigationEntries have the correct page state after going
@@ -1293,7 +1343,6 @@ TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
   // Navigate to about:blank.
   const GURL url(url::kAboutBlankURL);
   orig_rfh->SendRendererInitiatedNavigationRequest(url, false);
-  orig_rfh->PrepareForCommit();
   contents()->TestDidNavigate(orig_rfh, 1, 0, true, url,
                               ui::PAGE_TRANSITION_TYPED);
 
@@ -1437,7 +1486,9 @@ TEST_F(WebContentsImplTest, TerminateHidesValidationMessage) {
   contents()->SetDelegate(&fake_delegate);
   EXPECT_FALSE(fake_delegate.hide_validation_message_was_called());
 
-  // Crash the renderer.
+  // Initialize the RenderFrame and then simulate crashing the renderer
+  // process.
+  contents()->GetMainFrame()->InitializeRenderFrameIfNeeded();
   contents()->GetMainFrame()->GetProcess()->SimulateCrash();
 
   // Confirm HideValidationMessage was called.
@@ -1681,6 +1732,7 @@ TEST_F(WebContentsImplTest,
   // Simulate the navigation to the page, that's when the interstitial gets
   // hidden.
   GURL url3("http://www.thepage.com");
+  contents()->GetMainFrame()->PrepareForCommit();
   contents()->GetMainFrame()->SendNavigate(2, 0, true, url3);
 
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
@@ -1833,7 +1885,6 @@ TEST_F(WebContentsImplTest, ShowInterstitialThenGoBack) {
   GURL url1("http://www.google.com");
   main_test_rfh()->NavigateAndCommitRendererInitiated(1, true, url1);
   EXPECT_EQ(1, controller().GetEntryCount());
-  NavigationEntry* entry = controller().GetLastCommittedEntry();
 
   // Show interstitial.
   TestInterstitialPage::InterstitialState state =
@@ -1848,19 +1899,20 @@ TEST_F(WebContentsImplTest, ShowInterstitialThenGoBack) {
   int interstitial_entry_id = controller().GetTransientEntry()->GetUniqueID();
   interstitial->TestDidNavigate(2, interstitial_entry_id, true,
                                 interstitial_url);
+  EXPECT_EQ(2, controller().GetEntryCount());
 
-  // While the interstitial is showing, go back.
+  // While the interstitial is showing, go back. This will dismiss the
+  // interstitial and not initiate a navigation, but just show the existing
+  // RenderFrameHost.
   controller().GoBack();
-  main_test_rfh()->PrepareForCommit();
-  contents()->GetMainFrame()->SendNavigate(1, entry->GetUniqueID(), false,
-                                           url1);
 
   // Make sure we are back to the original page and that the interstitial is
   // gone.
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
-  entry = controller().GetVisibleEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry);
   EXPECT_EQ(url1.spec(), entry->GetURL().spec());
+  EXPECT_EQ(1, controller().GetEntryCount());
 
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(deleted);
@@ -1892,11 +1944,10 @@ TEST_F(WebContentsImplTest, ShowInterstitialCrashRendererThenGoBack) {
   // Crash the renderer
   contents()->GetMainFrame()->GetProcess()->SimulateCrash();
 
-  // While the interstitial is showing, go back.
+  // While the interstitial is showing, go back. This will dismiss the
+  // interstitial and not initiate a navigation, but just show the existing
+  // RenderFrameHost.
   controller().GoBack();
-  main_test_rfh()->PrepareForCommit();
-  contents()->GetMainFrame()->SendNavigate(1, entry->GetUniqueID(), false,
-                                           url1);
 
   // Make sure we are back to the original page and that the interstitial is
   // gone.
@@ -2445,7 +2496,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 
   // Check that an IPC with about:whatever is correctly normalized.
   other_contents->TestDidFailLoadWithError(
-      url_from_ipc, 1, base::string16());
+      url_from_ipc, 1, base::string16(), false);
   EXPECT_EQ(url_normalized, other_observer.last_url());
 }
 
@@ -2868,7 +2919,6 @@ TEST_F(WebContentsImplTest, StartStopEventsBalance) {
   // DidStartLoading and DidStopLoading messages.
   {
     subframe->SendRendererInitiatedNavigationRequest(initial_url, false);
-    subframe->PrepareForCommit();
     subframe->OnMessageReceived(
         FrameHostMsg_DidStartLoading(subframe->GetRoutingID(), true));
     subframe->SendNavigateWithTransition(1, 0, false, initial_url,
@@ -2979,11 +3029,15 @@ TEST_F(WebContentsImplTest, NoEarlyStop) {
   // Simulate the commit and DidStopLoading from the renderer-initiated
   // navigation in the current RenderFrameHost. There should still be a pending
   // RenderFrameHost and the WebContents should still be loading.
-  current_rfh->SendNavigate(1, 0, true, kUrl3);
+  current_rfh->SendNavigateWithModificationCallback(
+      1, 0, true, kUrl3, base::Bind(SetAsNonUserGesture));
   current_rfh->OnMessageReceived(
       FrameHostMsg_DidStopLoading(current_rfh->GetRoutingID()));
   EXPECT_EQ(contents()->GetPendingMainFrame(), pending_rfh);
   EXPECT_TRUE(contents()->IsLoading());
+  // It should commit.
+  ASSERT_EQ(2, controller().GetEntryCount());
+  EXPECT_EQ(kUrl3, controller().GetLastCommittedEntry()->GetURL());
 
   // Commit the navigation. The formerly pending RenderFrameHost should now be
   // the current RenderFrameHost and the WebContents should still be loading.
@@ -2993,6 +3047,7 @@ TEST_F(WebContentsImplTest, NoEarlyStop) {
   TestRenderFrameHost* new_current_rfh = contents()->GetMainFrame();
   EXPECT_EQ(new_current_rfh, pending_rfh);
   EXPECT_TRUE(contents()->IsLoading());
+  EXPECT_EQ(3, controller().GetEntryCount());
 
   // Simulate the new current RenderFrameHost DidStopLoading. The WebContents
   // should now have stopped loading.
@@ -3015,6 +3070,9 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
 
   TestRenderFrameHost* rfh = contents()->GetMainFrame();
   AudioStateProvider* audio_state = contents()->audio_state_provider();
+
+  // Ensure RenderFrame is initialized before simulating events coming from it.
+  main_test_rfh()->InitializeRenderFrameIfNeeded();
 
   // The audio power save blocker should not be based on having a media player
   // when audio stream monitoring is available.
@@ -3115,6 +3173,42 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   // Verify that all the power save blockers have been released.
   EXPECT_FALSE(contents()->has_video_power_save_blocker_for_testing());
   EXPECT_FALSE(contents()->has_audio_power_save_blocker_for_testing());
+}
+
+TEST_F(WebContentsImplTest, ThemeColorChangeDependingOnFirstVisiblePaint) {
+  TestWebContentsObserver observer(contents());
+  TestRenderFrameHost* rfh = contents()->GetMainFrame();
+
+  SkColor transparent = SK_ColorTRANSPARENT;
+
+  EXPECT_EQ(transparent, contents()->GetThemeColor());
+  EXPECT_EQ(transparent, observer.last_theme_color());
+
+  // Theme color changes should not propagate past the WebContentsImpl before
+  // the first visually non-empty paint has occurred.
+  RenderViewHostTester::TestOnMessageReceived(
+      test_rvh(),
+      FrameHostMsg_DidChangeThemeColor(rfh->GetRoutingID(), SK_ColorRED));
+
+  EXPECT_EQ(SK_ColorRED, contents()->GetThemeColor());
+  EXPECT_EQ(transparent, observer.last_theme_color());
+
+  // Simulate that the first visually non-empty paint has occurred. This will
+  // propagate the current theme color to the delegates.
+  RenderViewHostTester::TestOnMessageReceived(
+      test_rvh(),
+      FrameHostMsg_DidFirstVisuallyNonEmptyPaint(rfh->GetRoutingID()));
+
+  EXPECT_EQ(SK_ColorRED, contents()->GetThemeColor());
+  EXPECT_EQ(SK_ColorRED, observer.last_theme_color());
+
+  // Additional changes made by the web contents should propagate as well.
+  RenderViewHostTester::TestOnMessageReceived(
+      test_rvh(),
+      FrameHostMsg_DidChangeThemeColor(rfh->GetRoutingID(), SK_ColorGREEN));
+
+  EXPECT_EQ(SK_ColorGREEN, contents()->GetThemeColor());
+  EXPECT_EQ(SK_ColorGREEN, observer.last_theme_color());
 }
 
 }  // namespace content

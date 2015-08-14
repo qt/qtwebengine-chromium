@@ -5,9 +5,6 @@
 #include "cc/layers/ui_resource_layer.h"
 
 #include "cc/layers/ui_resource_layer_impl.h"
-#include "cc/resources/prioritized_resource.h"
-#include "cc/resources/resource_update.h"
-#include "cc/resources/resource_update_queue.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/trees/layer_tree_host.h"
@@ -51,14 +48,13 @@ class SharedUIResourceHolder : public UIResourceLayer::UIResourceHolder {
 
 UIResourceLayer::UIResourceHolder::~UIResourceHolder() {}
 
-scoped_refptr<UIResourceLayer> UIResourceLayer::Create() {
-  return make_scoped_refptr(new UIResourceLayer());
+scoped_refptr<UIResourceLayer> UIResourceLayer::Create(
+    const LayerSettings& settings) {
+  return make_scoped_refptr(new UIResourceLayer(settings));
 }
 
-UIResourceLayer::UIResourceLayer()
-    : Layer(),
-      uv_top_left_(0.f, 0.f),
-      uv_bottom_right_(1.f, 1.f) {
+UIResourceLayer::UIResourceLayer(const LayerSettings& settings)
+    : Layer(settings), uv_top_left_(0.f, 0.f), uv_bottom_right_(1.f, 1.f) {
   vertex_opacity_[0] = 1.0f;
   vertex_opacity_[1] = 1.0f;
   vertex_opacity_[2] = 1.0f;

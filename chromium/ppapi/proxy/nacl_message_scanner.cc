@@ -149,26 +149,26 @@ void ScanParam(const T& param, ScanningResults* results) {
 // The idea is to scan elements in the tuple which require special handling,
 // and write them into the |results| struct.
 template <class A>
-void ScanTuple(const Tuple<A>& t1, ScanningResults* results) {
-  ScanParam(get<0>(t1), results);
+void ScanTuple(const base::Tuple<A>& t1, ScanningResults* results) {
+  ScanParam(base::get<0>(t1), results);
 }
 template <class A, class B>
-void ScanTuple(const Tuple<A, B>& t1, ScanningResults* results) {
-  ScanParam(get<0>(t1), results);
-  ScanParam(get<1>(t1), results);
+void ScanTuple(const base::Tuple<A, B>& t1, ScanningResults* results) {
+  ScanParam(base::get<0>(t1), results);
+  ScanParam(base::get<1>(t1), results);
 }
 template <class A, class B, class C>
-void ScanTuple(const Tuple<A, B, C>& t1, ScanningResults* results) {
-  ScanParam(get<0>(t1), results);
-  ScanParam(get<1>(t1), results);
-  ScanParam(get<2>(t1), results);
+void ScanTuple(const base::Tuple<A, B, C>& t1, ScanningResults* results) {
+  ScanParam(base::get<0>(t1), results);
+  ScanParam(base::get<1>(t1), results);
+  ScanParam(base::get<2>(t1), results);
 }
 template <class A, class B, class C, class D>
-void ScanTuple(const Tuple<A, B, C, D>& t1, ScanningResults* results) {
-  ScanParam(get<0>(t1), results);
-  ScanParam(get<1>(t1), results);
-  ScanParam(get<2>(t1), results);
-  ScanParam(get<3>(t1), results);
+void ScanTuple(const base::Tuple<A, B, C, D>& t1, ScanningResults* results) {
+  ScanParam(base::get<0>(t1), results);
+  ScanParam(base::get<1>(t1), results);
+  ScanParam(base::get<2>(t1), results);
+  ScanParam(base::get<3>(t1), results);
 }
 
 template <class MessageType>
@@ -178,7 +178,8 @@ class MessageScannerImpl {
       : msg_(static_cast<const MessageType*>(msg)) {
   }
   bool ScanMessage(ScanningResults* results) {
-    typename TupleTypes<typename MessageType::Schema::Param>::ValueTuple params;
+    typename base::TupleTypes<typename MessageType::Schema::Param>::ValueTuple
+        params;
     if (!MessageType::Read(msg_, &params))
       return false;
     ScanTuple(params, results);
@@ -186,8 +187,8 @@ class MessageScannerImpl {
   }
 
   bool ScanReply(ScanningResults* results) {
-    typename TupleTypes<typename MessageType::Schema::ReplyParam>::ValueTuple
-        params;
+    typename base::TupleTypes<typename MessageType::Schema::ReplyParam>
+        ::ValueTuple params;
     if (!MessageType::ReadReplyParam(msg_, &params))
       return false;
     // If we need to rewrite the message, write the message id first.
@@ -292,6 +293,9 @@ NaClMessageScanner::~NaClMessageScanner() {
 // message body, rather than passed in a separate FileDescriptorSet. Therefore,
 // on Windows, any message containing handles must be rewritten in the POSIX
 // format before we can send it to the NaCl plugin.
+// On Mac, base::SharedMemoryHandle has a different serialization than
+// base::FileDescriptor (which base::SharedMemoryHandle is typedef-ed to in
+// OS_NACL).
 bool NaClMessageScanner::ScanMessage(
     const IPC::Message& msg,
     uint32_t type,
@@ -303,7 +307,7 @@ bool NaClMessageScanner::ScanMessage(
   DCHECK(!new_msg_ptr->get());
 
   bool rewrite_msg =
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
       true;
 #else
       false;

@@ -44,11 +44,13 @@
 #include "core/inspector/InspectorProfilerAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InspectorStateClient.h"
+#include "core/inspector/InspectorTaskRunner.h"
 #include "core/inspector/InspectorTimelineAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/WorkerConsoleAgent.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/inspector/WorkerRuntimeAgent.h"
+#include "core/inspector/WorkerThreadDebugger.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
@@ -87,6 +89,24 @@ private:
     virtual void updateInspectorStateCookie(const String& cookie) override { }
 };
 
+class RunInspectorCommandsTask final : public InspectorTaskRunner::Task {
+public:
+    explicit RunInspectorCommandsTask(WorkerThread* thread)
+        : m_thread(thread) { }
+    virtual ~RunInspectorCommandsTask() { }
+    virtual void run() override
+    {
+        // Process all queued debugger commands. WorkerThread is certainly
+        // alive if this task is being executed.
+        m_thread->willEnterNestedLoop();
+        while (MessageQueueMessageReceived == m_thread->runDebuggerTask(WorkerThread::DontWaitForMessage)) { }
+        m_thread->didLeaveNestedLoop();
+    }
+
+private:
+    WorkerThread* m_thread;
+};
+
 }
 
 class WorkerInjectedScriptHostClient: public InjectedScriptHostClient {
@@ -104,9 +124,11 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
     , m_injectedScriptManager(InjectedScriptManager::createForWorker())
     , m_workerThreadDebugger(WorkerThreadDebugger::create(workerGlobalScope))
     , m_agents(m_instrumentingAgents.get(), m_state.get())
+    , m_inspectorTaskRunner(adoptPtr(new InspectorTaskRunner(v8::Isolate::GetCurrent())))
+    , m_beforeInitlizedScope(adoptPtr(new InspectorTaskRunner::IgnoreInterruptsScope(m_inspectorTaskRunner.get())))
     , m_paused(false)
 {
-    OwnPtrWillBeRawPtr<WorkerRuntimeAgent> workerRuntimeAgent = WorkerRuntimeAgent::create(m_injectedScriptManager.get(), m_workerThreadDebugger->scriptDebugServer(), workerGlobalScope, this);
+    OwnPtrWillBeRawPtr<WorkerRuntimeAgent> workerRuntimeAgent = WorkerRuntimeAgent::create(m_injectedScriptManager.get(), m_workerThreadDebugger->debugger(), workerGlobalScope, this);
     m_workerRuntimeAgent = workerRuntimeAgent.get();
     m_agents.append(workerRuntimeAgent.release());
 
@@ -120,11 +142,12 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
 
     OwnPtrWillBeRawPtr<WorkerConsoleAgent> workerConsoleAgent = WorkerConsoleAgent::create(m_injectedScriptManager.get(), workerGlobalScope);
     WorkerConsoleAgent* workerConsoleAgentPtr = workerConsoleAgent.get();
+    workerConsoleAgentPtr->setDebuggerAgent(m_workerDebuggerAgent);
     m_agents.append(workerConsoleAgent.release());
 
     m_agents.append(InspectorTimelineAgent::create());
 
-    m_injectedScriptManager->injectedScriptHost()->init(workerConsoleAgentPtr, m_workerDebuggerAgent, nullptr, m_workerThreadDebugger->scriptDebugServer(), adoptPtr(new WorkerInjectedScriptHostClient()));
+    m_injectedScriptManager->injectedScriptHost()->init(workerConsoleAgentPtr, m_workerDebuggerAgent, nullptr, m_workerThreadDebugger->debugger(), adoptPtr(new WorkerInjectedScriptHostClient()));
 }
 
 WorkerInspectorController::~WorkerInspectorController()
@@ -174,6 +197,7 @@ void WorkerInspectorController::restoreInspectorStateFromCookie(const String& in
 
 void WorkerInspectorController::dispatchMessageFromFrontend(const String& message)
 {
+    InspectorTaskRunner::IgnoreInterruptsScope scope(m_inspectorTaskRunner.get());
     if (m_backendDispatcher)
         m_backendDispatcher->dispatch(message);
 }
@@ -186,7 +210,7 @@ void WorkerInspectorController::dispose()
 
 void WorkerInspectorController::interruptAndDispatchInspectorCommands()
 {
-    m_workerDebuggerAgent->interruptAndDispatchInspectorCommands();
+    m_inspectorTaskRunner->interruptAndRun(adoptPtr(new RunInspectorCommandsTask(m_workerGlobalScope->thread())));
 }
 
 void WorkerInspectorController::resumeStartup()
@@ -197,6 +221,13 @@ void WorkerInspectorController::resumeStartup()
 bool WorkerInspectorController::isRunRequired()
 {
     return m_paused;
+}
+
+void WorkerInspectorController::workerContextInitialized(bool shouldPauseOnStart)
+{
+    m_beforeInitlizedScope.clear();
+    if (shouldPauseOnStart)
+        pauseOnStart();
 }
 
 void WorkerInspectorController::pauseOnStart()

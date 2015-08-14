@@ -14,6 +14,7 @@ include_rules = [
   "+ui/ozone/public",
   "+ui/resources/grit/ui_resources.h",
   "+ui/strings/grit/ui_strings.h",
+  "+ui/touch_selection",
   "+ui/wm/core",
   "+ui/wm/public",
 
@@ -23,5 +24,8 @@ include_rules = [
 specific_include_rules = {
   "examples_browser_main_parts\.cc": [
     "+ui/wm/test"
+  ],
+  "view_unittest\.cc": [
+    "+cc/playback"
   ],
 }

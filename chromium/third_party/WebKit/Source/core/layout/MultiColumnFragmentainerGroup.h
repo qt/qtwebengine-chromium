@@ -83,7 +83,6 @@ private:
 
     LayoutUnit calculateColumnHeight(BalancedColumnHeightCalculation) const;
 
-    LayoutSize translationAtColumn(unsigned columnIndex) const;
     LayoutRect columnRectAt(unsigned columnIndex) const;
     LayoutUnit logicalTopInFlowThreadAt(unsigned columnIndex) const { return m_logicalTopInFlowThread + columnIndex * m_columnHeight; }
     LayoutRect flowThreadPortionRectAt(unsigned columnIndex) const;
@@ -147,6 +146,7 @@ private:
 class CORE_EXPORT MultiColumnFragmentainerGroupList {
 public:
     MultiColumnFragmentainerGroupList(LayoutMultiColumnSet&);
+    ~MultiColumnFragmentainerGroupList();
 
     // Add an additional fragmentainer group to the end of the list, and return it.
     MultiColumnFragmentainerGroup& addExtraGroup();

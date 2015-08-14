@@ -34,6 +34,7 @@
 #import "RTCMediaConstraints.h"
 #import "RTCMediaStream.h"
 #import "RTCPair.h"
+#import "RTCPeerConnectionInterface.h"
 #import "RTCVideoCapturer.h"
 #import "RTCAVFoundationVideoSource.h"
 
@@ -41,6 +42,7 @@
 #import "ARDCEODTURNClient.h"
 #import "ARDJoinResponse.h"
 #import "ARDMessageResponse.h"
+#import "ARDSDPUtils.h"
 #import "ARDSignalingMessage.h"
 #import "ARDUtilities.h"
 #import "ARDWebSocketChannel.h"
@@ -343,10 +345,15 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
       [_delegate appClient:self didError:sdpError];
       return;
     }
+    // Prefer H264 if available.
+    RTCSessionDescription *sdpPreferringH264 =
+        [ARDSDPUtils descriptionForDescription:sdp
+                           preferredVideoCodec:@"H264"];
     [_peerConnection setLocalDescriptionWithDelegate:self
-                                  sessionDescription:sdp];
+                                  sessionDescription:sdpPreferringH264];
     ARDSessionDescriptionMessage *message =
-        [[ARDSessionDescriptionMessage alloc] initWithDescription:sdp];
+        [[ARDSessionDescriptionMessage alloc]
+            initWithDescription:sdpPreferringH264];
     [self sendSignalingMessage:message];
   });
 }
@@ -397,9 +404,11 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 
   // Create peer connection.
   RTCMediaConstraints *constraints = [self defaultPeerConnectionConstraints];
-  _peerConnection = [_factory peerConnectionWithICEServers:_iceServers
-                                               constraints:constraints
-                                                  delegate:self];
+  RTCConfiguration *config = [[RTCConfiguration alloc] init];
+  config.iceServers = _iceServers;
+  _peerConnection = [_factory peerConnectionWithConfiguration:config
+                                                  constraints:constraints
+                                                     delegate:self];
   // Create AV media stream and add it to the peer connection.
   RTCMediaStream *localStream = [self createLocalMediaStream];
   [_peerConnection addStream:localStream];
@@ -438,8 +447,12 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
       ARDSessionDescriptionMessage *sdpMessage =
           (ARDSessionDescriptionMessage *)message;
       RTCSessionDescription *description = sdpMessage.sessionDescription;
+      // Prefer H264 if available.
+      RTCSessionDescription *sdpPreferringH264 =
+          [ARDSDPUtils descriptionForDescription:description
+                             preferredVideoCodec:@"H264"];
       [_peerConnection setRemoteDescriptionWithDelegate:self
-                                     sessionDescription:description];
+                                     sessionDescription:sdpPreferringH264];
       break;
     }
     case kARDSignalingMessageTypeCandidate: {

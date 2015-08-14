@@ -32,12 +32,12 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
-#include "content/browser/transition_request_manager.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/android/compositor.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/favicon_status.h"
@@ -221,7 +221,7 @@ ContentViewCoreImpl::ContentViewCoreImpl(
     : WebContentsObserver(web_contents),
       java_ref_(env, obj),
       web_contents_(static_cast<WebContentsImpl*>(web_contents)),
-      root_layer_(cc::SolidColorLayer::Create()),
+      root_layer_(cc::SolidColorLayer::Create(Compositor::LayerSettings())),
       dpi_scale_(GetPrimaryDisplayDeviceScaleFactor()),
       page_scale_(1),
       view_android_(new ui::ViewAndroid(view_android_delegate, window_android)),
@@ -660,7 +660,7 @@ void ContentViewCoreImpl::ShowPastePopup(int x_dip, int y_dip) {
 void ContentViewCoreImpl::GetScaledContentBitmap(
     float scale,
     SkColorType preferred_color_type,
-    gfx::Rect src_subrect,
+    const gfx::Rect& src_subrect,
     ReadbackRequestCallback& result_callback) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
   if (!view || preferred_color_type == kUnknown_SkColorType) {
@@ -705,13 +705,14 @@ void ContentViewCoreImpl::ShowDisambiguationPopup(
                                                java_bitmap.obj());
 }
 
-ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateTouchEventSynthesizer() {
+ScopedJavaLocalRef<jobject>
+ContentViewCoreImpl::CreateMotionEventSynthesizer() {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return ScopedJavaLocalRef<jobject>();
-  return Java_ContentViewCore_createTouchEventSynthesizer(env, obj.obj());
+  return Java_ContentViewCore_createMotionEventSynthesizer(env, obj.obj());
 }
 
 bool ContentViewCoreImpl::ShouldBlockMediaRequest(const GURL& url) {
@@ -1027,11 +1028,13 @@ void ContentViewCoreImpl::ScrollBegin(JNIEnv* env,
                                       jfloat x,
                                       jfloat y,
                                       jfloat hintx,
-                                      jfloat hinty) {
+                                      jfloat hinty,
+                                      jboolean target_viewport) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureScrollBegin, time_ms, x, y);
   event.data.scrollBegin.deltaXHint = hintx / dpi_scale();
   event.data.scrollBegin.deltaYHint = hinty / dpi_scale();
+  event.data.scrollBegin.targetViewport = target_viewport;
 
   SendGestureEvent(event);
 }
@@ -1052,12 +1055,19 @@ void ContentViewCoreImpl::ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
   SendGestureEvent(event);
 }
 
-void ContentViewCoreImpl::FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
-                                     jfloat x, jfloat y, jfloat vx, jfloat vy) {
+void ContentViewCoreImpl::FlingStart(JNIEnv* env,
+                                     jobject obj,
+                                     jlong time_ms,
+                                     jfloat x,
+                                     jfloat y,
+                                     jfloat vx,
+                                     jfloat vy,
+                                     jboolean target_viewport) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureFlingStart, time_ms, x, y);
   event.data.flingStart.velocityX = vx / dpi_scale();
   event.data.flingStart.velocityY = vy / dpi_scale();
+  event.data.flingStart.targetViewport = target_viewport;
 
   SendGestureEvent(event);
 }
@@ -1225,6 +1235,15 @@ long ContentViewCoreImpl::GetNativeImeAdapter(JNIEnv* env, jobject obj) {
   return rwhva->GetNativeImeAdapter();
 }
 
+void ContentViewCoreImpl::ForceUpdateImeAdapter(long native_ime_adapter) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_forceUpdateImeAdapter(env, obj.obj(),
+                                             native_ime_adapter);
+}
+
 void ContentViewCoreImpl::UpdateImeAdapter(long native_ime_adapter,
                                            int text_input_type,
                                            int text_input_flags,
@@ -1262,6 +1281,7 @@ void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
 
 void ContentViewCoreImpl::SetTextTrackSettings(JNIEnv* env,
                                                jobject obj,
+                                               jboolean textTracksEnabled,
                                                jstring textTrackBackgroundColor,
                                                jstring textTrackFontFamily,
                                                jstring textTrackFontStyle,
@@ -1270,6 +1290,7 @@ void ContentViewCoreImpl::SetTextTrackSettings(JNIEnv* env,
                                                jstring textTrackTextShadow,
                                                jstring textTrackTextSize) {
   FrameMsg_TextTrackSettings_Params params;
+  params.text_tracks_enabled = textTracksEnabled;
   params.text_track_background_color = ConvertJavaStringToUTF8(
       env, textTrackBackgroundColor);
   params.text_track_font_family = ConvertJavaStringToUTF8(
@@ -1284,7 +1305,6 @@ void ContentViewCoreImpl::SetTextTrackSettings(JNIEnv* env,
       env, textTrackTextShadow);
   params.text_track_text_size = ConvertJavaStringToUTF8(
       env, textTrackTextSize);
-
   web_contents_->GetMainFrame()->SetTextTrackSettings(params);
 }
 

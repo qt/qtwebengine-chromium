@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
+#include "base/win/scoped_handle.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/handle_closer.h"
 #include "sandbox/win/src/ipc_tags.h"
@@ -28,7 +29,7 @@ class LowLevelPolicy;
 class TargetProcess;
 struct PolicyGlobal;
 
-typedef std::vector<HANDLE> HandleList;
+typedef std::vector<base::win::ScopedHandle*> HandleList;
 
 // We act as a policy dispatcher, implementing the handler for the "ping" IPC,
 // so we have to provide the appropriate handler on the OnMessageReady method.
@@ -82,7 +83,8 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
 
   // Creates the two tokens with the levels specified in a previous call to
   // SetTokenLevel().
-  ResultCode MakeTokens(HANDLE* initial, HANDLE* lockdown);
+  ResultCode MakeTokens(base::win::ScopedHandle* initial,
+                        base::win::ScopedHandle* lockdown);
 
   const AppContainerAttributes* GetAppContainer() const;
 
@@ -103,7 +105,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   HANDLE GetStderrHandle();
 
   // Returns the list of handles being shared with the target process.
-  HandleList GetHandlesBeingShared();
+  const HandleList& GetHandlesBeingShared();
 
   // Closes the handles being shared with the target and clears out the list.
   void ClearSharedHandles();
@@ -167,6 +169,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   std::vector<base::string16> capabilities_;
   scoped_ptr<AppContainerAttributes> appcontainer_list_;
   PSID lowbox_sid_;
+  base::win::ScopedHandle lowbox_directory_;
 
   static HDESK alternate_desktop_handle_;
   static HWINSTA alternate_winstation_handle_;
@@ -175,7 +178,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   // Contains the list of handles being shared with the target process.
   // This list contains handles other than the stderr/stdout handles which are
   // shared with the target at times.
-  std::vector<HANDLE> handles_to_share_;
+  HandleList handles_to_share_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyBase);
 };

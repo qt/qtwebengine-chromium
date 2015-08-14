@@ -15,13 +15,11 @@
 #include "base/supports_user_data.h"
 #include "content/browser/frame_host/navigation_controller_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
-#include "content/browser/transition_request_manager.h"
 #include "content/common/content_export.h"
 
 namespace content {
 
 class WebContents;
-struct TransitionLayerData;
 
 // Android wrapper around WebContents that provides safer passage from java and
 // back to native and provides java with a means of communicating with its
@@ -48,44 +46,23 @@ class CONTENT_EXPORT WebContentsAndroid
   bool IsLoadingToDifferentDocument(JNIEnv* env, jobject obj) const;
 
   void Stop(JNIEnv* env, jobject obj);
+  void Cut(JNIEnv* env, jobject obj);
+  void Copy(JNIEnv* env, jobject obj);
+  void Paste(JNIEnv* env, jobject obj);
+  void SelectAll(JNIEnv* env, jobject obj);
+  void Unselect(JNIEnv* env, jobject obj);
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
   base::android::ScopedJavaLocalRef<jstring> GetLastCommittedURL(JNIEnv* env,
                                                                  jobject) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
 
-  void ResumeResponseDeferredAtStart(JNIEnv* env, jobject obj);
   void ResumeLoadingCreatedWebContents(JNIEnv* env, jobject obj);
-  void SetHasPendingNavigationTransitionForTesting(JNIEnv* env, jobject obj);
-  void SetupTransitionView(JNIEnv* env, jobject jobj, jstring markup);
-  void BeginExitTransition(JNIEnv* env, jobject jobj, jstring css_selector,
-                           jboolean exit_to_native_app);
-  void RevertExitTransition(JNIEnv* env, jobject jobj);
-  void HideTransitionElements(JNIEnv* env, jobject jobj, jstring css_selector);
-  void ShowTransitionElements(JNIEnv* env, jobject jobj, jstring css_selector);
-  void ClearNavigationTransitionData(JNIEnv* env, jobject jobj);
-  void FetchTransitionElements(JNIEnv* env, jobject jobj, jstring jurl);
-  void OnTransitionElementsFetched(
-      scoped_ptr<const TransitionLayerData> transition_data,
-      bool has_transition_data);
-
-  // This method is invoked when the request is deferred immediately after
-  // receiving response headers.
-  void DidDeferAfterResponseStarted(const TransitionLayerData& transition_data);
-
-  // This method is invoked when a navigation transition is detected, to
-  // determine if the embedder intends to handle it.
-  bool WillHandleDeferAfterResponseStarted();
-
-  // This method is invoked when a navigation transition has started.
-  void DidStartNavigationTransitionForFrame(int64 frame_id);
 
   void OnHide(JNIEnv* env, jobject obj);
   void OnShow(JNIEnv* env, jobject obj);
   void ReleaseMediaPlayers(JNIEnv* env, jobject jobj);
 
-  void AddStyleSheetByURL(
-      JNIEnv* env, jobject obj, jstring url);
   void ShowInterstitialPage(
       JNIEnv* env, jobject obj, jstring jurl, jlong delegate_ptr);
   jboolean IsShowingInterstitialPage(JNIEnv* env, jobject obj);
@@ -100,7 +77,10 @@ class CONTENT_EXPORT WebContentsAndroid
   void ShowImeIfNeeded(JNIEnv* env, jobject obj);
   void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
   void SelectWordAroundCaret(JNIEnv* env, jobject obj);
-
+  void AdjustSelectionByCharacterOffset(JNIEnv* env,
+                                        jobject obj,
+                                        jint start_adjust,
+                                        jint end_adjust);
   void InsertCSS(JNIEnv* env, jobject jobj, jstring jcss);
   void EvaluateJavaScript(JNIEnv* env,
                           jobject obj,
@@ -118,7 +98,13 @@ class CONTENT_EXPORT WebContentsAndroid
 
   void RequestAccessibilitySnapshot(JNIEnv* env,
                                     jobject obj,
-                                    jobject callback);
+                                    jobject callback,
+                                    jfloat y_offset,
+                                    jfloat x_scroll);
+
+  void ResumeMediaSession(JNIEnv* env, jobject obj);
+  void SuspendMediaSession(JNIEnv* env, jobject obj);
+
  private:
   RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid();
 

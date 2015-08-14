@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "build/build_config.h"
+#include "cc/base/math_util.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/public/common/content_switches.h"
@@ -28,11 +29,10 @@ static bool IsGpuRasterizationBlacklisted() {
 const char* kGpuCompositingFeatureName = "gpu_compositing";
 const char* kWebGLFeatureName = "webgl";
 const char* kRasterizationFeatureName = "rasterization";
-const char* kThreadedRasterizationFeatureName = "threaded_rasterization";
 const char* kMultipleRasterThreadsFeatureName = "multiple_raster_threads";
 
 const int kMinRasterThreads = 1;
-const int kMaxRasterThreads = 64;
+const int kMaxRasterThreads = 4;
 
 const int kMinMSAASampleCount = 0;
 
@@ -144,14 +144,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           true
       },
       {
-          kThreadedRasterizationFeatureName,
-          false,
-          !IsImplSidePaintingEnabled(),
-          "Threaded rasterization has not been enabled or"
-          " is not supported by the current system.",
-          false
-      },
-      {
           kMultipleRasterThreadsFeatureName,
           false,
           NumberOfRendererRasterThreads() == 1,
@@ -165,19 +157,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
 }
 
 }  // namespace
-
-bool IsPinchVirtualViewportEnabled() {
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-
-  // Command line switches take precedence over platform default.
-  if (command_line.HasSwitch(cc::switches::kDisablePinchVirtualViewport))
-    return false;
-  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport))
-    return true;
-
-  return true;
-}
 
 bool IsPropertyTreeVerificationEnabled() {
   const base::CommandLine& command_line =
@@ -201,29 +180,46 @@ bool IsDelegatedRendererEnabled() {
   return enabled;
 }
 
-bool IsImplSidePaintingEnabled() {
+int NumberOfRendererRasterThreads() {
+  int num_processors = base::SysInfo::NumberOfProcessors();
+
+#if defined(OS_ANDROID)
+  // Android may report 6 to 8 CPUs for big.LITTLE configurations.
+  // Limit the number of raster threads based on maximum of 4 big cores.
+  num_processors = std::min(num_processors, 4);
+#endif
+
+  int num_raster_threads = num_processors / 2;
+
+  // Async uploads is used when neither zero-copy nor one-copy is enabled and
+  // it uses its own thread, so reduce the number of raster threads when async
+  // uploads is in use.
+  bool async_uploads_is_used =
+      !IsZeroCopyUploadEnabled() && !IsOneCopyUploadEnabled();
+  if (async_uploads_is_used)
+    --num_raster_threads;
+
+#if defined(OS_ANDROID)
+  // Limit the number of raster threads to 1 on Android.
+  // TODO(reveman): Remove this when we have a better mechanims to prevent
+  // pre-paint raster work from slowing down non-raster work. crbug.com/504515
+  num_raster_threads = 1;
+#endif
+
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
-    return false;
-  return true;
-}
 
-int NumberOfRendererRasterThreads() {
-  int num_raster_threads = 1;
+  if (command_line.HasSwitch(switches::kNumRasterThreads)) {
+    std::string string_value = command_line.GetSwitchValueASCII(
+        switches::kNumRasterThreads);
+    if (!base::StringToInt(string_value, &num_raster_threads)) {
+      DLOG(WARNING) << "Failed to parse switch " <<
+          switches::kNumRasterThreads  << ": " << string_value;
+    }
+  }
 
-  // Async uploads uses its own thread, so allow an extra thread when async
-  // uploads is not in use.
-  bool allow_extra_thread =
-      IsZeroCopyUploadEnabled() || IsOneCopyUploadEnabled();
-  if (base::SysInfo::NumberOfProcessors() >= 4 && allow_extra_thread)
-    num_raster_threads = 2;
-
-  int force_num_raster_threads = ForceNumberOfRendererRasterThreads();
-  if (force_num_raster_threads)
-    num_raster_threads = force_num_raster_threads;
-
-  return num_raster_threads;
+  return cc::MathUtil::ClampToRange(num_raster_threads, kMinRasterThreads,
+                                    kMaxRasterThreads);
 }
 
 bool IsOneCopyUploadEnabled() {
@@ -246,35 +242,20 @@ bool IsOneCopyUploadEnabled() {
 bool IsZeroCopyUploadEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
+  // Single-threaded mode in the renderer process (for layout tests) is
+  // synchronous, which depends on tiles being ready to draw when raster is
+  // complete.  Therefore, it must use one of zero copy, software raster, or
+  // GPU raster. So we force zero-copy on for the case where software/GPU raster
+  // is not used.
+  // TODO(reveman): One-copy can work with sync compositing: crbug.com/490295.
+  if (command_line.HasSwitch(switches::kDisableThreadedCompositing))
+    return true;
   return command_line.HasSwitch(switches::kEnableZeroCopy);
-}
-
-int ForceNumberOfRendererRasterThreads() {
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-
-  if (!command_line.HasSwitch(switches::kNumRasterThreads))
-    return 0;
-  std::string string_value =
-      command_line.GetSwitchValueASCII(switches::kNumRasterThreads);
-  int force_num_raster_threads = 0;
-  if (base::StringToInt(string_value, &force_num_raster_threads) &&
-      force_num_raster_threads >= kMinRasterThreads &&
-      force_num_raster_threads <= kMaxRasterThreads) {
-    return force_num_raster_threads;
-  } else {
-    DLOG(WARNING) << "Failed to parse switch " <<
-        switches::kNumRasterThreads  << ": " << string_value;
-    return 0;
-  }
 }
 
 bool IsGpuRasterizationEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-
-  if (!IsImplSidePaintingEnabled())
-    return false;
 
   if (command_line.HasSwitch(switches::kDisableGpuRasterization))
     return false;
@@ -297,10 +278,6 @@ bool IsGpuRasterizationEnabled() {
 bool IsForceGpuRasterizationEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-
-  if (!IsImplSidePaintingEnabled())
-    return false;
-
   return command_line.HasSwitch(switches::kForceGpuRasterization);
 }
 
@@ -364,8 +341,6 @@ base::DictionaryValue* GetFeatureStatus() {
         status += "_software";
       else
         status += "_off";
-      if (gpu_feature_info.name == kThreadedRasterizationFeatureName)
-        status += "_ok";
     } else if (gpu_feature_info.blocked ||
                gpu_access_blocked) {
       status = "unavailable";
@@ -383,11 +358,12 @@ base::DictionaryValue* GetFeatureStatus() {
           status += "_force";
       }
       if (gpu_feature_info.name == kMultipleRasterThreadsFeatureName) {
-        if (ForceNumberOfRendererRasterThreads() > 0)
+        const base::CommandLine& command_line =
+            *base::CommandLine::ForCurrentProcess();
+        if (command_line.HasSwitch(switches::kNumRasterThreads))
           status += "_force";
       }
-      if (gpu_feature_info.name == kThreadedRasterizationFeatureName ||
-          gpu_feature_info.name == kMultipleRasterThreadsFeatureName)
+      if (gpu_feature_info.name == kMultipleRasterThreadsFeatureName)
         status += "_on";
     }
     if (gpu_feature_info.name == kWebGLFeatureName &&

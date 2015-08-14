@@ -323,12 +323,10 @@ IdlTypeBase.gc_type = property(gc_type)
 def is_traceable(idl_type):
     return (idl_type.is_garbage_collected
             or idl_type.is_will_be_garbage_collected
-            or idl_type.is_dictionary
-            or idl_type.is_union_type)
+            or idl_type.is_dictionary)
 
 IdlTypeBase.is_traceable = property(is_traceable)
-IdlUnionType.is_traceable = property(
-    lambda self: any((member_type.is_traceable for member_type in self.member_types)))
+IdlUnionType.is_traceable = property(lambda self: True)
 IdlArrayOrSequenceType.is_traceable = property(
     lambda self: self.element_type.is_traceable)
 
@@ -934,8 +932,17 @@ def union_literal_cpp_value(idl_type, idl_literal):
     return '%s::from%s(%s)' % (idl_type.name, member_type.name,
                                member_type.literal_cpp_value(idl_literal))
 
+
+def array_or_sequence_literal_cpp_value(idl_type, idl_literal):
+    # Only support empty arrays.
+    if idl_literal.value == '[]':
+        return cpp_type(idl_type) + '()'
+    raise ValueError('Unsupported literal type: ' + idl_literal.idl_type)
+
+
 IdlType.literal_cpp_value = literal_cpp_value
 IdlUnionType.literal_cpp_value = union_literal_cpp_value
+IdlArrayOrSequenceType.literal_cpp_value = array_or_sequence_literal_cpp_value
 
 
 ################################################################################
@@ -950,10 +957,10 @@ def cpp_type_has_null_value(idl_type):
     # - Interface types (raw pointer or RefPtr/PassRefPtr) represent null as
     #   a null pointer.
     # - Union types, as thier container classes can represent null value.
-    # - 'Object' type. We use ScriptValue for object type.
+    # - 'Object' and 'any' type. We use ScriptValue for object type.
     return (idl_type.is_string_type or idl_type.is_interface_type or
             idl_type.is_enum or idl_type.is_union_type
-            or idl_type.base_type == 'object'
+            or idl_type.base_type == 'object' or idl_type.base_type == 'any'
             or idl_type.is_callback_function or idl_type.is_callback_interface)
 
 IdlTypeBase.cpp_type_has_null_value = property(cpp_type_has_null_value)

@@ -4,12 +4,13 @@
 
 #include "net/quic/quic_crypto_client_stream.h"
 
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/null_encrypter.h"
 #include "net/quic/quic_client_session_base.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 
@@ -301,6 +302,15 @@ void QuicCryptoClientStream::DoSendCHLO(
     return;
   }
 
+  // If the server nonce is empty, copy over the server nonce from a previous
+  // SREJ, if there is one.
+  if (FLAGS_enable_quic_stateless_reject_support &&
+      crypto_negotiated_params_.server_nonce.empty() &&
+      cached->has_server_nonce()) {
+    crypto_negotiated_params_.server_nonce = cached->GetNextServerNonce();
+    DCHECK(!crypto_negotiated_params_.server_nonce.empty());
+  }
+
   string error_details;
   QuicErrorCode error = crypto_config_->FillClientHello(
       server_id_,
@@ -330,8 +340,8 @@ void QuicCryptoClientStream::DoSendCHLO(
   SendHandshakeMessage(out);
   // Be prepared to decrypt with the new server write key.
   session()->connection()->SetAlternativeDecrypter(
-      crypto_negotiated_params_.initial_crypters.decrypter.release(),
       ENCRYPTION_INITIAL,
+      crypto_negotiated_params_.initial_crypters.decrypter.release(),
       true /* latch once used */);
   // Send subsequent packets under encryption on the assumption that the
   // server will accept the handshake.
@@ -563,7 +573,7 @@ void QuicCryptoClientStream::DoReceiveSHLO(
   // with the FORWARD_SECURE key until it receives a FORWARD_SECURE
   // packet from the client.
   session()->connection()->SetAlternativeDecrypter(
-      crypters->decrypter.release(), ENCRYPTION_FORWARD_SECURE,
+      ENCRYPTION_FORWARD_SECURE, crypters->decrypter.release(),
       false /* don't latch */);
   session()->connection()->SetEncrypter(
       ENCRYPTION_FORWARD_SECURE, crypters->encrypter.release());

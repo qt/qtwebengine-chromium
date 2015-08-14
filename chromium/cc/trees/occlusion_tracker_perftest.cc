@@ -4,6 +4,7 @@
 
 #include "cc/trees/occlusion_tracker.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/layers/layer_iterator.h"
@@ -13,6 +14,7 @@
 #include "cc/test/fake_proxy.h"
 #include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -32,13 +34,13 @@ class OcclusionTrackerPerfTest : public testing::Test {
       : timer_(kWarmupRuns,
                base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
                kTimeCheckInterval),
+        proxy_(base::ThreadTaskRunnerHandle::Get(), nullptr),
         impl_(&proxy_) {}
   void CreateHost() {
     LayerTreeSettings settings;
-    shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    host_impl_ =
-        LayerTreeHostImpl::Create(settings, &client_, &proxy_, &stats_,
-                                  shared_bitmap_manager_.get(), NULL, NULL, 1);
+    host_impl_ = LayerTreeHostImpl::Create(settings, &client_, &proxy_, &stats_,
+                                           &shared_bitmap_manager_, nullptr,
+                                           &task_graph_runner_, 1);
     host_impl_->InitializeRenderer(FakeOutputSurface::Create3d());
 
     scoped_ptr<LayerImpl> root_layer = LayerImpl::Create(active_tree(), 1);
@@ -67,7 +69,8 @@ class OcclusionTrackerPerfTest : public testing::Test {
   FakeProxy proxy_;
   DebugScopedSetImplThread impl_;
   FakeRenderingStatsInstrumentation stats_;
-  scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
+  TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   scoped_ptr<LayerTreeHostImpl> host_impl_;
 };
 
@@ -75,7 +78,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   SetTestName("unoccluded_content_rect_fully_occluded");
 
   gfx::Rect viewport_rect(768, 1038);
-  OcclusionTracker<LayerImpl> tracker(viewport_rect);
+  OcclusionTracker tracker(viewport_rect);
 
   CreateHost();
   host_impl_->SetViewportSize(viewport_rect.size());
@@ -86,7 +89,6 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   opaque_layer->SetContentsOpaque(true);
   opaque_layer->SetDrawsContent(true);
   opaque_layer->SetBounds(viewport_rect.size());
-  opaque_layer->SetContentBounds(viewport_rect.size());
   active_tree()->root_layer()->AddChild(opaque_layer.Pass());
 
   bool update_lcd_text = false;
@@ -95,10 +97,10 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   ASSERT_EQ(1u, rsll.size());
   EXPECT_EQ(1u, rsll[0]->render_surface()->layer_list().size());
 
-  LayerIterator<LayerImpl> begin = LayerIterator<LayerImpl>::Begin(&rsll);
-  LayerIterator<LayerImpl> end = LayerIterator<LayerImpl>::End(&rsll);
+  LayerIterator begin = LayerIterator::Begin(&rsll);
+  LayerIterator end = LayerIterator::End(&rsll);
 
-  LayerIteratorPosition<LayerImpl> pos = begin;
+  LayerIteratorPosition pos = begin;
 
   // The opaque_layer adds occlusion over the whole viewport.
   tracker.EnterLayer(pos);
@@ -128,7 +130,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   } while (!timer_.HasTimeLimitExpired());
 
   ++begin;
-  LayerIteratorPosition<LayerImpl> next = begin;
+  LayerIteratorPosition next = begin;
   EXPECT_EQ(active_tree()->root_layer(), next.current_layer);
 
   ++begin;
@@ -142,7 +144,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
   SetTestName("unoccluded_content_rect_10_opaque_layers");
 
   gfx::Rect viewport_rect(768, 1038);
-  OcclusionTracker<LayerImpl> tracker(viewport_rect);
+  OcclusionTracker tracker(viewport_rect);
 
   CreateHost();
   host_impl_->SetViewportSize(viewport_rect.size());
@@ -155,8 +157,6 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
     opaque_layer->SetDrawsContent(true);
     opaque_layer->SetBounds(
         gfx::Size(viewport_rect.width() / 2, viewport_rect.height() / 2));
-    opaque_layer->SetContentBounds(
-        gfx::Size(viewport_rect.width() / 2, viewport_rect.height() / 2));
     opaque_layer->SetPosition(gfx::Point(i, i));
     active_tree()->root_layer()->AddChild(opaque_layer.Pass());
   }
@@ -168,17 +168,17 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
   EXPECT_EQ(static_cast<size_t>(kNumOpaqueLayers),
             rsll[0]->render_surface()->layer_list().size());
 
-  LayerIterator<LayerImpl> begin = LayerIterator<LayerImpl>::Begin(&rsll);
-  LayerIterator<LayerImpl> end = LayerIterator<LayerImpl>::End(&rsll);
+  LayerIterator begin = LayerIterator::Begin(&rsll);
+  LayerIterator end = LayerIterator::End(&rsll);
 
   // The opaque_layers add occlusion.
   for (int i = 0; i < kNumOpaqueLayers - 1; ++i) {
-    LayerIteratorPosition<LayerImpl> pos = begin;
+    LayerIteratorPosition pos = begin;
     tracker.EnterLayer(pos);
     tracker.LeaveLayer(pos);
     ++begin;
   }
-  LayerIteratorPosition<LayerImpl> pos = begin;
+  LayerIteratorPosition pos = begin;
   tracker.EnterLayer(pos);
   tracker.LeaveLayer(pos);
 
@@ -200,7 +200,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
   } while (!timer_.HasTimeLimitExpired());
 
   ++begin;
-  LayerIteratorPosition<LayerImpl> next = begin;
+  LayerIteratorPosition next = begin;
   EXPECT_EQ(active_tree()->root_layer(), next.current_layer);
 
   ++begin;

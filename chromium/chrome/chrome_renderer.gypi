@@ -36,8 +36,8 @@
       'renderer/net_benchmarking_extension.h',
       'renderer/page_load_histograms.cc',
       'renderer/page_load_histograms.h',
-      'renderer/plugins/chrome_plugin_placeholder.cc',
-      'renderer/plugins/chrome_plugin_placeholder.h',
+      'renderer/plugins/non_loadable_plugin_placeholder.cc',
+      'renderer/plugins/non_loadable_plugin_placeholder.h',
       'renderer/plugins/plugin_uma.cc',
       'renderer/plugins/plugin_uma.h',
       'renderer/plugins/shadow_dom_plugin_placeholder.cc',
@@ -182,6 +182,8 @@
       'renderer/pepper/pepper_shared_memory_message_filter.h',
       'renderer/pepper/pepper_uma_host.cc',
       'renderer/pepper/pepper_uma_host.h',
+      'renderer/plugins/chrome_plugin_placeholder.cc',
+      'renderer/plugins/chrome_plugin_placeholder.h',
       'renderer/plugins/plugin_preroller.cc',
       'renderer/plugins/plugin_preroller.h',
     ],
@@ -244,6 +246,7 @@
       'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
         'common',
+        'common_mojo_bindings',
         'common_net',
         'chrome_resources.gyp:chrome_resources',
         'chrome_resources.gyp:chrome_strings',
@@ -252,7 +255,10 @@
         '../components/components.gyp:content_settings_content_common',
         '../components/components.gyp:cdm_renderer',
         '../components/components.gyp:data_reduction_proxy_content_common',
+        '../components/components.gyp:data_reduction_proxy_core_common',
+        '../components/components.gyp:guest_view_renderer',
         '../components/components.gyp:network_hints_renderer',
+        '../components/components.gyp:omnibox_common',
         '../components/components.gyp:error_page_renderer',
         '../components/components.gyp:startup_metric_utils',
         '../components/components.gyp:password_manager_content_renderer',
@@ -268,7 +274,6 @@
         '../third_party/WebKit/public/blink.gyp:blink',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
-        '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
       ],
       'include_dirs': [
@@ -343,7 +348,7 @@
             '<@(chrome_renderer_spellchecker_sources)',
           ],
           'dependencies': [
-            '../third_party/hunspell_new/hunspell.gyp:hunspell',
+            '../third_party/hunspell/hunspell.gyp:hunspell',
           ],
         }],
         ['OS=="mac"', {
@@ -372,7 +377,6 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:dom_distiller_core',  # Needed by chrome_content_renderer_client.cc.
           ],
           'include_dirs': [

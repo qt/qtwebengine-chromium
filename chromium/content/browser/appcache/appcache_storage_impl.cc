@@ -12,12 +12,13 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/files/file_util.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/appcache/appcache.h"
 #include "content/browser/appcache/appcache_database.h"
 #include "content/browser/appcache/appcache_entry.h"
@@ -136,8 +137,9 @@ class AppCacheStorageImpl::DatabaseTask
     : public base::RefCountedThreadSafe<DatabaseTask> {
  public:
   explicit DatabaseTask(AppCacheStorageImpl* storage)
-      : storage_(storage), database_(storage->database_),
-        io_thread_(base::MessageLoopProxy::current()) {
+      : storage_(storage),
+        database_(storage->database_),
+        io_thread_(base::ThreadTaskRunnerHandle::Get()) {
     DCHECK(io_thread_.get());
   }
 
@@ -178,7 +180,7 @@ class AppCacheStorageImpl::DatabaseTask
   void CallRunCompleted(base::TimeTicks schedule_time);
   void OnFatalError();
 
-  scoped_refptr<base::MessageLoopProxy> io_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_thread_;
 };
 
 void AppCacheStorageImpl::DatabaseTask::Schedule() {
@@ -314,7 +316,7 @@ void AppCacheStorageImpl::InitTask::RunCompleted() {
   if (!storage_->is_disabled()) {
     storage_->usage_map_.swap(usage_map_);
     const base::TimeDelta kDelay = base::TimeDelta::FromMinutes(5);
-    base::MessageLoop::current()->PostDelayedTask(
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&AppCacheStorageImpl::DelayedStartDeletingUnusedResponses,
                    storage_->weak_factory_.GetWeakPtr()),
@@ -468,6 +470,10 @@ void AppCacheStorageImpl::StoreOrLoadTask::CreateCacheAndGroupFromRecords(
         storage_, group_record_.manifest_url,
         group_record_.group_id);
     group->get()->set_creation_time(group_record_.creation_time);
+    group->get()->set_last_full_update_check_time(
+        group_record_.last_full_update_check_time);
+    group->get()->set_first_evictable_error_time(
+        group_record_.first_evictable_error_time);
     group->get()->AddCache(cache->get());
 
     // TODO(michaeln): histogram is fishing for clues to crbug/95101
@@ -630,6 +636,10 @@ AppCacheStorageImpl::StoreGroupAndCacheTask::StoreGroupAndCacheTask(
   group_record_.group_id = group->group_id();
   group_record_.manifest_url = group->manifest_url();
   group_record_.origin = group_record_.manifest_url.GetOrigin();
+  group_record_.last_full_update_check_time =
+      group->last_full_update_check_time();
+  group_record_.first_evictable_error_time =
+      group->first_evictable_error_time();
   newest_cache->ToDatabaseRecords(
       group,
       &cache_record_, &entry_records_,
@@ -701,6 +711,11 @@ void AppCacheStorageImpl::StoreGroupAndCacheTask::Run() {
 
     database_->UpdateLastAccessTime(group_record_.group_id,
                                     base::Time::Now());
+
+    database_->UpdateEvictionTimes(
+        group_record_.group_id,
+        group_record_.last_full_update_check_time,
+        group_record_.first_evictable_error_time);
 
     AppCacheDatabase::CacheRecord cache;
     if (database_->FindCacheForGroup(group_record_.group_id, &cache)) {
@@ -1353,6 +1368,39 @@ class AppCacheStorageImpl::CommitLastAccessTimesTask
   ~CommitLastAccessTimesTask() override {}
 };
 
+// UpdateEvictionTimes -------
+
+class AppCacheStorageImpl::UpdateEvictionTimesTask
+    : public DatabaseTask {
+ public:
+  UpdateEvictionTimesTask(
+      AppCacheStorageImpl* storage, AppCacheGroup* group)
+      : DatabaseTask(storage), group_id_(group->group_id()),
+        last_full_update_check_time_(group->last_full_update_check_time()),
+        first_evictable_error_time_(group->first_evictable_error_time()) {
+  }
+
+  // DatabaseTask:
+  void Run() override;
+
+ protected:
+  ~UpdateEvictionTimesTask() override {}
+
+ private:
+  int64 group_id_;
+  base::Time last_full_update_check_time_;
+  base::Time first_evictable_error_time_;
+};
+
+void AppCacheStorageImpl::UpdateEvictionTimesTask::Run() {
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "AppCacheStorageImpl::UpdateEvictionTimes"));
+  database_->UpdateEvictionTimes(group_id_,
+                                 last_full_update_check_time_,
+                                 first_evictable_error_time_);
+}
+
 // AppCacheStorageImpl ---------------------------------------------------
 
 AppCacheStorageImpl::AppCacheStorageImpl(AppCacheServiceImpl* service)
@@ -1672,6 +1720,12 @@ void AppCacheStorageImpl::MakeGroupObsolete(AppCacheGroup* group,
   task->Schedule();
 }
 
+void AppCacheStorageImpl::StoreEvictionTimes(AppCacheGroup* group) {
+  scoped_refptr<UpdateEvictionTimesTask> task(
+      new UpdateEvictionTimesTask(this, group));
+  task->Schedule();
+}
+
 AppCacheResponseReader* AppCacheStorageImpl::CreateResponseReader(
     const GURL& manifest_url, int64 group_id, int64 response_id) {
   return new AppCacheResponseReader(response_id, group_id, disk_cache());
@@ -1738,10 +1792,9 @@ void AppCacheStorageImpl::StartDeletingResponses(
 void AppCacheStorageImpl::ScheduleDeleteOneResponse() {
   DCHECK(!is_response_deletion_scheduled_);
   const base::TimeDelta kBriefDelay = base::TimeDelta::FromMilliseconds(10);
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&AppCacheStorageImpl::DeleteOneResponse,
-                 weak_factory_.GetWeakPtr()),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::Bind(&AppCacheStorageImpl::DeleteOneResponse,
+                            weak_factory_.GetWeakPtr()),
       kBriefDelay);
   is_response_deletion_scheduled_ = true;
 }
@@ -1824,10 +1877,9 @@ void AppCacheStorageImpl::GetPendingForeignMarkingsForCache(
 
 void AppCacheStorageImpl::ScheduleSimpleTask(const base::Closure& task) {
   pending_simple_tasks_.push_back(task);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&AppCacheStorageImpl::RunOnePendingSimpleTask,
-                 weak_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&AppCacheStorageImpl::RunOnePendingSimpleTask,
+                            weak_factory_.GetWeakPtr()));
 }
 
 void AppCacheStorageImpl::RunOnePendingSimpleTask() {

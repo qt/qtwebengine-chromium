@@ -1,3 +1,4 @@
+#if defined(__arm__)
 
 @ ====================================================================
 @ Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
@@ -1366,7 +1367,7 @@ bsaes_ctr32_encrypt_blocks:
 
 	vld1.8	{q0}, [r8]		@ load counter
 #ifdef	__APPLE__
-	mov	r8, #.LREVM0SR-.LM0
+	mov	r8, #:lower16:(.LREVM0SR-.LM0)
 	add	r8, r6, r8
 #else
 	add	r8, r6, #.LREVM0SR-.LM0	@ borrow r8
@@ -1428,7 +1429,7 @@ bsaes_ctr32_encrypt_blocks:
 	mov	r5, r10			@ pass rounds
 	vstmia	r9, {q10}			@ save next counter
 #ifdef	__APPLE__
-	mov	r6, #.LREVM0SR-.LSR
+	mov	r6, #:lower16:(.LREVM0SR-.LSR)
 	sub	r6, r8, r6
 #else
 	sub	r6, r8, #.LREVM0SR-.LSR	@ pass constants
@@ -2573,5 +2574,6 @@ bsaes_xts_decrypt:
 	ldmia	sp!, {r4,r5,r6,r7,r8,r9,r10, pc}	@ return
 
 .size	bsaes_xts_decrypt,.-bsaes_xts_decrypt
+#endif
 #endif
 #endif

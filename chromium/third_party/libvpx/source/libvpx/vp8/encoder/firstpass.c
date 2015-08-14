@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <stdio.h>
 
+#include "./vpx_dsp_rtcd.h"
 #include "./vpx_scale_rtcd.h"
 #include "block.h"
 #include "onyx_int.h"
@@ -34,8 +35,6 @@
 /* #define OUTPUT_FPF 1 */
 
 extern void vp8cx_frame_init_quantizer(VP8_COMP *cpi);
-extern void vp8_set_mbmode_and_mvs(MACROBLOCK *x, MB_PREDICTION_MODE mb, int_mv *mv);
-extern void vp8_alloc_compressor_data(VP8_COMP *cpi);
 
 #define GFQ_ADJUSTMENT vp8_gf_boost_qadjustment[Q]
 extern int vp8_kf_boost_qadjustment[QINDEX_RANGE];
@@ -424,14 +423,14 @@ static void zz_motion_search( VP8_COMP *cpi, MACROBLOCK * x,
     /* Set up pointers for this macro block raw buffer */
     raw_ptr = (unsigned char *)(raw_buffer->y_buffer + recon_yoffset
                                 + d->offset);
-    vp8_mse16x16 ( src_ptr, src_stride, raw_ptr, raw_stride,
-                   (unsigned int *)(raw_motion_err));
+    vpx_mse16x16(src_ptr, src_stride, raw_ptr, raw_stride,
+                 (unsigned int *)(raw_motion_err));
 
     /* Set up pointers for this macro block recon buffer */
     xd->pre.y_buffer = recon_buffer->y_buffer + recon_yoffset;
     ref_ptr = (unsigned char *)(xd->pre.y_buffer + d->offset );
-    vp8_mse16x16 ( src_ptr, src_stride, ref_ptr, ref_stride,
-                   (unsigned int *)(best_motion_err));
+    vpx_mse16x16(src_ptr, src_stride, ref_ptr, ref_stride,
+                 (unsigned int *)(best_motion_err));
 }
 
 static void first_pass_motion_search(VP8_COMP *cpi, MACROBLOCK *x,
@@ -455,7 +454,7 @@ static void first_pass_motion_search(VP8_COMP *cpi, MACROBLOCK *x,
     int new_mv_mode_penalty = 256;
 
     /* override the default variance function to use MSE */
-    v_fn_ptr.vf    = vp8_mse16x16;
+    v_fn_ptr.vf    = vpx_mse16x16;
 
     /* Set up pointers for this macro block recon buffer */
     xd->pre.y_buffer = recon_buffer->y_buffer + recon_yoffset;
@@ -1328,8 +1327,6 @@ static int estimate_kf_group_q(VP8_COMP *cpi, double section_err, int section_ta
 
     return Q;
 }
-
-extern void vp8_new_framerate(VP8_COMP *cpi, double framerate);
 
 void vp8_init_second_pass(VP8_COMP *cpi)
 {

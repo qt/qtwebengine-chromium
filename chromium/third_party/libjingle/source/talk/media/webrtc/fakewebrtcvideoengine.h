@@ -56,8 +56,6 @@ static const int kMaxVideoBitrate = 1000;
 // renderer for a channel or it is adding a renderer for a capturer.
 static const int kViEChannelIdBase = 0;
 static const int kViEChannelIdMax = 1000;
-static const int kViECaptureIdBase = 10000;  // Make sure there is a gap.
-static const int kViECaptureIdMax = 11000;
 
 // Fake class for mocking out webrtc::VideoDecoder
 class FakeWebRtcVideoDecoder : public webrtc::VideoDecoder {
@@ -159,10 +157,9 @@ class FakeWebRtcVideoEncoder : public webrtc::VideoEncoder {
     return codec_settings_;
   }
 
-  virtual int32 Encode(
-      const webrtc::I420VideoFrame& inputImage,
-            const webrtc::CodecSpecificInfo* codecSpecificInfo,
-            const std::vector<webrtc::VideoFrameType>* frame_types) {
+  virtual int32 Encode(const webrtc::VideoFrame& inputImage,
+                       const webrtc::CodecSpecificInfo* codecSpecificInfo,
+                       const std::vector<webrtc::VideoFrameType>* frame_types) {
     rtc::CritScope lock(&crit_);
     ++num_frames_encoded_;
     return WEBRTC_VIDEO_CODEC_OK;

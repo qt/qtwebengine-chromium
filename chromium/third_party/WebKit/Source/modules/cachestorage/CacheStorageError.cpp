@@ -12,13 +12,9 @@
 
 namespace blink {
 
-DOMException* CacheStorageError::take(ScriptPromiseResolver*, WebType* webErrorRaw)
+DOMException* CacheStorageError::take(ScriptPromiseResolver*, PassOwnPtr<WebType> webError)
 {
-    return CacheStorageError::createException(*webErrorRaw);
-}
-
-void CacheStorageError::dispose(WebType* webErrorRaw)
-{
+    return CacheStorageError::createException(*webError);
 }
 
 DOMException* CacheStorageError::createException(WebType webError)

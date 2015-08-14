@@ -30,6 +30,7 @@
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/Iterable.h"
 #include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
@@ -42,7 +43,7 @@
 
 namespace blink {
 
-class CanvasRenderingContext2D;
+class CanvasRenderingContext;
 class ClientRect;
 class ClientRectList;
 class DOMArrayBuffer;
@@ -78,7 +79,7 @@ class Internals final : public GarbageCollectedFinalized<Internals>, public Scri
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Internals);
 public:
-    static Internals* create(Document*);
+    static Internals* create(ScriptState*);
     virtual ~Internals();
 
     static void resetToConsistentState(Page*);
@@ -90,6 +91,7 @@ public:
     GCObservation* observeGC(ScriptValue);
 
     bool isPreloaded(const String& url);
+    bool isPreloadedBy(const String& url, Document*);
     bool isLoadingFromMemoryCache(const String& url);
 
     bool isSharingStyle(Element*, Element*) const;
@@ -108,8 +110,9 @@ public:
     size_t countElementShadow(const Node*, ExceptionState&) const;
     const AtomicString& shadowPseudoId(Element*);
 
-    // CSS Animation / Transition testing.
+    // Animation testing.
     void pauseAnimations(double pauseTime, ExceptionState&);
+    bool isCompositedAnimation(Animation*);
 
     // Modifies m_desiredFrameStartTime in BitmapImage to advance the next frame time
     // for testing whether animated images work properly.
@@ -132,6 +135,9 @@ public:
     unsigned updateStyleAndReturnAffectedElementCount(ExceptionState&) const;
     unsigned needsLayoutCount(ExceptionState&) const;
     unsigned hitTestCount(Document*, ExceptionState&) const;
+    unsigned hitTestCacheHits(Document*, ExceptionState&) const;
+    Element* elementFromPoint(Document*, double x, double y, bool ignoreClipping, bool allowChildFrameContent, ExceptionState&) const;
+    void clearHitTestCache(Document*, ExceptionState&) const;
 
     String visiblePlaceholder(Element*);
     void selectColorInColorChooser(Element*, const String& colorValue);
@@ -251,10 +257,11 @@ public:
     String pageSizeAndMarginsInPixels(int, int, int, int, int, int, int, ExceptionState& = ASSERT_NO_EXCEPTION) const;
 
     void setDeviceScaleFactor(float scaleFactor, ExceptionState&);
+    void setPageScaleFactor(float scaleFactor, ExceptionState&);
+    void setPageScaleFactorLimits(float minScaleFactor, float maxScaleFactor, ExceptionState&);
 
     void setIsCursorVisible(Document*, bool, ExceptionState&);
 
-    void mediaPlayerRequestFullscreen(HTMLMediaElement*);
     double effectiveMediaVolume(HTMLMediaElement*);
 
     void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement*, bool);
@@ -333,14 +340,11 @@ public:
     void setNetworkConnectionInfo(const String&, ExceptionState&);
 
     ClientRect* boundsInViewportSpace(Element*);
-    String serializeNavigationMarkup();
-    Vector<String> getTransitionElementIds();
-    ClientRectList* getTransitionElementRects();
-    void hideAllTransitionElements();
-    void showAllTransitionElements();
-    void setExitTransitionStylesheetsEnabled(bool);
 
-    unsigned countHitRegions(CanvasRenderingContext2D*);
+    unsigned countHitRegions(CanvasRenderingContext*);
+
+    bool isInCanvasFontCache(Document*, const String&);
+    unsigned canvasFontCacheMaxFonts();
 
     void forcePluginPlaceholder(HTMLElement* plugin, PassRefPtrWillBeRawPtr<DocumentFragment>, ExceptionState&);
     void forcePluginPlaceholder(HTMLElement* plugin, const PluginPlaceholderOptions&, ExceptionState&);
@@ -364,8 +368,10 @@ public:
 
     ClientRectList* focusRingRects(Element*);
 
+    void setCapsLockState(bool enabled);
+
 private:
-    explicit Internals(Document*);
+    explicit Internals(ScriptState*);
     Document* contextDocument() const;
     LocalFrame* frame() const;
     Vector<String> iconURLs(Document*, int iconTypesMask) const;

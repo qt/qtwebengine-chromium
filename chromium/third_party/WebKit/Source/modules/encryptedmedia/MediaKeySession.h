@@ -62,12 +62,12 @@ class MediaKeySession final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaKeySession>
     , public ActiveDOMObject
     , private WebContentDecryptionModuleSession::Client {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaKeySession>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(MediaKeySession);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaKeySession);
 public:
     static MediaKeySession* create(ScriptState*, MediaKeys*, WebEncryptedMediaSessionType);
-    virtual ~MediaKeySession();
+    ~MediaKeySession() override;
 
     String sessionId() const;
     double expiration() const { return m_expiration; }
@@ -82,13 +82,16 @@ public:
     ScriptPromise remove(ScriptState*);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
+    // Oilpan: eagerly release owned m_session, which in turn
+    // drops the client reference back to this MediaKeySession object.
+    EAGERLY_FINALIZE();
     DECLARE_VIRTUAL_TRACE();
 
 private:
@@ -101,10 +104,10 @@ private:
     void actionTimerFired(Timer<MediaKeySession>*);
 
     // WebContentDecryptionModuleSession::Client
-    virtual void message(MessageType, const unsigned char* message, size_t messageLength) override;
-    virtual void close() override;
-    virtual void expirationChanged(double updatedExpiryTimeInMS) override;
-    virtual void keysStatusesChange(const WebVector<WebEncryptedMediaKeyInformation>&, bool hasAdditionalUsableKey) override;
+    void message(MessageType, const unsigned char* message, size_t messageLength) override;
+    void close() override;
+    void expirationChanged(double updatedExpiryTimeInMS) override;
+    void keysStatusesChange(const WebVector<WebEncryptedMediaKeyInformation>&, bool hasAdditionalUsableKey) override;
 
     // Called by NewSessionResult when the new session has been created.
     void finishGenerateRequest();

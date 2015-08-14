@@ -5,10 +5,12 @@
 #include "content/browser/appcache/mock_appcache_storage.h"
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/appcache/appcache.h"
 #include "content/browser/appcache/appcache_entry.h"
 #include "content/browser/appcache/appcache_group.h"
@@ -151,6 +153,12 @@ void MockAppCacheStorage::MakeGroupObsolete(AppCacheGroup* group,
                  make_scoped_refptr(group),
                  make_scoped_refptr(GetOrCreateDelegateReference(delegate)),
                  response_code));
+}
+
+void MockAppCacheStorage::StoreEvictionTimes(AppCacheGroup* group) {
+  stored_eviction_times_[group->group_id()] =
+      std::make_pair(group->last_full_update_check_time(),
+                     group->first_evictable_error_time());
 }
 
 AppCacheResponseReader* MockAppCacheStorage::CreateResponseReader(
@@ -458,10 +466,9 @@ void MockAppCacheStorage::ProcessMakeGroupObsolete(
 
 void MockAppCacheStorage::ScheduleTask(const base::Closure& task) {
   pending_tasks_.push_back(task);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&MockAppCacheStorage::RunOnePendingTask,
-                 weak_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&MockAppCacheStorage::RunOnePendingTask,
+                            weak_factory_.GetWeakPtr()));
 }
 
 void MockAppCacheStorage::RunOnePendingTask() {

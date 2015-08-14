@@ -23,7 +23,7 @@
 #include "jni/ProxyChangeListener_jni.h"
 #include "net/base/host_port_pair.h"
 #include "net/proxy/proxy_config.h"
-#include "url/url_parse.h"
+#include "url/third_party/mozilla/url_parse.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
@@ -355,7 +355,7 @@ class ProxyConfigServiceAndroid::Delegate
   ScopedJavaGlobalRef<jobject> java_proxy_change_listener_;
 
   JNIDelegateImpl jni_delegate_;
-  ObserverList<Observer> observers_;
+  base::ObserverList<Observer> observers_;
   scoped_refptr<base::SequencedTaskRunner> network_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> jni_task_runner_;
   GetPropertyCallback get_property_callback_;

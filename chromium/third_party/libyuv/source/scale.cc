@@ -191,6 +191,15 @@ static void ScalePlaneDown4(int src_width, int src_height,
     }
   }
 #endif
+#if defined(HAS_SCALEROWDOWN4_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    ScaleRowDown4 = filtering ?
+        ScaleRowDown4Box_Any_AVX2 : ScaleRowDown4_Any_AVX2;
+    if (IS_ALIGNED(dst_width, 16)) {
+      ScaleRowDown4 = filtering ? ScaleRowDown4Box_AVX2 : ScaleRowDown4_AVX2;
+    }
+  }
+#endif
 #if defined(HAS_SCALEROWDOWN4_MIPS_DSPR2)
   if (TestCpuFlag(kCpuHasMIPS_DSPR2) && IS_ALIGNED(row_stride, 4) &&
       IS_ALIGNED(src_ptr, 4) && IS_ALIGNED(src_stride, 4) &&
@@ -625,66 +634,6 @@ static void ScalePlaneDown38_16(int src_width, int src_height,
 
 #define MIN1(x) ((x) < 1 ? 1 : (x))
 
-static __inline uint32 SumBox(int iboxwidth, int iboxheight,
-                              ptrdiff_t src_stride, const uint8* src_ptr) {
-  uint32 sum = 0u;
-  int y;
-  assert(iboxwidth > 0);
-  assert(iboxheight > 0);
-  for (y = 0; y < iboxheight; ++y) {
-    int x;
-    for (x = 0; x < iboxwidth; ++x) {
-      sum += src_ptr[x];
-    }
-    src_ptr += src_stride;
-  }
-  return sum;
-}
-
-static __inline uint32 SumBox_16(int iboxwidth, int iboxheight,
-                                 ptrdiff_t src_stride, const uint16* src_ptr) {
-  uint32 sum = 0u;
-  int y;
-  assert(iboxwidth > 0);
-  assert(iboxheight > 0);
-  for (y = 0; y < iboxheight; ++y) {
-    int x;
-    for (x = 0; x < iboxwidth; ++x) {
-      sum += src_ptr[x];
-    }
-    src_ptr += src_stride;
-  }
-  return sum;
-}
-
-static void ScalePlaneBoxRow_C(int dst_width, int boxheight,
-                               int x, int dx, ptrdiff_t src_stride,
-                               const uint8* src_ptr, uint8* dst_ptr) {
-  int i;
-  int boxwidth;
-  for (i = 0; i < dst_width; ++i) {
-    int ix = x >> 16;
-    x += dx;
-    boxwidth = MIN1((x >> 16) - ix);
-    *dst_ptr++ = SumBox(boxwidth, boxheight, src_stride, src_ptr + ix) /
-        (boxwidth * boxheight);
-  }
-}
-
-static void ScalePlaneBoxRow_16_C(int dst_width, int boxheight,
-                                  int x, int dx, ptrdiff_t src_stride,
-                                  const uint16* src_ptr, uint16* dst_ptr) {
-  int i;
-  int boxwidth;
-  for (i = 0; i < dst_width; ++i) {
-    int ix = x >> 16;
-    x += dx;
-    boxwidth = MIN1((x >> 16) - ix);
-    *dst_ptr++ = SumBox_16(boxwidth, boxheight, src_stride, src_ptr + ix) /
-        (boxwidth * boxheight);
-  }
-}
-
 static __inline uint32 SumPixels(int iboxwidth, const uint16* src_ptr) {
   uint32 sum = 0u;
   int x;
@@ -784,7 +733,7 @@ static void ScalePlaneBox(int src_width, int src_height,
                           int dst_width, int dst_height,
                           int src_stride, int dst_stride,
                           const uint8* src_ptr, uint8* dst_ptr) {
-  int j;
+  int j, k;
   // Initial source x/y coordinate and step values as 16.16 fixed point.
   int x = 0;
   int y = 0;
@@ -801,29 +750,29 @@ static void ScalePlaneBox(int src_width, int src_height,
         const uint16* src_ptr, uint8* dst_ptr) =
         (dx & 0xffff) ? ScaleAddCols2_C:
         ((dx != 0x10000) ? ScaleAddCols1_C : ScaleAddCols0_C);
-    void (*ScaleAddRows)(const uint8* src_ptr, ptrdiff_t src_stride,
-        uint16* dst_ptr, int src_width, int src_height) = ScaleAddRows_C;
-#if defined(HAS_SCALEADDROWS_SSE2)
+    void (*ScaleAddRow)(const uint8* src_ptr, uint16* dst_ptr, int src_width) =
+        ScaleAddRow_C;
+#if defined(HAS_SCALEADDROW_SSE2)
     if (TestCpuFlag(kCpuHasSSE2)) {
-      ScaleAddRows = ScaleAddRows_Any_SSE2;
+      ScaleAddRow = ScaleAddRow_Any_SSE2;
       if (IS_ALIGNED(src_width, 16)) {
-        ScaleAddRows = ScaleAddRows_SSE2;
+        ScaleAddRow = ScaleAddRow_SSE2;
       }
     }
 #endif
-#if defined(HAS_SCALEADDROWS_AVX2)
+#if defined(HAS_SCALEADDROW_AVX2)
     if (TestCpuFlag(kCpuHasAVX2)) {
-      ScaleAddRows = ScaleAddRows_Any_AVX2;
+      ScaleAddRow = ScaleAddRow_Any_AVX2;
       if (IS_ALIGNED(src_width, 32)) {
-        ScaleAddRows = ScaleAddRows_AVX2;
+        ScaleAddRow = ScaleAddRow_AVX2;
       }
     }
 #endif
-#if defined(HAS_SCALEADDROWS_NEON)
+#if defined(HAS_SCALEADDROW_NEON)
     if (TestCpuFlag(kCpuHasNEON)) {
-      ScaleAddRows = ScaleAddRows_Any_NEON;
+      ScaleAddRow = ScaleAddRow_Any_NEON;
       if (IS_ALIGNED(src_width, 16)) {
-        ScaleAddRows = ScaleAddRows_NEON;
+        ScaleAddRow = ScaleAddRow_NEON;
       }
     }
 #endif
@@ -837,7 +786,11 @@ static void ScalePlaneBox(int src_width, int src_height,
         y = max_y;
       }
       boxheight = MIN1((y >> 16) - iy);
-      ScaleAddRows(src, src_stride, (uint16*)(row16), src_width, boxheight);
+      memset(row16, 0, src_width * 2);
+      for (k = 0; k < boxheight; ++k) {
+        ScaleAddRow(src, (uint16 *)(row16), src_width);
+        src += src_stride;
+      }
       ScaleAddCols(dst_width, boxheight, x, dx, (uint16*)(row16), dst_ptr);
       dst_ptr += dst_stride;
     }
@@ -849,7 +802,7 @@ static void ScalePlaneBox_16(int src_width, int src_height,
                              int dst_width, int dst_height,
                              int src_stride, int dst_stride,
                              const uint16* src_ptr, uint16* dst_ptr) {
-  int j;
+  int j, k;
   // Initial source x/y coordinate and step values as 16.16 fixed point.
   int x = 0;
   int y = 0;
@@ -865,12 +818,12 @@ static void ScalePlaneBox_16(int src_width, int src_height,
     void (*ScaleAddCols)(int dst_width, int boxheight, int x, int dx,
         const uint32* src_ptr, uint16* dst_ptr) =
         (dx & 0xffff) ? ScaleAddCols2_16_C: ScaleAddCols1_16_C;
-    void (*ScaleAddRows)(const uint16* src_ptr, ptrdiff_t src_stride,
-        uint32* dst_ptr, int src_width, int src_height) = ScaleAddRows_16_C;
+    void (*ScaleAddRow)(const uint16* src_ptr, uint32* dst_ptr, int src_width) =
+        ScaleAddRow_16_C;
 
-#if defined(HAS_SCALEADDROWS_16_SSE2)
+#if defined(HAS_SCALEADDROW_16_SSE2)
     if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(src_width, 16)) {
-      ScaleAddRows = ScaleAddRows_16_SSE2;
+      ScaleAddRow = ScaleAddRow_16_SSE2;
     }
 #endif
 
@@ -883,7 +836,11 @@ static void ScalePlaneBox_16(int src_width, int src_height,
         y = max_y;
       }
       boxheight = MIN1((y >> 16) - iy);
-      ScaleAddRows(src, src_stride, (uint32*)(row32), src_width, boxheight);
+      memset(row32, 0, src_width * 4);
+      for (k = 0; k < boxheight; ++k) {
+        ScaleAddRow(src, (uint32 *)(row32), src_width);
+        src += src_stride;
+      }
       ScaleAddCols(dst_width, boxheight, x, dx, (uint32*)(row32), dst_ptr);
       dst_ptr += dst_stride;
     }

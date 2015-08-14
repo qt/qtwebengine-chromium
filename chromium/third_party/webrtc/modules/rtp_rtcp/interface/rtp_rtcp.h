@@ -309,9 +309,6 @@ class RtpRtcp : public Module {
 
     virtual size_t TimeToSendPadding(size_t bytes) = 0;
 
-    virtual bool GetSendSideDelay(int* avg_send_delay_ms,
-                                  int* max_send_delay_ms) const = 0;
-
     // Called on generation of new statistics after an RTP send.
     virtual void RegisterSendChannelRtpStatisticsCallback(
         StreamDataCountersCallback* callback) = 0;
@@ -341,7 +338,7 @@ class RtpRtcp : public Module {
     *
     *   return -1 on failure else 0
     */
-    virtual int32_t SetCNAME(const char cName[RTCP_CNAME_SIZE]) = 0;
+    virtual int32_t SetCNAME(const char* c_name) = 0;
 
     /*
     *   Get remote CName
@@ -368,8 +365,7 @@ class RtpRtcp : public Module {
     *
     *   return -1 on failure else 0
     */
-    virtual int32_t AddMixedCNAME(uint32_t SSRC,
-                                  const char cName[RTCP_CNAME_SIZE]) = 0;
+    virtual int32_t AddMixedCNAME(uint32_t SSRC, const char* c_name) = 0;
 
     /*
     *   RemoveMixedCNAME
@@ -419,13 +415,6 @@ class RtpRtcp : public Module {
     virtual int32_t SendRTCPSliceLossIndication(uint8_t pictureID) = 0;
 
     /*
-    *   Reset RTP data counters for the sending side
-    *
-    *   return -1 on failure else 0
-    */
-    virtual int32_t ResetSendDataCountersRTP() = 0;
-
-    /*
     *   Statistics of the amount of data sent
     *
     *   return -1 on failure else 0
@@ -455,21 +444,6 @@ class RtpRtcp : public Module {
     */
     virtual int32_t RemoteRTCPStat(
         std::vector<RTCPReportBlock>* receiveBlocks) const = 0;
-
-    /*
-    *   Set received RTCP report block
-    *
-    *   return -1 on failure else 0
-    */
-    virtual int32_t AddRTCPReportBlock(uint32_t SSRC,
-                                       const RTCPReportBlock* receiveBlock) = 0;
-
-    /*
-    *   RemoveRTCPReportBlock
-    *
-    *   return -1 on failure else 0
-    */
-    virtual int32_t RemoveRTCPReportBlock(uint32_t SSRC) = 0;
 
     /*
     *   (APP) Application specific data

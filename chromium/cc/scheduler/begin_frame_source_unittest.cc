@@ -170,16 +170,16 @@ const BeginFrameArgs MockBeginFrameObserver::kDefaultBeginFrameArgs =
         -1,
         -1);
 
-// BeginFrameObserverMixIn testing ---------------------------------------
-class MockMinimalBeginFrameObserverMixIn : public BeginFrameObserverMixIn {
+// BeginFrameObserverBase testing ---------------------------------------
+class MockMinimalBeginFrameObserverBase : public BeginFrameObserverBase {
  public:
-  MOCK_METHOD1(OnBeginFrameMixInDelegate, bool(const BeginFrameArgs&));
+  MOCK_METHOD1(OnBeginFrameDerivedImpl, bool(const BeginFrameArgs&));
   int64_t dropped_begin_frame_args() const { return dropped_begin_frame_args_; }
 };
 
-TEST(BeginFrameObserverMixInTest, OnBeginFrameImplementation) {
+TEST(BeginFrameObserverBaseTest, OnBeginFrameImplementation) {
   using ::testing::Return;
-  MockMinimalBeginFrameObserverMixIn obs;
+  MockMinimalBeginFrameObserverBase obs;
   ::testing::InSequence ordered;  // These calls should be ordered
 
   // Initial conditions
@@ -192,7 +192,7 @@ TEST(BeginFrameObserverMixInTest, OnBeginFrameImplementation) {
 
   BeginFrameArgs args1 =
       CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 100, 200, 300);
-  EXPECT_CALL(obs, OnBeginFrameMixInDelegate(args1)).WillOnce(Return(true));
+  EXPECT_CALL(obs, OnBeginFrameDerivedImpl(args1)).WillOnce(Return(true));
   obs.OnBeginFrame(args1);
   EXPECT_EQ(args1, obs.LastUsedBeginFrameArgs());
   EXPECT_EQ(0, obs.dropped_begin_frame_args());
@@ -208,21 +208,21 @@ TEST(BeginFrameObserverMixInTest, OnBeginFrameImplementation) {
   // Returning false shouldn't update the LastUsedBeginFrameArgs value.
   BeginFrameArgs args2 =
       CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 200, 300, 400);
-  EXPECT_CALL(obs, OnBeginFrameMixInDelegate(args2)).WillOnce(Return(false));
+  EXPECT_CALL(obs, OnBeginFrameDerivedImpl(args2)).WillOnce(Return(false));
   obs.OnBeginFrame(args2);
   EXPECT_EQ(args1, obs.LastUsedBeginFrameArgs());
   EXPECT_EQ(1, obs.dropped_begin_frame_args());
 
   BeginFrameArgs args3 =
       CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 150, 300, 400);
-  EXPECT_CALL(obs, OnBeginFrameMixInDelegate(args3)).WillOnce(Return(true));
+  EXPECT_CALL(obs, OnBeginFrameDerivedImpl(args3)).WillOnce(Return(true));
   obs.OnBeginFrame(args3);
   EXPECT_EQ(args3, obs.LastUsedBeginFrameArgs());
   EXPECT_EQ(1, obs.dropped_begin_frame_args());
 }
 
 // BeginFrameSource testing ----------------------------------------------
-TEST(BeginFrameSourceMixInTest, ObserverManipulation) {
+TEST(BeginFrameSourceBaseTest, ObserverManipulation) {
   MockBeginFrameObserver obs;
   MockBeginFrameObserver otherObs;
   FakeBeginFrameSource source;
@@ -251,7 +251,7 @@ TEST(BeginFrameSourceMixInTest, ObserverManipulation) {
   source.RemoveObserver(&otherObs);
 }
 
-TEST(BeginFrameSourceMixInTest, Observer) {
+TEST(BeginFrameSourceBaseTest, Observer) {
   FakeBeginFrameSource source;
   MockBeginFrameObserver obs;
   source.AddObserver(&obs);
@@ -266,12 +266,12 @@ TEST(BeginFrameSourceMixInTest, Observer) {
   SEND_BEGIN_FRAME_USED(source, 700, 900, 300);
 }
 
-TEST(BeginFrameSourceMixInTest, NoObserver) {
+TEST(BeginFrameSourceBaseTest, NoObserver) {
   FakeBeginFrameSource source;
   SEND_BEGIN_FRAME_DROP(source, 100, 200, 300);
 }
 
-TEST(BeginFrameSourceMixInTest, NeedsBeginFrames) {
+TEST(BeginFrameSourceBaseTest, NeedsBeginFrames) {
   FakeBeginFrameSource source;
   EXPECT_FALSE(source.NeedsBeginFrames());
   source.SetNeedsBeginFrames(true);
@@ -280,7 +280,7 @@ TEST(BeginFrameSourceMixInTest, NeedsBeginFrames) {
   EXPECT_FALSE(source.NeedsBeginFrames());
 }
 
-class LoopingBeginFrameObserver : public BeginFrameObserverMixIn {
+class LoopingBeginFrameObserver : public BeginFrameObserverBase {
  public:
   BeginFrameSource* source_;
 
@@ -292,13 +292,13 @@ class LoopingBeginFrameObserver : public BeginFrameObserverMixIn {
   }
 
  protected:
-  // BeginFrameObserverMixIn
-  bool OnBeginFrameMixInDelegate(const BeginFrameArgs& args) override {
+  // BeginFrameObserverBase
+  bool OnBeginFrameDerivedImpl(const BeginFrameArgs& args) override {
     return true;
   }
 };
 
-TEST(BeginFrameSourceMixInTest, DetectAsValueIntoLoop) {
+TEST(BeginFrameSourceBaseTest, DetectAsValueIntoLoop) {
   LoopingBeginFrameObserver obs;
   FakeBeginFrameSource source;
 
@@ -314,20 +314,21 @@ TEST(BeginFrameSourceMixInTest, DetectAsValueIntoLoop) {
 class TestBackToBackBeginFrameSource : public BackToBackBeginFrameSource {
  public:
   static scoped_ptr<TestBackToBackBeginFrameSource> Create(
-      scoped_refptr<TestNowSource> now_src,
+      base::SimpleTestTickClock* now_src,
       base::SingleThreadTaskRunner* task_runner) {
     return make_scoped_ptr(
         new TestBackToBackBeginFrameSource(now_src, task_runner));
   }
 
  protected:
-  TestBackToBackBeginFrameSource(scoped_refptr<TestNowSource> now_src,
+  TestBackToBackBeginFrameSource(base::SimpleTestTickClock* now_src,
                                  base::SingleThreadTaskRunner* task_runner)
       : BackToBackBeginFrameSource(task_runner), now_src_(now_src) {}
 
-  base::TimeTicks Now() override { return now_src_->Now(); }
+  base::TimeTicks Now() override { return now_src_->NowTicks(); }
 
-  scoped_refptr<TestNowSource> now_src_;
+  // Not owned.
+  base::SimpleTestTickClock* now_src_;
 };
 
 class BackToBackBeginFrameSourceTest : public ::testing::Test {
@@ -335,18 +336,19 @@ class BackToBackBeginFrameSourceTest : public ::testing::Test {
   static const int64_t kDeadline;
   static const int64_t kInterval;
 
-  scoped_refptr<TestNowSource> now_src_;
+  scoped_ptr<base::SimpleTestTickClock> now_src_;
   scoped_refptr<OrderedSimpleTaskRunner> task_runner_;
   scoped_ptr<TestBackToBackBeginFrameSource> source_;
   scoped_ptr<MockBeginFrameObserver> obs_;
 
   void SetUp() override {
-    now_src_ = TestNowSource::Create(1000);
+    now_src_.reset(new base::SimpleTestTickClock());
+    now_src_->Advance(base::TimeDelta::FromMicroseconds(1000));
     task_runner_ =
-        make_scoped_refptr(new OrderedSimpleTaskRunner(now_src_, false));
+        make_scoped_refptr(new OrderedSimpleTaskRunner(now_src_.get(), false));
     task_runner_->SetRunTaskLimit(1);
-    source_ =
-        TestBackToBackBeginFrameSource::Create(now_src_, task_runner_.get());
+    source_ = TestBackToBackBeginFrameSource::Create(now_src_.get(),
+                                                     task_runner_.get());
     obs_ = make_scoped_ptr(new ::testing::StrictMock<MockBeginFrameObserver>());
     source_->AddObserver(obs_.get());
   }
@@ -367,7 +369,7 @@ TEST_F(BackToBackBeginFrameSourceTest, SetNeedsBeginFramesSendsBeginFrame) {
   task_runner_->RunUntilIdle();
 
   EXPECT_BEGIN_FRAME_USED(*obs_, 1100, 1100 + kDeadline, kInterval);
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
   task_runner_->RunUntilIdle();
 }
@@ -390,7 +392,7 @@ TEST_F(BackToBackBeginFrameSourceTest,
   source_->SetNeedsBeginFrames(true);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
   source_->SetNeedsBeginFrames(false);
 
@@ -404,14 +406,14 @@ TEST_F(BackToBackBeginFrameSourceTest,
   source_->SetNeedsBeginFrames(true);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
 
   source_->SetNeedsBeginFrames(false);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
   source_->DidFinishFrame(0);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
   source_->SetNeedsBeginFrames(false);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
   source_->SetNeedsBeginFrames(true);
 
   EXPECT_BEGIN_FRAME_USED(*obs_, 1130, 1130 + kDeadline, kInterval);
@@ -425,13 +427,13 @@ TEST_F(BackToBackBeginFrameSourceTest,
   source_->SetNeedsBeginFrames(true);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
   source_->SetNeedsBeginFrames(false);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
   source_->SetNeedsBeginFrames(true);
-  now_src_->AdvanceNowMicroseconds(10);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(10));
 
   EXPECT_BEGIN_FRAME_USED(*obs_, 1130, 1130 + kDeadline, kInterval);
   EXPECT_TRUE(task_runner_->HasPendingTasks());
@@ -449,7 +451,7 @@ TEST_F(BackToBackBeginFrameSourceTest, DidFinishFrameRemainingFrames) {
   source_->SetNeedsBeginFrames(true);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
 
   source_->DidFinishFrame(3);
   EXPECT_FALSE(task_runner_->HasPendingTasks());
@@ -469,14 +471,14 @@ TEST_F(BackToBackBeginFrameSourceTest, DidFinishFrameMultipleCallsIdempotent) {
   EXPECT_BEGIN_FRAME_USED(*obs_, 1000, 1000 + kDeadline, kInterval);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
   source_->DidFinishFrame(0);
   source_->DidFinishFrame(0);
   EXPECT_BEGIN_FRAME_USED(*obs_, 1100, 1100 + kDeadline, kInterval);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
   source_->DidFinishFrame(0);
   source_->DidFinishFrame(0);
@@ -489,9 +491,9 @@ TEST_F(BackToBackBeginFrameSourceTest, DelayInPostedTaskProducesCorrectFrame) {
   source_->SetNeedsBeginFrames(true);
   task_runner_->RunUntilIdle();
 
-  now_src_->AdvanceNowMicroseconds(100);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(100));
   source_->DidFinishFrame(0);
-  now_src_->AdvanceNowMicroseconds(50);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(50));
   EXPECT_BEGIN_FRAME_USED(*obs_, 1150, 1150 + kDeadline, kInterval);
 
   EXPECT_TRUE(task_runner_->HasPendingTasks());
@@ -501,17 +503,19 @@ TEST_F(BackToBackBeginFrameSourceTest, DelayInPostedTaskProducesCorrectFrame) {
 // SyntheticBeginFrameSource testing ------------------------------------------
 class SyntheticBeginFrameSourceTest : public ::testing::Test {
  public:
-  scoped_refptr<TestNowSource> now_src_;
+  scoped_ptr<base::SimpleTestTickClock> now_src_;
   scoped_refptr<OrderedSimpleTaskRunner> task_runner_;
   scoped_ptr<TestSyntheticBeginFrameSource> source_;
   scoped_ptr<MockBeginFrameObserver> obs_;
 
   void SetUp() override {
-    now_src_ = TestNowSource::Create(1000);
+    now_src_.reset(new base::SimpleTestTickClock());
+    now_src_->Advance(base::TimeDelta::FromMicroseconds(1000));
     task_runner_ =
-        make_scoped_refptr(new OrderedSimpleTaskRunner(now_src_, false));
+        make_scoped_refptr(new OrderedSimpleTaskRunner(now_src_.get(), false));
     source_ = TestSyntheticBeginFrameSource::Create(
-        now_src_, task_runner_.get(), base::TimeDelta::FromMicroseconds(10000));
+        now_src_.get(), task_runner_.get(),
+        base::TimeDelta::FromMicroseconds(10000));
     obs_ = make_scoped_ptr(new MockBeginFrameObserver());
     source_->AddObserver(obs_.get());
   }
@@ -521,7 +525,7 @@ class SyntheticBeginFrameSourceTest : public ::testing::Test {
 
 TEST_F(SyntheticBeginFrameSourceTest,
        SetNeedsBeginFramesCallsOnBeginFrameWithMissedTick) {
-  now_src_->SetNowMicroseconds(10010);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(9010));
   EXPECT_CALL((*obs_), OnBeginFrame(CreateBeginFrameArgsForTesting(
                            BEGINFRAME_FROM_HERE, 10000, 20000, 10000,
                            BeginFrameArgs::MISSED)));
@@ -535,7 +539,7 @@ TEST_F(SyntheticBeginFrameSourceTest,
   EXPECT_EQ(10000, task_runner_->NextTaskTime().ToInternalValue());
 
   EXPECT_BEGIN_FRAME_USED(*obs_, 10000, 20000, 10000);
-  now_src_->SetNowMicroseconds(10010);
+  now_src_->Advance(base::TimeDelta::FromMicroseconds(9010));
   task_runner_->RunPendingTasks();
 }
 

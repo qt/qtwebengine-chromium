@@ -5,6 +5,7 @@
 #include "ui/views/controls/prefix_selector.h"
 
 #include "base/i18n/case_conversion.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/range/range.h"
 #include "ui/views/controls/prefix_delegate.h"
@@ -53,10 +54,6 @@ void PrefixSelector::InsertText(const base::string16& text) {
 
 void PrefixSelector::InsertChar(base::char16 ch, int flags) {
   OnTextInput(base::string16(1, ch));
-}
-
-gfx::NativeWindow PrefixSelector::GetAttachedWindow() const {
-  return prefix_delegate_->GetWidget()->GetNativeWindow();
 }
 
 ui::TextInputType PrefixSelector::GetTextInputType() const {
@@ -136,15 +133,6 @@ void PrefixSelector::ExtendSelectionAndDelete(size_t before, size_t after) {
 }
 
 void PrefixSelector::EnsureCaretInRect(const gfx::Rect& rect) {
-}
-
-void PrefixSelector::OnCandidateWindowShown() {
-}
-
-void PrefixSelector::OnCandidateWindowUpdated() {
-}
-
-void PrefixSelector::OnCandidateWindowHidden() {
 }
 
 bool PrefixSelector::IsEditCommandEnabled(int command_id) {

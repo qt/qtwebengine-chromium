@@ -21,6 +21,7 @@
 #include "webrtc/modules/audio_processing/test/protobuf_utils.h"
 #include "webrtc/modules/audio_processing/test/test_utils.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/test/testsupport/trace_to_stderr.h"
 
 DEFINE_string(dump, "", "The name of the debug dump file to read from.");
 DEFINE_string(i, "", "The name of the input file to read from.");
@@ -63,16 +64,17 @@ int main(int argc, char* argv[]) {
   google::SetUsageMessage(kUsage);
   google::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (!((FLAGS_i == "") ^ (FLAGS_dump == ""))) {
+  if (!((FLAGS_i.empty()) ^ (FLAGS_dump.empty()))) {
     fprintf(stderr,
             "An input file must be specified with either -i or -dump.\n");
     return 1;
   }
-  if (FLAGS_dump != "") {
+  if (!FLAGS_dump.empty()) {
     fprintf(stderr, "FIXME: the -dump option is not yet implemented.\n");
     return 1;
   }
 
+  test::TraceToStderr trace_to_stderr(true);
   WavReader in_file(FLAGS_i);
   // If the output format is uninitialized, use the input format.
   const int out_channels =
@@ -94,7 +96,7 @@ int main(int argc, char* argv[]) {
   }
 
   rtc::scoped_ptr<AudioProcessing> ap(AudioProcessing::Create(config));
-  if (FLAGS_dump != "") {
+  if (!FLAGS_dump.empty()) {
     CHECK_EQ(kNoErr, ap->echo_cancellation()->Enable(FLAGS_aec || FLAGS_all));
   } else if (FLAGS_aec) {
     fprintf(stderr, "-aec requires a -dump file.\n");
@@ -127,6 +129,8 @@ int main(int argc, char* argv[]) {
   int num_chunks = 0;
   while (in_file.ReadSamples(in_interleaved.size(),
                              &in_interleaved[0]) == in_interleaved.size()) {
+    // Have logs display the file time rather than wallclock time.
+    trace_to_stderr.SetTimeSeconds(num_chunks * 1.f / kChunksPerSecond);
     FloatS16ToFloat(&in_interleaved[0], in_interleaved.size(),
                     &in_interleaved[0]);
     Deinterleave(&in_interleaved[0], in_buf.num_frames(),
@@ -155,8 +159,11 @@ int main(int argc, char* argv[]) {
     num_chunks++;
   }
   if (FLAGS_perf) {
-    printf("Execution time: %.3fs\nFile time: %.2fs\n\n",
-           accumulated_time.Milliseconds() * 0.001f, num_chunks * 0.01f);
+    int64_t execution_time_ms = accumulated_time.Milliseconds();
+    printf("\nExecution time: %.3f s\nFile time: %.2f s\n"
+           "Time per chunk: %.3f ms\n",
+           execution_time_ms * 0.001f, num_chunks * 1.f / kChunksPerSecond,
+           execution_time_ms * 1.f / num_chunks);
   }
   return 0;
 }

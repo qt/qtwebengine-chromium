@@ -12,10 +12,14 @@
 
 #include <assert.h>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/platform_file.h"
 #include "webrtc/common_audio/include/audio_util.h"
 #include "webrtc/common_audio/channel_buffer.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+extern "C" {
+#include "webrtc/modules/audio_processing/aec/aec_core.h"
+}
 #include "webrtc/modules/audio_processing/agc/agc_manager_direct.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/beamformer/nonlinear_beamformer.h"
@@ -33,6 +37,7 @@
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/file_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/metrics.h"
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
 // Files generated at build-time by the protobuf compiler.
@@ -170,6 +175,10 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
       stream_delay_ms_(0),
       delay_offset_ms_(0),
       was_stream_delay_set_(false),
+      last_stream_delay_ms_(0),
+      last_aec_system_delay_ms_(0),
+      stream_delay_jumps_(-1),
+      aec_system_delay_jumps_(-1),
       output_will_be_muted_(false),
       key_pressed_(false),
 #if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
@@ -178,7 +187,11 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
       use_new_agc_(config.Get<ExperimentalAgc>().enabled),
 #endif
       agc_startup_min_volume_(config.Get<ExperimentalAgc>().startup_min_volume),
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+      transient_suppressor_enabled_(false),
+#else
       transient_suppressor_enabled_(config.Get<ExperimentalNs>().enabled),
+#endif
       beamformer_enabled_(config.Get<Beamforming>().enabled),
       beamformer_(beamformer),
       array_geometry_(config.Get<Beamforming>().array_geometry),
@@ -583,6 +596,8 @@ int AudioProcessingImpl::ProcessStreamLocked() {
   }
 #endif
 
+  MaybeUpdateHistograms();
+
   AudioBuffer* ca = capture_audio_.get();  // For brevity.
   if (use_new_agc_ && gain_control_->is_enabled()) {
     agc_manager_->AnalyzePreProcess(ca->channels()[0],
@@ -791,7 +806,7 @@ int AudioProcessingImpl::delay_offset_ms() const {
 int AudioProcessingImpl::StartDebugRecording(
     const char filename[AudioProcessing::kMaxFilenameSize]) {
   CriticalSectionScoped crit_scoped(crit_);
-  assert(kMaxFilenameSize == FileWrapper::kMaxFileNameSize);
+  static_assert(kMaxFilenameSize == FileWrapper::kMaxFileNameSize, "");
 
   if (filename == NULL) {
     return kNullPointerError;
@@ -984,6 +999,70 @@ void AudioProcessingImpl::InitializeBeamformer() {
     }
     beamformer_->Initialize(kChunkSizeMs, split_rate_);
   }
+}
+
+void AudioProcessingImpl::MaybeUpdateHistograms() {
+  static const int kMinDiffDelayMs = 60;
+
+  if (echo_cancellation()->is_enabled()) {
+    // Activate delay_jumps_ counters if we know echo_cancellation is runnning.
+    // If a stream has echo we know that the echo_cancellation is in process.
+    if (stream_delay_jumps_ == -1 && echo_cancellation()->stream_has_echo()) {
+      stream_delay_jumps_ = 0;
+    }
+    if (aec_system_delay_jumps_ == -1 &&
+        echo_cancellation()->stream_has_echo()) {
+      aec_system_delay_jumps_ = 0;
+    }
+
+    // Detect a jump in platform reported system delay and log the difference.
+    const int diff_stream_delay_ms = stream_delay_ms_ - last_stream_delay_ms_;
+    if (diff_stream_delay_ms > kMinDiffDelayMs && last_stream_delay_ms_ != 0) {
+      RTC_HISTOGRAM_COUNTS("WebRTC.Audio.PlatformReportedStreamDelayJump",
+                           diff_stream_delay_ms, kMinDiffDelayMs, 1000, 100);
+      if (stream_delay_jumps_ == -1) {
+        stream_delay_jumps_ = 0;  // Activate counter if needed.
+      }
+      stream_delay_jumps_++;
+    }
+    last_stream_delay_ms_ = stream_delay_ms_;
+
+    // Detect a jump in AEC system delay and log the difference.
+    const int frames_per_ms = rtc::CheckedDivExact(split_rate_, 1000);
+    const int aec_system_delay_ms =
+        WebRtcAec_system_delay(echo_cancellation()->aec_core()) / frames_per_ms;
+    const int diff_aec_system_delay_ms = aec_system_delay_ms -
+        last_aec_system_delay_ms_;
+    if (diff_aec_system_delay_ms > kMinDiffDelayMs &&
+        last_aec_system_delay_ms_ != 0) {
+      RTC_HISTOGRAM_COUNTS("WebRTC.Audio.AecSystemDelayJump",
+                           diff_aec_system_delay_ms, kMinDiffDelayMs, 1000,
+                           100);
+      if (aec_system_delay_jumps_ == -1) {
+        aec_system_delay_jumps_ = 0;  // Activate counter if needed.
+      }
+      aec_system_delay_jumps_++;
+    }
+    last_aec_system_delay_ms_ = aec_system_delay_ms;
+  }
+}
+
+void AudioProcessingImpl::UpdateHistogramsOnCallEnd() {
+  CriticalSectionScoped crit_scoped(crit_);
+  if (stream_delay_jumps_ > -1) {
+    RTC_HISTOGRAM_ENUMERATION(
+        "WebRTC.Audio.NumOfPlatformReportedStreamDelayJumps",
+        stream_delay_jumps_, 51);
+  }
+  stream_delay_jumps_ = -1;
+  last_stream_delay_ms_ = 0;
+
+  if (aec_system_delay_jumps_ > -1) {
+    RTC_HISTOGRAM_ENUMERATION("WebRTC.Audio.NumOfAecSystemDelayJumps",
+                              aec_system_delay_jumps_, 51);
+  }
+  aec_system_delay_jumps_ = -1;
+  last_aec_system_delay_ms_ = 0;
 }
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP

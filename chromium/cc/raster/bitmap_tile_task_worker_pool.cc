@@ -12,6 +12,7 @@
 #include "cc/debug/traced_value.h"
 #include "cc/playback/raster_source.h"
 #include "cc/raster/raster_buffer.h"
+#include "cc/resources/platform_color.h"
 #include "cc/resources/resource.h"
 
 namespace cc {
@@ -20,21 +21,38 @@ namespace {
 class RasterBufferImpl : public RasterBuffer {
  public:
   RasterBufferImpl(ResourceProvider* resource_provider,
-                   const Resource* resource)
-      : lock_(resource_provider, resource->id()), resource_(resource) {}
+                   const Resource* resource,
+                   uint64_t resource_content_id,
+                   uint64_t previous_content_id)
+      : lock_(resource_provider, resource->id()),
+        resource_(resource),
+        resource_has_previous_content_(
+            resource_content_id && resource_content_id == previous_content_id) {
+  }
 
   // Overridden from RasterBuffer:
   void Playback(const RasterSource* raster_source,
-                const gfx::Rect& rect,
+                const gfx::Rect& raster_full_rect,
+                const gfx::Rect& raster_dirty_rect,
+                uint64_t new_content_id,
                 float scale) override {
-    TileTaskWorkerPool::PlaybackToMemory(lock_.sk_bitmap().getPixels(),
-                                         resource_->format(), resource_->size(),
-                                         0, raster_source, rect, scale);
+    gfx::Rect playback_rect = raster_full_rect;
+    if (resource_has_previous_content_) {
+      playback_rect.Intersect(raster_dirty_rect);
+    }
+    DCHECK(!playback_rect.IsEmpty())
+        << "Why are we rastering a tile that's not dirty?";
+
+    size_t stride = 0u;
+    TileTaskWorkerPool::PlaybackToMemory(
+        lock_.sk_bitmap().getPixels(), resource_->format(), resource_->size(),
+        stride, raster_source, raster_full_rect, playback_rect, scale);
   }
 
  private:
   ResourceProvider::ScopedWriteLockSoftware lock_;
   const Resource* resource_;
+  bool resource_has_previous_content_;
 
   DISALLOW_COPY_AND_ASSIGN(RasterBufferImpl);
 };
@@ -89,7 +107,7 @@ void BitmapTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
   // Mark all task sets as pending.
   tasks_pending_.set();
 
-  unsigned priority = kTileTaskPriorityBase;
+  size_t priority = kTileTaskPriorityBase;
 
   graph_.Reset();
 
@@ -161,14 +179,20 @@ void BitmapTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_tasks_.clear();
 }
 
-ResourceFormat BitmapTileTaskWorkerPool::GetResourceFormat() {
+ResourceFormat BitmapTileTaskWorkerPool::GetResourceFormat() const {
   return resource_provider_->best_texture_format();
 }
 
+bool BitmapTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
+  return !PlatformColor::SameComponentOrder(GetResourceFormat());
+}
+
 scoped_ptr<RasterBuffer> BitmapTileTaskWorkerPool::AcquireBufferForRaster(
-    const Resource* resource) {
-  return make_scoped_ptr<RasterBuffer>(
-      new RasterBufferImpl(resource_provider_, resource));
+    const Resource* resource,
+    uint64_t resource_content_id,
+    uint64_t previous_content_id) {
+  return scoped_ptr<RasterBuffer>(new RasterBufferImpl(
+      resource_provider_, resource, resource_content_id, previous_content_id));
 }
 
 void BitmapTileTaskWorkerPool::ReleaseBufferForRaster(

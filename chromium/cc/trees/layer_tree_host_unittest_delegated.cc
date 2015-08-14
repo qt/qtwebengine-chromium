@@ -135,7 +135,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
   }
 
   void AddTransferableResource(DelegatedFrameData* frame,
-                               ResourceProvider::ResourceId resource_id) {
+                               ResourceId resource_id) {
     TransferableResource resource;
     resource.id = resource_id;
     resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
@@ -147,8 +147,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     frame->resource_list.push_back(resource);
   }
 
-  void AddTextureQuad(DelegatedFrameData* frame,
-                      ResourceProvider::ResourceId resource_id) {
+  void AddTextureQuad(DelegatedFrameData* frame, ResourceId resource_id) {
     RenderPass* render_pass = frame->render_pass_list[0];
     SharedQuadState* sqs = render_pass->CreateAndAppendSharedQuadState();
     TextureDrawQuad* quad =
@@ -201,9 +200,9 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                  background_filters);
   }
 
-  static ResourceProvider::ResourceId AppendResourceId(
-      std::vector<ResourceProvider::ResourceId>* resources_in_last_sent_frame,
-      ResourceProvider::ResourceId resource_id) {
+  static ResourceId AppendResourceId(
+      std::vector<ResourceId>* resources_in_last_sent_frame,
+      ResourceId resource_id) {
     resources_in_last_sent_frame->push_back(resource_id);
     return resource_id;
   }
@@ -214,19 +213,18 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     if (!delegated_frame_data)
       return;
 
-    std::vector<ResourceProvider::ResourceId> resources_in_last_sent_frame;
+    std::vector<ResourceId> resources_in_last_sent_frame;
     for (size_t i = 0; i < delegated_frame_data->resource_list.size(); ++i) {
       resources_in_last_sent_frame.push_back(
           delegated_frame_data->resource_list[i].id);
     }
 
-    std::vector<ResourceProvider::ResourceId> resources_to_return;
+    std::vector<ResourceId> resources_to_return;
 
     const TransferableResourceArray& resources_held_by_parent =
         output_surface()->resources_held_by_parent();
     for (size_t i = 0; i < resources_held_by_parent.size(); ++i) {
-      ResourceProvider::ResourceId resource_in_parent =
-          resources_held_by_parent[i].id;
+      ResourceId resource_in_parent = resources_held_by_parent[i].id;
       bool resource_in_parent_is_not_part_of_frame =
           std::find(resources_in_last_sent_frame.begin(),
                     resources_in_last_sent_frame.end(),
@@ -274,7 +272,7 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
   }
 
   void SetupTree() override {
-    root_ = Layer::Create();
+    root_ = Layer::Create(layer_settings());
     root_->SetBounds(gfx::Size(15, 15));
 
     layer_tree_host()->SetRootLayer(root_);
@@ -310,7 +308,7 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
   scoped_refptr<DelegatedRendererLayer> CreateDelegatedLayer(
       DelegatedFrameProvider* frame_provider) {
     scoped_refptr<DelegatedRendererLayer> delegated =
-        FakeDelegatedRendererLayer::Create(frame_provider);
+        FakeDelegatedRendererLayer::Create(layer_settings(), frame_provider);
     delegated->SetBounds(gfx::Size(10, 10));
     delegated->SetIsDrawable(true);
 
@@ -432,7 +430,7 @@ class LayerTreeHostDelegatedTestDontUseLostChildIdAfterCommit
   }
 };
 
-MULTI_THREAD_IMPL_TEST_F(
+SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostDelegatedTestDontUseLostChildIdAfterCommit);
 
 // Test that we can gracefully handle invalid frames after the context was lost.
@@ -804,18 +802,18 @@ class LayerTreeHostDelegatedTestRemapResourcesInQuads
     EXPECT_EQ(1u, map.count(999));
     EXPECT_EQ(1u, map.count(555));
 
-    ResourceProvider::ResourceId parent_resource_id1 = map.find(999)->second;
+    ResourceId parent_resource_id1 = map.find(999)->second;
     EXPECT_NE(parent_resource_id1, 999u);
-    ResourceProvider::ResourceId parent_resource_id2 = map.find(555)->second;
+    ResourceId parent_resource_id2 = map.find(555)->second;
     EXPECT_NE(parent_resource_id2, 555u);
 
     // The resources in the quads should be remapped to the parent's namespace.
     const TextureDrawQuad* quad1 = TextureDrawQuad::MaterialCast(
         delegated_impl->RenderPassesInDrawOrder()[0]->quad_list.ElementAt(0));
-    EXPECT_EQ(parent_resource_id1, quad1->resource_id);
+    EXPECT_EQ(parent_resource_id1, quad1->resource_id());
     const TextureDrawQuad* quad2 = TextureDrawQuad::MaterialCast(
         delegated_impl->RenderPassesInDrawOrder()[0]->quad_list.ElementAt(1));
-    EXPECT_EQ(parent_resource_id2, quad2->resource_id);
+    EXPECT_EQ(parent_resource_id2, quad2->resource_id());
 
     EndTest();
   }
@@ -1057,7 +1055,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     EXPECT_EQ(1u, pass->quad_list.size());
     const TextureDrawQuad* quad =
         TextureDrawQuad::MaterialCast(pass->quad_list.front());
-    EXPECT_EQ(map.find(999)->second, quad->resource_id);
+    EXPECT_EQ(map.find(999)->second, quad->resource_id());
 
     EndTest();
   }
@@ -1169,13 +1167,13 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     EXPECT_EQ(3u, pass->quad_list.size());
     const TextureDrawQuad* quad1 =
         TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(0));
-    EXPECT_EQ(map.find(999)->second, quad1->resource_id);
+    EXPECT_EQ(map.find(999)->second, quad1->resource_id());
     const TextureDrawQuad* quad2 =
         TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(1));
-    EXPECT_EQ(map.find(555)->second, quad2->resource_id);
+    EXPECT_EQ(map.find(555)->second, quad2->resource_id());
     const TextureDrawQuad* quad3 =
         TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(2));
-    EXPECT_EQ(map.find(444)->second, quad3->resource_id);
+    EXPECT_EQ(map.find(444)->second, quad3->resource_id());
   }
 
   void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
@@ -1288,10 +1286,10 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(2u, pass->quad_list.size());
         const TextureDrawQuad* quad1 =
             TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(0));
-        EXPECT_EQ(map.find(999)->second, quad1->resource_id);
+        EXPECT_EQ(map.find(999)->second, quad1->resource_id());
         const TextureDrawQuad* quad2 =
             TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(1));
-        EXPECT_EQ(map.find(555)->second, quad2->resource_id);
+        EXPECT_EQ(map.find(555)->second, quad2->resource_id());
         break;
       }
       case 2: {
@@ -1310,10 +1308,10 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(2u, pass->quad_list.size());
         const TextureDrawQuad* quad1 =
             TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(0));
-        EXPECT_EQ(map.find(999)->second, quad1->resource_id);
+        EXPECT_EQ(map.find(999)->second, quad1->resource_id());
         const TextureDrawQuad* quad2 =
             TextureDrawQuad::MaterialCast(pass->quad_list.ElementAt(1));
-        EXPECT_EQ(map.find(555)->second, quad2->resource_id);
+        EXPECT_EQ(map.find(555)->second, quad2->resource_id());
         break;
       }
       case 3: {
@@ -1328,7 +1326,7 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(1u, pass->quad_list.size());
         const TextureDrawQuad* quad1 =
             TextureDrawQuad::MaterialCast(pass->quad_list.front());
-        EXPECT_EQ(map.find(999)->second, quad1->resource_id);
+        EXPECT_EQ(map.find(999)->second, quad1->resource_id());
         break;
       }
     }
@@ -2288,7 +2286,8 @@ class LayerTreeHostDelegatedTestActiveFrameIsValid
   bool drew_with_pending_tree_;
 };
 
-MULTI_THREAD_IMPL_TEST_F(LayerTreeHostDelegatedTestActiveFrameIsValid);
+// This test blocks activation which is not supported for single thread mode.
+MULTI_THREAD_BLOCKNOTIFY_TEST_F(LayerTreeHostDelegatedTestActiveFrameIsValid);
 
 }  // namespace
 }  // namespace cc

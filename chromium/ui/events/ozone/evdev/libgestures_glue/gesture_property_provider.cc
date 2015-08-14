@@ -505,17 +505,19 @@ bool IsMatchTypeSupported(const std::string& match_type) {
 
 // Check if a match criteria is a device type one.
 bool IsMatchDeviceType(const std::string& match_type) {
-  return StartsWithASCII(match_type, "MatchIs", true);
+  return base::StartsWithASCII(match_type, "MatchIs", true);
 }
 
 // Parse a boolean value keyword (e.g., on/off, true/false).
 int ParseBooleanKeyword(const std::string& value) {
-  for (size_t i = 0; i < arraysize(kTrue); ++i)
-    if (LowerCaseEqualsASCII(value, kTrue[i]))
+  for (size_t i = 0; i < arraysize(kTrue); ++i) {
+    if (base::LowerCaseEqualsASCII(value, kTrue[i]))
       return 1;
-  for (size_t i = 0; i < arraysize(kFalse); ++i)
-    if (LowerCaseEqualsASCII(value, kFalse[i]))
+  }
+  for (size_t i = 0; i < arraysize(kFalse); ++i) {
+    if (base::LowerCaseEqualsASCII(value, kFalse[i]))
       return -1;
+  }
   return 0;
 }
 
@@ -719,7 +721,8 @@ struct ConfigurationSection {
 
 MatchCriteria::MatchCriteria(const std::string& arg) {
   // TODO(sheckylin): Should we trim all tokens here?
-  Tokenize(arg, "|", &args_);
+  args_ = base::SplitString(
+      arg, "|", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   if (args_.empty()) {
     LOG(ERROR) << "Empty match pattern found, will evaluate to the default "
                   "value (true): \"" << arg << "\"";

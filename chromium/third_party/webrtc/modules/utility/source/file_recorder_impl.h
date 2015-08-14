@@ -72,17 +72,13 @@ public:
     {
         return -1;
     }
-    virtual int32_t RecordVideoToFile(const I420VideoFrame& videoFrame)
-    {
+    virtual int32_t RecordVideoToFile(const VideoFrame& videoFrame) {
         return -1;
     }
 
 protected:
-    virtual int32_t WriteEncodedAudioData(
-        const int8_t* audioBuffer,
-        size_t bufferLength,
-        uint16_t millisecondsOfData,
-        const TickTime* playoutTS);
+    int32_t WriteEncodedAudioData(const int8_t* audioBuffer,
+                                  size_t bufferLength);
 
     int32_t SetUpAudioEncoder();
 

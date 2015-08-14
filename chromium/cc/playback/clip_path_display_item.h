@@ -12,7 +12,6 @@
 #include "third_party/skia/include/core/SkRegion.h"
 
 class SkCanvas;
-class SkDrawPictureCallback;
 
 namespace cc {
 
@@ -23,7 +22,9 @@ class CC_EXPORT ClipPathDisplayItem : public DisplayItem {
 
   void SetNew(const SkPath& path, SkRegion::Op clip_op, bool antialias);
 
-  void Raster(SkCanvas* canvas, SkDrawPictureCallback* callback) const override;
+  void Raster(SkCanvas* canvas,
+              const gfx::Rect& canvas_target_playback_rect,
+              SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
 
  private:
@@ -41,7 +42,9 @@ class CC_EXPORT EndClipPathDisplayItem : public DisplayItem {
     return make_scoped_ptr(new EndClipPathDisplayItem());
   }
 
-  void Raster(SkCanvas* canvas, SkDrawPictureCallback* callback) const override;
+  void Raster(SkCanvas* canvas,
+              const gfx::Rect& canvas_target_playback_rect,
+              SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
 };
 

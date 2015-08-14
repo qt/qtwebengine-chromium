@@ -32,7 +32,6 @@
 #define HAVE_AVX2 0
 #define HAVE_VPX_PORTS 1
 #define HAVE_STDINT_H 1
-#define HAVE_ALT_TREE_LAYOUT 0
 #define HAVE_PTHREAD_H 1
 #define HAVE_SYS_MMAN_H 1
 #define HAVE_UNISTD_H 0

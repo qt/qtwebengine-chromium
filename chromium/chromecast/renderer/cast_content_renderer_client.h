@@ -22,18 +22,21 @@ namespace chromecast {
 namespace shell {
 class CastRenderProcessObserver;
 
-// Adds any platform-specific bindings to the current frame.
-void PlatformAddRendererNativeBindings(blink::WebLocalFrame* frame);
-
 class CastContentRendererClient : public content::ContentRendererClient {
  public:
-  CastContentRendererClient();
+  // Creates an implementation of CastContentRendererClient. Platform should
+  // link in an implementation as needed.
+  static scoped_ptr<CastContentRendererClient> Create();
+
   ~CastContentRendererClient() override;
+
+  // Adds any platform-specific bindings to the current frame.
+  virtual void AddRendererNativeBindings(blink::WebLocalFrame* frame);
 
   // Returns any MessageFilters from the platform implementation that should
   // be added to the render process.
-  std::vector<scoped_refptr<IPC::MessageFilter>>
-  PlatformGetRendererMessageFilters();
+  virtual std::vector<scoped_refptr<IPC::MessageFilter>>
+  GetRendererMessageFilters();
 
   // ContentRendererClient implementation:
   void RenderThreadStarted() override;
@@ -41,13 +44,17 @@ class CastContentRendererClient : public content::ContentRendererClient {
   void AddKeySystems(
       std::vector< ::media::KeySystemInfo>* key_systems) override;
 #if !defined(OS_ANDROID)
-  scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
+  scoped_ptr<::media::RendererFactory> CreateMediaRendererFactory(
       content::RenderFrame* render_frame,
-      const scoped_refptr<media::MediaLog>& media_log) override;
+      const scoped_refptr<::media::GpuVideoAcceleratorFactories>& gpu_factories,
+      const scoped_refptr<::media::MediaLog>& media_log) override;
 #endif
   blink::WebPrescientNetworking* GetPrescientNetworking() override;
   void DeferMediaLoad(content::RenderFrame* render_frame,
                       const base::Closure& closure) override;
+
+ protected:
+  CastContentRendererClient();
 
  private:
   scoped_ptr<network_hints::PrescientNetworkingDispatcher>

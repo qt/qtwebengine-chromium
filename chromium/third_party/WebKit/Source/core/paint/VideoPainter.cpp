@@ -28,13 +28,13 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
         return;
     rect.moveBy(paintOffset);
 
+    GraphicsContext* context = paintInfo.context;
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutVideo, paintInfo.phase))
+        return;
+
     LayoutRect contentRect = m_layoutVideo.contentBoxRect();
     contentRect.moveBy(paintOffset);
-    GraphicsContext* context = paintInfo.context;
-
     LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutVideo, paintInfo.phase, contentRect);
-    if (drawingRecorder.canUseCachedDrawing())
-        return;
 
     bool clip = !contentRect.contains(rect);
     if (clip) {
@@ -42,11 +42,13 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
         context->clip(contentRect);
     }
 
-    if (displayingPoster)
+    if (displayingPoster) {
         ImagePainter(m_layoutVideo).paintIntoRect(context, rect);
-    else if ((m_layoutVideo.document().view() && m_layoutVideo.document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !m_layoutVideo.acceleratedRenderingInUse())
-        m_layoutVideo.videoElement()->paintCurrentFrameInContext(context, pixelSnappedIntRect(rect));
-
+    } else if ((m_layoutVideo.document().view() && m_layoutVideo.document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !m_layoutVideo.acceleratedRenderingInUse()) {
+        SkPaint videoPaint = context->fillPaint();
+        videoPaint.setColor(SK_ColorBLACK);
+        m_layoutVideo.videoElement()->paintCurrentFrame(context->canvas(), pixelSnappedIntRect(rect), &videoPaint);
+    }
     if (clip)
         context->restore();
 }

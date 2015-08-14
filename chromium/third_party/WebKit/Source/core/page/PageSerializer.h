@@ -45,6 +45,7 @@ namespace blink {
 class Attribute;
 class FontResource;
 class ImageResource;
+class CSSRule;
 class CSSStyleSheet;
 class CSSValue;
 class Document;
@@ -75,6 +76,9 @@ public:
     // vector is the top frame serialized content.
     void serialize(Page*);
 
+    void registerRewriteURL(const String& from, const String& to);
+    void setRewriteURLFolder(const String&);
+
     KURL urlForBlankFrame(LocalFrame*);
 
     Delegate* delegate();
@@ -85,6 +89,9 @@ private:
     // Serializes the stylesheet back to text and adds it to the resources if URL is not-empty.
     // It also adds any resources included in that stylesheet (including any imported stylesheets and their own resources).
     void serializeCSSStyleSheet(CSSStyleSheet&, const KURL&);
+
+    // Serializes the css rule (including any imported stylesheets), adding referenced resources.
+    void serializeCSSRule(CSSRule*);
 
     bool shouldAddURL(const KURL&);
 
@@ -100,6 +107,8 @@ private:
 
     using BlankFrameURLMap = WillBeHeapHashMap<RawPtrWillBeMember<LocalFrame>, KURL>;
     BlankFrameURLMap m_blankFrameURLs;
+    HashMap<String, String> m_rewriteURLs;
+    String m_rewriteFolder;
     unsigned m_blankFrameCounter;
 
     OwnPtr<Delegate> m_delegate;

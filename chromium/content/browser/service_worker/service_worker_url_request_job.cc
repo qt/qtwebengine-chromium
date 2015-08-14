@@ -10,8 +10,11 @@
 
 #include "base/bind.h"
 #include "base/guid.h"
+#include "base/location.h"
 #include "base/memory/scoped_vector.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
@@ -25,6 +28,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/resource_response_info.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -367,28 +371,22 @@ const net::HttpResponseInfo* ServiceWorkerURLRequestJob::http_info() const {
 }
 
 void ServiceWorkerURLRequestJob::GetExtraResponseInfo(
-    bool* was_fetched_via_service_worker,
-    bool* was_fallback_required_by_service_worker,
-    GURL* original_url_via_service_worker,
-    blink::WebServiceWorkerResponseType* response_type_via_service_worker,
-    base::TimeTicks* fetch_start_time,
-    base::TimeTicks* fetch_ready_time,
-    base::TimeTicks* fetch_end_time) const {
+    ResourceResponseInfo* response_info) const {
   if (response_type_ != FORWARD_TO_SERVICE_WORKER) {
-    *was_fetched_via_service_worker = false;
-    *was_fallback_required_by_service_worker = false;
-    *original_url_via_service_worker = GURL();
-    *response_type_via_service_worker =
+    response_info->was_fetched_via_service_worker = false;
+    response_info->was_fallback_required_by_service_worker = false;
+    response_info->original_url_via_service_worker = GURL();
+    response_info->response_type_via_service_worker =
         blink::WebServiceWorkerResponseTypeDefault;
     return;
   }
-  *was_fetched_via_service_worker = true;
-  *was_fallback_required_by_service_worker = fall_back_required_;
-  *original_url_via_service_worker = response_url_;
-  *response_type_via_service_worker = service_worker_response_type_;
-  *fetch_start_time = fetch_start_time_;
-  *fetch_ready_time = fetch_ready_time_;
-  *fetch_end_time = fetch_end_time_;
+  response_info->was_fetched_via_service_worker = true;
+  response_info->was_fallback_required_by_service_worker = fall_back_required_;
+  response_info->original_url_via_service_worker = response_url_;
+  response_info->response_type_via_service_worker =
+      service_worker_response_type_;
+  response_info->service_worker_start_time = worker_start_time_;
+  response_info->service_worker_ready_time = worker_ready_time_;
 }
 
 
@@ -409,10 +407,9 @@ ServiceWorkerURLRequestJob::~ServiceWorkerURLRequestJob() {
 void ServiceWorkerURLRequestJob::MaybeStartRequest() {
   if (is_started_ && response_type_ != NOT_DETERMINED) {
     // Start asynchronously.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ServiceWorkerURLRequestJob::StartRequest,
-                   weak_factory_.GetWeakPtr()));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&ServiceWorkerURLRequestJob::StartRequest,
+                              weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -456,8 +453,7 @@ void ServiceWorkerURLRequestJob::StartRequest() {
                      weak_factory_.GetWeakPtr()),
           base::Bind(&ServiceWorkerURLRequestJob::DidDispatchFetchEvent,
                      weak_factory_.GetWeakPtr())));
-      fetch_start_time_ = base::TimeTicks::Now();
-      load_timing_info_.send_start = fetch_start_time_;
+      worker_start_time_ = base::TimeTicks::Now();
       fetch_dispatcher_->Run();
       return;
   }
@@ -573,7 +569,8 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
 }
 
 void ServiceWorkerURLRequestJob::DidPrepareFetchEvent() {
-  fetch_ready_time_ = base::TimeTicks::Now();
+  worker_ready_time_ = base::TimeTicks::Now();
+  load_timing_info_.send_start = worker_ready_time_;
 }
 
 void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
@@ -629,18 +626,16 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   // We should have a response now.
   DCHECK_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, fetch_result);
 
-  // A response with status code 0 occurs when the respondWith promise was
-  // rejected or preventDefault() was called with no response provided.
-  // In this case, return a network error.
+  // A response with status code 0 is Blink telling us to respond with network
+  // error.
   if (response.status_code == 0) {
-    RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_RESPONSE_STATUS_ZERO);
+    RecordStatusZeroResponseError(response.error);
     NotifyDone(
         net::URLRequestStatus(net::URLRequestStatus::FAILED, net::ERR_FAILED));
     return;
   }
 
-  fetch_end_time_ = base::TimeTicks::Now();
-  load_timing_info_.send_end = fetch_end_time_;
+  load_timing_info_.send_end = base::TimeTicks::Now();
 
   // Creates a new HttpResponseInfo using the the ServiceWorker script's
   // HttpResponseInfo to show HTTPS padlock.
@@ -765,16 +760,30 @@ bool ServiceWorkerURLRequestJob::ShouldRecordResult() {
 
 void ServiceWorkerURLRequestJob::RecordResult(
     ServiceWorkerMetrics::URLRequestJobResult result) {
-  DCHECK(ShouldRecordResult());
-  // It violates style guidelines to handle a DCHECK fail condition but if there
+  // It violates style guidelines to handle a NOTREACHED() failure but if there
   // is a bug don't let it corrupt UMA results by double-counting.
-  if (!ShouldRecordResult())
+  if (!ShouldRecordResult()) {
+    NOTREACHED();
     return;
+  }
   did_record_result_ = true;
   ServiceWorkerMetrics::RecordURLRequestJobResult(is_main_resource_load_,
                                                   result);
   if (request())
     request()->net_log().AddEvent(RequestJobResultToNetEventType(result));
+}
+
+void ServiceWorkerURLRequestJob::RecordStatusZeroResponseError(
+    blink::WebServiceWorkerResponseError error) {
+  // It violates style guidelines to handle a NOTREACHED() failure but if there
+  // is a bug don't let it corrupt UMA results by double-counting.
+  if (!ShouldRecordResult()) {
+    NOTREACHED();
+    return;
+  }
+  RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_RESPONSE_STATUS_ZERO);
+  ServiceWorkerMetrics::RecordStatusZeroResponseError(is_main_resource_load_,
+                                                      error);
 }
 
 void ServiceWorkerURLRequestJob::ClearStream() {

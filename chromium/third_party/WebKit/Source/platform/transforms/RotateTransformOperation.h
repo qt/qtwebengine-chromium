@@ -50,10 +50,17 @@ public:
     static bool shareSameAxis(const RotateTransformOperation* fromRotation, const RotateTransformOperation* toRotation, FloatPoint3D* axis, double* fromAngle, double* toAngle);
 
     virtual bool canBlendWith(const TransformOperation& other) const;
-    virtual OperationType type() const override { return m_type; }
+    OperationType type() const override { return m_type; }
+
+    void apply(TransformationMatrix& transform, const FloatSize& /*borderBoxSize*/) const override
+    {
+        transform.rotate3d(m_x, m_y, m_z, m_angle);
+    }
+
+    static bool isMatchingOperationType(OperationType type) { return type == Rotate || type == RotateX || type == RotateY || type == RotateZ || type == Rotate3D; }
 
 private:
-    virtual bool operator==(const TransformOperation& o) const override
+    bool operator==(const TransformOperation& o) const override
     {
         if (!isSameType(o))
             return false;
@@ -61,12 +68,7 @@ private:
         return m_x == r->m_x && m_y == r->m_y && m_z == r->m_z && m_angle == r->m_angle;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize& /*borderBoxSize*/) const override
-    {
-        transform.rotate3d(m_x, m_y, m_z, m_angle);
-    }
-
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
+    PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
 
     RotateTransformOperation(double x, double y, double z, double angle, OperationType type)
         : m_x(x)
@@ -75,7 +77,7 @@ private:
         , m_angle(angle)
         , m_type(type)
     {
-        ASSERT(type == RotateX || type == RotateY || type == RotateZ || type == Rotate3D);
+        ASSERT(isMatchingOperationType(type));
     }
 
     double m_x;
@@ -84,6 +86,8 @@ private:
     double m_angle;
     OperationType m_type;
 };
+
+DEFINE_TRANSFORM_TYPE_CASTS(RotateTransformOperation);
 
 } // namespace blink
 

@@ -155,7 +155,8 @@ bool Process::WaitForExitWithTimeout(TimeDelta timeout, int* exit_code) {
   if (!::GetExitCodeProcess(Handle(), &temp_code))
     return false;
 
-  *exit_code = temp_code;
+  if (exit_code)
+    *exit_code = temp_code;
   return true;
 }
 
@@ -189,8 +190,8 @@ bool Process::SetProcessBackgrounded(bool value) {
     DWORD background_priority = IDLE_PRIORITY_CLASS;
     base::FieldTrial* trial =
         base::FieldTrialList::Find("BackgroundRendererProcesses");
-    if (trial && StartsWithASCII(trial->group_name(),
-                                 "AllowBelowNormalFromBrowser", true)) {
+    if (trial && StartsWith(trial->group_name(), "AllowBelowNormalFromBrowser",
+                            CompareCase::SENSITIVE)) {
       background_priority = BELOW_NORMAL_PRIORITY_CLASS;
     }
 

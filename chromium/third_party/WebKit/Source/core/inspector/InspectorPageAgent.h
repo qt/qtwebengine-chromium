@@ -32,9 +32,10 @@
 #define InspectorPageAgent_h
 
 
+#include "core/CoreExport.h"
 #include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/inspector/InspectorResourceContentLoader.h"
+#include "core/page/ChromeClient.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
 
@@ -55,7 +56,7 @@ class TextResourceDecoder;
 
 typedef String ErrorString;
 
-class InspectorPageAgent final : public InspectorBaseAgent<InspectorPageAgent, InspectorFrontend::Page>, public InspectorBackendDispatcher::PageCommandHandler {
+class CORE_EXPORT InspectorPageAgent final : public InspectorBaseAgent<InspectorPageAgent, InspectorFrontend::Page>, public InspectorBackendDispatcher::PageCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorPageAgent);
 public:
     enum ResourceType {
@@ -71,7 +72,7 @@ public:
         OtherResource
     };
 
-    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, InspectorOverlay*);
+    static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
     void setDeferredAgents(InspectorDebuggerAgent*, InspectorCSSAgent*);
 
     static Vector<Document*> importsForFrame(LocalFrame*);
@@ -111,17 +112,15 @@ public:
     void frameStoppedLoading(LocalFrame*);
     void frameScheduledNavigation(LocalFrame*, double delay);
     void frameClearedScheduledNavigation(LocalFrame*);
-    void willRunJavaScriptDialog(const String& message);
-    void didRunJavaScriptDialog();
+    void willRunJavaScriptDialog(const String& message, ChromeClient::DialogType);
+    void didRunJavaScriptDialog(bool result);
     void didLayout();
     void didScroll();
     void didResizeMainFrame();
-    void didRecalculateStyle(int);
 
     // Inspector Controller API
     void disable(ErrorString*) override;
     void restore() override;
-    void discardAgent() override;
 
     // Cross-agents API
     static DocumentLoader* assertDocumentLoader(ErrorString*, LocalFrame*);
@@ -131,14 +130,13 @@ public:
     LocalFrame* inspectedFrame() const { return m_inspectedFrame.get(); }
     LocalFrame* findFrameWithSecurityOrigin(const String& originRawString);
     bool screencastEnabled();
-    InspectorResourceContentLoader* resourceContentLoader() { return m_inspectorResourceContentLoader.get(); }
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     class GetResourceContentLoadListener;
 
-    InspectorPageAgent(LocalFrame* inspectedFrame, InspectorOverlay*);
+    InspectorPageAgent(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
 
     void finishReload();
     void getResourceContentAfterResourcesContentLoaded(const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback>);
@@ -157,7 +155,7 @@ private:
     bool m_enabled;
     bool m_reloading;
 
-    OwnPtrWillBeMember<InspectorResourceContentLoader> m_inspectorResourceContentLoader;
+    RawPtrWillBeMember<InspectorResourceContentLoader> m_inspectorResourceContentLoader;
 };
 
 

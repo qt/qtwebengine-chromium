@@ -68,7 +68,11 @@ class IncludeNode(base.Node):
     """Returns the file for the specified language.  This allows us to return
     different files for different language variants of the include file.
     """
-    return self.ToRealPath(self.GetInputPath())
+    input_path = self.GetInputPath()
+    if input_path is None:
+      return None
+
+    return self.ToRealPath(input_path)
 
   def GetDataPackPair(self, lang, encoding):
     """Returns a (id, string) pair that represents the resource id and raw

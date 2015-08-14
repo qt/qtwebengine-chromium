@@ -50,14 +50,14 @@ bool write_ref_data = false;
 const int kChannels[] = {1, 2};
 const size_t kChannelsSize = sizeof(kChannels) / sizeof(*kChannels);
 
-const int kSampleRates[] = {8000, 16000, 32000};
+const int kSampleRates[] = {8000, 16000, 32000, 48000};
 const size_t kSampleRatesSize = sizeof(kSampleRates) / sizeof(*kSampleRates);
 
 #if defined(WEBRTC_AUDIOPROC_FIXED_PROFILE)
 // AECM doesn't support super-wb.
 const int kProcessSampleRates[] = {8000, 16000};
 #elif defined(WEBRTC_AUDIOPROC_FLOAT_PROFILE)
-const int kProcessSampleRates[] = {8000, 16000, 32000};
+const int kProcessSampleRates[] = {8000, 16000, 32000, 48000};
 #endif
 const size_t kProcessSampleRatesSize = sizeof(kProcessSampleRates) /
     sizeof(*kProcessSampleRates);
@@ -269,7 +269,7 @@ std::string OutputFilePath(std::string name,
   ss << output_rate / 1000 << "_pcm";
 
   std::string filename = ss.str();
-  if (temp_filenames[filename] == "")
+  if (temp_filenames[filename].empty())
     temp_filenames[filename] = test::TempFilename(test::OutputPath(), filename);
   return temp_filenames[filename];
 }
@@ -816,7 +816,7 @@ TEST_F(ApmTest, SampleRatesInt) {
   SetContainerFormat(10000, 2, frame_, &float_cb_);
   EXPECT_EQ(apm_->kBadSampleRateError, ProcessStreamChooser(kIntFormat));
   // Testing valid sample rates
-  int fs[] = {8000, 16000, 32000};
+  int fs[] = {8000, 16000, 32000, 48000};
   for (size_t i = 0; i < sizeof(fs) / sizeof(*fs); i++) {
     SetContainerFormat(fs[i], 2, frame_, &float_cb_);
     EXPECT_NOERR(ProcessStreamChooser(kIntFormat));
@@ -893,7 +893,7 @@ TEST_F(ApmTest, DISABLED_EchoCancellationReportsCorrectDelays) {
             apm_->echo_cancellation()->enable_delay_logging(true));
   EXPECT_EQ(apm_->kNoError, apm_->echo_cancellation()->Enable(true));
   Config config;
-  config.Set<ReportedDelay>(new ReportedDelay(true));
+  config.Set<DelayAgnostic>(new DelayAgnostic(false));
   apm_->SetExtraOptions(config);
 
   // Internally in the AEC the amount of lookahead the delay estimation can
@@ -1587,7 +1587,7 @@ TEST_F(ApmTest, SplittingFilter) {
   // Make sure we have extended filter enabled. This makes sure nothing is
   // touched until we have a farend frame.
   Config config;
-  config.Set<DelayCorrection>(new DelayCorrection(true));
+  config.Set<ExtendedFilter>(new ExtendedFilter(true));
   apm_->SetExtraOptions(config);
   SetFrameTo(frame_, 1000);
   frame_copy.CopyFrom(*frame_);
@@ -1914,7 +1914,7 @@ TEST_F(ApmTest, FloatAndIntInterfacesGiveSimilarResults) {
                 fapm->echo_cancellation()->stream_has_echo());
       EXPECT_NEAR(apm_->noise_suppression()->speech_probability(),
                   fapm->noise_suppression()->speech_probability(),
-                  0.0005);
+                  0.01);
 
       // Reset in case of downmixing.
       frame_->num_channels_ = test->num_input_channels();
@@ -1969,8 +1969,8 @@ TEST_F(ApmTest, Process) {
 
     Config config;
     config.Set<ExperimentalAgc>(new ExperimentalAgc(false));
-    config.Set<DelayCorrection>(
-        new DelayCorrection(test->use_aec_extended_filter()));
+    config.Set<ExtendedFilter>(
+        new ExtendedFilter(test->use_aec_extended_filter()));
     apm_.reset(AudioProcessing::Create(config));
 
     EnableAllComponents();
@@ -2256,7 +2256,7 @@ class AudioProcessingTest
 
   static void SetUpTestCase() {
     // Create all needed output reference files.
-    const int kNativeRates[] = {8000, 16000, 32000};
+    const int kNativeRates[] = {8000, 16000, 32000, 48000};
     const size_t kNativeRatesSize =
         sizeof(kNativeRates) / sizeof(*kNativeRates);
     const int kNumChannels[] = {1, 2};
@@ -2401,7 +2401,10 @@ TEST_P(AudioProcessingTest, Formats) {
                   "out");
     int min_ref_rate = std::min(input_rate_, output_rate_);
     int ref_rate;
-    if (min_ref_rate > 16000) {
+
+    if (min_ref_rate > 32000) {
+      ref_rate = 48000;
+    } else if (min_ref_rate > 16000) {
       ref_rate = 32000;
     } else if (min_ref_rate > 8000) {
       ref_rate = 16000;
@@ -2510,6 +2513,61 @@ TEST_P(AudioProcessingTest, Formats) {
 #if defined(WEBRTC_AUDIOPROC_FLOAT_PROFILE)
 INSTANTIATE_TEST_CASE_P(
     CommonFormats, AudioProcessingTest, testing::Values(
+        std::tr1::make_tuple(48000, 48000, 48000, 0),
+        std::tr1::make_tuple(48000, 48000, 32000, 40),
+        std::tr1::make_tuple(48000, 48000, 16000, 40),
+        std::tr1::make_tuple(48000, 44100, 48000, 20),
+        std::tr1::make_tuple(48000, 44100, 32000, 20),
+        std::tr1::make_tuple(48000, 44100, 16000, 20),
+        std::tr1::make_tuple(48000, 32000, 48000, 30),
+        std::tr1::make_tuple(48000, 32000, 32000, 30),
+        std::tr1::make_tuple(48000, 32000, 16000, 30),
+        std::tr1::make_tuple(48000, 16000, 48000, 25),
+        std::tr1::make_tuple(48000, 16000, 32000, 25),
+        std::tr1::make_tuple(48000, 16000, 16000, 25),
+
+        std::tr1::make_tuple(44100, 48000, 48000, 30),
+        std::tr1::make_tuple(44100, 48000, 32000, 30),
+        std::tr1::make_tuple(44100, 48000, 16000, 30),
+        std::tr1::make_tuple(44100, 44100, 48000, 20),
+        std::tr1::make_tuple(44100, 44100, 32000, 20),
+        std::tr1::make_tuple(44100, 44100, 16000, 20),
+        std::tr1::make_tuple(44100, 32000, 48000, 30),
+        std::tr1::make_tuple(44100, 32000, 32000, 30),
+        std::tr1::make_tuple(44100, 32000, 16000, 30),
+        std::tr1::make_tuple(44100, 16000, 48000, 25),
+        std::tr1::make_tuple(44100, 16000, 32000, 25),
+        std::tr1::make_tuple(44100, 16000, 16000, 25),
+
+        std::tr1::make_tuple(32000, 48000, 48000, 30),
+        std::tr1::make_tuple(32000, 48000, 32000, 35),
+        std::tr1::make_tuple(32000, 48000, 16000, 30),
+        std::tr1::make_tuple(32000, 44100, 48000, 20),
+        std::tr1::make_tuple(32000, 44100, 32000, 20),
+        std::tr1::make_tuple(32000, 44100, 16000, 20),
+        std::tr1::make_tuple(32000, 32000, 48000, 40),
+        std::tr1::make_tuple(32000, 32000, 32000, 0),
+        std::tr1::make_tuple(32000, 32000, 16000, 40),
+        std::tr1::make_tuple(32000, 16000, 48000, 25),
+        std::tr1::make_tuple(32000, 16000, 32000, 25),
+        std::tr1::make_tuple(32000, 16000, 16000, 25),
+
+        std::tr1::make_tuple(16000, 48000, 48000, 25),
+        std::tr1::make_tuple(16000, 48000, 32000, 25),
+        std::tr1::make_tuple(16000, 48000, 16000, 25),
+        std::tr1::make_tuple(16000, 44100, 48000, 15),
+        std::tr1::make_tuple(16000, 44100, 32000, 15),
+        std::tr1::make_tuple(16000, 44100, 16000, 15),
+        std::tr1::make_tuple(16000, 32000, 48000, 25),
+        std::tr1::make_tuple(16000, 32000, 32000, 25),
+        std::tr1::make_tuple(16000, 32000, 16000, 25),
+        std::tr1::make_tuple(16000, 16000, 48000, 40),
+        std::tr1::make_tuple(16000, 16000, 32000, 50),
+        std::tr1::make_tuple(16000, 16000, 16000, 0)));
+
+#elif defined(WEBRTC_AUDIOPROC_FIXED_PROFILE)
+INSTANTIATE_TEST_CASE_P(
+    CommonFormats, AudioProcessingTest, testing::Values(
         std::tr1::make_tuple(48000, 48000, 48000, 20),
         std::tr1::make_tuple(48000, 48000, 32000, 20),
         std::tr1::make_tuple(48000, 48000, 16000, 20),
@@ -2536,15 +2594,15 @@ INSTANTIATE_TEST_CASE_P(
         std::tr1::make_tuple(44100, 16000, 32000, 20),
         std::tr1::make_tuple(44100, 16000, 16000, 20),
 
-        std::tr1::make_tuple(32000, 48000, 48000, 25),
-        std::tr1::make_tuple(32000, 48000, 32000, 25),
-        std::tr1::make_tuple(32000, 48000, 16000, 25),
-        std::tr1::make_tuple(32000, 44100, 48000, 20),
-        std::tr1::make_tuple(32000, 44100, 32000, 20),
-        std::tr1::make_tuple(32000, 44100, 16000, 20),
-        std::tr1::make_tuple(32000, 32000, 48000, 30),
-        std::tr1::make_tuple(32000, 32000, 32000, 0),
-        std::tr1::make_tuple(32000, 32000, 16000, 30),
+        std::tr1::make_tuple(32000, 48000, 48000, 20),
+        std::tr1::make_tuple(32000, 48000, 32000, 20),
+        std::tr1::make_tuple(32000, 48000, 16000, 20),
+        std::tr1::make_tuple(32000, 44100, 48000, 15),
+        std::tr1::make_tuple(32000, 44100, 32000, 15),
+        std::tr1::make_tuple(32000, 44100, 16000, 15),
+        std::tr1::make_tuple(32000, 32000, 48000, 20),
+        std::tr1::make_tuple(32000, 32000, 32000, 20),
+        std::tr1::make_tuple(32000, 32000, 16000, 20),
         std::tr1::make_tuple(32000, 16000, 48000, 20),
         std::tr1::make_tuple(32000, 16000, 32000, 20),
         std::tr1::make_tuple(32000, 16000, 16000, 20),
@@ -2558,63 +2616,8 @@ INSTANTIATE_TEST_CASE_P(
         std::tr1::make_tuple(16000, 32000, 48000, 25),
         std::tr1::make_tuple(16000, 32000, 32000, 25),
         std::tr1::make_tuple(16000, 32000, 16000, 25),
-        std::tr1::make_tuple(16000, 16000, 48000, 30),
-        std::tr1::make_tuple(16000, 16000, 32000, 30),
-        std::tr1::make_tuple(16000, 16000, 16000, 0)));
-
-#elif defined(WEBRTC_AUDIOPROC_FIXED_PROFILE)
-INSTANTIATE_TEST_CASE_P(
-    CommonFormats, AudioProcessingTest, testing::Values(
-        std::tr1::make_tuple(48000, 48000, 48000, 20),
-        std::tr1::make_tuple(48000, 48000, 32000, 20),
-        std::tr1::make_tuple(48000, 48000, 16000, 20),
-        std::tr1::make_tuple(48000, 44100, 48000, 15),
-        std::tr1::make_tuple(48000, 44100, 32000, 15),
-        std::tr1::make_tuple(48000, 44100, 16000, 15),
-        std::tr1::make_tuple(48000, 32000, 48000, 20),
-        std::tr1::make_tuple(48000, 32000, 32000, 20),
-        std::tr1::make_tuple(48000, 32000, 16000, 20),
-        std::tr1::make_tuple(48000, 16000, 48000, 20),
-        std::tr1::make_tuple(48000, 16000, 32000, 20),
-        std::tr1::make_tuple(48000, 16000, 16000, 20),
-
-        std::tr1::make_tuple(44100, 48000, 48000, 19),
-        std::tr1::make_tuple(44100, 48000, 32000, 19),
-        std::tr1::make_tuple(44100, 48000, 16000, 19),
-        std::tr1::make_tuple(44100, 44100, 48000, 15),
-        std::tr1::make_tuple(44100, 44100, 32000, 15),
-        std::tr1::make_tuple(44100, 44100, 16000, 15),
-        std::tr1::make_tuple(44100, 32000, 48000, 19),
-        std::tr1::make_tuple(44100, 32000, 32000, 19),
-        std::tr1::make_tuple(44100, 32000, 16000, 19),
-        std::tr1::make_tuple(44100, 16000, 48000, 19),
-        std::tr1::make_tuple(44100, 16000, 32000, 19),
-        std::tr1::make_tuple(44100, 16000, 16000, 19),
-
-        std::tr1::make_tuple(32000, 48000, 48000, 19),
-        std::tr1::make_tuple(32000, 48000, 32000, 19),
-        std::tr1::make_tuple(32000, 48000, 16000, 19),
-        std::tr1::make_tuple(32000, 44100, 48000, 15),
-        std::tr1::make_tuple(32000, 44100, 32000, 15),
-        std::tr1::make_tuple(32000, 44100, 16000, 15),
-        std::tr1::make_tuple(32000, 32000, 48000, 19),
-        std::tr1::make_tuple(32000, 32000, 32000, 19),
-        std::tr1::make_tuple(32000, 32000, 16000, 19),
-        std::tr1::make_tuple(32000, 16000, 48000, 19),
-        std::tr1::make_tuple(32000, 16000, 32000, 19),
-        std::tr1::make_tuple(32000, 16000, 16000, 19),
-
-        std::tr1::make_tuple(16000, 48000, 48000, 25),
-        std::tr1::make_tuple(16000, 48000, 32000, 25),
-        std::tr1::make_tuple(16000, 48000, 16000, 25),
-        std::tr1::make_tuple(16000, 44100, 48000, 15),
-        std::tr1::make_tuple(16000, 44100, 32000, 15),
-        std::tr1::make_tuple(16000, 44100, 16000, 15),
-        std::tr1::make_tuple(16000, 32000, 48000, 25),
-        std::tr1::make_tuple(16000, 32000, 32000, 25),
-        std::tr1::make_tuple(16000, 32000, 16000, 25),
-        std::tr1::make_tuple(16000, 16000, 48000, 30),
-        std::tr1::make_tuple(16000, 16000, 32000, 30),
+        std::tr1::make_tuple(16000, 16000, 48000, 35),
+        std::tr1::make_tuple(16000, 16000, 32000, 40),
         std::tr1::make_tuple(16000, 16000, 16000, 0)));
 #endif
 

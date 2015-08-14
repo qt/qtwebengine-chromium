@@ -86,7 +86,9 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     if (starterOrigin)
         securityOrigin()->transferPrivilegesFrom(*starterOrigin);
 
-    m_workerClients->reattachThread();
+    if (m_workerClients)
+        m_workerClients->reattachThread();
+
     m_thread->setWorkerInspectorController(m_workerInspectorController.get());
 }
 
@@ -96,13 +98,15 @@ WorkerGlobalScope::~WorkerGlobalScope()
     ASSERT(!m_workerInspectorController);
 }
 
-void WorkerGlobalScope::applyContentSecurityPolicyFromString(const String& policy, ContentSecurityPolicyHeaderType contentSecurityPolicyType)
+void WorkerGlobalScope::applyContentSecurityPolicyFromVector(const Vector<CSPHeaderAndType>& headers)
 {
-    // FIXME: This doesn't match the CSP2 spec's Worker behavior (see https://w3c.github.io/webappsec/specs/content-security-policy/#processing-model-workers)
-    RefPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
-    csp->didReceiveHeader(policy, contentSecurityPolicyType, ContentSecurityPolicyHeaderSourceHTTP);
-    csp->bindToExecutionContext(executionContext());
-    setContentSecurityPolicy(csp);
+    if (!contentSecurityPolicy()) {
+        RefPtr<ContentSecurityPolicy> csp = ContentSecurityPolicy::create();
+        setContentSecurityPolicy(csp);
+    }
+    for (const auto& policyAndType : headers)
+        contentSecurityPolicy()->didReceiveHeader(policyAndType.first, policyAndType.second, ContentSecurityPolicyHeaderSourceHTTP);
+    contentSecurityPolicy()->bindToExecutionContext(executionContext());
 }
 
 ExecutionContext* WorkerGlobalScope::executionContext() const
@@ -237,23 +241,23 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
     }
 
     for (const KURL& completeURL : completedURLs) {
-        RefPtr<WorkerScriptLoader> scriptLoader(WorkerScriptLoader::create());
-        scriptLoader->setRequestContext(WebURLRequest::RequestContextScript);
-        scriptLoader->loadSynchronously(executionContext, completeURL, AllowCrossOriginRequests);
+        WorkerScriptLoader scriptLoader;
+        scriptLoader.setRequestContext(WebURLRequest::RequestContextScript);
+        scriptLoader.loadSynchronously(executionContext, completeURL, AllowCrossOriginRequests);
 
         // If the fetching attempt failed, throw a NetworkError exception and abort all these steps.
-        if (scriptLoader->failed()) {
+        if (scriptLoader.failed()) {
             exceptionState.throwDOMException(NetworkError, "The script at '" + completeURL.elidedString() + "' failed to load.");
             return;
         }
 
-        InspectorInstrumentation::scriptImported(&executionContext, scriptLoader->identifier(), scriptLoader->script());
-        scriptLoaded(scriptLoader->script().length(), scriptLoader->cachedMetadata() ? scriptLoader->cachedMetadata()->size() : 0);
+        InspectorInstrumentation::scriptImported(&executionContext, scriptLoader.identifier(), scriptLoader.script());
+        scriptLoaded(scriptLoader.script().length(), scriptLoader.cachedMetadata() ? scriptLoader.cachedMetadata()->size() : 0);
 
         RefPtrWillBeRawPtr<ErrorEvent> errorEvent = nullptr;
-        OwnPtr<Vector<char>> cachedMetaData(scriptLoader->releaseCachedMetadata());
+        OwnPtr<Vector<char>> cachedMetaData(scriptLoader.releaseCachedMetadata());
         OwnPtr<CachedMetadataHandler> handler(createWorkerScriptCachedMetadataHandler(completeURL, cachedMetaData.get()));
-        m_script->evaluate(ScriptSourceCode(scriptLoader->script(), scriptLoader->responseURL()), &errorEvent, handler.get(), m_v8CacheOptions);
+        m_script->evaluate(ScriptSourceCode(scriptLoader.script(), scriptLoader.responseURL()), &errorEvent, handler.get(), m_v8CacheOptions);
         if (errorEvent) {
             m_script->rethrowExceptionFromImportedScript(errorEvent.release(), exceptionState);
             return;
@@ -322,7 +326,7 @@ void WorkerGlobalScope::countDeprecation(UseCounter::Feature feature) const
 {
     // FIXME: How should we count features for shared/service workers?
 
-    ASSERT(isSharedWorkerGlobalScope() || isServiceWorkerGlobalScope());
+    ASSERT(isSharedWorkerGlobalScope() || isServiceWorkerGlobalScope() || isCompositorWorkerGlobalScope());
     // For each deprecated feature, send console message at most once
     // per worker lifecycle.
     if (!m_deprecationWarningBits.hasRecordedMeasurement(feature)) {

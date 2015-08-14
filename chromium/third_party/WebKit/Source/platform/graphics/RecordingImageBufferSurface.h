@@ -15,11 +15,11 @@
 
 class SkPicture;
 class SkPictureRecorder;
-class RecordingImageBufferSurfaceTest;
 
 namespace blink {
 
 class ImageBuffer;
+class RecordingImageBufferSurfaceTest;
 
 class RecordingImageBufferFallbackSurfaceFactory {
 public:
@@ -31,7 +31,7 @@ class PLATFORM_EXPORT RecordingImageBufferSurface : public ImageBufferSurface {
     WTF_MAKE_NONCOPYABLE(RecordingImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(RecordingImageBufferSurface);
 public:
     RecordingImageBufferSurface(const IntSize&, PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> fallbackFactory, OpacityMode = NonOpaque);
-    virtual ~RecordingImageBufferSurface();
+    ~RecordingImageBufferSurface() override;
 
     // Implementation of ImageBufferSurface interfaces
     SkCanvas* canvas() const override;
@@ -42,10 +42,10 @@ public:
     bool isRecording() const override { return !m_fallbackSurface; }
     void willAccessPixels() override;
     void willOverwriteCanvas() override;
-    void finalizeFrame(const FloatRect&) override;
+    virtual void finalizeFrame(const FloatRect&);
     void setImageBuffer(ImageBuffer*) override;
     PassRefPtr<SkImage> newImageSnapshot() const override;
-    void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode, bool needsCopy) override;
+    void draw(GraphicsContext*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode) override;
     bool isExpensiveToPaint() override;
     void setHasExpensiveOp() override { m_currentFrameHasExpensiveOp = true; }
 
@@ -54,15 +54,10 @@ public:
     bool restore() override;
     WebLayer* layer() const override;
     bool isAccelerated() const override;
-    Platform3DObject getBackingTexture() const override;
-    bool cachedBitmapEnabled() const override;
-    const SkBitmap& cachedBitmap() const override;
-    void invalidateCachedBitmap() override;
-    void updateCachedBitmapIfNeeded() override;
     void setIsHidden(bool) override;
 
 private:
-    friend class ::RecordingImageBufferSurfaceTest; // for unit testing
+    friend class RecordingImageBufferSurfaceTest; // for unit testing
     void fallBackToRasterCanvas();
     bool initializeCurrentFrame();
     bool finalizeFrameInternal();

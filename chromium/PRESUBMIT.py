@@ -63,7 +63,7 @@ _TEST_ONLY_WARNING = (
 
 _INCLUDE_ORDER_WARNING = (
     'Your #include order seems to be broken. Remember to use the right '
-    'collation (LC_COLLATE=C) and check https://google-styleguide.googlecode'
+    'collation (LC_COLLATE=C) and check\nhttps://google-styleguide.googlecode'
     '.com/svn/trunk/cppguide.html#Names_and_Order_of_Includes')
 
 _BANNED_OBJC_FUNCTIONS = (
@@ -702,33 +702,38 @@ def _CheckIncludeOrderForScope(scope, input_api, file_path, changed_linenums):
   previous_line = ''
   previous_line_num = 0
   problem_linenums = []
+  out_of_order = " - line belongs before previous line"
   for line_num, line in scope:
     if c_system_include_pattern.match(line):
       if state != C_SYSTEM_INCLUDES:
-        problem_linenums.append((line_num, previous_line_num))
+        problem_linenums.append((line_num, previous_line_num,
+            " - C system include file in wrong block"))
       elif previous_line and previous_line > line:
-        problem_linenums.append((line_num, previous_line_num))
+        problem_linenums.append((line_num, previous_line_num,
+            out_of_order))
     elif cpp_system_include_pattern.match(line):
       if state == C_SYSTEM_INCLUDES:
         state = CPP_SYSTEM_INCLUDES
       elif state == CUSTOM_INCLUDES:
-        problem_linenums.append((line_num, previous_line_num))
+        problem_linenums.append((line_num, previous_line_num,
+            " - c++ system include file in wrong block"))
       elif previous_line and previous_line > line:
-        problem_linenums.append((line_num, previous_line_num))
+        problem_linenums.append((line_num, previous_line_num, out_of_order))
     elif custom_include_pattern.match(line):
       if state != CUSTOM_INCLUDES:
         state = CUSTOM_INCLUDES
       elif previous_line and previous_line > line:
-        problem_linenums.append((line_num, previous_line_num))
+        problem_linenums.append((line_num, previous_line_num, out_of_order))
     else:
-      problem_linenums.append(line_num)
+      problem_linenums.append((line_num, previous_line_num,
+          "Unknown include type"))
     previous_line = line
     previous_line_num = line_num
 
   warnings = []
-  for (line_num, previous_line_num) in problem_linenums:
+  for (line_num, previous_line_num, failure_type) in problem_linenums:
     if line_num in changed_linenums or previous_line_num in changed_linenums:
-      warnings.append('    %s:%d' % (file_path, line_num))
+      warnings.append('    %s:%d:%s' % (file_path, line_num, failure_type))
   return warnings
 
 
@@ -826,7 +831,7 @@ def _CheckIncludeOrder(input_api, output_api):
 
   warnings = []
   for f in input_api.AffectedFiles(file_filter=FileFilterIncludeOrder):
-    if f.LocalPath().endswith(('.cc', '.h')):
+    if f.LocalPath().endswith(('.cc', '.h', '.mm')):
       changed_linenums = set(line_num for line_num, _ in f.ChangedContents())
       warnings.extend(_CheckIncludeOrderInFile(input_api, f, changed_linenums))
 
@@ -841,6 +846,10 @@ def _CheckForVersionControlConflictsInFile(input_api, f):
   pattern = input_api.re.compile('^(?:<<<<<<<|>>>>>>>) |^=======$')
   errors = []
   for line_num, line in f.ChangedContents():
+    if f.LocalPath().endswith('.md'):
+      # First-level headers in markdown look a lot like version control
+      # conflict markers. http://daringfireball.net/projects/markdown/basics
+      continue
     if pattern.match(line):
       errors.append('    %s:%d %s' % (f.LocalPath(), line_num, line))
   return errors
@@ -1035,6 +1044,8 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^chrome_elf[\\\/]dll_hash[\\\/]dll_hash_main\.cc$",
                  r"^chromecast[\\\/]",
                  r"^cloud_print[\\\/]",
+                 r"^components[\\\/]html_viewer[\\\/]"
+                     r"web_test_delegate_impl\.cc$",
                  r"^content[\\\/]common[\\\/]gpu[\\\/]client[\\\/]"
                      r"gl_helper_benchmark\.cc$",
                  r"^courgette[\\\/]courgette_tool\.cc$",
@@ -1300,32 +1311,92 @@ def _CheckJavaStyle(input_api, output_api):
       black_list=_EXCLUDED_PATHS + input_api.DEFAULT_BLACK_LIST)
 
 
-def _CheckNoNewUtilLogUsage(input_api, output_api):
-  """Checks that new logs are using org.chromium.base.Log."""
+def _CheckAndroidCrLogUsage(input_api, output_api):
+  """Checks that new logs using org.chromium.base.Log:
+    - Are using 'TAG' as variable name for the tags (warn)
+    - Are using the suggested name format for the tags: "cr.<PackageTag>" (warn)
+    - Are using a tag that is shorter than 23 characters (error)
+  """
+  cr_log_import_pattern = input_api.re.compile(
+      r'^import org\.chromium\.base\.Log;$', input_api.re.MULTILINE)
+  class_in_base_pattern = input_api.re.compile(
+      r'^package org\.chromium\.base;$', input_api.re.MULTILINE)
+  has_some_log_import_pattern = input_api.re.compile(
+      r'^import .*\.Log;$', input_api.re.MULTILINE)
+  # Extract the tag from lines like `Log.d(TAG, "*");` or `Log.d("TAG", "*");`
+  log_call_pattern = input_api.re.compile(r'^\s*Log\.\w\((?P<tag>\"?\w+\"?)\,')
+  log_decl_pattern = input_api.re.compile(
+      r'^\s*private static final String TAG = "(?P<name>(.*)")',
+      input_api.re.MULTILINE)
+  log_name_pattern = input_api.re.compile(r'^cr[.\w]*')
 
-  chromium_log_import_pattern = input_api.re.compile(
-      r'^import org\.chromium\.base\.Log;$', input_api.re.MULTILINE);
-  log_pattern = input_api.re.compile(r'^\s*(android\.util\.)?Log\.\w')
+  REF_MSG = ('See base/android/java/src/org/chromium/base/README_logging.md '
+            'or contact dgn@chromium.org for more info.')
   sources = lambda x: input_api.FilterSourceFile(x, white_list=(r'.*\.java$',))
 
-  errors = []
+  tag_decl_errors = []
+  tag_length_errors = []
+  tag_errors = []
+  util_log_errors = []
 
   for f in input_api.AffectedSourceFiles(sources):
-    if chromium_log_import_pattern.search(input_api.ReadFile(f)) is not None:
-      # Uses org.chromium.base.Log already
-      continue
+    file_content = input_api.ReadFile(f)
+    has_modified_logs = False
 
-    for line_num, line in f.ChangedContents():
-      if log_pattern.search(line):
-        errors.append("%s:%d" % (f.LocalPath(), line_num))
+    # Per line checks
+    if (cr_log_import_pattern.search(file_content) or
+        (class_in_base_pattern.search(file_content) and
+            not has_some_log_import_pattern.search(file_content))):
+      # Checks to run for files using cr log
+      for line_num, line in f.ChangedContents():
+
+        # Check if the new line is doing some logging
+        match = log_call_pattern.search(line)
+        if match:
+          has_modified_logs = True
+
+          # Make sure it uses "TAG"
+          if not match.group('tag') == 'TAG':
+            tag_errors.append("%s:%d" % (f.LocalPath(), line_num))
+    else:
+      # Report non cr Log function calls in changed lines
+      for line_num, line in f.ChangedContents():
+        if log_call_pattern.search(line):
+          util_log_errors.append("%s:%d" % (f.LocalPath(), line_num))
+
+    # Per file checks
+    if has_modified_logs:
+      # Make sure the tag is using the "cr" prefix and is not too long
+      match = log_decl_pattern.search(file_content)
+      tag_name = match.group('name') if match else ''
+      if not log_name_pattern.search(tag_name ):
+        tag_decl_errors.append(f.LocalPath())
+      if len(tag_name) > 23:
+        tag_length_errors.append(f.LocalPath())
 
   results = []
-  if len(errors):
+  if tag_decl_errors:
     results.append(output_api.PresubmitPromptWarning(
-        'Please use org.chromium.base.Log for new logs.\n' +
-        'See base/android/java/src/org/chromium/base/README_logging.md ' +
-        'or contact dgn@chromium.org for more info.',
-        errors))
+        'Please define your tags using the suggested format: .\n'
+        '"private static final String TAG = "cr.<package tag>".\n' + REF_MSG,
+        tag_decl_errors))
+
+  if tag_length_errors:
+    results.append(output_api.PresubmitError(
+        'The tag length is restricted by the system to be at most '
+        '23 characters.\n' + REF_MSG,
+        tag_length_errors))
+
+  if tag_errors:
+    results.append(output_api.PresubmitPromptWarning(
+        'Please use a variable named "TAG" for your log tags.\n' + REF_MSG,
+        tag_errors))
+
+  if util_log_errors:
+    results.append(output_api.PresubmitPromptWarning(
+        'Please use org.chromium.base.Log for new logs.\n' + REF_MSG,
+        util_log_errors))
+
   return results
 
 
@@ -1340,8 +1411,8 @@ def _CheckForCopyrightedCode(input_api, output_api):
   original_sys_path = sys.path
   try:
     sys.path = sys.path + [input_api.os_path.join(
-        input_api.PresubmitLocalPath(), 'android_webview', 'tools')]
-    import copyright_scanner
+        input_api.PresubmitLocalPath(), 'tools')]
+    from copyright_scanner import copyright_scanner
   finally:
     # Restore sys.path to what it was before.
     sys.path = original_sys_path
@@ -1406,7 +1477,8 @@ _DEPRECATED_CSS = [
 def _CheckNoDeprecatedCSS(input_api, output_api):
   """ Make sure that we don't use deprecated CSS
       properties, functions or values. Our external
-      documentation is ignored by the hooks as it
+      documentation and iOS CSS for dom distiller
+      (reader mode) are ignored by the hooks as it
       needs to be consumed by WebKit. """
   results = []
   file_inclusion_pattern = (r".+\.css$",)
@@ -1415,6 +1487,7 @@ def _CheckNoDeprecatedCSS(input_api, output_api):
                 input_api.DEFAULT_BLACK_LIST +
                 (r"^chrome/common/extensions/docs",
                  r"^chrome/docs",
+                 r"^components/dom_distiller/core/css/distilledpage_ios.css",
                  r"^native_client_sdk"))
   file_filter = lambda f: input_api.FilterSourceFile(
       f, white_list=file_inclusion_pattern, black_list=black_list)
@@ -1449,6 +1522,13 @@ def _CheckNoDeprecatedJS(input_api, output_api):
           results.append(output_api.PresubmitError(
               "%s:%d: Use of deprecated JS %s, use %s instead" %
               (fpath.LocalPath(), lnum, deprecated, replacement)))
+  return results
+
+
+def _AndroidSpecificOnUploadChecks(input_api, output_api):
+  """Groups checks that target android code."""
+  results = []
+  results.extend(_CheckAndroidCrLogUsage(input_api, output_api))
   return results
 
 
@@ -1497,7 +1577,6 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckForCopyrightedCode(input_api, output_api))
   results.extend(_CheckForWindowsLineEndings(input_api, output_api))
   results.extend(_CheckSingletonInHeaders(input_api, output_api))
-  results.extend(_CheckNoNewUtilLogUsage(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1725,6 +1804,7 @@ def CheckChangeOnUpload(input_api, output_api):
   results.extend(
       input_api.canned_checks.CheckGNFormatted(input_api, output_api))
   results.extend(_CheckUmaHistogramChanges(input_api, output_api))
+  results.extend(_AndroidSpecificOnUploadChecks(input_api, output_api))
   return results
 
 
@@ -1784,29 +1864,27 @@ def CheckChangeOnCommit(input_api, output_api):
 
 
 def GetPreferredTryMasters(project, change):
-  import re
-  files = change.LocalPaths()
-
-  import os
   import json
-  with open(os.path.join(
-      change.RepositoryRoot(), 'testing', 'commit_queue', 'config.json')) as f:
-    cq_config = json.load(f)
-    cq_verifiers = cq_config.get('verifiers_no_patch', {})
-    cq_try_jobs = cq_verifiers.get('try_job_verifier', {})
-    builders = cq_try_jobs.get('launched', {})
+  import os.path
+  import platform
+  import subprocess
 
-    for master, master_config in cq_try_jobs.get('triggered', {}).iteritems():
-      for triggered_bot in master_config:
-        builders.get(master, {}).pop(triggered_bot, None)
+  cq_config_path = os.path.join(
+      change.RepositoryRoot(), 'infra', 'config', 'cq.cfg')
+  # commit_queue.py below is a script in depot_tools directory, which has a
+  # 'builders' command to retrieve a list of CQ builders from the CQ config.
+  is_win = platform.system() == 'Windows'
+  masters = json.loads(subprocess.check_output(
+      ['commit_queue', 'builders', cq_config_path], shell=is_win))
 
-    # Explicitly iterate over copies of dicts since we mutate them.
-    for master in builders.keys():
-      for builder in builders[master].keys():
-        # Do not trigger presubmit builders, since they're likely to fail
-        # (e.g. OWNERS checks before finished code review), and we're
-        # running local presubmit anyway.
-        if 'presubmit' in builder:
-          builders[master].pop(builder)
+  try_config = {}
+  for master in masters:
+    try_config.setdefault(master, {})
+    for builder in masters[master]:
+      # Do not trigger presubmit builders, since they're likely to fail
+      # (e.g. OWNERS checks before finished code review), and we're
+      # running local presubmit anyway.
+      if 'presubmit' not in builder:
+        try_config[master][builder] = ['defaulttests']
 
-  return builders
+  return try_config

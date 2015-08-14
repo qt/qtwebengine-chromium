@@ -16,16 +16,23 @@ group("public") {
     "interfaces/bindings/tests:test_interfaces",
   ]
 
+  if (mojo_use_application_in_sdk) {
+    deps += [ "cpp/application:standalone" ]
+  }
+
   if (is_linux) {
     deps += [ "python" ]
   }
 
   if (is_android) {
     deps += [
-      "java:application",
       "java:system",
       "java:bindings",
     ]
+  }
+
+  if (is_android && mojo_use_application_in_sdk) {
+    deps += [ "java:application" ]
   }
 }
 
@@ -38,6 +45,17 @@ group("sdk") {
     "interfaces/bindings",
     "js",
   ]
+
+  if (mojo_use_application_in_sdk) {
+    deps += [
+      "cpp/application:standalone",
+      "interfaces/application",
+    ]
+  }
+
+  if (mojo_use_network_in_sdk) {
+    deps += [ "interfaces/network" ]
+  }
 }
 
 static_library("libmojo_sdk") {

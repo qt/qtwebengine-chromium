@@ -11,7 +11,12 @@ gypi_values = exec_script("//build/gypi_to_gn.py",
                           "scope",
                           [ "views.gyp" ])
 
+config("flags") {
+  defines = [ "TOOLKIT_VIEWS=1" ]
+}
+
 component("views") {
+  all_dependent_configs = [ ":flags" ]
   sources = gypi_values.views_sources
 
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -28,6 +33,7 @@ component("views") {
     "//ui/native_theme",
     "//ui/resources",
     "//ui/strings",
+    "//ui/views/resources",
     "//url",
   ]
 
@@ -42,6 +48,7 @@ component("views") {
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/views/resources",
   ]
 
   if (use_x11 && !is_chromeos) {
@@ -99,13 +106,14 @@ component("views") {
     sources += gypi_values.views_aura_sources
     deps += [
       "//ui/aura",
+      "//ui/touch_selection",
       "//ui/wm",
     ]
     if (!is_chromeos) {
       sources += gypi_values.views_desktop_aura_sources
       if (use_x11) {
         sources += gypi_values.views_desktop_aura_x11_sources
-        configs += [ "//build/config/linux:atk" ]
+        configs += [ "//ui/accessibility:atk" ]
       } else if (is_win) {
         sources += gypi_values.views_desktop_aura_win_sources
       } else if (use_ozone) {
@@ -235,6 +243,7 @@ test("views_unittests") {
     deps += [
       "//ui/aura",
       "//ui/aura:test_support",
+      "//ui/touch_selection",
       "//ui/wm",
     ]
     if (!is_chromeos) {
@@ -258,13 +267,7 @@ test("views_unittests") {
     # views_unittests not yet compiling on Mac. http://crbug.com/378134
     sources -= [
       "bubble/bubble_window_targeter_unittest.cc",
-      "controls/button/custom_button_unittest.cc",
-      "controls/button/menu_button_unittest.cc",
-      "controls/menu/menu_controller_unittest.cc",
       "controls/native/native_view_host_unittest.cc",
-      "focus/focus_manager_unittest.cc",
-      "ime/input_method_bridge_unittest.cc",
-      "widget/widget_unittest.cc",
       "widget/window_reorderer_unittest.cc",
     ]
   }
@@ -284,6 +287,7 @@ if (is_mac) {
       "//base/test:test_support",
       "//skia",
       "//testing/gtest",
+      "//ui/base:test_support",
       "//ui/compositor",
       "//ui/resources",
       "//ui/resources:ui_test_pak",

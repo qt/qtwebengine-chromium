@@ -16,7 +16,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/pickle.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/sha1.h"
@@ -312,8 +312,9 @@ X509Certificate* X509Certificate::CreateFromBytes(const char* data,
 }
 
 // static
-X509Certificate* X509Certificate::CreateFromPickle(PickleIterator* pickle_iter,
-                                                   PickleType type) {
+X509Certificate* X509Certificate::CreateFromPickle(
+    base::PickleIterator* pickle_iter,
+    PickleType type) {
   if (type == PICKLETYPE_CERTIFICATE_CHAIN_V3) {
     int chain_length = 0;
     if (!pickle_iter->ReadLength(&chain_length))
@@ -338,7 +339,7 @@ X509Certificate* X509Certificate::CreateFromPickle(PickleIterator* pickle_iter,
     return NULL;
 
   OSCertHandles intermediates;
-  uint32 num_intermediates = 0;
+  uint32_t num_intermediates = 0;
   if (type != PICKLETYPE_SINGLE_CERTIFICATE) {
     if (!pickle_iter->ReadUInt32(&num_intermediates)) {
       FreeOSCertHandle(cert_handle);
@@ -359,8 +360,8 @@ X509Certificate* X509Certificate::CreateFromPickle(PickleIterator* pickle_iter,
     // bits of zeroes. Now we always write 32 bits, so after a while, these old
     // cached pickles will all get replaced.
     // TODO(mdm): remove this compatibility code in April 2013 or so.
-    PickleIterator saved_iter = *pickle_iter;
-    uint32 zero_check = 0;
+    base::PickleIterator saved_iter = *pickle_iter;
+    uint32_t zero_check = 0;
     if (!pickle_iter->ReadUInt32(&zero_check)) {
       // This may not be an error. If there are no intermediates, and we're
       // reading an old 32-bit pickle, and there's nothing else after this in
@@ -378,7 +379,7 @@ X509Certificate* X509Certificate::CreateFromPickle(PickleIterator* pickle_iter,
       *pickle_iter = saved_iter;
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && defined(__x86_64__)
 
-    for (uint32 i = 0; i < num_intermediates; ++i) {
+    for (uint32_t i = 0; i < num_intermediates; ++i) {
       OSCertHandle intermediate = ReadOSCertHandleFromPickle(pickle_iter);
       if (!intermediate)
         break;
@@ -413,9 +414,9 @@ CertificateList X509Certificate::CreateCertificateListFromBytes(
   if (format & FORMAT_PKCS7)
     pem_headers.push_back(kPKCS7Header);
 
-  PEMTokenizer pem_tok(data_string, pem_headers);
-  while (pem_tok.GetNext()) {
-    std::string decoded(pem_tok.data());
+  PEMTokenizer pem_tokenizer(data_string, pem_headers);
+  while (pem_tokenizer.GetNext()) {
+    std::string decoded(pem_tokenizer.data());
 
     OSCertHandle handle = NULL;
     if (format & FORMAT_PEM_CERT_SEQUENCE)
@@ -473,7 +474,7 @@ CertificateList X509Certificate::CreateCertificateListFromBytes(
   return results;
 }
 
-void X509Certificate::Persist(Pickle* pickle) {
+void X509Certificate::Persist(base::Pickle* pickle) {
   DCHECK(cert_handle_);
   // This would be an absolutely insane number of intermediates.
   if (intermediate_ca_certs_.size() > static_cast<size_t>(INT_MAX) - 1) {

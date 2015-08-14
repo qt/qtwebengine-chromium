@@ -142,6 +142,7 @@ static dispatch_queue_t kBackgroundQueue = nil;
   if (!_isRunning) {
     return;
   }
+  [_videoOutput setSampleBufferDelegate:nil queue:nullptr];
   AVCaptureSession* session = _captureSession;
   dispatch_async(kBackgroundQueue, ^{
     [session stopRunning];
@@ -262,9 +263,10 @@ static dispatch_queue_t kBackgroundQueue = nil;
   AVCaptureVideoOrientation orientation = AVCaptureVideoOrientationPortrait;
   switch ([UIDevice currentDevice].orientation) {
     case UIDeviceOrientationPortrait:
-      orientation = AVCaptureVideoOrientationPortraitUpsideDown;
-    case UIDeviceOrientationPortraitUpsideDown:
       orientation = AVCaptureVideoOrientationPortrait;
+      break;
+    case UIDeviceOrientationPortraitUpsideDown:
+      orientation = AVCaptureVideoOrientationPortraitUpsideDown;
       break;
     case UIDeviceOrientationLandscapeLeft:
       orientation = AVCaptureVideoOrientationLandscapeRight;

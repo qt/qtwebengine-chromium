@@ -761,9 +761,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_BINDING_2D',
       'GL_TEXTURE_BINDING_CUBE_MAP',
       'GL_UNPACK_ALIGNMENT',
-      'GL_UNPACK_FLIP_Y_CHROMIUM',
-      'GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM',
-      'GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM',
       'GL_BIND_GENERATES_RESOURCE_CHROMIUM',
       # we can add this because we emulate it if the driver does not support it.
       'GL_VERTEX_ARRAY_BINDING_OES',
@@ -1412,9 +1409,6 @@ _NAMED_TYPE_INFO = {
     'valid': [
       'GL_PACK_ALIGNMENT',
       'GL_UNPACK_ALIGNMENT',
-      'GL_UNPACK_FLIP_Y_CHROMIUM',
-      'GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM',
-      'GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM',
     ],
     'valid_es3': [
       'GL_PACK_ROW_LENGTH',
@@ -1695,6 +1689,7 @@ _NAMED_TYPE_INFO = {
       'GL_RG16I',
       'GL_RG32UI',
       'GL_RG32I',
+      'GL_RGB8',
       'GL_SRGB8',
       'GL_RGB8_SNORM',
       'GL_R11F_G11F_B10F',
@@ -1707,6 +1702,7 @@ _NAMED_TYPE_INFO = {
       'GL_RGB16I',
       'GL_RGB32UI',
       'GL_RGB32I',
+      'GL_RGBA8',
       'GL_SRGB8_ALPHA8',
       'GL_RGBA8_SNORM',
       'GL_RGB10_A2',
@@ -2074,7 +2070,7 @@ _FUNCTION_INFO = {
     'gen_func': 'GenTextures',
     # TODO(gman): remove this once client side caching works.
     'client_test': False,
-    'trace_level': 1,
+    'trace_level': 2,
   },
   'BindTransformFeedback': {
     'type': 'Bind',
@@ -2095,12 +2091,14 @@ _FUNCTION_INFO = {
     'type': 'Manual',
     'data_transfer_methods': ['shm'],
     'client_test': False,
+    'trace_level': 2,
   },
   'BufferSubData': {
     'type': 'Data',
     'client_test': False,
     'decoder_func': 'DoBufferSubData',
     'data_transfer_methods': ['shm'],
+    'trace_level': 2,
   },
   'CheckFramebufferStatus': {
     'type': 'Is',
@@ -2112,27 +2110,31 @@ _FUNCTION_INFO = {
   'Clear': {
     'decoder_func': 'DoClear',
     'defer_draws': True,
-    'trace_level': 1,
+    'trace_level': 2,
   },
   'ClearBufferiv': {
     'type': 'PUT',
     'use_count_func': True,
     'count': 4,
     'unsafe': True,
+    'trace_level': 2,
   },
   'ClearBufferuiv': {
     'type': 'PUT',
     'count': 4,
     'unsafe': True,
+    'trace_level': 2,
   },
   'ClearBufferfv': {
     'type': 'PUT',
     'use_count_func': True,
     'count': 4,
     'unsafe': True,
+    'trace_level': 2,
   },
   'ClearBufferfi': {
     'unsafe': True,
+    'trace_level': 2,
   },
   'ClearColor': {
     'type': 'StateSet',
@@ -2154,6 +2156,7 @@ _FUNCTION_INFO = {
                 'GLuint timeout_0, GLuint timeout_1, GLenum* result',
     'unsafe': True,
     'result': ['GLenum'],
+    'trace_level': 2,
   },
   'ColorMask': {
     'type': 'StateSet',
@@ -2170,7 +2173,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
-    'trace_level': 1,
+    'trace_level': 2,
   },
   'CopyBufferSubData': {
     'unsafe': True,
@@ -2184,6 +2187,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
+    'trace_level': 2,
   },
   'GenValuebuffersCHROMIUM': {
     'type': 'GENn',
@@ -2255,35 +2259,42 @@ _FUNCTION_INFO = {
   'CompressedTexImage2D': {
     'type': 'Manual',
     'data_transfer_methods': ['bucket', 'shm'],
+    'trace_level': 1,
   },
   'CompressedTexSubImage2D': {
     'type': 'Data',
     'data_transfer_methods': ['bucket', 'shm'],
     'decoder_func': 'DoCompressedTexSubImage2D',
+    'trace_level': 1,
   },
   'CopyTexImage2D': {
     'decoder_func': 'DoCopyTexImage2D',
     'unit_test': False,
     'defer_reads': True,
+    'trace_level': 1,
   },
   'CopyTexSubImage2D': {
     'decoder_func': 'DoCopyTexSubImage2D',
     'defer_reads': True,
+    'trace_level': 1,
   },
   'CompressedTexImage3D': {
     'type': 'Manual',
     'data_transfer_methods': ['bucket', 'shm'],
     'unsafe': True,
+    'trace_level': 1,
   },
   'CompressedTexSubImage3D': {
     'type': 'Data',
     'data_transfer_methods': ['bucket', 'shm'],
     'decoder_func': 'DoCompressedTexSubImage3D',
     'unsafe': True,
+    'trace_level': 1,
   },
   'CopyTexSubImage3D': {
     'defer_reads': True,
     'unsafe': True,
+    'trace_level': 1,
   },
   'CreateImageCHROMIUM': {
     'type': 'Manual',
@@ -2294,15 +2305,17 @@ _FUNCTION_INFO = {
     'client_test': False,
     'gen_cmd': False,
     'expectation': False,
-    'extension': True,
+    'extension': "CHROMIUM_image",
     'chromium': True,
+    'trace_level': 1,
   },
   'DestroyImageCHROMIUM': {
     'type': 'Manual',
     'client_test': False,
     'gen_cmd': False,
-    'extension': True,
+    'extension': "CHROMIUM_image",
     'chromium': True,
+    'trace_level': 1,
   },
   'CreateGpuMemoryBufferImageCHROMIUM': {
     'type': 'Manual',
@@ -2312,8 +2325,9 @@ _FUNCTION_INFO = {
     'client_test': False,
     'gen_cmd': False,
     'expectation': False,
-    'extension': True,
+    'extension': "CHROMIUM_image",
     'chromium': True,
+    'trace_level': 1,
   },
   'CreateProgram': {
     'type': 'Create',
@@ -2407,6 +2421,7 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glDeleteFramebuffersEXT',
     'resource_type': 'Framebuffer',
     'resource_types': 'Framebuffers',
+    'trace_level': 2,
   },
   'DeleteProgram': { 'type': 'Delete' },
   'DeleteRenderbuffers': {
@@ -2414,6 +2429,7 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glDeleteRenderbuffersEXT',
     'resource_type': 'Renderbuffer',
     'resource_types': 'Renderbuffers',
+    'trace_level': 2,
   },
   'DeleteSamplers': {
     'type': 'DELn',
@@ -2491,20 +2507,24 @@ _FUNCTION_INFO = {
     'type': 'Create',
     'client_test': False,
     'unsafe': True,
+    'trace_level': 1,
   },
   'Finish': {
     'impl_func': False,
     'client_test': False,
     'decoder_func': 'DoFinish',
     'defer_reads': True,
+    'trace_level': 1,
   },
   'Flush': {
     'impl_func': False,
     'decoder_func': 'DoFlush',
+    'trace_level': 1,
   },
   'FramebufferRenderbuffer': {
     'decoder_func': 'DoFramebufferRenderbuffer',
     'gl_test_func': 'glFramebufferRenderbufferEXT',
+    'trace_level': 1,
   },
   'FramebufferTexture2D': {
     'decoder_func': 'DoFramebufferTexture2D',
@@ -2522,10 +2542,12 @@ _FUNCTION_INFO = {
   'FramebufferTextureLayer': {
     'decoder_func': 'DoFramebufferTextureLayer',
     'unsafe': True,
+    'trace_level': 1,
   },
   'GenerateMipmap': {
     'decoder_func': 'DoGenerateMipmap',
     'gl_test_func': 'glGenerateMipmapEXT',
+    'trace_level': 1,
   },
   'GenBuffers': {
     'type': 'GENn',
@@ -2673,6 +2695,12 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glGetFramebufferAttachmentParameterivEXT',
     'result': ['SizedResult<GLint>'],
   },
+  'GetGraphicsResetStatusKHR': {
+    'extension': True,
+    'client_test': False,
+    'gen_cmd': False,
+    'trace_level': 1,
+  },
   'GetInteger64v': {
     'type': 'GETn',
     'result': ['SizedResult<GLint64>'],
@@ -2699,8 +2727,12 @@ _FUNCTION_INFO = {
     'unsafe': True
   },
   'GetInternalformativ': {
-    'type': 'GETn',
+    'type': 'Custom',
+    'data_transfer_methods': ['shm'],
     'result': ['SizedResult<GLint>'],
+    'cmd_args':
+        'GLenumRenderBufferTarget target, GLenumRenderBufferFormat format, '
+        'GLenumInternalFormatParameter pname, GLint* params',
     'unsafe': True,
   },
   'GetMaxValueInBufferCHROMIUM': {
@@ -3015,12 +3047,14 @@ _FUNCTION_INFO = {
   'LinkProgram': {
     'decoder_func': 'DoLinkProgram',
     'impl_func':  False,
+    'trace_level': 1,
   },
   'MapBufferCHROMIUM': {
     'gen_cmd': False,
-    'extension': True,
+    'extension': "CHROMIUM_pixel_transfer_buffer_object",
     'chromium': True,
     'client_test': False,
+    'trace_level': 1,
   },
   'MapBufferSubDataCHROMIUM': {
     'gen_cmd': False,
@@ -3028,6 +3062,7 @@ _FUNCTION_INFO = {
     'chromium': True,
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
+    'trace_level': 1,
   },
   'MapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
@@ -3035,6 +3070,7 @@ _FUNCTION_INFO = {
     'chromium': True,
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
+    'trace_level': 1,
   },
   'MapBufferRange': {
     'type': 'Custom',
@@ -3045,6 +3081,7 @@ _FUNCTION_INFO = {
                 'uint32_t result_shm_id, uint32_t result_shm_offset',
     'unsafe': True,
     'result': ['uint32_t'],
+    'trace_level': 1,
   },
   'PauseTransformFeedback': {
     'unsafe': True,
@@ -3084,6 +3121,7 @@ _FUNCTION_INFO = {
     'decoder_func': 'DoRenderbufferStorage',
     'gl_test_func': 'glRenderbufferStorageEXT',
     'expectation': False,
+    'trace_level': 1,
   },
   'RenderbufferStorageMultisampleCHROMIUM': {
     'cmd_comment':
@@ -3095,6 +3133,7 @@ _FUNCTION_INFO = {
     'extension_flag': 'chromium_framebuffer_multisample',
     'pepper_interface': 'FramebufferMultisample',
     'pepper_name': 'RenderbufferStorageMultisampleEXT',
+    'trace_level': 1,
   },
   'RenderbufferStorageMultisampleEXT': {
     'cmd_comment':
@@ -3104,9 +3143,11 @@ _FUNCTION_INFO = {
     'expectation': False,
     'unit_test': False,
     'extension_flag': 'multisampled_render_to_texture',
+    'trace_level': 1,
   },
   'ReadBuffer': {
     'unsafe': True,
+    'trace_level': 1,
   },
   'ReadPixels': {
     'cmd_comment':
@@ -3125,6 +3166,7 @@ _FUNCTION_INFO = {
         'GLboolean async',
     'result': ['uint32_t'],
     'defer_reads': True,
+    'trace_level': 1,
   },
   'ReleaseShaderCompiler': {
     'decoder_func': 'DoReleaseShaderCompiler',
@@ -3212,12 +3254,14 @@ _FUNCTION_INFO = {
     'type': 'Manual',
     'data_transfer_methods': ['shm'],
     'client_test': False,
+    'trace_level': 2,
   },
   'TexImage3D': {
     'type': 'Manual',
     'data_transfer_methods': ['shm'],
     'client_test': False,
     'unsafe': True,
+    'trace_level': 2,
   },
   'TexParameterf': {
     'decoder_func': 'DoTexParameterf',
@@ -3249,11 +3293,13 @@ _FUNCTION_INFO = {
   },
   'TexStorage3D': {
     'unsafe': True,
+    'trace_level': 2,
   },
   'TexSubImage2D': {
     'type': 'Manual',
     'data_transfer_methods': ['shm'],
     'client_test': False,
+    'trace_level': 2,
     'cmd_args': 'GLenumTextureTarget target, GLint level, '
                 'GLint xoffset, GLint yoffset, '
                 'GLsizei width, GLsizei height, '
@@ -3264,6 +3310,7 @@ _FUNCTION_INFO = {
     'type': 'Manual',
     'data_transfer_methods': ['shm'],
     'client_test': False,
+    'trace_level': 2,
     'cmd_args': 'GLenumTextureTarget target, GLint level, '
                 'GLint xoffset, GLint yoffset, GLint zoffset, '
                 'GLsizei width, GLsizei height, GLsizei depth, '
@@ -3420,9 +3467,10 @@ _FUNCTION_INFO = {
   },
   'UnmapBufferCHROMIUM': {
     'gen_cmd': False,
-    'extension': True,
+    'extension': "CHROMIUM_pixel_transfer_buffer_object",
     'chromium': True,
     'client_test': False,
+    'trace_level': 1,
   },
   'UnmapBufferSubDataCHROMIUM': {
     'gen_cmd': False,
@@ -3430,10 +3478,12 @@ _FUNCTION_INFO = {
     'chromium': True,
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
+    'trace_level': 1,
   },
   'UnmapBuffer': {
     'type': 'Custom',
     'unsafe': True,
+    'trace_level': 1,
   },
   'UnmapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
@@ -3441,6 +3491,7 @@ _FUNCTION_INFO = {
     'chromium': True,
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
+    'trace_level': 1,
   },
   'UseProgram': {
     'type': 'Bind',
@@ -3513,6 +3564,7 @@ _FUNCTION_INFO = {
     'impl_func': False,
     'client_test': False,
     'unsafe': True,
+    'trace_level': 1,
   },
   'Scissor': {
     'type': 'StateSet',
@@ -3527,6 +3579,7 @@ _FUNCTION_INFO = {
     'unit_test': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'GetRequestableExtensionsCHROMIUM': {
     'type': 'Custom',
@@ -3555,21 +3608,31 @@ _FUNCTION_INFO = {
     'gen_cmd': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'TexImageIOSurface2DCHROMIUM': {
     'decoder_func': 'DoTexImageIOSurface2DCHROMIUM',
     'unit_test': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'CopyTextureCHROMIUM': {
     'decoder_func': 'DoCopyTextureCHROMIUM',
     'unit_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_copy_texture",
     'chromium': True,
+    'trace_level': 2,
   },
   'CopySubTextureCHROMIUM': {
     'decoder_func': 'DoCopySubTextureCHROMIUM',
+    'unit_test': False,
+    'extension': "CHROMIUM_copy_texture",
+    'chromium': True,
+    'trace_level': 2,
+  },
+  'CompressedCopyTextureCHROMIUM': {
+    'decoder_func': 'DoCompressedCopyTextureCHROMIUM',
     'unit_test': False,
     'extension': True,
     'chromium': True,
@@ -3578,6 +3641,7 @@ _FUNCTION_INFO = {
     'unit_test': False,
     'extension': True,
     'decoder_func': 'DoTexStorage2DEXT',
+    'trace_level': 2,
   },
   'DrawArraysInstancedANGLE': {
     'type': 'Manual',
@@ -3587,6 +3651,7 @@ _FUNCTION_INFO = {
     'unit_test': False,
     'pepper_interface': 'InstancedArrays',
     'defer_draws': True,
+    'trace_level': 2,
   },
   'DrawBuffersEXT': {
     'type': 'PUTn',
@@ -3598,6 +3663,7 @@ _FUNCTION_INFO = {
     # work without.
     'extension': True,
     'pepper_interface': 'DrawBuffers',
+    'trace_level': 2,
   },
   'DrawElementsInstancedANGLE': {
     'type': 'Manual',
@@ -3608,6 +3674,7 @@ _FUNCTION_INFO = {
     'client_test': False,
     'pepper_interface': 'InstancedArrays',
     'defer_draws': True,
+    'trace_level': 2,
   },
   'VertexAttribDivisorANGLE': {
     'type': 'Manual',
@@ -3663,6 +3730,13 @@ _FUNCTION_INFO = {
   'EndTransformFeedback': {
     'unsafe': True,
   },
+  'FlushDriverCachesCHROMIUM': {
+    'decoder_func': 'DoFlushDriverCachesCHROMIUM',
+    'unit_test': False,
+    'extension': True,
+    'chromium': True,
+    'trace_level': 1,
+  },
   'GetQueryivEXT': {
     'gen_cmd': False,
     'client_test': False,
@@ -3676,6 +3750,12 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glGetQueryObjectuiv',
     'pepper_interface': 'Query',
     'extension': "occlusion_query_EXT",
+  },
+  'GetQueryObjectui64vEXT': {
+    'gen_cmd': False,
+    'client_test': False,
+    'gl_test_func': 'glGetQueryObjectui64v',
+    'extension': "disjoint_timer_query_EXT",
   },
   'BindUniformLocationCHROMIUM': {
     'type': 'GLchar',
@@ -3743,13 +3823,13 @@ _FUNCTION_INFO = {
   'BindTexImage2DCHROMIUM': {
     'decoder_func': 'DoBindTexImage2DCHROMIUM',
     'unit_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_image",
     'chromium': True,
   },
   'ReleaseTexImage2DCHROMIUM': {
     'decoder_func': 'DoReleaseTexImage2DCHROMIUM',
     'unit_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_image",
     'chromium': True,
   },
   'ShallowFinishCHROMIUM': {
@@ -3803,6 +3883,7 @@ _FUNCTION_INFO = {
         'void* sync_data',
     'extension': True,
     'chromium': True,
+    'trace_level': 2,
   },
   'AsyncTexSubImage2DCHROMIUM': {
     'type': 'Manual',
@@ -3817,18 +3898,21 @@ _FUNCTION_INFO = {
         'void* sync_data',
     'extension': True,
     'chromium': True,
+    'trace_level': 2,
   },
   'WaitAsyncTexImage2DCHROMIUM': {
     'type': 'Manual',
     'client_test': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'WaitAllAsyncTexImage2DCHROMIUM': {
     'type': 'Manual',
     'client_test': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'DiscardFramebufferEXT': {
     'type': 'PUTn',
@@ -3837,18 +3921,21 @@ _FUNCTION_INFO = {
     'unit_test': False,
     'client_test': False,
     'extension_flag': 'ext_discard_framebuffer',
+    'trace_level': 2,
   },
   'LoseContextCHROMIUM': {
     'decoder_func': 'DoLoseContextCHROMIUM',
     'unit_test': False,
     'extension': True,
     'chromium': True,
+    'trace_level': 1,
   },
   'InsertSyncPointCHROMIUM': {
     'type': 'HandWritten',
     'impl_func': False,
     'extension': "CHROMIUM_sync_point",
     'chromium': True,
+    'trace_level': 1,
   },
   'WaitSyncPointCHROMIUM': {
     'type': 'Custom',
@@ -3862,6 +3949,7 @@ _FUNCTION_INFO = {
     'impl_func': True,
     'extension': True,
     'chromium': True,
+    'trace_level': 2,
   },
   'ScheduleOverlayPlaneCHROMIUM': {
       'type': 'Custom',
@@ -3898,17 +3986,14 @@ def Grouper(n, iterable, fillvalue=None):
 
 
 def SplitWords(input_string):
-  """Transforms a input_string into a list of lower-case components.
+  """Split by '_' if found, otherwise split at uppercase/numeric chars.
 
-  Args:
-    input_string: the input string.
-
-  Returns:
-    a list of lower-case words.
+  Will split "some_TEXT" into ["some", "TEXT"], "CamelCase" into ["Camel",
+  "Case"], and "Vector3" into ["Vector", "3"].
   """
   if input_string.find('_') > -1:
-    # 'some_TEXT_' -> 'some text'
-    return input_string.replace('_', ' ').strip().lower().split()
+    # 'some_TEXT_' -> 'some TEXT'
+    return input_string.replace('_', ' ').strip().split()
   else:
     if re.search('[A-Z]', input_string) and re.search('[a-z]', input_string):
       # mixed case.
@@ -3917,25 +4002,12 @@ def SplitWords(input_string):
       input_string = re.sub('([A-Z])', r' \1', input_string).strip()
       # 'Vector3' -> 'Vector 3'
       input_string = re.sub('([^0-9])([0-9])', r'\1 \2', input_string)
-    return input_string.lower().split()
-
-
-def Lower(words):
-  """Makes a lower-case identifier from words.
-
-  Args:
-    words: a list of lower-case words.
-
-  Returns:
-    the lower-case identifier.
-  """
-  return '_'.join(words)
-
+    return input_string.split()
 
 def ToUnderscore(input_string):
   """converts CamelCase to camel_case."""
   words = SplitWords(input_string)
-  return Lower(words)
+  return '_'.join([word.lower() for word in words])
 
 def CachedStateName(item):
   if item.get('cached', False):
@@ -4577,7 +4649,9 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
                 func.MakeTypedOriginalArgString("")))
     extensions = ["CHROMIUM_sync_point", "CHROMIUM_texture_mailbox",
                   "CHROMIUM_sub_image", "CHROMIUM_miscellaneous",
-                  "occlusion_query_EXT"]
+                  "occlusion_query_EXT", "CHROMIUM_image",
+                  "CHROMIUM_copy_texture",
+                  "CHROMIUM_pixel_transfer_buffer_object"]
     if func.IsCoreGLFunction() or func.GetInfo("extension") in extensions:
       file.Write("MojoGLES2MakeCurrent(context_);");
       func_return = "gl" + func.original_name + "(" + \
@@ -6329,11 +6403,9 @@ class GETnHandler(TypeHandler):
 }
 """
     else:
-     code = """  GLenum error = glGetError();
+     code = """  GLenum error = LOCAL_PEEK_GL_ERROR("%(func_name)s");
   if (error == GL_NO_ERROR) {
     result->SetNumResults(num_values);
-  } else {
-    LOCAL_SET_GL_ERROR(error, "%(func_name)s", "");
   }
   return error::kNoError;
 }
@@ -10416,7 +10488,10 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
 #include "mojo/gpu/mojo_gles2_impl_autogen.h"
 
 #include "base/logging.h"
+#include "third_party/mojo/src/mojo/public/c/gles2/chromium_copy_texture.h"
+#include "third_party/mojo/src/mojo/public/c/gles2/chromium_image.h"
 #include "third_party/mojo/src/mojo/public/c/gles2/chromium_miscellaneous.h"
+#include "third_party/mojo/src/mojo/public/c/gles2/chromium_pixel_transfer_buffer_object.h"
 #include "third_party/mojo/src/mojo/public/c/gles2/chromium_sub_image.h"
 #include "third_party/mojo/src/mojo/public/c/gles2/chromium_sync_point.h"
 #include "third_party/mojo/src/mojo/public/c/gles2/chromium_texture_mailbox.h"
@@ -11020,6 +11095,15 @@ def main(argv):
   gen.WriteMojoGLCallVisitorForExtension(
       mojo_gles2_prefix + "_occlusion_query_ext_autogen.h",
       "occlusion_query_EXT")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_image_autogen.h",
+      "CHROMIUM_image")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_copy_texture_autogen.h",
+      "CHROMIUM_copy_texture")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_pixel_transfer_buffer_object_autogen.h",
+      "CHROMIUM_pixel_transfer_buffer_object")
 
   Format(gen.generated_cpp_filenames)
 

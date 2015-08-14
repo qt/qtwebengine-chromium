@@ -6,7 +6,12 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_manager.h"
+#include "cc/surfaces/surface_sequence.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
@@ -145,7 +150,7 @@ void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
       continue;
 
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-    gestures.reset(gesture_recognizer_->AckSyncTouchEvent(
+    gestures.reset(gesture_recognizer_->AckTouchEvent(
         (*iter)->unique_event_id(), result, this));
     ProcessGestures(gestures.get());
   }
@@ -202,14 +207,73 @@ void RenderWidgetHostViewGuest::SetTooltipText(
 void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
-  if (!guest_)
+  if (!guest_ || !guest_->attached()) {
+    // We shouldn't hang on to a surface while we are detached.
+    ClearCompositorSurfaceIfNecessary();
     return;
+  }
 
   last_scroll_offset_ = frame->metadata.root_scroll_offset;
-  guest_->SwapCompositorFrame(output_surface_id,
-                              host_->GetProcess()->GetID(),
-                              host_->GetRoutingID(),
-                              frame.Pass());
+  // When not using surfaces, the frame just gets proxied to
+  // the embedder's renderer to be composited.
+  if (!frame->delegated_frame_data || !use_surfaces_) {
+    guest_->SwapCompositorFrame(output_surface_id,
+                                host_->GetProcess()->GetID(),
+                                host_->GetRoutingID(),
+                                frame.Pass());
+    return;
+  }
+
+  cc::RenderPass* root_pass =
+      frame->delegated_frame_data->render_pass_list.back();
+
+  gfx::Size frame_size = root_pass->output_rect.size();
+  float scale_factor = frame->metadata.device_scale_factor;
+
+  guest_->UpdateGuestSizeIfNecessary(frame_size, scale_factor);
+
+  // Check whether we need to recreate the cc::Surface, which means the child
+  // frame renderer has changed its output surface, or size, or scale factor.
+  if (output_surface_id != last_output_surface_id_ && surface_factory_) {
+    surface_factory_->Destroy(surface_id_);
+    surface_factory_.reset();
+  }
+  if (output_surface_id != last_output_surface_id_ ||
+      frame_size != current_surface_size_ ||
+      scale_factor != current_surface_scale_factor_ ||
+      guest_->has_attached_since_surface_set()) {
+    ClearCompositorSurfaceIfNecessary();
+    last_output_surface_id_ = output_surface_id;
+    current_surface_size_ = frame_size;
+    current_surface_scale_factor_ = scale_factor;
+  }
+
+  if (!surface_factory_) {
+    cc::SurfaceManager* manager = GetSurfaceManager();
+    surface_factory_ = make_scoped_ptr(new cc::SurfaceFactory(manager, this));
+  }
+
+  if (surface_id_.is_null()) {
+    surface_id_ = id_allocator_->GenerateId();
+    surface_factory_->Create(surface_id_);
+
+    cc::SurfaceSequence sequence = cc::SurfaceSequence(
+        id_allocator_->id_namespace(), next_surface_sequence_++);
+    // The renderer process will satisfy this dependency when it creates a
+    // SurfaceLayer.
+    cc::SurfaceManager* manager = GetSurfaceManager();
+    manager->GetSurfaceForId(surface_id_)->AddDestructionDependency(sequence);
+    guest_->SetChildFrameSurface(surface_id_, frame_size, scale_factor,
+                                 sequence);
+  }
+
+  cc::SurfaceFactory::DrawCallback ack_callback = base::Bind(
+      &RenderWidgetHostViewChildFrame::SurfaceDrawn,
+      RenderWidgetHostViewChildFrame::AsWeakPtr(), output_surface_id);
+  ack_pending_count_++;
+  // If this value grows very large, something is going wrong.
+  DCHECK(ack_pending_count_ < 1000);
+  surface_factory_->SubmitFrame(surface_id_, frame.Pass(), ack_callback);
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -448,12 +512,12 @@ bool RenderWidgetHostViewGuest::PostProcessEventForPluginIme(
 
 #endif  // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
+#if defined(OS_ANDROID) || defined(USE_AURA)
 void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
     const gfx::Rect& rect_pixels,
     const SkBitmap& zoomed_bitmap) {
 }
-#endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
+#endif  // defined(OS_ANDROID) || defined(USE_AURA)
 
 #if defined(OS_ANDROID)
 void RenderWidgetHostViewGuest::LockCompositingSurface() {
@@ -584,6 +648,11 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
   }
 
   if (blink::WebInputEvent::isTouchEventType(event->type)) {
+    if (event->type == blink::WebInputEvent::TouchStart &&
+        !embedder->GetView()->HasFocus()) {
+      embedder->GetView()->Focus();
+    }
+
     host_->ForwardTouchEventWithLatencyInfo(
         *static_cast<const blink::WebTouchEvent*>(event),
         ui::LatencyInfo());

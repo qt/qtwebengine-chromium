@@ -31,10 +31,10 @@ void CompositingRecorder::beginCompositing(GraphicsContext& graphicsContext, con
         ASSERT(graphicsContext.displayItemList());
         if (graphicsContext.displayItemList()->displayItemConstructionIsDisabled())
             return;
-        graphicsContext.displayItemList()->add(BeginCompositingDisplayItem::create(client, xferMode, opacity, bounds, colorFilter));
+        graphicsContext.displayItemList()->createAndAppend<BeginCompositingDisplayItem>(client, xferMode, opacity, bounds, colorFilter);
     } else {
-        BeginCompositingDisplayItem beginCompositingDisplayItem(client, xferMode, opacity, bounds, colorFilter);
-        beginCompositingDisplayItem.replay(graphicsContext);
+        BeginCompositingDisplayItem compositingDisplayItem(client, xferMode, opacity, bounds, colorFilter);
+        compositingDisplayItem.replay(graphicsContext);
     }
 }
 
@@ -42,9 +42,12 @@ void CompositingRecorder::endCompositing(GraphicsContext& graphicsContext, const
 {
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(graphicsContext.displayItemList());
-        if (graphicsContext.displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        graphicsContext.displayItemList()->add(EndCompositingDisplayItem::create(client));
+        if (!graphicsContext.displayItemList()->displayItemConstructionIsDisabled()) {
+            if (graphicsContext.displayItemList()->lastDisplayItemIsNoopBegin())
+                graphicsContext.displayItemList()->removeLastDisplayItem();
+            else
+                graphicsContext.displayItemList()->createAndAppend<EndCompositingDisplayItem>(client);
+        }
     } else {
         EndCompositingDisplayItem endCompositingDisplayItem(client);
         endCompositingDisplayItem.replay(graphicsContext);

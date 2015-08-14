@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/pattern.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "media/base/media_switches.h"
 #include "media/formats/mpeg/adts_stream_parser.h"
@@ -110,9 +112,9 @@ static int GetMP4AudioObjectType(const std::string& codec_id,
   // the second element is a hexadecimal representation of the MP4 Registration
   // Authority ObjectTypeIndication (OTI). Note that MP4RA uses a leading "0x"
   // with these values, which is omitted here and hence implied.
-  std::vector<std::string> tokens;
-  if (Tokenize(codec_id, ".", &tokens) == 3 &&
-      tokens[0] == "mp4a" && tokens[1] == "40") {
+  std::vector<base::StringPiece> tokens = base::SplitStringPiece(
+      codec_id, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  if (tokens.size() == 3 && tokens[0] == "mp4a" && tokens[1] == "40") {
     // From RFC 6381 section 3.3:
     // One of the OTI values for 'mp4a' is 40 (identifying MPEG-4 audio). For
     // this value, the third element identifies the audio ObjectTypeIndication
@@ -172,9 +174,9 @@ static StreamParser* BuildMP4Parser(
   bool has_sbr = false;
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
-    if (MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
+    if (base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
       audio_object_types.insert(mp4::kISO_13818_7_AAC_LC);
-    } else if (MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern)) {
+    } else if (base::MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern)) {
       int audio_object_type = GetMP4AudioObjectType(codec_id, log_cb);
       DCHECK_GT(audio_object_type, 0);
 
@@ -230,7 +232,7 @@ static StreamParser* BuildMP2TParser(
   bool has_sbr = false;
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
-    if (MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern)) {
+    if (base::MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern)) {
       int audio_object_type = GetMP4AudioObjectType(codec_id, log_cb);
       if (audio_object_type == kAACSBRObjectType ||
           audio_object_type == kAACPSObjectType) {
@@ -349,7 +351,7 @@ static bool CheckTypeAndCodecs(
         bool found_codec = false;
         std::string codec_id = codecs[j];
         for (int k = 0; type_info.codecs[k]; ++k) {
-          if (MatchPattern(codec_id, type_info.codecs[k]->pattern) &&
+          if (base::MatchPattern(codec_id, type_info.codecs[k]->pattern) &&
               (!type_info.codecs[k]->validator ||
                type_info.codecs[k]->validator(codec_id, log_cb))) {
             found_codec =

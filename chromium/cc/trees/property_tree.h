@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -67,25 +68,36 @@ struct CC_EXPORT TransformNodeData {
   int source_node_id;
 
   // TODO(vollick): will be moved when accelerated effects are implemented.
-  bool needs_local_transform_update;
+  bool needs_local_transform_update : 1;
 
-  bool is_invertible;
-  bool ancestors_are_invertible;
+  bool is_invertible : 1;
+  bool ancestors_are_invertible : 1;
 
-  bool is_animated;
-  bool to_screen_is_animated;
+  bool is_animated : 1;
+  bool to_screen_is_animated : 1;
 
   // Flattening, when needed, is only applied to a node's inherited transform,
   // never to its local transform.
-  bool flattens_inherited_transform;
+  bool flattens_inherited_transform : 1;
 
   // This is true if the to_parent transform at every node on the path to the
   // root is flat.
-  bool node_and_ancestors_are_flat;
+  bool node_and_ancestors_are_flat : 1;
 
-  bool scrolls;
+  // This is needed to know if a layer can use lcd text.
+  bool node_and_ancestors_have_only_integer_translation : 1;
 
-  bool needs_sublayer_scale;
+  bool scrolls : 1;
+
+  bool needs_sublayer_scale : 1;
+
+  // These are used to position nodes wrt the right or bottom of the inner or
+  // outer viewport.
+  bool affected_by_inner_viewport_bounds_delta_x : 1;
+  bool affected_by_inner_viewport_bounds_delta_y : 1;
+  bool affected_by_outer_viewport_bounds_delta_x : 1;
+  bool affected_by_outer_viewport_bounds_delta_y : 1;
+
   // This is used as a fallback when we either cannot adjust raster scale or if
   // the raster scale cannot be extracted from the screen space transform.
   float layer_scale_factor;
@@ -96,7 +108,7 @@ struct CC_EXPORT TransformNodeData {
   gfx::Vector2dF sublayer_scale;
 
   // TODO(vollick): will be moved when accelerated effects are implemented.
-  gfx::Vector2dF scroll_offset;
+  gfx::ScrollOffset scroll_offset;
 
   // We scroll snap where possible, but this has an effect on scroll
   // compensation: the snap is yet more scrolling that must be compensated for.
@@ -105,6 +117,7 @@ struct CC_EXPORT TransformNodeData {
 
   // TODO(vollick): will be moved when accelerated effects are implemented.
   gfx::Vector2dF source_offset;
+  gfx::Vector2dF source_to_parent;
 
   void set_to_parent(const gfx::Transform& transform) {
     to_parent = transform;
@@ -130,7 +143,14 @@ struct CC_EXPORT ClipNodeData {
 
 typedef TreeNode<ClipNodeData> ClipNode;
 
-typedef TreeNode<float> OpacityNode;
+struct CC_EXPORT OpacityNodeData {
+  OpacityNodeData();
+
+  float opacity;
+  float screen_space_opacity;
+};
+
+typedef TreeNode<OpacityNodeData> OpacityNode;
 
 template <typename T>
 class CC_EXPORT PropertyTree {
@@ -159,7 +179,7 @@ class CC_EXPORT PropertyTree {
     return size() ? &nodes_[nodes_.size() - 1] : nullptr;
   }
 
-  void clear();
+  virtual void clear();
   size_t size() const { return nodes_.size(); }
 
   void set_needs_update(bool needs_update) { needs_update_ = needs_update; }
@@ -174,6 +194,11 @@ class CC_EXPORT PropertyTree {
 
 class CC_EXPORT TransformTree final : public PropertyTree<TransformNode> {
  public:
+  TransformTree();
+  ~TransformTree() override;
+
+  void clear() override;
+
   // Computes the change of basis transform from node |source_id| to |dest_id|.
   // The function returns false iff the inverse of a singular transform was
   // used (and the result should, therefore, not be trusted). Transforms may
@@ -211,6 +236,37 @@ class CC_EXPORT TransformTree final : public PropertyTree<TransformNode> {
   // Updates the parent, target, and screen space transforms and snapping.
   void UpdateTransforms(int id);
 
+  // A TransformNode's source_to_parent value is used to account for the fact
+  // that fixed-position layers are positioned by Blink wrt to their layer tree
+  // parent (their "source"), but are parented in the transform tree by their
+  // fixed-position container. This value needs to be updated on main-thread
+  // property trees (for position changes initiated by Blink), but not on the
+  // compositor thread (since the offset from a node corresponding to a
+  // fixed-position layer to its fixed-position container is unaffected by
+  // compositor-driven effects).
+  void set_source_to_parent_updates_allowed(bool allowed) {
+    source_to_parent_updates_allowed_ = allowed;
+  }
+  bool source_to_parent_updates_allowed() const {
+    return source_to_parent_updates_allowed_;
+  }
+
+  void SetInnerViewportBoundsDelta(gfx::Vector2dF bounds_delta);
+  gfx::Vector2dF inner_viewport_bounds_delta() const {
+    return inner_viewport_bounds_delta_;
+  }
+
+  void SetOuterViewportBoundsDelta(gfx::Vector2dF bounds_delta);
+  gfx::Vector2dF outer_viewport_bounds_delta() const {
+    return outer_viewport_bounds_delta_;
+  }
+
+  void AddNodeAffectedByInnerViewportBoundsDelta(int node_id);
+  void AddNodeAffectedByOuterViewportBoundsDelta(int node_id);
+
+  bool HasNodesAffectedByInnerViewportBoundsDelta() const;
+  bool HasNodesAffectedByOuterViewportBoundsDelta() const;
+
  private:
   // Returns true iff the node at |desc_id| is a descendant of the node at
   // |anc_id|.
@@ -239,11 +295,24 @@ class CC_EXPORT TransformTree final : public PropertyTree<TransformNode> {
                                   TransformNode* target_node);
   void UpdateIsAnimated(TransformNode* node, TransformNode* parent_node);
   void UpdateSnapping(TransformNode* node);
+  void UpdateNodeAndAncestorsHaveIntegerTranslations(
+      TransformNode* node,
+      TransformNode* parent_node);
+  bool NeedsSourceToParentUpdate(TransformNode* node);
+
+  bool source_to_parent_updates_allowed_;
+  gfx::Vector2dF inner_viewport_bounds_delta_;
+  gfx::Vector2dF outer_viewport_bounds_delta_;
+  std::vector<int> nodes_affected_by_inner_viewport_bounds_delta_;
+  std::vector<int> nodes_affected_by_outer_viewport_bounds_delta_;
 };
 
 class CC_EXPORT ClipTree final : public PropertyTree<ClipNode> {};
 
-class CC_EXPORT OpacityTree final : public PropertyTree<OpacityNode> {};
+class CC_EXPORT OpacityTree final : public PropertyTree<OpacityNode> {
+ public:
+  void UpdateOpacities(int id);
+};
 
 class CC_EXPORT PropertyTrees final {
  public:

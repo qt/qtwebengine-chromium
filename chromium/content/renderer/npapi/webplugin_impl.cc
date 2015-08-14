@@ -7,13 +7,15 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/io_surface_layer.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
@@ -206,7 +208,7 @@ void GetResponseInfo(const WebURLResponse& response,
   WebString content_encoding =
       response.httpHeaderField(WebString::fromUTF8("Content-Encoding"));
   if (!content_encoding.isNull() &&
-      !EqualsASCII(content_encoding, "identity")) {
+      !base::EqualsASCII(content_encoding, "identity")) {
     // Don't send the compressed content length to the plugin, which only
     // cares about the decoded length.
     response_info->expected_length = 0;
@@ -364,10 +366,9 @@ void WebPluginImpl::updateGeometry(const WebRect& window_rect,
       // geometry received by a call to setFrameRect in the Webkit
       // layout code path. To workaround this issue we download the
       // plugin source url on a timer.
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
-                     weak_factory_.GetWeakPtr()));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
+                                weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -861,7 +862,8 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
   if (next_io_surface_allocated_) {
     if (next_io_surface_id_) {
       if (!io_surface_layer_.get()) {
-        io_surface_layer_ = cc::IOSurfaceLayer::Create();
+        io_surface_layer_ =
+            cc::IOSurfaceLayer::Create(cc_blink::WebLayerImpl::LayerSettings());
         web_layer_.reset(new cc_blink::WebLayerImpl(io_surface_layer_));
         container_->setWebLayer(web_layer_.get());
       }
@@ -940,7 +942,7 @@ void WebPluginImpl::willSendRequest(WebURLLoader* loader,
       // just block cross origin 307 POST redirects.
       if (!client_info->notify_redirects) {
         if (response.httpStatusCode() == 307 &&
-            LowerCaseEqualsASCII(request.httpMethod().utf8(), "post")) {
+            base::LowerCaseEqualsASCII(request.httpMethod().utf8(), "post")) {
           GURL original_request_url(response.url());
           GURL response_url(request.url());
           if (original_request_url.GetOrigin() != response_url.GetOrigin()) {

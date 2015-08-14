@@ -96,7 +96,7 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindPendingTreeLayerById(int id);
   bool PinchGestureActive() const;
   BeginFrameArgs CurrentBeginFrameArgs() const;
-  base::TimeDelta begin_impl_frame_interval() const;
+  base::TimeDelta CurrentBeginFrameInterval() const;
   void SetNeedsCommit();
   gfx::Rect DeviceViewport() const;
   gfx::Size DrawViewportSize() const;
@@ -131,7 +131,11 @@ class CC_EXPORT LayerTreeImpl {
 
   void SetPropertyTrees(const PropertyTrees& property_trees) {
     property_trees_ = property_trees;
+    property_trees_.transform_tree.set_source_to_parent_updates_allowed(false);
   }
+  PropertyTrees* property_trees() { return &property_trees_; }
+
+  void UpdatePropertyTreesForBoundsDelta();
 
   void PushPropertiesTo(LayerTreeImpl* tree_impl);
 
@@ -178,6 +182,7 @@ class CC_EXPORT LayerTreeImpl {
     has_transparent_background_ = transparent;
   }
 
+  void UpdatePropertyTreeScrollingAndAnimationFromMainThread();
   void SetPageScaleOnActiveTree(float active_page_scale);
   void PushPageScaleFromMainThread(float page_scale_factor,
                                    float min_page_scale_factor,
@@ -211,6 +216,7 @@ class CC_EXPORT LayerTreeImpl {
   // priorities. Returns false if it was unable to update.  Updating lcd
   // text may cause invalidations, so should only be done after a commit.
   bool UpdateDrawProperties(bool update_lcd_text);
+  void BuildPropertyTreesForTesting();
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
@@ -241,7 +247,7 @@ class CC_EXPORT LayerTreeImpl {
 
   gfx::Rect RootScrollLayerDeviceViewportBounds() const;
 
-  LayerImpl* LayerById(int id);
+  LayerImpl* LayerById(int id) const;
 
   // These should be called by LayerImpl's ctor/dtor.
   void RegisterLayer(LayerImpl* layer);
@@ -254,10 +260,6 @@ class CC_EXPORT LayerTreeImpl {
   void PushPersistedState(LayerTreeImpl* pending_tree);
 
   void DidBecomeActive();
-
-  bool ContentsTexturesPurged() const;
-  void SetContentsTexturesPurged();
-  void ResetContentsTexturesPurged();
 
   // Set on the active tree when the viewport size recently changed
   // and the active tree's size is now out of date.
@@ -286,7 +288,7 @@ class CC_EXPORT LayerTreeImpl {
 
   void DidModifyTilePriorities();
 
-  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
+  ResourceId ResourceIdForUIResource(UIResourceId uid) const;
   void ProcessUIResourceRequestQueue();
 
   bool IsUIResourceOpaque(UIResourceId uid) const;
@@ -340,8 +342,35 @@ class CC_EXPORT LayerTreeImpl {
 
   void GatherFrameTimingRequestIds(std::vector<int64_t>* request_ids);
 
-  bool IsExternalFlingActive() const;
+  bool IsExternalScrollActive() const;
   void DidUpdateScrollOffset(int layer_id);
+
+  bool IsAnimatingFilterProperty(const LayerImpl* layer) const;
+  bool IsAnimatingOpacityProperty(const LayerImpl* layer) const;
+  bool IsAnimatingTransformProperty(const LayerImpl* layer) const;
+
+  bool HasPotentiallyRunningOpacityAnimation(const LayerImpl* layer) const;
+  bool HasPotentiallyRunningTransformAnimation(const LayerImpl* layer) const;
+
+  bool FilterIsAnimatingOnImplOnly(const LayerImpl* layer) const;
+  bool OpacityIsAnimatingOnImplOnly(const LayerImpl* layer) const;
+  bool TransformIsAnimatingOnImplOnly(const LayerImpl* layer) const;
+
+  bool HasOnlyTranslationTransforms(const LayerImpl* layer) const;
+
+  bool MaximumTargetScale(const LayerImpl* layer, float* max_scale) const;
+  bool AnimationStartScale(const LayerImpl* layer, float* start_scale) const;
+
+  bool HasFilterAnimationThatInflatesBounds(const LayerImpl* layer) const;
+  bool HasTransformAnimationThatInflatesBounds(const LayerImpl* layer) const;
+  bool HasAnimationThatInflatesBounds(const LayerImpl* layer) const;
+
+  bool FilterAnimationBoundsForBox(const LayerImpl* layer,
+                                   const gfx::BoxF& box,
+                                   gfx::BoxF* bounds) const;
+  bool TransformAnimationBoundsForBox(const LayerImpl* layer,
+                                      const gfx::BoxF& box,
+                                      gfx::BoxF* bounds) const;
 
  protected:
   explicit LayerTreeImpl(
@@ -396,7 +425,6 @@ class CC_EXPORT LayerTreeImpl {
   // would not be fully covered by opaque content.
   Region unoccluded_screen_space_region_;
 
-  bool contents_textures_purged_;
   bool viewport_size_invalid_;
   bool needs_update_draw_properties_;
 

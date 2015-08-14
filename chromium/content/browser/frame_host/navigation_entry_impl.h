@@ -28,18 +28,25 @@ class CONTENT_EXPORT NavigationEntryImpl
     : public NON_EXPORTED_BASE(NavigationEntry) {
  public:
   // Represents a tree of FrameNavigationEntries that make up this joint session
-  // history item.  The tree currently only tracks the main frame.
-  // TODO(creis): Populate the tree with subframe entries in --site-per-process.
+  // history item.  The tree currently only tracks the main frame by default,
+  // and is populated with subframe nodes in --site-per-process mode.
   struct TreeNode {
     TreeNode(FrameNavigationEntry* frame_entry);
     ~TreeNode();
 
-    // Returns a deep copy of the tree with copies of each node's
-    // FrameNavigationEntries.  We do not yet share FrameNavigationEntries
-    // across trees.
+    // Returns whether this TreeNode corresponds to |frame_tree_node|.
+    bool MatchesFrame(FrameTreeNode* frame_tree_node) const;
+
+    // Recursively makes a deep copy of TreeNode with copies of each of the
+    // FrameNavigationEntries in the subtree.  Replaces the TreeNode
+    // corresponding to |frame_tree_node| (and all of its children) with a new
+    // TreeNode for |frame_navigation_entry|.  Pass nullptr for both parameters
+    // to make a complete clone.
     // TODO(creis): For --site-per-process, share FrameNavigationEntries between
     // NavigationEntries of the same tab.
-    TreeNode* Clone() const;
+    scoped_ptr<TreeNode> CloneAndReplace(
+        FrameTreeNode* frame_tree_node,
+        FrameNavigationEntry* frame_navigation_entry) const;
 
     // Ref counted pointer that keeps the FrameNavigationEntry alive as long as
     // it is needed by this node's NavigationEntry.
@@ -50,6 +57,10 @@ class CONTENT_EXPORT NavigationEntryImpl
   };
 
   static NavigationEntryImpl* FromNavigationEntry(NavigationEntry* entry);
+  static const NavigationEntryImpl* FromNavigationEntry(
+      const NavigationEntry* entry);
+  static scoped_ptr<NavigationEntryImpl> FromNavigationEntry(
+      scoped_ptr<NavigationEntry> entry);
 
   // The value of bindings() before it is set during commit.
   static int kInvalidBindings;
@@ -119,19 +130,30 @@ class CONTENT_EXPORT NavigationEntryImpl
   // Creates a copy of this NavigationEntryImpl that can be modified
   // independently from the original.  Does not copy any value that would be
   // cleared in ResetForCommit.
+  scoped_ptr<NavigationEntryImpl> Clone() const;
+
+  // Like |Clone|, but replaces the FrameNavigationEntry corresponding to
+  // |frame_tree_node| (and all its children) with |frame_entry|.
   // TODO(creis): Once we start sharing FrameNavigationEntries between
   // NavigationEntryImpls, we will need to support two versions of Clone: one
   // that shares the existing FrameNavigationEntries (for use within the same
   // tab) and one that draws them from a different pool (for use in a new tab).
-  NavigationEntryImpl* Clone() const;
+  scoped_ptr<NavigationEntryImpl> CloneAndReplace(
+      FrameTreeNode* frame_tree_node, FrameNavigationEntry* frame_entry) const;
 
   // Helper functions to construct NavigationParameters for a navigation to this
   // NavigationEntry.
   CommonNavigationParams ConstructCommonNavigationParams(
+      const GURL& dest_url,
+      const Referrer& dest_referrer,
+      const FrameNavigationEntry& frame_entry,
       FrameMsg_Navigate_Type::Value navigation_type) const;
   StartNavigationParams ConstructStartNavigationParams() const;
   RequestNavigationParams ConstructRequestNavigationParams(
+      const FrameNavigationEntry& frame_entry,
       base::TimeTicks navigation_start,
+      bool is_same_document_history_load,
+      bool has_committed_real_load,
       bool intended_as_new_entry,
       int pending_offset_to_send,
       int current_offset_to_send,
@@ -154,10 +176,19 @@ class CONTENT_EXPORT NavigationEntryImpl
   // its FrameNavigationEntry.  A new FrameNavigationEntry is added if none
   // exists, or else the existing one (which might be shared with other
   // NavigationEntries) is updated with the given parameters.
+  // Does nothing if there is no entry already and |url| is about:blank, since
+  // that does not count as a real commit.
   void AddOrUpdateFrameEntry(FrameTreeNode* frame_tree_node,
+                             int64 item_sequence_number,
+                             int64 document_sequence_number,
                              SiteInstanceImpl* site_instance,
                              const GURL& url,
-                             const Referrer& referrer);
+                             const Referrer& referrer,
+                             const PageState& page_state);
+
+  // Returns the FrameNavigationEntry corresponding to |frame_tree_node|, if
+  // there is one in this NavigationEntry.
+  FrameNavigationEntry* GetFrameEntry(FrameTreeNode* frame_tree_node) const;
 
   void set_unique_id(int unique_id) {
     unique_id_ = unique_id;
@@ -305,6 +336,10 @@ class CONTENT_EXPORT NavigationEntryImpl
 #endif
 
  private:
+  // Finds the TreeNode associated with |frame_tree_node|, if any.
+  NavigationEntryImpl::TreeNode* FindFrameEntry(
+      FrameTreeNode* frame_tree_node) const;
+
   // WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
   // Session/Tab restore save portions of this class so that it can be recreated
   // later. If you add a new field that needs to be persisted you'll have to
@@ -328,7 +363,6 @@ class CONTENT_EXPORT NavigationEntryImpl
   bool update_virtual_url_with_url_;
   base::string16 title_;
   FaviconStatus favicon_;
-  PageState page_state_;
   int32 page_id_;
   SSLStatus ssl_;
   ui::PageTransition transition_type_;

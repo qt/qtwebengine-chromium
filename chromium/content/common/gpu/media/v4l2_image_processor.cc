@@ -22,19 +22,19 @@
     NotifyError();                          \
   } while (0)
 
-#define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value)              \
-  do {                                                             \
-    if (device_->Ioctl(type, arg) != 0) {                          \
-      PLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type;  \
-      return value;                                                \
-    }                                                              \
+#define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value, type_str)        \
+  do {                                                                 \
+    if (device_->Ioctl(type, arg) != 0) {                              \
+      PLOG(ERROR) << __func__ << "(): ioctl() failed: " << type_str;   \
+      return value;                                                    \
+    }                                                                  \
   } while (0)
 
 #define IOCTL_OR_ERROR_RETURN(type, arg) \
-  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, ((void)0))
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, ((void)0), #type)
 
 #define IOCTL_OR_ERROR_RETURN_FALSE(type, arg) \
-  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false)
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false, #type)
 
 #define IOCTL_OR_LOG_ERROR(type, arg)                              \
   do {                                                             \
@@ -256,8 +256,8 @@ bool V4L2ImageProcessor::CreateInputBuffers() {
   format.fmt.pix_mp.num_planes = input_planes_count_;
   for (size_t i = 0; i < input_planes_count_; ++i) {
     format.fmt.pix_mp.plane_fmt[i].sizeimage =
-        media::VideoFrame::PlaneAllocationSize(
-            input_format_, i, input_allocated_size_);
+        media::VideoFrame::PlaneSize(input_format_, i, input_allocated_size_)
+            .GetArea();
     format.fmt.pix_mp.plane_fmt[i].bytesperline =
         base::checked_cast<__u32>(input_allocated_size_.width());
   }
@@ -306,8 +306,8 @@ bool V4L2ImageProcessor::CreateOutputBuffers() {
   format.fmt.pix_mp.num_planes = output_planes_count_;
   for (size_t i = 0; i < output_planes_count_; ++i) {
     format.fmt.pix_mp.plane_fmt[i].sizeimage =
-        media::VideoFrame::PlaneAllocationSize(
-            output_format_, i, output_allocated_size_);
+        media::VideoFrame::PlaneSize(output_format_, i, output_allocated_size_)
+            .GetArea();
     format.fmt.pix_mp.plane_fmt[i].bytesperline =
         base::checked_cast<__u32>(output_allocated_size_.width());
   }
@@ -560,11 +560,11 @@ void V4L2ImageProcessor::Dequeue() {
             gfx::Rect(output_visible_size_),
             output_visible_size_,
             output_record.fds,
-            job_record->frame->timestamp(),
-            media::BindToCurrentLoop(
-                base::Bind(&V4L2ImageProcessor::ReuseOutputBuffer,
-                           device_weak_factory_.GetWeakPtr(),
-                           dqbuf.index)));
+            job_record->frame->timestamp());
+    output_frame->AddDestructionObserver(media::BindToCurrentLoop(
+        base::Bind(&V4L2ImageProcessor::ReuseOutputBuffer,
+                   device_weak_factory_.GetWeakPtr(),
+                   dqbuf.index)));
 
     DVLOG(3) << "Processing finished, returning frame, ts="
              << output_frame->timestamp().InMilliseconds();
@@ -608,8 +608,8 @@ bool V4L2ImageProcessor::EnqueueInputRecord() {
   qbuf.m.planes = qbuf_planes;
   qbuf.length = input_planes_count_;
   for (size_t i = 0; i < input_planes_count_; ++i) {
-    qbuf.m.planes[i].bytesused = media::VideoFrame::PlaneAllocationSize(
-        input_record.frame->format(), i, input_allocated_size_);
+    qbuf.m.planes[i].bytesused = media::VideoFrame::PlaneSize(
+        input_record.frame->format(), i, input_allocated_size_).GetArea();
     qbuf.m.planes[i].length = qbuf.m.planes[i].bytesused;
     qbuf.m.planes[i].m.userptr =
         reinterpret_cast<unsigned long>(input_record.frame->data(i));

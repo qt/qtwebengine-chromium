@@ -10,6 +10,15 @@
         'angle_build_winrt%': '0',
         'angle_build_winphone%': '0',
         'angle_build_winrt_app_type_revision%': '8.1',
+        'conditions':
+        [
+            ['OS=="linux" and use_x11==1 and chromeos==0', {
+                'angle_use_glx%': 1,
+            },
+            {
+                'angle_use_glx%': 0,
+            }],
+        ],
     },
     'msvs_disabled_warnings':
     [
@@ -34,7 +43,9 @@
                 4251, # STL objects do not have DLL interface, needed by ShaderVars.h
             ],
         }],
-        ['angle_build_winrt==0',
+        # Normally the WinRT project should rely on the default SDK header include paths
+        # However, the WinPhone projects also need the Windows SDK path for DXProgrammableCapture.h
+        ['angle_build_winrt==0 or angle_build_winphone==1',
         {
             'msvs_system_include_dirs':
             [
@@ -102,6 +113,7 @@
             {
                 'x86_Base':
                 {
+                    'abstract': 1,
                     'msvs_settings':
                     {
                         'VCLinkerTool':
@@ -122,6 +134,7 @@
                 },
                 'x64_Base':
                 {
+                    'abstract': 1,
                     'msvs_settings':
                     {
                         'VCLinkerTool':

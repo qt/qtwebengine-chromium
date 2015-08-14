@@ -9,13 +9,13 @@
 {
   'variables': {
     'audio_coding_dependencies': [
-      'CNG',
-      'G711',
-      'G722',
-      'iLBC',
-      'iSAC',
-      'iSACFix',
-      'PCM16B',
+      'cng',
+      'g711',
+      'g722',
+      'ilbc',
+      'isac',
+      'isac_fix',
+      'pcm16b',
       'red',
       '<(webrtc_root)/common.gyp:webrtc_common',
       '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
@@ -78,8 +78,40 @@
         'nack.h',
       ],
     },
+    {
+      'target_name': 'acm_dump',
+      'type': 'static_library',
+      'conditions': [
+        ['enable_protobuf==1', {
+          'defines': ['RTC_AUDIOCODING_DEBUG_DUMP'],
+          'dependencies': ['acm_dump_proto'],
+          }
+        ],
+      ],
+      'sources': [
+        'acm_dump.h',
+        'acm_dump.cc'
+      ],
+    },
   ],
   'conditions': [
+    ['enable_protobuf==1', {
+      'targets': [
+        {
+          'target_name': 'acm_dump_proto',
+          'type': 'static_library',
+          'sources': ['dump.proto',],
+          'variables': {
+            'proto_in_dir': '.',
+            # Workaround to protect against gyp's pathname relativization when
+            # this file is included by modules.gyp.
+            'proto_out_protected': 'webrtc/audio_coding',
+            'proto_out_dir': '<(proto_out_protected)',
+          },
+          'includes': ['../../../../build/protoc.gypi',],
+        },
+      ]
+    }],
     ['include_tests==1', {
       'targets': [
         {

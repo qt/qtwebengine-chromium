@@ -53,7 +53,8 @@ class GpuProcessTransportFactory
   void RemoveCompositor(ui::Compositor* compositor) override;
   scoped_refptr<cc::ContextProvider> SharedMainThreadContextProvider() override;
   bool DoesCreateTestContexts() override;
-  uint32 GetImageTextureTarget() override;
+  uint32 GetImageTextureTarget(gfx::GpuMemoryBuffer::Format format,
+                               gfx::GpuMemoryBuffer::Usage usage) override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
@@ -96,7 +97,7 @@ class GpuProcessTransportFactory
   PerCompositorDataMap per_compositor_data_;
   scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
   scoped_ptr<GLHelper> gl_helper_;
-  ObserverList<ImageTransportFactoryObserver> observer_list_;
+  base::ObserverList<ImageTransportFactoryObserver> observer_list_;
   scoped_ptr<cc::SurfaceManager> surface_manager_;
   uint32_t next_surface_id_namespace_;
   scoped_ptr<cc::TaskGraphRunner> task_graph_runner_;

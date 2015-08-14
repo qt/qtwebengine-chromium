@@ -26,11 +26,16 @@ RemoteFrameClientImpl::RemoteFrameClientImpl(WebRemoteFrameImpl* webFrame)
 {
 }
 
+bool RemoteFrameClientImpl::inShadowTree() const
+{
+    return m_webFrame->inShadowTree();
+}
+
 void RemoteFrameClientImpl::willBeDetached()
 {
 }
 
-void RemoteFrameClientImpl::detached()
+void RemoteFrameClientImpl::detached(FrameDetachType type)
 {
     // Alert the client that the frame is being detached.
     RefPtrWillBeRawPtr<WebRemoteFrameImpl> protector(m_webFrame);
@@ -39,7 +44,7 @@ void RemoteFrameClientImpl::detached()
     if (!client)
         return;
 
-    client->frameDetached();
+    client->frameDetached(static_cast<WebRemoteFrameClient::DetachType>(type));
     // Clear our reference to RemoteFrame at the very end, in case the client
     // refers to it.
     m_webFrame->setCoreFrame(nullptr);
@@ -50,9 +55,9 @@ Frame* RemoteFrameClientImpl::opener() const
     return toCoreFrame(m_webFrame->opener());
 }
 
-void RemoteFrameClientImpl::setOpener(Frame*)
+void RemoteFrameClientImpl::setOpener(Frame* opener)
 {
-    // FIXME: Implement.
+    m_webFrame->setOpener(WebFrame::fromFrame(opener));
 }
 
 Frame* RemoteFrameClientImpl::parent() const
@@ -99,10 +104,19 @@ void RemoteFrameClientImpl::navigate(const ResourceRequest& request, bool should
         m_webFrame->client()->navigate(WrappedResourceRequest(request), shouldReplaceCurrentEntry);
 }
 
-void RemoteFrameClientImpl::reload(ReloadPolicy reloadPolicy, ClientRedirectPolicy clientRedirectPolicy)
+void RemoteFrameClientImpl::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedirectPolicy)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->reload(reloadPolicy == EndToEndReload, clientRedirectPolicy == ClientRedirect);
+        m_webFrame->client()->reload(loadType == FrameLoadTypeReloadFromOrigin, clientRedirectPolicy == ClientRedirect);
+}
+
+unsigned RemoteFrameClientImpl::backForwardLength()
+{
+    // TODO(creis,japhet): This method should return the real value for the
+    // session history length. For now, return static value for the initial
+    // navigation and the subsequent one moving the frame out-of-process.
+    // See https://crbug.com/501116.
+    return 2;
 }
 
 // FIXME: Remove this code once we have input routing in the browser

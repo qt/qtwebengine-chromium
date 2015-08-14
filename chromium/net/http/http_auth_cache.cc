@@ -5,7 +5,7 @@
 #include "net/http/http_auth_cache.h"
 
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 
 namespace {
@@ -37,7 +37,8 @@ void CheckPathIsValid(const std::string& path) {
 bool IsEnclosingPath(const std::string& container, const std::string& path) {
   DCHECK(container.empty() || *(container.end() - 1) == '/');
   return ((container.empty() && path.empty()) ||
-          (!container.empty() && StartsWithASCII(path, container, true)));
+          (!container.empty() &&
+           base::StartsWith(path, container, base::CompareCase::SENSITIVE)));
 }
 
 // Debug helper to check that |origin| arguments are properly formed.

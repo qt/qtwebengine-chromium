@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-library {{module.name}};
+library {{module.name|dot_to_underscore}};
 
 import 'dart:async';
 
-import 'package:mojo/public/dart/bindings.dart' as bindings;
-import 'package:mojo/public/dart/core.dart' as core;
+import 'package:mojo/bindings.dart' as bindings;
+import 'package:mojo/core.dart' as core;
 
 {%- for import in imports %}
 import 'package:{{import.rebased_path}}.dart' as {{import.unique_name}};

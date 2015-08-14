@@ -34,11 +34,11 @@
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/RemoteFrameView.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
 #include "core/page/AutoscrollController.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/DragController.h"
@@ -104,7 +104,7 @@ Page::Page(PageClients& pageClients)
     : SettingsDelegate(Settings::create())
     , m_animator(PageAnimator::create(*this))
     , m_autoscrollController(AutoscrollController::create(*this))
-    , m_chrome(Chrome::create(this, pageClients.chromeClient))
+    , m_chromeClient(pageClients.chromeClient)
     , m_dragCaretController(DragCaretController::create())
     , m_dragController(DragController::create(this, pageClients.dragClient))
     , m_focusController(FocusController::create(this))
@@ -312,13 +312,13 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
     if (scale != viewport.scale()) {
         viewport.setScale(scale);
 
-        m_chrome->client().pageScaleFactorChanged();
+        chromeClient().pageScaleFactorChanged();
 
         deprecatedLocalMainFrame()->loader().saveScrollState();
     }
 
     if (view && view->scrollPosition() != origin)
-        view->notifyScrollPositionChanged(origin);
+        view->setScrollPosition(origin, ProgrammaticScroll);
 }
 
 float Page::pageScaleFactor() const
@@ -496,6 +496,15 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             doc->styleResolver()->viewportStyleResolver()->collectViewportRules();
         }
         break;
+    case SettingsDelegate::TextTrackKindUserPreferenceChange:
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+            if (frame->isLocalFrame()) {
+                Document* doc = toLocalFrame(frame)->document();
+                if (doc)
+                    HTMLMediaElement::setTextTrackKindUserPreferenceForAllMediaElements(doc);
+            }
+        }
+        break;
     }
 }
 
@@ -544,6 +553,7 @@ DEFINE_TRACE(Page)
     visitor->trace(m_focusController);
     visitor->trace(m_contextMenuController);
     visitor->trace(m_pointerLockController);
+    visitor->trace(m_scrollingCoordinator);
     visitor->trace(m_undoStack);
     visitor->trace(m_mainFrame);
     visitor->trace(m_validationMessageClient);
@@ -558,7 +568,7 @@ void Page::willBeDestroyed()
 {
     RefPtrWillBeRawPtr<Frame> mainFrame = m_mainFrame;
 
-    mainFrame->detach();
+    mainFrame->detach(FrameDetachType::Remove);
 
     if (mainFrame->isLocalFrame()) {
         toLocalFrame(mainFrame.get())->setView(nullptr);
@@ -578,7 +588,7 @@ void Page::willBeDestroyed()
     pageCounter.decrement();
 #endif
 
-    m_chrome->willBeDestroyed();
+    chromeClient().chromeDestroyed();
     if (m_validationMessageClient)
         m_validationMessageClient->willBeDestroyed();
     m_mainFrame = nullptr;
@@ -599,6 +609,6 @@ Page::PageClients::~PageClients()
 {
 }
 
-template class WillBeHeapSupplement<Page>;
+template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;
 
 } // namespace blink

@@ -6,8 +6,8 @@
 #define LockOrientationCallback_h
 
 #include "platform/heap/Handle.h"
-#include "public/platform/WebLockOrientationCallback.h"
-#include "public/platform/WebScreenOrientationType.h"
+#include "public/platform/modules/screen_orientation/WebLockOrientationCallback.h"
+#include "public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -23,10 +23,10 @@ class LockOrientationCallback final : public WebLockOrientationCallback {
     WTF_MAKE_NONCOPYABLE(LockOrientationCallback);
 public:
     explicit LockOrientationCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver>);
-    virtual ~LockOrientationCallback();
+    ~LockOrientationCallback() override;
 
-    virtual void onSuccess() override;
-    virtual void onError(WebLockOrientationError) override;
+    void onSuccess() override;
+    void onError(WebLockOrientationError) override;
 
 private:
     RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;

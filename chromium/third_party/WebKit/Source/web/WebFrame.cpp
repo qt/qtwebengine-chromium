@@ -10,10 +10,12 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/RemoteFrame.h"
+#include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/heap/Handle.h"
+#include "public/web/WebElement.h"
 #include "public/web/WebSandboxFlags.h"
 #include "web/OpenedFrameTracker.h"
 #include "web/RemoteBridgeFrameOwner.h"
@@ -37,15 +39,17 @@ bool WebFrame::swap(WebFrame* frame)
 {
     using std::swap;
     RefPtrWillBeRawPtr<Frame> oldFrame = toCoreFrame(this);
+#if !ENABLE(OILPAN)
+    RefPtrWillBeRawPtr<WebLocalFrameImpl> protectWebLocalFrame = isWebLocalFrame() ? toWebLocalFrameImpl(this) : nullptr;
+    RefPtrWillBeRawPtr<WebRemoteFrameImpl> protectWebRemoteFrame = isWebRemoteFrame() ? toWebRemoteFrameImpl(this) : nullptr;
+#endif
 
-    // All child frames must be detached first.
-    oldFrame->detachChildren();
-
-    // If the frame has been detached during detaching its children, return
-    // immediately.
+    // Unload the current Document in this frame: this calls unload handlers,
+    // detaches child frames, etc. Since this runs script, make sure this frame
+    // wasn't detached before continuing with the swap.
     // FIXME: There is no unit test for this condition, so one needs to be
     // written.
-    if (!oldFrame->host())
+    if (!oldFrame->prepareForCommit())
         return false;
 
     if (m_parent) {
@@ -58,7 +62,6 @@ bool WebFrame::swap(WebFrame* frame)
         // an actual page or something else, like a download. The PlzNavigate
         // project will remove the need for provisional local frames.
         frame->m_parent = m_parent;
-        m_parent = nullptr;
     }
 
     if (m_previousSibling) {
@@ -105,12 +108,17 @@ bool WebFrame::swap(WebFrame* frame)
     }
     toCoreFrame(frame)->finishSwapFrom(oldFrame.get());
 
+    // Although the Document in this frame is now unloaded, many resources
+    // associated with the frame itself have not yet been freed yet.
+    oldFrame->detach(FrameDetachType::Swap);
+    m_parent = nullptr;
+
     return true;
 }
 
 void WebFrame::detach()
 {
-    toCoreFrame(this)->detach();
+    toCoreFrame(this)->detach(FrameDetachType::Remove);
 }
 
 WebSecurityOrigin WebFrame::securityOrigin() const
@@ -258,6 +266,15 @@ WebFrame* WebFrame::findChildByName(const WebString& name) const
     return fromFrame(frame->tree().child(name));
 }
 
+WebFrame* WebFrame::fromFrameOwnerElement(const WebElement& webElement)
+{
+    Element* element = PassRefPtrWillBeRawPtr<Element>(webElement).get();
+
+    if (!isHTMLFrameElementBase(element))
+        return nullptr;
+    return fromFrame(toHTMLFrameElementBase(element)->contentFrame());
+}
+
 WebFrame* WebFrame::fromFrame(Frame* frame)
 {
     if (!frame)
@@ -268,8 +285,9 @@ WebFrame* WebFrame::fromFrame(Frame* frame)
     return WebRemoteFrameImpl::fromFrame(toRemoteFrame(*frame));
 }
 
-WebFrame::WebFrame()
-    : m_parent(0)
+WebFrame::WebFrame(WebTreeScopeType scope)
+    : m_scope(scope)
+    , m_parent(0)
     , m_previousSibling(0)
     , m_nextSibling(0)
     , m_firstChild(0)
@@ -285,6 +303,17 @@ WebFrame::~WebFrame()
 }
 
 #if ENABLE(OILPAN)
+ALWAYS_INLINE bool WebFrame::isFrameAlive(const WebFrame* frame)
+{
+    if (!frame)
+        return true;
+
+    if (frame->isWebLocalFrame())
+        return Heap::isHeapObjectAlive(toWebLocalFrameImpl(frame));
+
+    return Heap::isHeapObjectAlive(toWebRemoteFrameImpl(frame));
+}
+
 template <typename VisitorDispatcher>
 ALWAYS_INLINE void WebFrame::traceFrameImpl(VisitorDispatcher visitor, WebFrame* frame)
 {
@@ -309,28 +338,15 @@ ALWAYS_INLINE void WebFrame::traceFramesImpl(VisitorDispatcher visitor, WebFrame
 }
 
 template <typename VisitorDispatcher>
-ALWAYS_INLINE bool WebFrame::isFrameAliveImpl(VisitorDispatcher visitor, const WebFrame* frame)
-{
-    if (!frame)
-        return true;
-
-    if (frame->isWebLocalFrame())
-        return visitor->isHeapObjectAlive(toWebLocalFrameImpl(frame));
-
-    return visitor->isHeapObjectAlive(toWebRemoteFrameImpl(frame));
-}
-
-template <typename VisitorDispatcher>
 ALWAYS_INLINE void WebFrame::clearWeakFramesImpl(VisitorDispatcher visitor)
 {
-    if (!isFrameAlive(visitor, m_opener))
+    if (!isFrameAlive(m_opener))
         m_opener = nullptr;
 }
 
 #define DEFINE_VISITOR_METHOD(VisitorDispatcher)                                                                               \
     void WebFrame::traceFrame(VisitorDispatcher visitor, WebFrame* frame) { traceFrameImpl(visitor, frame); }                  \
     void WebFrame::traceFrames(VisitorDispatcher visitor, WebFrame* frame) { traceFramesImpl(visitor, frame); }                \
-    bool WebFrame::isFrameAlive(VisitorDispatcher visitor, const WebFrame* frame) { return isFrameAliveImpl(visitor, frame); } \
     void WebFrame::clearWeakFrames(VisitorDispatcher visitor) { clearWeakFramesImpl(visitor); }
 
 DEFINE_VISITOR_METHOD(Visitor*)

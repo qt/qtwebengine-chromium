@@ -8,7 +8,8 @@ source_set("heap") {
   visibility = [ "//third_party/WebKit/Source/platform" ]
 
   sources = [
-    "AddressSanitizer.h",
+    "BlinkGCMemoryDumpProvider.cpp",
+    "BlinkGCMemoryDumpProvider.h",
     "CallbackStack.cpp",
     "CallbackStack.h",
     "GCInfo.cpp",
@@ -22,6 +23,11 @@ source_set("heap") {
     "InlinedGlobalMarkingVisitor.h",
     "MarkingVisitor.h",
     "MarkingVisitorImpl.h",
+    "PageMemory.h",
+    "PagePool.cpp",
+    "PagePool.h",
+    "PersistentNode.cpp",
+    "PersistentNode.h",
     "StackFrameDepth.cpp",
     "StackFrameDepth.h",
     "SafePoint.cpp",

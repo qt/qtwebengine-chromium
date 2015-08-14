@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="ml">
 <translation id="2774256287122201187">നിങ്ങൾക്ക് തുടരാം. പേജിൽ തുടരുകയാണെങ്കിൽ, അഞ്ച് മിനിറ്റിന് ഈ മുന്നറിയിപ്പ് വീണ്ടും ദൃശ്യമാകുന്നതല്ല.</translation>
+<translation id="3963721102035795474">റീഡർ മോഡ്</translation>
 <translation id="7485870689360869515">ഡാറ്റകളൊന്നും കണ്ടെത്തിയില്ല.</translation>
 <translation id="3884278016824448484">വിരുദ്ധ ഉപകരണ ഐഡന്റിഫയർ</translation>
 <translation id="5172758083709347301">മെഷീൻ</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">നിർബന്ധിതം</translation>
 <translation id="2958431318199492670">നെറ്റ്‌വർക്ക് കോൺഫിഗറേഷൻ ONC സ്റ്റാൻഡേർഡിന് അനുസൃതമായി പ്രവർത്തിക്കുന്നില്ല. കോൺഫിഗറേഷൻ ഭാഗങ്ങൾ ഇമ്പോർട്ടുചെയ്‌തേക്കില്ല.</translation>
 <translation id="3583757800736429874">&amp;നീക്കുന്നത് വീണ്ടും ചെയ്യുക</translation>
+<translation id="7887683347370398519">നിങ്ങളുടെ CVC പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">ഉപകരണ റെക്കോർഡ് കാണുന്നില്ല</translation>
 <translation id="1491151370853475546">ഈ പേജ് വീണ്ടും ലോഡുചെയ്യുക</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314"><ph name="LANGUAGE"/> എല്ലായ്പ്പോഴും വിവര്‍ത്തനം ചെയ്യുക </translation>
 <translation id="1227633850867390598">മൂല്യം മറയ്‌ക്കുക</translation>
 <translation id="6753269504797312559">നയ മൂല്യം</translation>
+<translation id="3369366829301677151">അപ്‌ഡേറ്റുചെയ്‌ത് നിങ്ങളുടെ <ph name="CREDIT_CARD"/> പരിശോധിച്ചുറപ്പിക്കുക</translation>
 <translation id="8834246243508017242">കോൺടാക്‌റ്റുകൾ ഉപയോഗിച്ച് ഓട്ടോഫിൽ പ്രവർത്തനക്ഷമമാക്കുക…</translation>
 <translation id="7275334191706090484">നിയന്ത്രിത ബുക്ക്‌മാർക്കുകൾ</translation>
 <translation id="7400418766976504921">URL</translation>
 <translation id="7378627244592794276">വേണ്ട</translation>
 <translation id="2704283930420550640">മൂല്യം ഫോർമാറ്റുമായി പൊരുത്തപ്പെടുന്നില്ല.</translation>
 <translation id="1055184225775184556">&amp;ചേർക്കുന്നത് പഴയപടിയാക്കുക</translation>
+<translation id="7813600968533626083">Chrome-ൽ നിന്നുള്ള നിർദ്ദേശം നീക്കംചെയ്യണോ?</translation>
 <translation id="4850886885716139402">കാണുക</translation>
 <translation id="8091372947890762290">സെർവറിൽ സജീവമാക്കൽ തീർപ്പാക്കിയിട്ടില്ല</translation>
 <translation id="6874604403660855544">&amp;ചേർക്കുന്നത് വീണ്ടും ചെയ്യുക</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">ഏരിയ</translation>
 <translation id="1871208020102129563">സ്ഥിരമായ പ്രോക്‌സി സെർവറുകൾ ഉപയോഗിക്കുന്നതിനായി പ്രോക്‌സി സജ്ജീകരിച്ചിരിക്കുന്നു, ഒരു .pac സ്‌ക്രിപ്റ്റ് URL ഉപയോഗിക്കുന്നതിനല്ല.</translation>
+<translation id="8988760548304185580">നിങ്ങളുടെ കാർഡിന്റെ പുറകിലുള്ള കാലഹരണപ്പെടൽ തീയതിയും 3-അക്ക CVC-യും നൽകുക</translation>
 <translation id="8940229512486821554"><ph name="EXTENSION_NAME"/> കമാന്‍റ്:<ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">അജ്ഞാതമായ പിശക്</translation>
 <translation id="112840717907525620">നയ കാഷെ ശരി</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">മൂല്യനിർണ്ണയ പിശക്: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076"><ph name="TARGET_LANGUAGE"/> ഭാഷയിലേക്കുള്ള വിവർത്തനം പരാജയപ്പെട്ടു.</translation>
 <translation id="4103249731201008433">ഉപകരണ സീരിയൽ നമ്പർ അസാധുവാണ്</translation>
+<translation id="3219579145727097045">നിങ്ങളുടെ കാർഡിന്റെ മുന്നിലുള്ള കാലഹരണപ്പെടൽ തീയതിയും 4-അക്ക CVC-യും നൽകുക</translation>
 <translation id="59107663811261420">ഈ വ്യാപരിയ്‌ക്കായി ഈ തരത്തിലുള്ള കാർഡ് Google പേയ്‌മെന്റ് പിന്തുണയ്ക്കുന്നില്ല. മറ്റൊരു കാർഡ് തിരഞ്ഞെടുക്കുക.</translation>
-<translation id="3667681724235208644">യഥാർത്ഥമായത് കാണുക</translation>
 <translation id="4079302484614802869">പ്രോക്‌സി കോൺഫിഗറേഷൻ .pac സ്‌ക്രിപ്റ്റ് URL ഉപയോഗിക്കുന്നതിനായി സജ്ജീകരിച്ചിരിക്കുന്നു, സ്ഥിരമായ പ്രോക്‌സി സെർവറുകൾ ഉപയോഗിക്കുന്നതിനായല്ല.</translation>
 <translation id="5540224163453853">അഭ്യർത്ഥിച്ച ലേഖനം കണ്ടെത്താനായില്ല.</translation>
 <translation id="8437238597147034694">&amp;നീക്കുന്നത് പഴയപടിയാക്കുക</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911"><ph name="ORIGINAL_LANGUAGE"/>-ൽ നിന്ന് <ph name="TARGET_LANGUAGE"/>-ലേക്ക് വിവർത്തനം ചെയ്യണോ?</translation>
 <translation id="8218327578424803826">നൽകിയിരിക്കുന്ന ലൊക്കേഷൻ:</translation>
 <translation id="3542684924769048008">ഇതിനായി പാസ്‌വേഡ് ഉപയോഗിക്കുക:</translation>
+<translation id="2855922900409897335">നിങ്ങളുടെ <ph name="CREDIT_CARD"/> പരിശോധിച്ചുറപ്പിക്കുക</translation>
 <translation id="7186367841673660872">ഈ പേജ്<ph name="ORIGINAL_LANGUAGE"/>ല്‍‌ നിന്നും<ph name="LANGUAGE_LANGUAGE"/>ലേക്ക് വിവര്‍‌ത്തനം ചെയ്‌തു</translation>
+<translation id="4587425331216688090">Chrome-ൽ നിന്ന് വിലാസം നീക്കംചെയ്യണോ?</translation>
 <translation id="7139724024395191329">എമിറേറ്റ്</translation>
+<translation id="6646897916597483132">നിങ്ങളുടെ കാർഡിന്റെ മുന്നിലുള്ള 4 അക്ക CVC നൽകുക</translation>
 <translation id="5145883236150621069">നയ പ്രതികരണത്തിൽ പിശക് കോഡ് ഉണ്ട്</translation>
 <translation id="7983301409776629893">എല്ലായ്‌പ്പോഴും <ph name="ORIGINAL_LANGUAGE"/> നെ <ph name="TARGET_LANGUAGE"/> ലേക്ക് വിവര്‍‌ത്തനം ചെയ്യുക</translation>
 <translation id="6970216967273061347">ജില്ല</translation>
 <translation id="3427342743765426898">&amp;എഡിറ്റുചെയ്യുന്നത് വീണ്ടും ചെയ്യുക</translation>
 <translation id="3010559122411665027">ലിസ്റ്റ് എൻട്രി &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Chrome-ൽ നിന്ന് ക്രെഡിറ്റ് കാർഡ് നീക്കംചെയ്യണോ?</translation>
 <translation id="6445051938772793705">രാജ്യം</translation>
 <translation id="5031870354684148875">Google വിവര്‍ത്തനം എന്നതിനെക്കുറിച്ച് </translation>
 <translation id="1152921474424827756"><ph name="URL"/>-ന്റെ <ph name="BEGIN_LINK"/>കാഷെ ചെയ്‌ത പകർപ്പ്<ph name="END_LINK"/> ആക്‌സസ്സുചെയ്യുക</translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436"><ph name="DOMAIN"/> ബുക്ക്‌മാർക്കുകൾ</translation>
 <translation id="4300246636397505754">പാരന്റ് നിർദ്ദേശങ്ങൾ</translation>
 <translation id="111844081046043029">നിങ്ങള്‍ക്ക് ഈ പേജ് ഉപേക്ഷിക്കുന്നതിന് താല്പര്യമുണ്ടോ?</translation>
+<translation id="2495083838625180221">JSON പാഴ്‌സർ</translation>
 <translation id="1973335181906896915">സീരിയലൈസേഷൻ പിശക്</translation>
 <translation id="5989320800837274978">ഒരു സ്ഥിരമായ പ്രോക്സി സെർവർ അല്ലെങ്കിൽ ഒരു .pac സ്‌ക്രിപ്റ്റ് URL വ്യക്തമാക്കിയിട്ടില്ല.</translation>
 <translation id="7805768142964895445">നില</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">നയ ക്രമീകരണങ്ങൾ സംഭരിക്കുന്നതിൽ പരാജയപ്പെട്ടു</translation>
 <translation id="5439770059721715174">&quot;<ph name="ERROR_PATH"/>&quot; എന്നതിൽ സ്‌കീമ മൂല്ല്യനിർണ്ണയ പിശക്: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">ബുക്മാര്‍ക്ക് ബാര്‍</translation>
+<translation id="587701087903783706">മൊബൈൽ-സൗഹൃദ കാഴ്‌ച അടയ്‌ക്കുക</translation>
 <translation id="7208899522964477531"><ph name="SEARCH_TERMS"/> നായി <ph name="SITE_NAME"/> തിരയുക</translation>
 <translation id="7956713633345437162">മൊബൈൽ ബുക്ക്‌മാർക്കുകൾ</translation>
 <translation id="5089810972385038852">സ്റ്റേറ്റ്</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">അസാധുവായ പ്രോക്സി മോഡ്</translation>
 <translation id="3105172416063519923">അസറ്റ് ഐഡി:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">ഈ ഫീച്ചർ ഉപയോഗിക്കാൻ JavaScript പ്രവർത്തനക്ഷമമാക്കിയിരിക്കണം.</translation>
 <translation id="2587841377698384444">ഡയറക്‌ടറി API ഐഡി:</translation>
 <translation id="7752995774971033316">നിയന്ത്രിക്കാനാകാത്തത്</translation>
 <translation id="3712624925041724820">ലൈസൻസുകൾ കാലഹരണപ്പെട്ടു</translation>
 <translation id="4926049483395192435">വ്യക്തമാക്കേണ്ടതാണ്.</translation>
+<translation id="1455235771979731432">നിങ്ങളുടെ കാർഡ് പരിശോധിച്ചുറപ്പിക്കുന്നതിൽ ഒരു പ്രശ്‌നമുണ്ടായിരുന്നു. ഇന്റർ‌നെറ്റ് കണക്ഷൻ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.</translation>
 <translation id="7542995811387359312">ഈ ഫോം ഒരു സുരക്ഷിത കണക്ഷന്‍ ഉപയോഗിക്കാത്തതിനാല്‍ സ്വപ്രേരിത ക്രെഡിറ്റ് കാര്‍ഡ് പൂരിപ്പിക്കല്‍ അപ്രാപ്തമാക്കി.</translation>
 <translation id="5179510805599951267"><ph name="ORIGINAL_LANGUAGE"/> എന്നതില്‍‌ ഇല്ലേ? ഈ പിശക് റിപ്പോര്‍‌ട്ടുചെയ്യുക</translation>
 <translation id="8088680233425245692">ലേഖനം കാണുന്നത് പരാജയപ്പെട്ടു.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">സജീവമാണ്</translation>
 <translation id="7568593326407688803">ഈ പേജ്<ph name="ORIGINAL_LANGUAGE"/>ലാണ് നിങ്ങളത് വിവര്‍‌ത്തനം ചെയ്യാന്‍‌ താല്‍‌പ്പര്യപ്പെടുന്നോ?</translation>
 <translation id="8876793034577346603">നെറ്റ്‌വർക്ക് കോൺഫിഗറേഷൻ പാഴ്‌സുചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു</translation>
+<translation id="4800132727771399293">നിങ്ങളുടെ കാലഹരണ തീയതിയും CVC യും പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക</translation>
 <translation id="4171400957073367226">മോശം പരിശോധിച്ചുറപ്പിക്കൽ സിഗ്‌നേച്ചർ</translation>
+<translation id="9125941078353557812">നിങ്ങളുടെ കാർഡിന്റെ പുറകിലുള്ള 3 അക്ക CVC നൽകുക</translation>
 <translation id="106701514854093668">ഡെസ്‌ക്‌ടോപ്പ് ബുക്ക്‌മാർക്കുകൾ</translation>
 <translation id="6154808779448689242">മടങ്ങിയ നയ ടോക്കൺ നിലവിലുള്ള ടോക്കണുമായി പൊരുത്തപ്പെടില്ല</translation>
 <translation id="7995512525968007366">വ്യക്തമാക്കിയിട്ടില്ല</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;പുനഃക്രമീകരിക്കുന്നത് പഴയപടിയാക്കുക</translation>
 <translation id="20817612488360358">സിസ്റ്റം പ്രോക്‌സി ക്രമീകരണം ഉപയോഗിക്കുന്നതിനായി സജ്ജമാക്കി, പക്ഷെ ഒരു സ്‌പഷ്‌ടമായ പ്രോക്‌സി കോൺഫിഗറേഷനും അതോടൊപ്പം നിർദ്ദേശിച്ചിരിക്കുന്നു.</translation>
 <translation id="2639739919103226564">നില:</translation>
+<translation id="8824019021993735287">Chrome-ന് ഇപ്പോൾ നിങ്ങളുടെ കാർഡ് പരിശോധിപ്പിച്ചുറപ്പിക്കാൻ കഴിഞ്ഞില്ല. പിന്നീട് വീണ്ടും ശ്രമിക്കുക.</translation>
 <translation id="4968547170521245791">പ്രോക്‌സി ചെയ്യാനാകില്ല</translation>
 <translation id="385051799172605136">പിന്നോട്ട്</translation>
 <translation id="4196861286325780578">&amp;നീക്കുന്നത് വീണ്ടും ചെയ്യുക</translation>

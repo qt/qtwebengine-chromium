@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="ar">
 <translation id="2774256287122201187">يمكنك المتابعة. إذا تابعت إلى الصفحة، فلن يظهر هذا التحذير مرة أخرى لمدة خمس دقائق.</translation>
+<translation id="3963721102035795474">وضع القارئ</translation>
 <translation id="7485870689360869515">لم يتم العثور على بيانات.</translation>
 <translation id="3884278016824448484">معرف جهاز متضارب</translation>
 <translation id="5172758083709347301">الجهاز</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">إلزامية</translation>
 <translation id="2958431318199492670">‏لا تتوافق تهيئة الشبكة مع معيار ONC. قد لا يتم استيراد بعض أجزاء التهيئة.</translation>
 <translation id="3583757800736429874">إ&amp;عادة النقل</translation>
+<translation id="7887683347370398519">‏تحقق من رمز التحقق من البطاقة (CVC) ثم أعد المحاولة.</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">سجِلّ الجهاز مفقود</translation>
 <translation id="1491151370853475546">إعادة تحميل هذه الصفحة</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">ترجمة اللغة <ph name="LANGUAGE"/> دومًا</translation>
 <translation id="1227633850867390598">إخفاء القيمة</translation>
 <translation id="6753269504797312559">قيمة السياسة</translation>
+<translation id="3369366829301677151">تحديث <ph name="CREDIT_CARD"/> والتحقق منها</translation>
 <translation id="8834246243508017242">تمكين الملء التلقائي باستخدام جهات الاتصال...</translation>
 <translation id="7275334191706090484">الإشارات المرجعية المُدارة</translation>
 <translation id="7400418766976504921">‏عنوان URL</translation>
 <translation id="7378627244592794276">لا</translation>
 <translation id="2704283930420550640">القيمة لا تطابق التنسيق.</translation>
 <translation id="1055184225775184556">تراجع عن الإ&amp;ضافة</translation>
+<translation id="7813600968533626083">‏هل تريد إزالة اقتراح النموذج من Chrome؟</translation>
 <translation id="4850886885716139402">عرض</translation>
 <translation id="8091372947890762290">التنشيط قيد الانتظار في الخادم</translation>
 <translation id="6874604403660855544">إعا&amp;دة الإضافة</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">المنطقة</translation>
 <translation id="1871208020102129563">‏تم تعيين الخادم الوكيل لاستخدام الخوادم الوكيلة الثابتة وليس عنوان URL لنص برمجي pac.</translation>
+<translation id="8988760548304185580">‏أدخل تاريخ انتهاء الصلاحية ورمز التحقق من البطاقة (CVC) المكوّن من ثلاثة أرقام من الجزء الخلفي من بطاقتك.</translation>
 <translation id="8940229512486821554">تشغيل الأمر <ph name="EXTENSION_NAME"/>:<ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">خطأ غير معروف</translation>
 <translation id="112840717907525620">ذاكرة التخزين المؤقت للسياسة بحالة جيدة</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">خطأ في عملية التحقق: <ph name="VALIDATION_ERROR"/>.</translation>
 <translation id="7108649287766967076">أخفقت الترجمة إلى <ph name="TARGET_LANGUAGE"/>.</translation>
 <translation id="4103249731201008433">الرقم التسلسلي للجهاز غير صالح</translation>
+<translation id="3219579145727097045">‏أدخل تاريخ انتهاء الصلاحية ورمز التحقق من البطاقة (CVC) المكوّن من أربعة أرقام من الجزء الأمامي من بطاقتك.</translation>
 <translation id="59107663811261420">‏هذا النوع من البطاقات غير متوافق مع Google Payments لهذا التاجر. يُرجى تحديد بطاقة أخرى.</translation>
-<translation id="3667681724235208644">عرض النسخة الأصلية</translation>
 <translation id="4079302484614802869">‏تم تعيين تهيئة الخادم الوكيل لاستخدام عنوان URL نص برمجي ‎.pac وليس الخوادم الوكيلة الثابتة.</translation>
 <translation id="5540224163453853">تعذر العثور على المقالة المطلوبة</translation>
 <translation id="8437238597147034694">تراجع عن ال&amp;نقل</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">هل تريد الترجمة من <ph name="ORIGINAL_LANGUAGE"/> إلى <ph name="TARGET_LANGUAGE"/>؟</translation>
 <translation id="8218327578424803826">الموقع الذي تم تعيينه:</translation>
 <translation id="3542684924769048008">استخدام كلمة مرور لـ:</translation>
+<translation id="2855922900409897335">تحقق من <ph name="CREDIT_CARD"/></translation>
 <translation id="7186367841673660872">تمت ترجمة هذه الصفحة من اللغة<ph name="ORIGINAL_LANGUAGE"/>إلى اللغة<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">‏هل تريد إزالة العنوان من Chrome؟</translation>
 <translation id="7139724024395191329">الإمارة</translation>
+<translation id="6646897916597483132">‏أدخل رمز التحقق من البطاقة (CVC) المكون من أربعة أرقام من الجزء الأمامي من بطاقتك</translation>
 <translation id="5145883236150621069">يوجد رمز خطأ في استجابة السياسة</translation>
 <translation id="7983301409776629893">الترجمة من اللغة <ph name="ORIGINAL_LANGUAGE"/> إلى اللغة <ph name="TARGET_LANGUAGE"/> دومًا</translation>
 <translation id="6970216967273061347">المنطقة</translation>
 <translation id="3427342743765426898">إعادة الت&amp;حرير</translation>
 <translation id="3010559122411665027">إدخال القائمة &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">‏هل تريد إزالة بطاقة الائتمان من Chrome؟</translation>
 <translation id="6445051938772793705">البلد</translation>
 <translation id="5031870354684148875">‏معلومات عن الترجمة من Google</translation>
 <translation id="1152921474424827756">الدخول إلى <ph name="BEGIN_LINK"/>النسخة المخزنة مؤقتًا<ph name="END_LINK"/> من <ph name="URL"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">إشارات <ph name="DOMAIN"/></translation>
 <translation id="4300246636397505754">اقتراحات الآباء</translation>
 <translation id="111844081046043029">هل تريد بالتأكيد مغادرة هذه الصفحة؟</translation>
+<translation id="2495083838625180221">‏محلل JSON اللغوي</translation>
 <translation id="1973335181906896915">خطأ أثناء التسلسل</translation>
 <translation id="5989320800837274978">‏لم يتم تحديد أي من الخوادم الوكيلة الثابتة ولا عنوان URL للنص البرمجي pac.</translation>
 <translation id="7805768142964895445">الحالة</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">أخفق تخزين إعدادات السياسة</translation>
 <translation id="5439770059721715174">حدث خطأ في مصادقة المخطط على &quot;<ph name="ERROR_PATH"/>&quot;: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">شريط الإشارات</translation>
+<translation id="587701087903783706">غلق عرض متوافق مع الجوّال</translation>
 <translation id="7208899522964477531">البحث  في الموقع <ph name="SITE_NAME"/> عن &quot;<ph name="SEARCH_TERMS"/>&quot;</translation>
 <translation id="7956713633345437162">الإشارات المرجعية على الجوال</translation>
 <translation id="5089810972385038852">بلد/دولة</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">وضع الخادم الوكيل غير صالح.</translation>
 <translation id="3105172416063519923">رقم تعريف الأصل:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">‏يجب تمكين JavaScript لاستخدام هذه الميزة.</translation>
 <translation id="2587841377698384444">رقم تعريف واجهة برمجة التطبيقات الدليل:</translation>
 <translation id="7752995774971033316">غير مُدار</translation>
 <translation id="3712624925041724820">التراخيص مستنفذة</translation>
 <translation id="4926049483395192435">يجب تحديدها.</translation>
+<translation id="1455235771979731432">حدثت مشكلة أثناء التحقق من بطاقتك. تحقق من اتصالك بالإنترنت وأعد المحاولة.</translation>
 <translation id="7542995811387359312">تم تعطيل الملء التلقائي لبطاقة الائتمان لأن هذا النموذج لا يستخدم اتصالاً آمنًا.</translation>
 <translation id="5179510805599951267">هل الصفحة ليست باللغة <ph name="ORIGINAL_LANGUAGE"/>؟ الإبلاغ عن هذا الخطأ</translation>
 <translation id="8088680233425245692">أخفق عرض المقالة.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">نشط</translation>
 <translation id="7568593326407688803">تتوفر هذه الصفحة باللغة<ph name="ORIGINAL_LANGUAGE"/>فهل تريد ترجمتها؟</translation>
 <translation id="8876793034577346603">أخفق تحليل تهيئة الشبكة</translation>
+<translation id="4800132727771399293">‏تحقق من تاريخ انتهاء الصلاحية ورمز التحقق من البطاقة (CVC) وأعد المحاولة مرة أخرى.</translation>
 <translation id="4171400957073367226">توقيع تحقق سيئ</translation>
+<translation id="9125941078353557812">‏أدخل رمز التحقق من البطاقة (CVC) المكون من ثلاثة أرقام من الجزء الخلفي من بطاقتك</translation>
 <translation id="106701514854093668">الإشارات المرجعية على سطح المكتب</translation>
 <translation id="6154808779448689242">لا يتطابق الرمز المميز لسياسة الإرجاع مع الرمز المميز الحالي</translation>
 <translation id="7995512525968007366">غير محدد</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">تراجع عن إعادة الت&amp;رتيب</translation>
 <translation id="20817612488360358">تم تعيين إعدادات الخادم الوكيل ليتم استخدامها وتم أيضًا تحديد تهيئة صريحة للخادم الوكيل.</translation>
 <translation id="2639739919103226564">الحالة:</translation>
+<translation id="8824019021993735287">‏لم يتمكن Chrome من التحقق من بطاقتك في الوقت الحالي.يُرجى إعادة المحاولة في وقت لاحق.</translation>
 <translation id="4968547170521245791">لا يمكن إنشاء خادم وكيل</translation>
 <translation id="385051799172605136">الرجوع إلى الوراء</translation>
 <translation id="4196861286325780578">إ&amp;عادة النقل</translation>

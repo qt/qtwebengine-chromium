@@ -71,6 +71,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   typedef base::Callback<void(ServiceWorkerStatusCode,
                               bool /* accept_connction */)>
       CrossOriginConnectCallback;
+  typedef base::Callback<void(ServiceWorkerStatusCode, const std::vector<int>&)>
+      SendStashedPortsCallback;
 
   enum RunningStatus {
     STOPPED = EmbeddedWorkerInstance::STOPPED,
@@ -108,6 +110,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                         const base::string16& message,
                                         int line_number,
                                         const GURL& source_url) {}
+    virtual void OnControlleeAdded(ServiceWorkerVersion* version,
+                                   ServiceWorkerProviderHost* provider_host) {}
+    virtual void OnControlleeRemoved(ServiceWorkerVersion* version,
+                                     ServiceWorkerProviderHost* provider_host) {
+    }
     // Fires when a version transitions from having a controllee to not.
     virtual void OnNoControllees(ServiceWorkerVersion* version) {}
     virtual void OnCachedMetadataUpdated(ServiceWorkerVersion* version) {}
@@ -144,13 +151,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Starts an embedded worker for this version.
   // This returns OK (success) if the worker is already running.
   void StartWorker(const StatusCallback& callback);
-
-  // Starts an embedded worker for this version.
-  // |pause_after_download| notifies worker to pause after download finished
-  // which could be resumed by EmbeddedWorkerInstance::ResumeAfterDownload.
-  // This returns OK (success) if the worker is already running.
-  void StartWorker(bool pause_after_download,
-                   const StatusCallback& callback);
 
   // Stops an embedded worker for this version.
   // This returns OK (success) if the worker is already stopped.
@@ -259,6 +259,16 @@ class CONTENT_EXPORT ServiceWorkerVersion
       const std::vector<TransferredMessagePort>& sent_message_ports,
       const StatusCallback& callback);
 
+  // Transfers one or more stashed message ports to the associated embedded
+  // worker, and asynchronously calls |callback| with the new route ids for the
+  // transferred ports as soon as the ports are sent to the renderer.
+  // Once the ports are received by the renderer, the ports themselves will
+  // inform MessagePortService, which will enable actual messages to be sent.
+  void SendStashedMessagePorts(
+      const std::vector<TransferredMessagePort>& stashed_message_ports,
+      const std::vector<base::string16>& port_names,
+      const SendStashedPortsCallback& callback);
+
   // Adds and removes |provider_host| as a controllee of this ServiceWorker.
   // A potential controllee is a host having the version as its .installing
   // or .waiting version.
@@ -325,6 +335,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
                            ActivateWaitingVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, IdleTimeout);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, SetDevToolsAttached);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, StaleUpdate_FreshWorker);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest,
+                           StaleUpdate_NonActiveWorker);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, StaleUpdate_StartWorker);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, StaleUpdate_RunningWorker);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest,
+                           StaleUpdate_DoNotDeferTimer);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWaitForeverInFetchTest, RequestTimeout);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerFailToStartTest, Timeout);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionBrowserTest,
@@ -405,7 +422,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OnFetchEventFinished(int request_id,
                             ServiceWorkerFetchEventResult result,
                             const ServiceWorkerResponse& response);
-  void OnSyncEventFinished(int request_id);
+  void OnSyncEventFinished(int request_id,
+                           blink::WebServiceWorkerEventResult result);
   void OnNotificationClickEventFinished(int request_id);
   void OnPushEventFinished(int request_id,
                            blink::WebServiceWorkerEventResult result);
@@ -433,17 +451,17 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OnSkipWaiting(int request_id);
   void OnClaimClients(int request_id);
   void OnPongFromWorker();
+  void OnStashMessagePort(int message_port_id, const base::string16& name);
 
   void OnFocusClientFinished(int request_id,
                              const std::string& client_uuid,
                              const ServiceWorkerClientInfo& client);
 
   void DidEnsureLiveRegistrationForStartWorker(
-      bool pause_after_download,
       const StatusCallback& callback,
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& protect);
-  void StartWorkerInternal(bool pause_after_download);
+  void StartWorkerInternal();
 
   void DidSkipWaiting(int request_id);
 
@@ -494,6 +512,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerStatusCode DeduceStartWorkerFailureReason(
       ServiceWorkerStatusCode default_code);
 
+  // Sets |stale_time_| if this worker is stale, causing an update to eventually
+  // occur once the worker stops or is running too long.
+  void MarkIfStale();
+
+  void FoundRegistrationForUpdate(
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
+
   void OnStoppedInternal(EmbeddedWorkerInstance::Status old_status);
 
   const int64 version_id_;
@@ -524,7 +550,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   std::map<std::string, ServiceWorkerProviderHost*> controllee_map_;
   // Will be null while shutting down.
   base::WeakPtr<ServiceWorkerContextCore> context_;
-  ObserverList<Listener> listeners_;
+  base::ObserverList<Listener> listeners_;
   ServiceWorkerScriptCacheMap script_cache_map_;
   base::OneShotTimer<ServiceWorkerVersion> update_timer_;
 
@@ -536,6 +562,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   base::TimeTicks start_time_;
   // Holds the time the worker entered STOPPING status.
   base::TimeTicks stop_time_;
+  // Holds the time the worker was detected as stale and needs updating. We try
+  // to update once the worker stops, but will also update if it stays alive too
+  // long.
+  base::TimeTicks stale_time_;
 
   // New requests are added to |requests_| along with their entry in a callback
   // map. The timeout timer periodically checks |requests_| for entries that
@@ -546,6 +576,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool skip_waiting_ = false;
   bool skip_recording_startup_time_ = false;
   bool force_bypass_cache_for_scripts_ = false;
+  bool is_update_scheduled_ = false;
 
   std::vector<int> pending_skip_waiting_requests_;
   scoped_ptr<net::HttpResponseInfo> main_script_http_info_;

@@ -51,7 +51,7 @@
 #include "platform/graphics/CompositingReasons.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/PictureSnapshot.h"
-#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
+#include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebFloatPoint.h"
@@ -327,15 +327,10 @@ void InspectorLayerTreeAgent::makeSnapshot(ErrorString* errorString, const Strin
 
     IntSize size = expandedIntSize(layer->size());
 
-    SkPictureRecorder pictureRecorder;
-    OwnPtr<GraphicsContext> recordingContext = GraphicsContext::deprecatedCreateWithCanvas(pictureRecorder.beginRecording(size.width(), size.height()));
+    SkPictureBuilder pictureBuilder(FloatRect(0, 0, size.width(), size.height()));
+    layer->paint(pictureBuilder.context(), IntRect(IntPoint(0, 0), size));
 
-    {
-        DisplayItemListContextRecorder contextRecorder(*recordingContext);
-        layer->paint(contextRecorder.context(), IntRect(IntPoint(0, 0), size));
-    }
-
-    RefPtr<PictureSnapshot> snapshot = adoptRef(new PictureSnapshot(pictureRecorder.endRecording()));
+    RefPtr<PictureSnapshot> snapshot = adoptRef(new PictureSnapshot(pictureBuilder.endRecording()));
 
     *snapshotId = String::number(++s_lastSnapshotId);
     bool newEntry = m_snapshotById.add(*snapshotId, snapshot).isNewEntry;
@@ -372,9 +367,14 @@ void InspectorLayerTreeAgent::loadSnapshot(ErrorString* errorString, const RefPt
     }
     RefPtr<PictureSnapshot> snapshot = PictureSnapshot::load(decodedTiles);
     if (!snapshot) {
-        *errorString = "Invalida snapshot format";
+        *errorString = "Invalid snapshot format";
         return;
     }
+    if (snapshot->isEmpty()) {
+        *errorString = "Empty snapshot";
+        return;
+    }
+
     *snapshotId = String::number(++s_lastSnapshotId);
     bool newEntry = m_snapshotById.add(*snapshotId, snapshot).isNewEntry;
     ASSERT_UNUSED(newEntry, newEntry);

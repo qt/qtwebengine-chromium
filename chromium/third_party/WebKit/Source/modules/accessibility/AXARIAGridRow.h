@@ -38,16 +38,16 @@ class AXObjectCacheImpl;
 class AXARIAGridRow final : public AXTableRow {
 
 private:
-    AXARIAGridRow(LayoutObject*, AXObjectCacheImpl*);
+    AXARIAGridRow(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtr<AXARIAGridRow> create(LayoutObject*, AXObjectCacheImpl*);
-    virtual ~AXARIAGridRow();
+    static PassRefPtrWillBeRawPtr<AXARIAGridRow> create(LayoutObject*, AXObjectCacheImpl&);
+    ~AXARIAGridRow() override;
 
-    virtual void headerObjectsForRow(AccessibilityChildrenVector&) override;
+    void headerObjectsForRow(AccessibilityChildrenVector&) override;
 
 private:
-    virtual bool isARIATreeGridRow() const override;
+    bool isARIATreeGridRow() const override;
 };
 
 } // namespace blink

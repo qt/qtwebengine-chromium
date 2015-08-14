@@ -31,7 +31,7 @@ class GCM_EXPORT GCMStoreImpl : public GCMStore {
   ~GCMStoreImpl() override;
 
   // Load the directory and pass the initial state back to caller.
-  void Load(const LoadCallback& callback) override;
+  void Load(StoreOpenMode open_mode, const LoadCallback& callback) override;
 
   // Closes the GCM store.
   void Close() override;
@@ -49,10 +49,10 @@ class GCM_EXPORT GCMStoreImpl : public GCMStore {
                             const UpdateCallback& callback) override;
 
   // Registration info.
-  void AddRegistration(const std::string& app_id,
-                       const linked_ptr<RegistrationInfo>& registration,
+  void AddRegistration(const std::string& serialized_key,
+                       const std::string& serialized_value,
                        const UpdateCallback& callback) override;
-  void RemoveRegistration(const std::string& app_id,
+  void RemoveRegistration(const std::string& serialized_key,
                           const UpdateCallback& callback) override;
 
   // Unacknowledged incoming message handling.

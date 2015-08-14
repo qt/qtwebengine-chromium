@@ -333,7 +333,7 @@ WebInspector.VersionController = function()
 }
 
 WebInspector.VersionController._currentVersionName = "inspectorVersion";
-WebInspector.VersionController.currentVersion = 12;
+WebInspector.VersionController.currentVersion = 14;
 
 WebInspector.VersionController.prototype = {
     updateVersion: function()
@@ -564,6 +564,23 @@ WebInspector.VersionController.prototype = {
     },
 
     _updateVersionFrom11To12: function()
+    {
+        this._migrateSettingsFromLocalStorage();
+    },
+
+    _updateVersionFrom12To13: function()
+    {
+        this._migrateSettingsFromLocalStorage();
+        WebInspector.settings.createSetting("timelineOverviewMode", "").remove();
+    },
+
+    _updateVersionFrom13To14: function()
+    {
+        var defaultValue = { "throughput": -1, "latency": 0 };
+        WebInspector.settings.createSetting("networkConditions", defaultValue).set(defaultValue);
+    },
+
+    _migrateSettingsFromLocalStorage: function()
     {
         // This step migrates all the settings except for the ones below into the browser profile.
         var localSettings = [ "advancedSearchConfig", "breakpoints", "consoleHistory", "domBreakpoints", "eventListenerBreakpoints",

@@ -6,7 +6,6 @@
 
 #include "content/common/media/media_player_messages_android.h"
 #include "content/public/common/renderer_preferences.h"
-#include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
 #include "content/renderer/media/crypto/renderer_cdm_manager.h"
 #include "content/renderer/render_view_impl.h"
@@ -50,8 +49,6 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
                         OnConnectedToRemoteDevice)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DisconnectedFromRemoteDevice,
                         OnDisconnectedFromRemoteDevice)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_RequestFullscreen,
-                        OnRequestFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
@@ -234,12 +231,6 @@ void RendererMediaPlayerManager::OnPlayerPause(int player_id) {
     player->OnMediaPlayerPause();
 }
 
-void RendererMediaPlayerManager::OnRequestFullscreen(int player_id) {
-  WebMediaPlayerAndroid* player = GetMediaPlayer(player_id);
-  if (player)
-    player->OnRequestFullscreen();
-}
-
 void RendererMediaPlayerManager::OnRemoteRouteAvailabilityChanged(
     int player_id,
     bool routes_available) {
@@ -250,10 +241,6 @@ void RendererMediaPlayerManager::OnRemoteRouteAvailabilityChanged(
 
 void RendererMediaPlayerManager::EnterFullscreen(int player_id) {
   Send(new MediaPlayerHostMsg_EnterFullscreen(routing_id(), player_id));
-}
-
-void RendererMediaPlayerManager::ExitFullscreen(int player_id) {
-  Send(new MediaPlayerHostMsg_ExitFullscreen(routing_id(), player_id));
 }
 
 void RendererMediaPlayerManager::SetCdm(int player_id, int cdm_id) {

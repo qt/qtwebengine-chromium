@@ -91,13 +91,12 @@ public:
     {
         v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
         v8::HandleScope scope(isolate);
-        v8::Local<v8::Context> context = isolate->GetCurrentContext();
         // If we're invoked from C++ without a V8 context on the stack, we should
         // run the microtask in the context of the element's document's main world.
-        if (context.IsEmpty())
-            m_scriptState = ScriptState::from(toV8Context(&loader->element()->document(), DOMWrapperWorld::mainWorld()));
+        if (ScriptState::hasCurrentScriptState(isolate))
+            m_scriptState = ScriptState::current(isolate);
         else
-            m_scriptState = ScriptState::from(context);
+            m_scriptState = ScriptState::forMainWorld(loader->element()->document().frame());
     }
 
     ~Task() override
@@ -106,25 +105,13 @@ public:
 
     void run() override
     {
-        if (m_loader) {
-#if ENABLE(OILPAN)
-            // Oilpan: this WebThread::Task microtask may run after the
-            // loader has been GCed, but not yet lazily swept & finalized
-            // (when this task's loader reference will be cleared.)
-            //
-            // Handle this transient condition by explicitly checking here
-            // before going ahead with the update operation. Unsafe to do it
-            // if so, as the objects that the loader refers to may have been
-            // finalized by this time.
-            if (Heap::willObjectBeLazilySwept(m_loader))
-                return;
-#endif
-            if (m_scriptState->contextIsValid()) {
-                ScriptState::Scope scope(m_scriptState.get());
-                m_loader->doUpdateFromElement(m_shouldBypassMainWorldCSP, m_updateBehavior);
-            } else {
-                m_loader->doUpdateFromElement(m_shouldBypassMainWorldCSP, m_updateBehavior);
-            }
+        if (!m_loader)
+            return;
+        if (m_scriptState->contextIsValid()) {
+            ScriptState::Scope scope(m_scriptState.get());
+            m_loader->doUpdateFromElement(m_shouldBypassMainWorldCSP, m_updateBehavior);
+        } else {
+            m_loader->doUpdateFromElement(m_shouldBypassMainWorldCSP, m_updateBehavior);
         }
     }
 
@@ -231,12 +218,8 @@ static void configureRequest(FetchRequest& request, ImageLoader::BypassMainWorld
     if (!crossOriginMode.isNull())
         request.setCrossOriginAccessControl(element.document().securityOrigin(), crossOriginMode);
 
-    if (clientHintsPreferences.shouldSendRW() && isHTMLImageElement(element)) {
-        FetchRequest::ResourceWidth resourceWidth;
-        resourceWidth.width = toHTMLImageElement(element).sourceSize(element);
-        resourceWidth.isSet = true;
-        request.setResourceWidth(resourceWidth);
-    }
+    if (clientHintsPreferences.shouldSendResourceWidth() && isHTMLImageElement(element))
+        request.setResourceWidth(toHTMLImageElement(element).resourceWidth());
 }
 
 inline void ImageLoader::dispatchErrorEvent()
@@ -291,8 +274,11 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
         ResourceLoaderOptions resourceLoaderOptions = ResourceFetcher::defaultResourceOptions();
         ResourceRequest resourceRequest(url);
         resourceRequest.setFetchCredentialsMode(WebURLRequest::FetchCredentialsModeSameOrigin);
-        if (updateBehavior == UpdateForcedReload)
+        if (updateBehavior == UpdateForcedReload) {
             resourceRequest.setCachePolicy(ResourceRequestCachePolicy::ReloadBypassingCache);
+            // ImageLoader defers the load of images when in an ImageDocument. Don't defer this load on a forced reload.
+            m_loadingImageDocument = false;
+        }
         if (isHTMLPictureElement(element()->parentNode()) || !element()->fastGetAttribute(HTMLNames::srcsetAttr).isNull())
             resourceRequest.setRequestContext(WebURLRequest::RequestContextImageSet);
         FetchRequest request(resourceRequest, element()->localName(), resourceLoaderOptions);
@@ -307,7 +293,7 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
             request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
         }
 
-        newImage = document.fetcher()->fetchImage(request);
+        newImage = ImageResource::fetch(request, document.fetcher());
         if (m_loadingImageDocument && newImage)
             newImage->setLoading(true);
 
@@ -419,8 +405,11 @@ KURL ImageLoader::imageSourceToKURL(AtomicString imageSourceURL) const
 
     // Do not load any image if the 'src' attribute is missing or if it is
     // an empty string.
-    if (!imageSourceURL.isNull() && !stripLeadingAndTrailingHTMLSpaces(imageSourceURL).isEmpty())
-        url = document.completeURL(sourceURI(imageSourceURL));
+    if (!imageSourceURL.isNull()) {
+        String strippedImageSourceURL = stripLeadingAndTrailingHTMLSpaces(imageSourceURL);
+        if (!strippedImageSourceURL.isEmpty())
+            url = document.completeURL(strippedImageSourceURL);
+    }
     return url;
 }
 

@@ -84,13 +84,13 @@ std::string SuggestionsToResponse(const NavigationCorrection* corrections,
   for (int i = 0; i < num_corrections; ++i)
     url_corrections->Append(corrections[i].ToValue());
 
-  scoped_ptr<base::DictionaryValue> response(new base::DictionaryValue());
-  response->Set("result.UrlCorrections", url_corrections);
-  response->SetString("result.eventId", kNavigationCorrectionEventId);
-  response->SetString("result.fingerprint", kNavigationCorrectionFingerprint);
+  base::DictionaryValue response;
+  response.Set("result.UrlCorrections", url_corrections);
+  response.SetString("result.eventId", kNavigationCorrectionEventId);
+  response.SetString("result.fingerprint", kNavigationCorrectionFingerprint);
 
   std::string json;
-  base::JSONWriter::Write(response.get(), &json);
+  base::JSONWriter::Write(response, &json);
   return json;
 }
 
@@ -311,10 +311,14 @@ class NetErrorHelperCoreTest : public testing::Test,
                                   scoped_ptr<ErrorPageParams> params,
                                   bool* reload_button_shown,
                                   bool* show_saved_copy_button_shown,
+                                  bool* show_cached_copy_button_shown,
+                                  bool* show_cached_page_button_shown,
                                   std::string* html) const override {
     last_error_page_params_.reset(params.release());
     *reload_button_shown = false;
     *show_saved_copy_button_shown = false;
+    *show_cached_copy_button_shown = false;
+    *show_cached_page_button_shown = false;
     *html = ErrorToString(error, is_failed_post);
   }
 
@@ -2458,14 +2462,14 @@ TEST_F(NetErrorHelperCoreHistogramTest, SuccessPageLoadedBeforeTimerFires) {
 TEST_F(NetErrorHelperCoreTest, ExplicitReloadSucceeds) {
   DoErrorLoad(net::ERR_CONNECTION_RESET);
   EXPECT_EQ(0, reload_count());
-  core()->ExecuteButtonPress(NetErrorHelperCore::RELOAD_BUTTON);
+  core()->ExecuteButtonPress(true, NetErrorHelperCore::RELOAD_BUTTON);
   EXPECT_EQ(1, reload_count());
 }
 
 TEST_F(NetErrorHelperCoreTest, ExplicitShowSavedSucceeds) {
   DoErrorLoad(net::ERR_CONNECTION_RESET);
   EXPECT_EQ(0, show_saved_count());
-  core()->ExecuteButtonPress(NetErrorHelperCore::SHOW_SAVED_COPY_BUTTON);
+  core()->ExecuteButtonPress(true, NetErrorHelperCore::SHOW_SAVED_COPY_BUTTON);
   EXPECT_EQ(1, show_saved_count());
   EXPECT_EQ(GURL(kFailedUrl), show_saved_url());
 }

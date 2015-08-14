@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_COMMON_CONTEXT_MENU_PARAMS_H_
 #define CONTENT_PUBLIC_COMMON_CONTEXT_MENU_PARAMS_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -104,6 +105,10 @@ struct CONTENT_EXPORT ContextMenuParams {
   // This is the text of the selection that the context menu was invoked on.
   base::string16 selection_text;
 
+  // This is the title or alt (if title not available) text of the selection
+  // that the context menu was invoked on.
+  base::string16 title_text;
+
   // This is the suggested filename to be used when saving file through "Save
   // Link As" option of context menu.
   base::string16 suggested_filename;
@@ -151,12 +156,18 @@ struct CONTENT_EXPORT ContextMenuParams {
 
   ui::MenuSourceType source_type;
 
+  // Extra properties for the context menu.
+  std::map<std::string, std::string> properties;
+
 #if defined(OS_ANDROID)
   // Points representing the coordinates in the document space of the start and
   // end of the selection, if there is one.
   gfx::Point selection_start;
   gfx::Point selection_end;
 #endif
+
+  // If this node is an input field, the type of that field.
+  blink::WebContextMenuData::InputFieldType input_field_type;
 };
 
 }  // namespace content

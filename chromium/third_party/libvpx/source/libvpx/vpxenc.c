@@ -99,7 +99,7 @@ static void warn_or_exit_on_error(vpx_codec_ctx_t *ctx, int fatal,
   va_end(ap);
 }
 
-int read_frame(struct VpxInputContext *input_ctx, vpx_image_t *img) {
+static int read_frame(struct VpxInputContext *input_ctx, vpx_image_t *img) {
   FILE *f = input_ctx->file;
   y4m_input *y4m = &input_ctx->y4m;
   int shortread = 0;
@@ -114,14 +114,14 @@ int read_frame(struct VpxInputContext *input_ctx, vpx_image_t *img) {
   return !shortread;
 }
 
-int file_is_y4m(const char detect[4]) {
+static int file_is_y4m(const char detect[4]) {
   if (memcmp(detect, "YUV4", 4) == 0) {
     return 1;
   }
   return 0;
 }
 
-int fourcc_is_ivf(const char detect[4]) {
+static int fourcc_is_ivf(const char detect[4]) {
   if (memcmp(detect, "DKIF", 4) == 0) {
     return 1;
   }
@@ -330,10 +330,6 @@ static const arg_def_t sharpness = ARG_DEF(
     NULL, "sharpness", 1, "Loop filter sharpness (0..7)");
 static const arg_def_t static_thresh = ARG_DEF(
     NULL, "static-thresh", 1, "Motion detection threshold");
-static const arg_def_t cpu_used_vp8 = ARG_DEF(
-    NULL, "cpu-used", 1, "CPU Used (-16..16)");
-static const arg_def_t cpu_used_vp9 = ARG_DEF(
-    NULL, "cpu-used", 1, "CPU Used (-8..8)");
 static const arg_def_t auto_altref = ARG_DEF(
     NULL, "auto-alt-ref", 1, "Enable automatic alt reference frames");
 static const arg_def_t arnr_maxframes = ARG_DEF(
@@ -353,17 +349,14 @@ static const arg_def_t cq_level = ARG_DEF(
     NULL, "cq-level", 1, "Constant/Constrained Quality level");
 static const arg_def_t max_intra_rate_pct = ARG_DEF(
     NULL, "max-intra-rate", 1, "Max I-frame bitrate (pct)");
-static const arg_def_t max_inter_rate_pct = ARG_DEF(
-    NULL, "max-inter-rate", 1, "Max P-frame bitrate (pct)");
-static const arg_def_t gf_cbr_boost_pct = ARG_DEF(
-    NULL, "gf-cbr-boost", 1, "Boost for Golden Frame in CBR mode (pct)");
-
-static const arg_def_t screen_content_mode = ARG_DEF(NULL, "screen-content-mode", 1,
-                                                     "Screen content mode");
 
 #if CONFIG_VP8_ENCODER
+static const arg_def_t cpu_used_vp8 = ARG_DEF(
+    NULL, "cpu-used", 1, "CPU Used (-16..16)");
 static const arg_def_t token_parts = ARG_DEF(
     NULL, "token-parts", 1, "Number of token partitions to use, log2");
+static const arg_def_t screen_content_mode = ARG_DEF(
+    NULL, "screen-content-mode", 1, "Screen content mode");
 static const arg_def_t *vp8_args[] = {
   &cpu_used_vp8, &auto_altref, &noise_sens, &sharpness, &static_thresh,
   &token_parts, &arnr_maxframes, &arnr_strength, &arnr_type,
@@ -382,6 +375,8 @@ static const int vp8_arg_ctrl_map[] = {
 #endif
 
 #if CONFIG_VP9_ENCODER
+static const arg_def_t cpu_used_vp9 = ARG_DEF(
+    NULL, "cpu-used", 1, "CPU Used (-8..8)");
 static const arg_def_t tile_cols = ARG_DEF(
     NULL, "tile-columns", 1, "Number of tile columns to use, log2");
 static const arg_def_t tile_rows = ARG_DEF(
@@ -397,6 +392,10 @@ static const arg_def_t aq_mode = ARG_DEF(
 static const arg_def_t frame_periodic_boost = ARG_DEF(
     NULL, "frame-boost", 1,
     "Enable frame periodic boost (0: off (default), 1: on)");
+static const arg_def_t gf_cbr_boost_pct = ARG_DEF(
+    NULL, "gf-cbr-boost", 1, "Boost for Golden Frame in CBR mode (pct)");
+static const arg_def_t max_inter_rate_pct = ARG_DEF(
+    NULL, "max-inter-rate", 1, "Max P-frame bitrate (pct)");
 
 static const struct arg_enum_list color_space_enum[] = {
   { "unknown", VPX_CS_UNKNOWN },
@@ -467,8 +466,9 @@ static const int vp9_arg_ctrl_map[] = {
 
 static const arg_def_t *no_args[] = { NULL };
 
-void usage_exit() {
+void usage_exit(void) {
   int i;
+  const int num_encoder = get_vpx_encoder_count();
 
   fprintf(stderr, "Usage: %s <options> -o dst_filename src_filename \n",
           exec_name);
@@ -496,11 +496,15 @@ void usage_exit() {
           "  in fractional seconds. Default is 1/1000.\n");
   fprintf(stderr, "\nIncluded encoders:\n\n");
 
-  for (i = 0; i < get_vpx_encoder_count(); ++i) {
+  for (i = 0; i < num_encoder; ++i) {
     const VpxInterface *const encoder = get_vpx_encoder_by_index(i);
-    fprintf(stderr, "    %-6s - %s\n",
-            encoder->name, vpx_codec_iface_name(encoder->codec_interface()));
+    const char* defstr = (i == (num_encoder - 1)) ? "(default)" : "";
+      fprintf(stderr, "    %-6s - %s %s\n",
+              encoder->name, vpx_codec_iface_name(encoder->codec_interface()),
+              defstr);
   }
+  fprintf(stderr, "\n        ");
+  fprintf(stderr, "Use --codec to switch to a non-default encoder.\n\n");
 
   exit(EXIT_FAILURE);
 }
@@ -793,8 +797,8 @@ struct stream_state {
 };
 
 
-void validate_positive_rational(const char          *msg,
-                                struct vpx_rational *rat) {
+static void validate_positive_rational(const char          *msg,
+                                       struct vpx_rational *rat) {
   if (rat->den < 0) {
     rat->num *= -1;
     rat->den *= -1;
@@ -811,10 +815,14 @@ void validate_positive_rational(const char          *msg,
 static void parse_global_config(struct VpxEncoderConfig *global, char **argv) {
   char       **argi, **argj;
   struct arg   arg;
+  const int num_encoder = get_vpx_encoder_count();
+
+  if (num_encoder < 1)
+    die("Error: no valid encoder available\n");
 
   /* Initialize default parameters */
   memset(global, 0, sizeof(*global));
-  global->codec = get_vpx_encoder_by_index(0);
+  global->codec = get_vpx_encoder_by_index(num_encoder - 1);
   global->passes = 0;
   global->color_type = I420;
   /* Assign default deadline to good quality */
@@ -919,7 +927,7 @@ static void parse_global_config(struct VpxEncoderConfig *global, char **argv) {
 }
 
 
-void open_input_file(struct VpxInputContext *input) {
+static void open_input_file(struct VpxInputContext *input) {
   /* Parse certain options from the input file, if possible */
   input->file = strcmp(input->filename, "-")
       ? fopen(input->filename, "rb") : set_binary_mode(stdin);
@@ -935,6 +943,10 @@ void open_input_file(struct VpxInputContext *input) {
     rewind(input->file);
   }
 
+  /* Default to 1:1 pixel aspect ratio. */
+  input->pixel_aspect_ratio.numerator = 1;
+  input->pixel_aspect_ratio.denominator = 1;
+
   /* For RAW input sources, these bytes will applied on the first frame
    *  in read_frame().
    */
@@ -948,6 +960,8 @@ void open_input_file(struct VpxInputContext *input) {
       input->file_type = FILE_TYPE_Y4M;
       input->width = input->y4m.pic_w;
       input->height = input->y4m.pic_h;
+      input->pixel_aspect_ratio.numerator = input->y4m.par_n;
+      input->pixel_aspect_ratio.denominator = input->y4m.par_d;
       input->framerate.numerator = input->y4m.fps_n;
       input->framerate.denominator = input->y4m.fps_d;
       input->fmt = input->y4m.vpx_fmt;
@@ -1381,7 +1395,8 @@ static void show_stream_config(struct stream_state *stream,
 
 
 static void open_output_file(struct stream_state *stream,
-                             struct VpxEncoderConfig *global) {
+                             struct VpxEncoderConfig *global,
+                             const struct VpxRational *pixel_aspect_ratio) {
   const char *fn = stream->config.out_fn;
   const struct vpx_codec_enc_cfg *const cfg = &stream->config.cfg;
 
@@ -1402,7 +1417,8 @@ static void open_output_file(struct stream_state *stream,
     write_webm_file_header(&stream->ebml, cfg,
                            &global->framerate,
                            stream->config.stereo_fmt,
-                           global->codec->fourcc);
+                           global->codec->fourcc,
+                           pixel_aspect_ratio);
   }
 #endif
 
@@ -2035,7 +2051,8 @@ int main(int argc, const char **argv_) {
     }
 
     FOREACH_STREAM(setup_pass(stream, &global, pass));
-    FOREACH_STREAM(open_output_file(stream, &global));
+    FOREACH_STREAM(open_output_file(stream, &global,
+                                    &input.pixel_aspect_ratio));
     FOREACH_STREAM(initialize_encoder(stream, &global));
 
 #if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH

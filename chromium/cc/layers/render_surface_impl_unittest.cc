@@ -18,7 +18,6 @@ TEST(RenderSurfaceLayerImplTest, Occlusion) {
 
   LayerImpl* owning_layer_impl = impl.AddChildToRoot<LayerImpl>();
   owning_layer_impl->SetBounds(layer_size);
-  owning_layer_impl->SetContentBounds(layer_size);
   owning_layer_impl->SetDrawsContent(true);
   owning_layer_impl->SetHasRenderSurface(true);
 
@@ -39,7 +38,7 @@ TEST(RenderSurfaceLayerImplTest, Occlusion) {
 
   {
     SCOPED_TRACE("Full occlusion");
-    gfx::Rect occluded(owning_layer_impl->visible_content_rect());
+    gfx::Rect occluded(owning_layer_impl->visible_layer_rect());
     impl.AppendSurfaceQuadsWithOcclusion(render_surface_impl, occluded);
 
     LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(), gfx::Rect());

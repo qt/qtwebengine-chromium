@@ -81,7 +81,6 @@ downloadableBinaryFontsEnabled initial=true
 
 xssAuditorEnabled initial=false
 unsafePluginPastingEnabled initial=false
-treatIPAddressAsDomain initial=false
 
 preferCompositingToLCDTextEnabled initial=false, invalidate=AcceleratedCompositing
 
@@ -234,6 +233,11 @@ touchEditingEnabled initial=false
 useSolidColorScrollbars initial=false
 pinchOverlayScrollbarThickness type=int, initial=0
 
+# Experiment to invert the scroll order of the layout and visual viewports
+# in some circumstances. Namely, during a pinch-zoom gesture and browser
+# generated scrolls like "scroll into view".
+invertViewportScrollOrder initial=false
+
 # The rubber-band overscroll effect is implemented in Blink and is being moved
 # to the compositor thread. This will be set to true and eventually removed.
 # crbug.com/133097
@@ -251,6 +255,16 @@ displayModeOverride type=WebDisplayMode, initial=WebDisplayModeUndefined, invali
 loadsImagesAutomatically initial=false, invalidate=ImageLoading
 imagesEnabled initial=true, invalidate=ImageLoading
 imageAnimationPolicy type=ImageAnimationPolicy, initial=ImageAnimationPolicyAllowed
+
+# Number of outstanding and pending tokens allowed in the background HTML
+# parser. A value of 0 indicates the parser should use its default value.
+backgroundHtmlParserOutstandingTokenLimit type=unsigned, initial=0
+backgroundHtmlParserPendingTokenLimit type=unsigned, initial=0
+
+# Html preload scanning is a fast, early scan of HTML documents to find loadable
+# resources before the parser advances to them. If it is disabled, resources will
+# be loaded later.
+doHtmlPreloadScanning initial=true
 
 javaEnabled initial=false
 pluginsEnabled initial=false
@@ -325,6 +339,10 @@ logPreload initial=false
 # Android, and dynamically set by the inspector for mobile emulation.
 useMobileViewportStyle initial=false, invalidate=ViewportRule
 
+# Automatic track selection is performed based on user preference for track kind specified
+# by this setting.
+textTrackKindUserPreference type=TextTrackKindUserPreference, initial=TextTrackKindUserPreference::Default, invalidate=TextTrackKindUserPreference
+
 # User style overrides for captions and subtitles
 textTrackBackgroundColor type=String
 textTrackFontFamily type=String
@@ -333,3 +351,7 @@ textTrackFontVariant type=String
 textTrackTextColor type=String
 textTrackTextShadow type=String
 textTrackTextSize type=String
+
+lowPriorityIframes initial=false
+
+reportWheelOverscroll initial=false

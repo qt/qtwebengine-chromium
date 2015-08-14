@@ -32,6 +32,7 @@
 #define InterceptingCanvas_h
 
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 
@@ -64,8 +65,10 @@ public:
     void resetStepCount() { m_callCount = 0; }
 
 protected:
-    explicit InterceptingCanvasBase(SkBitmap bitmap) : SkCanvas(bitmap), m_callNestingDepth(0), m_callCount(0) { };
-    InterceptingCanvasBase(int width, int height) : SkCanvas(width, height), m_callNestingDepth(0), m_callCount(0) { };
+    explicit InterceptingCanvasBase(SkBitmap bitmap) : SkCanvas(bitmap), m_callNestingDepth(0), m_callCount(0) { }
+    InterceptingCanvasBase(int width, int height) : SkCanvas(width, height), m_callNestingDepth(0), m_callCount(0) { }
+
+    void unrollDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*, SkPicture::AbortCallback*);
 
     void onDrawPaint(const SkPaint&) override = 0;
     void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override = 0;
@@ -81,9 +84,6 @@ protected:
     void onDrawSprite(const SkBitmap&, int left, int top, const SkPaint*) override = 0;
     void onDrawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[],
         const SkColor colors[], SkXfermode* xmode, const uint16_t indices[], int indexCount, const SkPaint&) override = 0;
-    void beginCommentGroup(const char* description) override = 0;
-    void addComment(const char* keyword, const char* value) override = 0;
-    void endCommentGroup() override = 0;
 
     void onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint&) override = 0;
     void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y, const SkPaint&) override = 0;
@@ -115,8 +115,8 @@ template<typename DerivedCanvas> class CanvasInterceptor { };
 template<typename DerivedCanvas, typename Interceptor = CanvasInterceptor<DerivedCanvas>>
     class InterceptingCanvas : public InterceptingCanvasBase {
 protected:
-    explicit InterceptingCanvas(SkBitmap bitmap) : InterceptingCanvasBase(bitmap) { };
-    InterceptingCanvas(int width, int height) : InterceptingCanvasBase(width, height) { };
+    explicit InterceptingCanvas(SkBitmap bitmap) : InterceptingCanvasBase(bitmap) { }
+    InterceptingCanvas(int width, int height) : InterceptingCanvasBase(width, height) { }
 
     void onDrawPaint(const SkPaint& paint) override
     {
@@ -197,24 +197,6 @@ protected:
         this->SkCanvas::onDrawVertices(vmode, vertexCount, vertices, texs, colors, xmode, indices, indexCount, paint);
     }
 
-    void beginCommentGroup(const char* description) override
-    {
-        Interceptor interceptor(this);
-        this->SkCanvas::beginCommentGroup(description);
-    }
-
-    void addComment(const char* keyword, const char* value) override
-    {
-        Interceptor interceptor(this);
-        this->SkCanvas::addComment(keyword, value);
-    }
-
-    void endCommentGroup() override
-    {
-        Interceptor interceptor(this);
-        this->SkCanvas::endCommentGroup();
-    }
-
     void onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint& paint) override
     {
         Interceptor interceptor(this);
@@ -277,8 +259,7 @@ protected:
 
     void onDrawPicture(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint) override
     {
-        Interceptor interceptor(this);
-        this->SkCanvas::onDrawPicture(picture, matrix, paint);
+        this->unrollDrawPicture(picture, matrix, paint, nullptr);
     }
 
     void didSetMatrix(const SkMatrix& matrix) override

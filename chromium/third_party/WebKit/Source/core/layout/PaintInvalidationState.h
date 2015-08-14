@@ -22,7 +22,10 @@ public:
     PaintInvalidationState(PaintInvalidationState& next, LayoutBoxModelObject& layoutObject, const LayoutBoxModelObject& paintInvalidationContainer);
     PaintInvalidationState(PaintInvalidationState& next, const LayoutSVGModelObject& layoutObject);
 
-    explicit PaintInvalidationState(const LayoutView&, Vector<LayoutObject*>& pendingDelayedPaintInvalidations);
+    PaintInvalidationState(const LayoutView& layoutView, Vector<LayoutObject*>& pendingDelayedPaintInvalidations)
+        : PaintInvalidationState(layoutView, pendingDelayedPaintInvalidations, nullptr) { }
+    PaintInvalidationState(const LayoutView& layoutView, PaintInvalidationState& ownerPaintInvalidationState)
+        : PaintInvalidationState(layoutView, ownerPaintInvalidationState.m_pendingDelayedPaintInvalidations, &ownerPaintInvalidationState) { }
 
     const LayoutRect& clipRect() const { return m_clipRect; }
     const LayoutSize& paintOffset() const { return m_paintOffset; }
@@ -31,8 +34,8 @@ public:
     bool cachedOffsetsEnabled() const { return m_cachedOffsetsEnabled; }
     bool isClipped() const { return m_clipped; }
 
-    bool forceCheckForPaintInvalidation() const { return m_forceCheckForPaintInvalidation; }
-    void setForceCheckForPaintInvalidation() { m_forceCheckForPaintInvalidation = true; }
+    bool ancestorHadPaintInvalidationForLocationChange() const { return m_ancestorHadPaintInvalidationForLocationChange; }
+    void setAncestorHadPaintInvalidationForLocationChange() { m_ancestorHadPaintInvalidationForLocationChange = true; }
 
     const LayoutBoxModelObject& paintInvalidationContainer() const { return m_paintInvalidationContainer; }
 
@@ -46,6 +49,8 @@ public:
     Vector<LayoutObject*>& pendingDelayedPaintInvalidationTargets() { return m_pendingDelayedPaintInvalidations; }
 
 private:
+    PaintInvalidationState(const LayoutView&, Vector<LayoutObject*>& pendingDelayedPaintInvalidations, PaintInvalidationState* ownerPaintInvalidationState);
+
     void applyClipIfNeeded(const LayoutObject&);
     void addClipRectRelativeToPaintOffset(const LayoutSize& clipSize);
 
@@ -53,7 +58,7 @@ private:
 
     bool m_clipped;
     mutable bool m_cachedOffsetsEnabled;
-    bool m_forceCheckForPaintInvalidation;
+    bool m_ancestorHadPaintInvalidationForLocationChange;
 
     LayoutRect m_clipRect;
 

@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/filename_util.h"
@@ -206,7 +207,7 @@ void OSExchangeDataProviderAuraX11::SetFilenames(
 
 void OSExchangeDataProviderAuraX11::SetPickledData(
     const OSExchangeData::CustomFormat& format,
-    const Pickle& pickle) {
+    const base::Pickle& pickle) {
   const unsigned char* data =
       reinterpret_cast<const unsigned char*>(pickle.data());
 
@@ -259,10 +260,11 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
       base::string16 unparsed;
       data.AssignTo(&unparsed);
 
-      std::vector<base::string16> tokens;
-      size_t num_tokens = Tokenize(unparsed, base::ASCIIToUTF16("\n"), &tokens);
-      if (num_tokens > 0) {
-        if (num_tokens > 1)
+      std::vector<base::string16> tokens = base::SplitString(
+          unparsed, base::ASCIIToUTF16("\n"),
+          base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+      if (tokens.size() > 0) {
+        if (tokens.size() > 1)
           *title = tokens[1];
         else
           *title = base::string16();
@@ -324,7 +326,7 @@ bool OSExchangeDataProviderAuraX11::GetFilenames(
 
 bool OSExchangeDataProviderAuraX11::GetPickledData(
     const OSExchangeData::CustomFormat& format,
-    Pickle* pickle) const {
+    base::Pickle* pickle) const {
   std::vector< ::Atom> requested_types;
   requested_types.push_back(atom_cache_.GetAtom(format.ToString().c_str()));
 
@@ -332,8 +334,8 @@ bool OSExchangeDataProviderAuraX11::GetPickledData(
   if (data.IsValid()) {
     // Note that the pickle object on the right hand side of the assignment
     // only refers to the bytes in |data|. The assignment copies the data.
-    *pickle = Pickle(reinterpret_cast<const char*>(data.GetData()),
-                     static_cast<int>(data.GetSize()));
+    *pickle = base::Pickle(reinterpret_cast<const char*>(data.GetData()),
+                           static_cast<int>(data.GetSize()));
     return true;
   }
 

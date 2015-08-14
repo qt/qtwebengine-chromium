@@ -6,6 +6,7 @@
 #define DisplayItem_h
 
 #include "platform/PlatformExport.h"
+#include "platform/graphics/ListContainer.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassOwnPtr.h"
@@ -24,7 +25,7 @@ class WebDisplayItemList;
 class PLATFORM_EXPORT DisplayItem {
 public:
     enum {
-        // Must be kept in sync with core/layout/PaintPhase.h.
+        // Must be kept in sync with core/paint/PaintPhase.h.
         PaintPhaseMax = 12,
     };
 
@@ -67,6 +68,9 @@ public:
         PopupContainerBorder,
         PopupListBoxBackground,
         PopupListBoxRow,
+        PrintedContentBackground,
+        PrintedContentLineBoundary,
+        PrintedContentPDFURLRect,
         Resizer,
         SVGClip,
         SVGFilter,
@@ -89,7 +93,8 @@ public:
         TableCellBackgroundFromSelfPaintingRow, // FIXME: To be deprecated.
         VideoBitmap,
         WebPlugin,
-        DrawingLast = WebPlugin,
+        WebFont,
+        DrawingLast = WebFont,
 
         CachedFirst,
         CachedLast = CachedFirst + DrawingLast - DrawingFirst,
@@ -115,7 +120,8 @@ public:
         ClipSelectionImage,
         PageWidgetDelegateClip,
         TransparencyClip,
-        ClipLast = TransparencyClip,
+        ClipPrintedPage,
+        ClipLast = ClipPrintedPage,
 
         EndClipFirst,
         EndClipLast = EndClipFirst + ClipLast - ClipFirst,
@@ -168,28 +174,70 @@ public:
         EndSubtreePaintPhaseLast = EndSubtreePaintPhaseFirst + PaintPhaseMax,
         EndSubtreeLast = EndSubtreePaintPhaseLast,
 
-        TypeLast = EndSubtreeLast
+        UninitializedType,
+        TypeLast = UninitializedType
     };
+
+    DisplayItem(const DisplayItemClientWrapper& client, Type type)
+        : m_client(client.displayItemClient())
+        , m_scopeContainer(nullptr)
+        , m_scopeId(0)
+        , m_type(type)
+        , m_skippedCache(false)
+        , m_ignoredFromList(false)
+#ifndef NDEBUG
+        , m_clientDebugString(client.debugName())
+#endif
+    { }
+
+    // Ids are for matching new DisplayItems with existing DisplayItems.
+    struct Id {
+        Id(const DisplayItemClient client, const Type type, const int scopeId, const DisplayItemClient scopeContainer)
+            : client(client)
+            , type(type)
+            , scopeId(scopeId)
+            , scopeContainer(scopeContainer) { }
+
+        bool matches(const DisplayItem& item) const
+        {
+            // We should always convert to non-cached types before matching.
+            ASSERT(!isCachedType(item.m_type));
+            ASSERT(!isCachedType(type));
+            return client == item.m_client
+                && type == item.m_type
+                && scopeId == item.m_scopeId
+                && scopeContainer == item.m_scopeContainer;
+        }
+
+        const DisplayItemClient client;
+        const Type type;
+        const int scopeId;
+        const DisplayItemClient scopeContainer;
+    };
+
+    // Return the Id with cached types converted to non-cached types
+    // (e.g., Type::CachedSVGImage -> Type::SVGImage).
+    Id nonCachedId() const
+    {
+        return Id(m_client, isCachedType(m_type) ? cachedTypeToDrawingType(m_type) : m_type, m_scopeId, m_scopeContainer);
+    }
 
     virtual ~DisplayItem() { }
 
     virtual void replay(GraphicsContext&) { }
 
-    DisplayItemClient client() const { return m_id.client; }
-    Type type() const { return m_id.type; }
-    bool idsEqual(const DisplayItem& other, Type overrideType) const
+    DisplayItemClient client() const { return m_client; }
+    Type type() const { return m_type; }
+
+    void setScope(int scopeId, DisplayItemClient scopeContainer)
     {
-        return m_id.client == other.m_id.client
-            && m_id.type == overrideType
-            && m_id.scopeContainer == other.m_id.scopeContainer
-            && m_id.scopeId == other.m_id.scopeId;
+        m_scopeId = scopeId;
+        m_scopeContainer = scopeContainer;
     }
 
-    void setScope(DisplayItemClient scopeContainer, int scopeId)
-    {
-        m_id.scopeContainer = scopeContainer;
-        m_id.scopeId = scopeId;
-    }
+    // For DisplayItemList only. Painters should use DisplayItemCacheSkipper instead.
+    void setSkippedCache() { m_skippedCache = true; }
+    bool skippedCache() const { return m_skippedCache; }
 
     virtual void appendToWebDisplayItemList(WebDisplayItemList*) const { }
 
@@ -257,10 +305,13 @@ public:
     virtual bool isEnd() const { return false; }
 
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const { return false; }
+    virtual bool isEndAndPairedWith(DisplayItem::Type otherType) const { return false; }
 #endif
 
     virtual bool drawsContent() const { return false; }
+
+    bool ignoreFromDisplayList() const { return m_ignoredFromList; }
+    void setIgnoredFromDisplayList() { m_ignoredFromList = true; }
 
 #ifndef NDEBUG
     static WTF::String typeAsDebugString(DisplayItem::Type);
@@ -269,26 +320,29 @@ public:
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const;
 #endif
 
-protected:
-    DisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : m_id(client.displayItemClient(), type)
+private:
+    // The default DisplayItem constructor is only used by ListContainer::appendByMoving
+    // where an inavlid DisplaItem is constructed at the source location.
+    friend DisplayItem* ListContainer<DisplayItem>::appendByMoving<DisplayItem>(DisplayItem*);
+    DisplayItem()
+        : m_client(nullptr)
+        , m_scopeContainer(nullptr)
+        , m_scopeId(0)
+        , m_type(UninitializedType)
+        , m_skippedCache(false)
+        , m_ignoredFromList(true)
 #ifndef NDEBUG
-        , m_clientDebugString(client.debugName())
+        , m_clientDebugString("invalid")
 #endif
     { }
 
-private:
-    struct Id {
-        Id(DisplayItemClient c, Type t) : client(c), type(t), scopeContainer(nullptr), scopeId(0)
-        {
-            ASSERT(c);
-        }
-
-        const DisplayItemClient client;
-        const Type type;
-        DisplayItemClient scopeContainer;
-        int scopeId;
-    } m_id;
+    const DisplayItemClient m_client;
+    DisplayItemClient m_scopeContainer;
+    int m_scopeId;
+    static_assert(TypeLast < (1 << 16), "DisplayItem::Type should fit in 16 bits");
+    const Type m_type : 16;
+    unsigned m_skippedCache : 1;
+    unsigned m_ignoredFromList : 1;
 
 #ifndef NDEBUG
     WTF::String m_clientDebugString;
@@ -300,7 +354,7 @@ protected:
     PairedBeginDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
 
 private:
-    virtual bool isBegin() const override final { return true; }
+    bool isBegin() const final { return true; }
 };
 
 class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
@@ -308,11 +362,11 @@ protected:
     PairedEndDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
 
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const override = 0;
+    bool isEndAndPairedWith(DisplayItem::Type otherType) const override = 0;
 #endif
 
 private:
-    virtual bool isEnd() const override final { return true; }
+    bool isEnd() const final { return true; }
 };
 
 } // namespace blink

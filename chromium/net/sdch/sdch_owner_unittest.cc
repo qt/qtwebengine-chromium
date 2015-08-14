@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/location.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/prefs/testing_pref_store.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/simple_test_clock.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "net/base/sdch_manager.h"
 #include "net/log/net_log.h"
@@ -95,7 +98,7 @@ class URLRequestErrorCountingJob : public URLRequestJob {
   }
 
   void Start() override {
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(&URLRequestErrorCountingJob::StartAsync,
                               weak_factory_.GetWeakPtr()));
   }
@@ -774,7 +777,7 @@ TEST_F(SdchOwnerPersistenceTest, Empty) {
 
 // Test a persistence store with an empty dictionary.
 TEST_F(SdchOwnerPersistenceTest, Persistent_EmptyDict) {
-  pref_store_->SetValue("SDCH", new base::DictionaryValue(),
+  pref_store_->SetValue("SDCH", make_scoped_ptr(new base::DictionaryValue()),
                         WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
   ResetOwner(false);
   EXPECT_EQ(0, owner_->GetDictionaryCountForTesting());
@@ -782,9 +785,9 @@ TEST_F(SdchOwnerPersistenceTest, Persistent_EmptyDict) {
 
 // Test a persistence store with a bad version number.
 TEST_F(SdchOwnerPersistenceTest, Persistent_BadVersion) {
-  base::DictionaryValue* sdch_dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> sdch_dict(new base::DictionaryValue());
   sdch_dict->SetInteger("version", 2);
-  pref_store_->SetValue("SDCH", sdch_dict,
+  pref_store_->SetValue("SDCH", sdch_dict.Pass(),
                         WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
 
   ResetOwner(false);
@@ -793,11 +796,11 @@ TEST_F(SdchOwnerPersistenceTest, Persistent_BadVersion) {
 
 // Test a persistence store with an empty dictionaries map.
 TEST_F(SdchOwnerPersistenceTest, Persistent_EmptyDictList) {
-  base::DictionaryValue* sdch_dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> sdch_dict(new base::DictionaryValue());
   scoped_ptr<base::DictionaryValue> dicts(new base::DictionaryValue());
   sdch_dict->SetInteger("version", 1);
   sdch_dict->Set("dictionaries", dicts.Pass());
-  pref_store_->SetValue("SDCH", sdch_dict,
+  pref_store_->SetValue("SDCH", sdch_dict.Pass(),
                         WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
 
   ResetOwner(false);

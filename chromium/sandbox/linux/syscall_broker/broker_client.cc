@@ -65,7 +65,7 @@ int BrokerClient::PathAndFlagsSyscall(IPCCommand syscall_type,
     }
   }
 
-  Pickle write_pickle;
+  base::Pickle write_pickle;
   write_pickle.WriteInt(syscall_type);
   write_pickle.WriteString(pathname);
   write_pickle.WriteInt(flags);
@@ -78,7 +78,7 @@ int BrokerClient::PathAndFlagsSyscall(IPCCommand syscall_type,
   // temporary socketpair (created internally by SendRecvMsg()).
   // Then read the reply on this new socketpair in reply_buf and put an
   // eventual attached file descriptor in |returned_fd|.
-  ssize_t msg_len = UnixDomainSocket::SendRecvMsgWithFlags(
+  ssize_t msg_len = base::UnixDomainSocket::SendRecvMsgWithFlags(
       ipc_channel_.get(), reply_buf, sizeof(reply_buf), recvmsg_flags,
       &returned_fd, write_pickle);
   if (msg_len <= 0) {
@@ -87,8 +87,8 @@ int BrokerClient::PathAndFlagsSyscall(IPCCommand syscall_type,
     return -ENOMEM;
   }
 
-  Pickle read_pickle(reinterpret_cast<char*>(reply_buf), msg_len);
-  PickleIterator iter(read_pickle);
+  base::Pickle read_pickle(reinterpret_cast<char*>(reply_buf), msg_len);
+  base::PickleIterator iter(read_pickle);
   int return_value = -1;
   // Now deserialize the return value and eventually return the file
   // descriptor.

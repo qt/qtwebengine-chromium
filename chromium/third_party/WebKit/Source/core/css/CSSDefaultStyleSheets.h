@@ -35,13 +35,12 @@ class CSSDefaultStyleSheets : public NoBaseWillBeGarbageCollected<CSSDefaultStyl
 public:
     static CSSDefaultStyleSheets& instance();
 
-    void ensureDefaultStyleSheetsForElement(Element*, bool& changedDefaultStyle);
+    void ensureDefaultStyleSheetsForElement(const Element&, bool& changedDefaultStyle);
 
     RuleSet* defaultStyle() { return m_defaultStyle.get(); }
     RuleSet* defaultQuirksStyle() { return m_defaultQuirksStyle.get(); }
     RuleSet* defaultPrintStyle() { return m_defaultPrintStyle.get(); }
     RuleSet* defaultViewSourceStyle();
-    RuleSet* defaultTransitionStyle();
     RuleSet* defaultMobileViewportStyle();
 
     // FIXME: Remove WAP support.
@@ -65,7 +64,6 @@ private:
     OwnPtrWillBeMember<RuleSet> m_defaultPrintStyle;
     OwnPtrWillBeMember<RuleSet> m_defaultViewSourceStyle;
     OwnPtrWillBeMember<RuleSet> m_defaultXHTMLMobileProfileStyle;
-    OwnPtrWillBeMember<RuleSet> m_defaultTransitionStyle;
 
     RefPtrWillBeMember<StyleSheetContents> m_defaultStyleSheet;
     RefPtrWillBeMember<StyleSheetContents> m_mobileViewportStyleSheet;

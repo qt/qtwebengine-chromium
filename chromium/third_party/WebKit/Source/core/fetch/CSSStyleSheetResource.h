@@ -33,34 +33,49 @@
 namespace blink {
 
 class CSSParserContext;
+class FetchRequest;
 class ResourceClient;
+class ResourceFetcher;
 class StyleSheetContents;
 
 class CSSStyleSheetResource final : public StyleSheetResource {
 public:
     enum class MIMETypeCheck { Strict, Lax };
 
-    CSSStyleSheetResource(const ResourceRequest&, const String& charset);
-    virtual ~CSSStyleSheetResource();
+    static ResourcePtr<CSSStyleSheetResource> fetch(FetchRequest&, ResourceFetcher*);
+
+    ~CSSStyleSheetResource() override;
     DECLARE_VIRTUAL_TRACE();
 
     const String sheetText(MIMETypeCheck = MIMETypeCheck::Strict) const;
 
     const AtomicString mimeType() const;
 
-    virtual void didAddClient(ResourceClient*) override;
+    void didAddClient(ResourceClient*) override;
 
     PassRefPtrWillBeRawPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
     void saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>);
 
 protected:
-    virtual bool isSafeToUnlock() const override;
-    virtual void destroyDecodedDataIfPossible() override;
+    bool isSafeToUnlock() const override;
+    void destroyDecodedDataIfPossible() override;
 
 private:
+    class CSSStyleSheetResourceFactory : public ResourceFactory {
+    public:
+        CSSStyleSheetResourceFactory()
+            : ResourceFactory(Resource::CSSStyleSheet) { }
+
+        Resource* create(const ResourceRequest& request, const String& charset) const override
+        {
+            return new CSSStyleSheetResource(request, charset);
+        }
+    };
+    CSSStyleSheetResource(const ResourceRequest&, const String& charset);
+
     bool canUseSheet(MIMETypeCheck) const;
-    virtual void dispose() override;
-    virtual void checkNotify() override;
+    void dispose() override;
+    void checkNotify() override;
 
     String m_decodedSheetText;
 

@@ -34,10 +34,6 @@ class CONTENT_EXPORT NavigatorDelegate {
       bool is_error_page,
       bool is_iframe_srcdoc) {}
 
-  // The |render_frame_host| started a transition-flagged navigation.
-  virtual void DidStartNavigationTransition(
-      RenderFrameHostImpl* render_frame_host) {}
-
   // A provisional load in |render_frame_host| failed.
   virtual void DidFailProvisionalLoadWithError(
       RenderFrameHostImpl* render_frame_host,
@@ -48,7 +44,8 @@ class CONTENT_EXPORT NavigatorDelegate {
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
       int error_code,
-      const base::string16& error_description) {}
+      const base::string16& error_description,
+      bool was_ignored_by_handler) {}
 
   // A navigation was committed in |render_frame_host|.
   virtual void DidCommitProvisionalLoad(

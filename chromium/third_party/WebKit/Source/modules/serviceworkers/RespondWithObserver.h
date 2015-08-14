@@ -8,6 +8,7 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebServiceWorkerResponseError.h"
 #include "public/platform/WebURLRequest.h"
 
 namespace blink {
@@ -24,7 +25,7 @@ class MODULES_EXPORT RespondWithObserver final : public GarbageCollectedFinalize
 public:
     static RespondWithObserver* create(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
 
-    virtual void contextDestroyed() override;
+    void contextDestroyed() override;
 
     void didDispatchEvent(bool defaultPrevented);
 
@@ -32,7 +33,7 @@ public:
     // given promise is resolved or rejected.
     void respondWith(ScriptState*, const ScriptValue&, ExceptionState&);
 
-    void responseWasRejected();
+    void responseWasRejected(WebServiceWorkerResponseError);
     void responseWasFulfilled(const ScriptValue&);
 
     DECLARE_VIRTUAL_TRACE();

@@ -62,14 +62,14 @@ class CORE_EXPORT PingLoader : public RefCountedWillBeRefCountedGarbageCollected
     WTF_MAKE_NONCOPYABLE(PingLoader);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PingLoader);
 public:
-    virtual ~PingLoader();
+    ~PingLoader() override;
 
     enum ViolationReportType {
         ContentSecurityPolicyViolationReport,
         XSSAuditorViolationReport
     };
 
-    static void loadImage(LocalFrame*, const KURL& url);
+    static void loadImage(LocalFrame*, const KURL&);
     static void sendLinkAuditPing(LocalFrame*, const KURL& pingURL, const KURL& destinationURL);
     static void sendViolationReport(LocalFrame*, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType);
 
@@ -83,10 +83,10 @@ protected:
     void dispose();
 
 private:
-    virtual void didReceiveResponse(WebURLLoader*, const WebURLResponse&) override;
-    virtual void didReceiveData(WebURLLoader*, const char*, int, int) override;
-    virtual void didFinishLoading(WebURLLoader*, double, int64_t) override;
-    virtual void didFail(WebURLLoader*, const WebURLError&) override;
+    void didReceiveResponse(WebURLLoader*, const WebURLResponse&) override;
+    void didReceiveData(WebURLLoader*, const char*, int, int) override;
+    void didFinishLoading(WebURLLoader*, double, int64_t) override;
+    void didFail(WebURLLoader*, const WebURLError&) override;
 
     void timeout(Timer<PingLoader>*);
 

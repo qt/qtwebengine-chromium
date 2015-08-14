@@ -77,9 +77,6 @@ class CONTENT_EXPORT CompositorImpl
                            const gfx::Vector2dF& elastic_overscroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
-  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
-                           float page_scale,
-                           float top_controls_delta) override {}
   void RequestNewOutputSurface() override;
   void DidInitializeOutputSurface() override;
   void DidFailToInitializeOutputSurface() override;
@@ -88,6 +85,10 @@ class CONTENT_EXPORT CompositorImpl
   void DidCommitAndDrawFrame() override {}
   void DidCompleteSwapBuffers() override;
   void DidCompletePageScaleAnimation() override {}
+  void RecordFrameTimingEvents(
+      scoped_ptr<cc::FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<cc::FrameTimingTracker::MainFrameTimingSet> main_frame_events)
+      override {}
 
   // LayerTreeHostSingleThreadClient implementation.
   void ScheduleComposite() override;

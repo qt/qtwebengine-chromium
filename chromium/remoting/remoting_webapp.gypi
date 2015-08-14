@@ -11,6 +11,7 @@
     'main_html_file%': '<(SHARED_INTERMEDIATE_DIR)/remoting/main.html',
     'generated_html_files': [
       '<(SHARED_INTERMEDIATE_DIR)/remoting/background.html',
+      '<(SHARED_INTERMEDIATE_DIR)/remoting/credits.html',
       '<(SHARED_INTERMEDIATE_DIR)/remoting/message_window.html',
       '<(SHARED_INTERMEDIATE_DIR)/remoting/wcs_sandbox.html',
     ],
@@ -22,7 +23,7 @@
   ],
   'conditions': [
     ['run_jscompile != 0', {
-      'includes': ['remoting_webapp_compile.gypi'],
+      'dependencies': ['remoting_webapp_compile.gypi:*'],
     }],
   ],
   'actions': [

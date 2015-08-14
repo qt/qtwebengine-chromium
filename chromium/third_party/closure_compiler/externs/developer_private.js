@@ -14,11 +14,11 @@ chrome.developerPrivate = {};
  * @see https://developer.chrome.com/extensions/developerPrivate#type-ItemType
  */
 chrome.developerPrivate.ItemType = {
-  hosted_app: 'hosted_app',
-  packaged_app: 'packaged_app',
-  legacy_packaged_app: 'legacy_packaged_app',
-  extension: 'extension',
-  theme: 'theme',
+  HOSTED_APP: 'hosted_app',
+  PACKAGED_APP: 'packaged_app',
+  LEGACY_PACKAGED_APP: 'legacy_packaged_app',
+  EXTENSION: 'extension',
+  THEME: 'theme',
 };
 
 /**
@@ -122,6 +122,15 @@ chrome.developerPrivate.ExtensionState = {
 };
 
 /**
+ * @enum {string}
+ * @see https://developer.chrome.com/extensions/developerPrivate#type-CommandScope
+ */
+chrome.developerPrivate.CommandScope = {
+  GLOBAL: 'GLOBAL',
+  CHROME: 'CHROME',
+};
+
+/**
  * @typedef {{
  *   isEnabled: boolean,
  *   isActive: boolean
@@ -217,9 +226,41 @@ var HomePage;
 var ExtensionView;
 
 /**
+ * @enum {string}
+ */
+chrome.developerPrivate.ControllerType = {
+  POLICY: 'POLICY',
+  CHILD_CUSTODIAN: 'CHILD_CUSTODIAN',
+  SUPERVISED_USER_CUSTODIAN: 'SUPERVISED_USER_CUSTODIAN',
+};
+
+/**
+ * @typedef {{
+ *   type: !chrome.developerPrivate.ControllerType,
+ *   text: string
+ * }}
+ */
+var ControlledInfo;
+
+/**
+ * @typedef {{
+ *   description: string,
+ *   keybinding: string,
+ *   name: string,
+ *   isActive: boolean,
+ *   scope: !chrome.developerPrivate.CommandScope,
+ *   isExtensionAction: boolean
+ * }}
+ * @see https://developer.chrome.com/extensions/developerPrivate#type-Command
+ */
+var Command;
+
+/**
  * @typedef {{
  *   actionButtonHidden: boolean,
  *   blacklistText: (string|undefined),
+ *   commands: !Array<Command>,
+ *   controlledInfo: (ControlledInfo|undefined),
  *   dependentExtensions: !Array<string>,
  *   description: string,
  *   disableReasons: DisableReasons,
@@ -229,7 +270,6 @@ var ExtensionView;
  *   iconUrl: string,
  *   id: string,
  *   incognitoAccess: AccessModifier,
- *   installedByCustodian: boolean,
  *   installWarnings: !Array<string>,
  *   launchUrl: (string|undefined),
  *   location: !chrome.developerPrivate.Location,
@@ -240,7 +280,6 @@ var ExtensionView;
  *   offlineEnabled: boolean,
  *   optionsPage: (OptionsPage|undefined),
  *   path: (string|undefined),
- *   policyText: (string|undefined),
  *   prettifiedPath: (string|undefined),
  *   runOnAllUrls: AccessModifier,
  *   runtimeErrors: !Array<RuntimeError>,
@@ -334,6 +373,17 @@ var ProfileConfigurationUpdate;
 
 /**
  * @typedef {{
+ *   extensionId: string,
+ *   commandName: string,
+ *   scope: (!chrome.developerPrivate.CommandScope|undefined),
+ *   keybinding: (string|undefined)
+ * }}
+ * @see https://developer.chrome.com/extensions/developerPrivate#type-ExtensionCommandUpdate
+ */
+var ExtensionCommandUpdate;
+
+/**
+ * @typedef {{
  *   failQuietly: (boolean|undefined)
  * }}
  * @see https://developer.chrome.com/extensions/developerPrivate#type-ReloadOptions
@@ -390,6 +440,7 @@ chrome.developerPrivate.EventType = {
   ERROR_ADDED: 'ERROR_ADDED',
   ERRORS_REMOVED: 'ERRORS_REMOVED',
   PREFS_CHANGED: 'PREFS_CHANGED',
+  WARNINGS_CHANGED: 'WARNINGS_CHANGED',
 };
 
 /**
@@ -616,7 +667,8 @@ chrome.developerPrivate.openDevTools = function(properties, callback) {};
 
 /**
  * Delete reported extension erors.
- * @param {DeleteExtensionErrorsProperties} properties
+ * @param {DeleteExtensionErrorsProperties} properties The properties specifying
+ *     the errors to remove.
  * @param {function():void=} callback
  * @see https://developer.chrome.com/extensions/developerPrivate#method-deleteExtensionErrors
  */
@@ -624,7 +676,7 @@ chrome.developerPrivate.deleteExtensionErrors = function(properties, callback) {
 
 /**
  * Repairs the extension specified.
- * @param {string} extensionId
+ * @param {string} extensionId The id of the extension to repair.
  * @param {function():void=} callback
  * @see https://developer.chrome.com/extensions/developerPrivate#method-repairExtension
  */
@@ -632,7 +684,8 @@ chrome.developerPrivate.repairExtension = function(extensionId, callback) {};
 
 /**
  * Shows the options page for the extension specified.
- * @param {string} extensionId
+ * @param {string} extensionId The id of the extension to show the options page
+ *     for.
  * @param {function():void=} callback
  * @see https://developer.chrome.com/extensions/developerPrivate#method-showOptions
  */
@@ -640,11 +693,29 @@ chrome.developerPrivate.showOptions = function(extensionId, callback) {};
 
 /**
  * Shows the path of the extension specified.
- * @param {string} extensionId
+ * @param {string} extensionId The id of the extension to show the path for.
  * @param {function():void=} callback
  * @see https://developer.chrome.com/extensions/developerPrivate#method-showPath
  */
 chrome.developerPrivate.showPath = function(extensionId, callback) {};
+
+/**
+ * (Un)suspends global shortcut handling.
+ * @param {boolean} isSuspended Whether or not shortcut handling should be
+ *     suspended.
+ * @param {function():void=} callback
+ * @see https://developer.chrome.com/extensions/developerPrivate#method-setShortcutHandlingSuspended
+ */
+chrome.developerPrivate.setShortcutHandlingSuspended = function(isSuspended, callback) {};
+
+/**
+ * Updates an extension command.
+ * @param {ExtensionCommandUpdate} update The parameters for updating the
+ *     extension command.
+ * @param {function():void=} callback
+ * @see https://developer.chrome.com/extensions/developerPrivate#method-updateExtensionCommand
+ */
+chrome.developerPrivate.updateExtensionCommand = function(update, callback) {};
 
 /**
  * @param {string} id
@@ -687,3 +758,10 @@ chrome.developerPrivate.inspect = function(options, callback) {};
  * @see https://developer.chrome.com/extensions/developerPrivate#event-onItemStateChanged
  */
 chrome.developerPrivate.onItemStateChanged;
+
+/**
+ * Fired when the profile's state has changed.
+ * @type {!ChromeEvent}
+ * @see https://developer.chrome.com/extensions/developerPrivate#event-onProfileStateChanged
+ */
+chrome.developerPrivate.onProfileStateChanged;

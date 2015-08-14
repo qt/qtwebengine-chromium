@@ -40,7 +40,10 @@ class GIN_EXPORT IsolateHolder {
 
   // Should be invoked once before creating IsolateHolder instances to
   // initialize V8 and Gin. In case V8_USE_EXTERNAL_STARTUP_DATA is
-  // defined, V8's initial snapshot should be loaded (by calling
+  // defined, V8's initial natives should be loaded (by calling
+  // V8Initializer::LoadV8NativesFromFD or
+  // V8Initializer::LoadV8Natives) before calling this method.  If the
+  // snapshot file is available, it should also be loaded (by calling
   // V8Initializer::LoadV8SnapshotFromFD or
   // V8Initializer::LoadV8Snapshot) before calling this method.
   static void Initialize(ScriptMode mode,
@@ -62,6 +65,13 @@ class GIN_EXPORT IsolateHolder {
 
   // This method returns if v8::Locker is needed to access isolate.
   AccessMode access_mode() const { return access_mode_; }
+
+  // This method returns V8IsolateMemoryDumpProvider of this isolate, used for
+  // testing.
+  V8IsolateMemoryDumpProvider* isolate_memory_dump_provider_for_testing()
+      const {
+    return isolate_memory_dump_provider_.get();
+  }
 
  private:
   v8::Isolate* isolate_;

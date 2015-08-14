@@ -77,10 +77,10 @@ IDBRequest* IDBFactory::getDatabaseNames(ScriptState* scriptState, ExceptionStat
         return nullptr;
     if (!scriptState->executionContext()->securityOrigin()->canAccessDatabase()) {
         exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
-        return 0;
+        return nullptr;
     }
 
-    IDBRequest* request = IDBRequest::create(scriptState, IDBAny::createNull(), 0);
+    IDBRequest* request = IDBRequest::create(scriptState, IDBAny::createNull(), nullptr);
 
     if (!m_permissionClient->allowIndexedDB(scriptState->executionContext(), "Database Listing")) {
         request->onError(DOMError::create(UnknownError, permissionDeniedErrorMessage));
@@ -96,7 +96,7 @@ IDBOpenDBRequest* IDBFactory::open(ScriptState* scriptState, const String& name,
     IDB_TRACE("IDBFactory::open");
     if (!version) {
         exceptionState.throwTypeError("The version provided must not be 0.");
-        return 0;
+        return nullptr;
     }
     return openInternal(scriptState, name, version, exceptionState);
 }
@@ -109,7 +109,7 @@ IDBOpenDBRequest* IDBFactory::openInternal(ScriptState* scriptState, const Strin
         return nullptr;
     if (!scriptState->executionContext()->securityOrigin()->canAccessDatabase()) {
         exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
-        return 0;
+        return nullptr;
     }
 
     IDBDatabaseCallbacks* databaseCallbacks = IDBDatabaseCallbacks::create();
@@ -139,7 +139,7 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
         return nullptr;
     if (!scriptState->executionContext()->securityOrigin()->canAccessDatabase()) {
         exceptionState.throwSecurityError("access to the Indexed Database API is denied in this context.");
-        return 0;
+        return nullptr;
     }
 
     IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState, nullptr, 0, IDBDatabaseMetadata::DefaultIntVersion);
@@ -156,12 +156,19 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
 short IDBFactory::cmp(ScriptState* scriptState, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& exceptionState)
 {
     IDBKey* first = ScriptValue::to<IDBKey*>(scriptState->isolate(), firstValue, exceptionState);
-    IDBKey* second = ScriptValue::to<IDBKey*>(scriptState->isolate(), secondValue, exceptionState);
-
+    if (exceptionState.hadException())
+        return 0;
     ASSERT(first);
-    ASSERT(second);
+    if (!first->isValid()) {
+        exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
+        return 0;
+    }
 
-    if (!first->isValid() || !second->isValid()) {
+    IDBKey* second = ScriptValue::to<IDBKey*>(scriptState->isolate(), secondValue, exceptionState);
+    if (exceptionState.hadException())
+        return 0;
+    ASSERT(second);
+    if (!second->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
     }

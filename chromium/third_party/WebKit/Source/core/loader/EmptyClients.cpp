@@ -62,18 +62,18 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
 class EmptyPopupMenu : public PopupMenu {
 public:
-    virtual void show(const FloatQuad&, const IntSize&, int) override { }
-    virtual void hide() override { }
-    virtual void updateFromElement() override { }
-    virtual void disconnectClient() override { }
+    void show(const FloatQuad&, const IntSize&, int) override { }
+    void hide() override { }
+    void updateFromElement() override { }
+    void disconnectClient() override { }
 };
 
-PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*)
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, PopupMenuClient*)
 {
     return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
 
-PassOwnPtrWillBeRawPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
+PassOwnPtrWillBeRawPtr<ColorChooser> EmptyChromeClient::openColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
 {
     return nullptr;
 }
@@ -87,7 +87,7 @@ void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
 {
 }
 
-void EmptyChromeClient::runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>)
+void EmptyChromeClient::openFileChooser(LocalFrame*, PassRefPtr<FileChooser>)
 {
 }
 
@@ -96,7 +96,7 @@ String EmptyChromeClient::acceptLanguages()
     return String();
 }
 
-NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy, bool isTransitionNavigation)
+NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy)
 {
     return NavigationPolicyIgnore;
 }
@@ -109,7 +109,7 @@ void EmptyFrameLoaderClient::dispatchWillSubmitForm(HTMLFormElement*)
 {
 }
 
-PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& substituteData)
+PassRefPtrWillBeRawPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& substituteData)
 {
     return DocumentLoader::create(frame, request, substituteData);
 }
@@ -140,6 +140,11 @@ void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtrWillBeRawPtr<Text
 
 void EmptyFrameLoaderClient::didRequestAutocomplete(HTMLFormElement*)
 {
+}
+
+v8::Local<v8::Value> EmptyFrameLoaderClient::createTestInterface(const AtomicString& name)
+{
+    return v8::Local<v8::Value>();
 }
 
 PassOwnPtr<WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider()

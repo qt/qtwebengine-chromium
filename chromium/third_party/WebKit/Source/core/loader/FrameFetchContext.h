@@ -50,9 +50,9 @@ class ResourceRequest;
 
 class CORE_EXPORT FrameFetchContext final : public FetchContext {
 public:
-    static PassRefPtrWillBeRawPtr<ResourceFetcher> createContextAndFetcher(DocumentLoader* loader)
+    static ResourceFetcher* createContextAndFetcher(DocumentLoader* loader)
     {
-        return ResourceFetcher::create(adoptPtrWillBeNoop(new FrameFetchContext(loader)));
+        return ResourceFetcher::create(new FrameFetchContext(loader));
     }
 
     static void provideDocumentToContext(FetchContext& context, Document* document)
@@ -85,7 +85,7 @@ public:
     void willStartLoadingResource(ResourceRequest&) override;
     void didLoadResource() override;
 
-    void addResourceTiming(ResourceTimingInfo*, bool isMainResource) override;
+    void addResourceTiming(const ResourceTimingInfo&) override;
     bool allowImage(bool imagesEnabled, const KURL&) const override;
     bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const override;
 
@@ -101,10 +101,14 @@ public:
     void sendImagePing(const KURL&) override;
     void addConsoleMessage(const String&) const override;
     SecurityOrigin* securityOrigin() const override;
-    String charset() const override;
     void upgradeInsecureRequest(FetchRequest&) override;
     void addClientHintsIfNecessary(FetchRequest&) override;
     void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&) override;
+    bool isLowPriorityIframe() const override;
+
+    void countClientHintsDPR() override;
+    void countClientHintsResourceWidth() override;
+    void countClientHintsViewportWidth() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -119,7 +123,7 @@ private:
     // currently leak because ComputedStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
-    DocumentLoader* m_documentLoader;
+    RawPtrWillBeMember<DocumentLoader> m_documentLoader;
 };
 
 }

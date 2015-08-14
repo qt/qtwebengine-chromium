@@ -67,6 +67,7 @@ const char IDBDatabase::transactionInactiveErrorMessage[] = "The transaction is 
 const char IDBDatabase::transactionFinishedErrorMessage[] = "The transaction has finished.";
 const char IDBDatabase::transactionReadOnlyErrorMessage[] = "The transaction is read-only.";
 const char IDBDatabase::databaseClosedErrorMessage[] = "The database connection is closed.";
+const char IDBDatabase::notValidMaxCountErrorMessage[] = "The maxCount provided must not be 0.";
 
 IDBDatabase* IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> database, IDBDatabaseCallbacks* callbacks)
 {
@@ -167,7 +168,7 @@ void IDBDatabase::onComplete(int64_t transactionId)
 
 PassRefPtrWillBeRawPtr<DOMStringList> IDBDatabase::objectStoreNames() const
 {
-    RefPtrWillBeRawPtr<DOMStringList> objectStoreNames = DOMStringList::create();
+    RefPtrWillBeRawPtr<DOMStringList> objectStoreNames = DOMStringList::create(DOMStringList::IndexedDB);
     for (IDBDatabaseMetadata::ObjectStoreMap::const_iterator it = m_metadata.objectStores.begin(); it != m_metadata.objectStores.end(); ++it)
         objectStoreNames->append(it->value.name);
     objectStoreNames->sort();
@@ -188,35 +189,35 @@ IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const IDBKeyP
     Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBCreateObjectStoreCall, IDBMethodsMax);
     if (!m_versionChangeTransaction) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::notVersionChangeTransactionErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (m_versionChangeTransaction->isFinished() || m_versionChangeTransaction->isFinishing()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
-        return 0;
+        return nullptr;
     }
     if (!m_versionChangeTransaction->isActive()) {
         exceptionState.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     if (containsObjectStore(name)) {
         exceptionState.throwDOMException(ConstraintError, "An object store with the specified name already exists.");
-        return 0;
+        return nullptr;
     }
 
     if (!keyPath.isNull() && !keyPath.isValid()) {
         exceptionState.throwDOMException(SyntaxError, "The keyPath option is not a valid key path.");
-        return 0;
+        return nullptr;
     }
 
     if (autoIncrement && ((keyPath.type() == IDBKeyPath::StringType && keyPath.string().isEmpty()) || keyPath.type() == IDBKeyPath::ArrayType)) {
         exceptionState.throwDOMException(InvalidAccessError, "The autoIncrement option was set but the keyPath option was empty or an array.");
-        return 0;
+        return nullptr;
     }
 
     if (!m_backend) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     int64_t objectStoreId = m_metadata.maxObjectStoreId + 1;
@@ -269,48 +270,57 @@ IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const StringO
     IDB_TRACE("IDBDatabase::transaction");
     Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBTransactionCall, IDBMethodsMax);
 
-    Vector<String> scope;
-    if (storeNames.isString())
-        scope.append(storeNames.getAsString());
-    else if (storeNames.isStringSequence())
-        scope = storeNames.getAsStringSequence();
-    else if (storeNames.isDOMStringList())
-        scope = *storeNames.getAsDOMStringList();
-    else
+    HashSet<String> scope;
+    if (storeNames.isString()) {
+        scope.add(storeNames.getAsString());
+    } else if (storeNames.isStringSequence()) {
+        for (const String& name : storeNames.getAsStringSequence())
+            scope.add(name);
+    } else if (storeNames.isDOMStringList()) {
+        const Vector<String>& list = *storeNames.getAsDOMStringList();
+        for (const String& name : list)
+            scope.add(name);
+    } else {
         ASSERT_NOT_REACHED();
-
-    if (!scope.size()) {
-        exceptionState.throwDOMException(InvalidAccessError, "The storeNames parameter was empty.");
-        return 0;
     }
 
-    WebIDBTransactionMode mode = IDBTransaction::stringToMode(modeString, exceptionState);
+    if (scope.isEmpty()) {
+        exceptionState.throwDOMException(InvalidAccessError, "The storeNames parameter was empty.");
+        return nullptr;
+    }
+
+    WebIDBTransactionMode mode = IDBTransaction::stringToMode(modeString);
+    if (mode != WebIDBTransactionModeReadOnly && mode != WebIDBTransactionModeReadWrite) {
+        exceptionState.throwTypeError("The mode provided ('" + modeString + "') is not one of 'readonly' or 'readwrite'.");
+        return nullptr;
+    }
+
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     if (m_versionChangeTransaction) {
         exceptionState.throwDOMException(InvalidStateError, "A version change transaction is running.");
-        return 0;
+        return nullptr;
     }
 
     if (m_closePending) {
         exceptionState.throwDOMException(InvalidStateError, "The database connection is closing.");
-        return 0;
+        return nullptr;
     }
 
     Vector<int64_t> objectStoreIds;
-    for (size_t i = 0; i < scope.size(); ++i) {
-        int64_t objectStoreId = findObjectStoreId(scope[i]);
+    for (const String& name : scope) {
+        int64_t objectStoreId = findObjectStoreId(name);
         if (objectStoreId == IDBObjectStoreMetadata::InvalidId) {
             exceptionState.throwDOMException(NotFoundError, "One of the specified object stores was not found.");
-            return 0;
+            return nullptr;
         }
         objectStoreIds.append(objectStoreId);
     }
 
     if (!m_backend) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::databaseClosedErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     int64_t transactionId = nextTransactionId();

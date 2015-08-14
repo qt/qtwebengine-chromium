@@ -34,19 +34,11 @@
 #include "core/dom/MessagePort.h"
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
+#include "core/events/MessageEventInit.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/DOMWindow.h"
 
 namespace blink {
-
-struct MessageEventInit : public EventInit {
-    MessageEventInit();
-
-    String origin;
-    String lastEventId;
-    RefPtrWillBeMember<EventTarget> source;
-    MessagePortArray ports;
-};
 
 class CORE_EXPORT MessageEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
@@ -55,11 +47,11 @@ public:
     {
         return adoptRefWillBeNoop(new MessageEvent);
     }
-    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtrWillBeRawPtr<MessagePortArray> ports, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
+    static PassRefPtrWillBeRawPtr<MessageEvent> create(MessagePortArray* ports, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
     {
         return adoptRefWillBeNoop(new MessageEvent(origin, lastEventId, source, ports));
     }
-    static PassRefPtrWillBeRawPtr<MessageEvent> create(PassOwnPtrWillBeRawPtr<MessagePortArray> ports, PassRefPtr<SerializedScriptValue> data, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
+    static PassRefPtrWillBeRawPtr<MessageEvent> create(MessagePortArray* ports, PassRefPtr<SerializedScriptValue> data, const String& origin = String(), const String& lastEventId = String(), PassRefPtrWillBeRawPtr<EventTarget> source = nullptr)
     {
         return adoptRefWillBeNoop(new MessageEvent(data, origin, lastEventId, source, ports));
     }
@@ -82,13 +74,14 @@ public:
     static PassRefPtrWillBeRawPtr<MessageEvent> create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState&);
     virtual ~MessageEvent();
 
-    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
-    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
+    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, ScriptValue data, const String& origin, const String& lastEventId, DOMWindow* source, MessagePortArray*);
+    void initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, MessagePortArray*);
 
     const String& origin() const { return m_origin; }
     const String& lastEventId() const { return m_lastEventId; }
     EventTarget* source() const { return m_source.get(); }
-    MessagePortArray ports() const { return m_ports ? *m_ports : MessagePortArray(); }
+    MessagePortArray ports(bool& isNull) const;
+    MessagePortArray ports() const;
     MessagePortChannelArray* channels() const { return m_channels ? m_channels.get() : 0; }
 
     virtual const AtomicString& interfaceName() const override;
@@ -101,7 +94,8 @@ public:
         DataTypeArrayBuffer
     };
     DataType dataType() const { return m_dataType; }
-    SerializedScriptValue* dataAsSerializedScriptValue() const { ASSERT(m_dataType == DataTypeScriptValue || m_dataType == DataTypeSerializedScriptValue); return m_dataAsSerializedScriptValue.get(); }
+    ScriptValue dataAsScriptValue() const { ASSERT(m_dataType == DataTypeScriptValue); return m_dataAsScriptValue; }
+    SerializedScriptValue* dataAsSerializedScriptValue() const { ASSERT(m_dataType == DataTypeSerializedScriptValue); return m_dataAsSerializedScriptValue.get(); }
     String dataAsString() const { ASSERT(m_dataType == DataTypeString); return m_dataAsString; }
     Blob* dataAsBlob() const { ASSERT(m_dataType == DataTypeBlob); return m_dataAsBlob.get(); }
     DOMArrayBuffer* dataAsArrayBuffer() const { ASSERT(m_dataType == DataTypeArrayBuffer); return m_dataAsArrayBuffer.get(); }
@@ -116,13 +110,13 @@ public:
 
     DECLARE_VIRTUAL_TRACE();
 
-    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override;
+    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override WARN_UNUSED_RETURN;
 
 private:
     MessageEvent();
     MessageEvent(const AtomicString&, const MessageEventInit&);
-    MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
-    MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray>);
+    MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, MessagePortArray*);
+    MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, MessagePortArray*);
     MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortChannelArray>);
 
     MessageEvent(const String& data, const String& origin);
@@ -130,6 +124,7 @@ private:
     MessageEvent(PassRefPtr<DOMArrayBuffer> data, const String& origin);
 
     DataType m_dataType;
+    ScriptValue m_dataAsScriptValue;
     RefPtr<SerializedScriptValue> m_dataAsSerializedScriptValue;
     String m_dataAsString;
     PersistentWillBeMember<Blob> m_dataAsBlob;
@@ -140,7 +135,7 @@ private:
     // m_ports are the MessagePorts in an engtangled state, and m_channels are
     // the MessageChannels in a disentangled state. Only one of them can be
     // non-empty at a time. entangleMessagePorts() moves between the states.
-    OwnPtrWillBeMember<MessagePortArray> m_ports;
+    PersistentWillBeMember<MessagePortArray> m_ports;
     OwnPtr<MessagePortChannelArray> m_channels;
 };
 

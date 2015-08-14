@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/numerics/safe_conversions.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
@@ -13,7 +14,7 @@
 
 namespace cc {
 
-Tile::Id Tile::s_next_id_ = 0;
+Tile::Id Tile::s_next_id_ = 1;
 
 Tile::Tile(TileManager* tile_manager,
            const gfx::Size& desired_texture_size,
@@ -34,6 +35,7 @@ Tile::Tile(TileManager* tile_manager,
       required_for_activation_(false),
       required_for_draw_(false),
       id_(s_next_id_++),
+      invalidated_id_(0),
       scheduled_priority_(0) {
 }
 
@@ -61,12 +63,17 @@ void Tile::AsValueInto(base::trace_event::TracedValue* value) const {
                     draw_info().has_resource() || HasRasterTask());
   value->SetInteger("scheduled_priority", scheduled_priority_);
   value->SetBoolean("use_picture_analysis", use_picture_analysis());
-  value->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
+  value->SetInteger("gpu_memory_usage",
+                    base::saturated_cast<int>(GPUMemoryUsageInBytes()));
 }
 
 size_t Tile::GPUMemoryUsageInBytes() const {
-  if (draw_info_.resource_)
-    return draw_info_.resource_->bytes();
+  if (draw_info_.resource_) {
+    // We can use UncheckedSizeInBytes, since the tile size is determined by the
+    // compositor.
+    return Resource::UncheckedMemorySizeBytes(draw_info_.resource_->size(),
+                                              draw_info_.resource_->format());
+  }
   return 0;
 }
 

@@ -152,6 +152,13 @@ class CC_EXPORT OutputSurface {
   // there's new content.
   virtual void Invalidate() {}
 
+  // Updates the worker context provider's visibility, freeing GPU resources if
+  // appropriate.
+  virtual void SetWorkerContextShouldAggressivelyFreeResources(bool is_visible);
+
+  // If this returns true, then the surface will not attempt to draw.
+  virtual bool SurfaceIsSuspendForRecycle() const;
+
  protected:
   OutputSurfaceClient* client_;
 

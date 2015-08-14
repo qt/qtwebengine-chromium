@@ -1,3 +1,4 @@
+#if defined(__arm__)
 
 @ ====================================================================
 @ Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
@@ -1881,7 +1882,7 @@ sha256_block_data_order_neon:
 	stmdb	sp!,{r4,r5,r6,r7,r8,r9,r10,r11,r12,lr}
 
 	sub	r11,sp,#16*4+16
-	adr	r14,K256
+	adrl	r14,K256
 	bic	r11,r11,#15		@ align for 128-bit stores
 	mov	r12,sp
 	mov	sp,r11			@ alloca
@@ -2813,4 +2814,5 @@ sha256_block_data_order_armv8:
 #if __ARM_MAX_ARCH__>=7 && !defined(__KERNEL__)
 .comm	OPENSSL_armcap_P,4,4
 .hidden	OPENSSL_armcap_P
+#endif
 #endif

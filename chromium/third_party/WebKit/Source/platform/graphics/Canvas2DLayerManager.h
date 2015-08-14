@@ -28,16 +28,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "platform/graphics/Canvas2DLayerBridge.h"
 #include "public/platform/WebThread.h"
 
-class Canvas2DLayerManagerTest;
-
 namespace blink {
+
+class Canvas2DLayerManagerTest;
 
 class PLATFORM_EXPORT Canvas2DLayerManager : public WebThread::TaskObserver {
 public:
     static Canvas2DLayerManager& get();
 
     void init(size_t maxBytesAllocated, size_t targetBytesAllocated);
-    virtual ~Canvas2DLayerManager();
+    ~Canvas2DLayerManager() override;
 
     void layerTransientResourceAllocationChanged(Canvas2DLayerBridge*, intptr_t deltaBytes = 0);
     void layerDidDraw(Canvas2DLayerBridge*);
@@ -49,8 +49,8 @@ private:
     // internal methods
     void freeMemoryIfNecessary();
     void addLayerToList(Canvas2DLayerBridge*);
-    virtual void willProcessTask() override;
-    virtual void didProcessTask() override;
+    void willProcessTask() override;
+    void didProcessTask() override;
 
     size_t m_bytesAllocated;
     size_t m_maxBytesAllocated;
@@ -58,7 +58,7 @@ private:
     bool m_taskObserverActive;
     DoublyLinkedList<Canvas2DLayerBridge> m_layerList;
 
-    friend class ::Canvas2DLayerManagerTest; // for unit testing
+    friend class Canvas2DLayerManagerTest; // for unit testing
 };
 
 } // namespace blink

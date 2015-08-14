@@ -6,9 +6,10 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/fileapi/mock_url_request_delegate.h"
 #include "content/browser/quota/mock_quota_manager_proxy.h"
@@ -18,6 +19,7 @@
 #include "content/public/common/referrer.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "net/base/test_completion_callback.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory_impl.h"
@@ -38,10 +40,10 @@ const char kTestData[] = "Hello World";
 // the memory.
 storage::BlobProtocolHandler* CreateMockBlobProtocolHandler(
     storage::BlobStorageContext* blob_storage_context) {
-  // The FileSystemContext and MessageLoopProxy are not actually used but a
-  // MessageLoopProxy is needed to avoid a DCHECK in BlobURLRequestJob ctor.
+  // The FileSystemContext and thread task runner are not actually used but a
+  // task runner is needed to avoid a DCHECK in BlobURLRequestJob ctor.
   return new storage::BlobProtocolHandler(
-      blob_storage_context, NULL, base::MessageLoopProxy::current().get());
+      blob_storage_context, NULL, base::ThreadTaskRunnerHandle::Get().get());
 }
 
 // A disk_cache::Backend wrapper that can delay operations.
@@ -128,12 +130,12 @@ class TestCacheStorageCache : public CacheStorageCache {
   TestCacheStorageCache(
       const GURL& origin,
       const base::FilePath& path,
-      net::URLRequestContext* request_context,
+      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
       const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context)
       : CacheStorageCache(origin,
                           path,
-                          request_context,
+                          request_context_getter,
                           quota_manager_proxy,
                           blob_context),
         delay_backend_creation_(false) {}
@@ -186,7 +188,7 @@ class CacheStorageCacheTest : public testing::Test {
     blob_storage_context_ = blob_storage_context->context();
 
     quota_manager_proxy_ = new MockQuotaManagerProxy(
-        nullptr, base::MessageLoopProxy::current().get());
+        nullptr, base::ThreadTaskRunnerHandle::Get().get());
 
     url_request_job_factory_.reset(new net::URLRequestJobFactoryImpl);
     url_request_job_factory_->SetProtocolHandler(
@@ -204,7 +206,7 @@ class CacheStorageCacheTest : public testing::Test {
     base::FilePath path = MemoryOnly() ? base::FilePath() : temp_dir_.path();
 
     cache_ = make_scoped_refptr(new TestCacheStorageCache(
-        GURL("http://example.com"), path, url_request_context,
+        GURL("http://example.com"), path, browser_context_.GetRequestContext(),
         quota_manager_proxy_, blob_storage_context->context()->AsWeakPtr()));
   }
 
@@ -238,11 +240,13 @@ class CacheStorageCacheTest : public testing::Test {
     body_response_ = ServiceWorkerResponse(
         GURL("http://example.com/body.html"), 200, "OK",
         blink::WebServiceWorkerResponseTypeDefault, headers,
-        blob_handle_->uuid(), expected_blob_data_.size(), GURL());
+        blob_handle_->uuid(), expected_blob_data_.size(), GURL(),
+        blink::WebServiceWorkerResponseErrorUnknown);
 
     no_body_response_ = ServiceWorkerResponse(
         GURL("http://example.com/no_body.html"), 200, "OK",
-        blink::WebServiceWorkerResponseTypeDefault, headers, "", 0, GURL());
+        blink::WebServiceWorkerResponseTypeDefault, headers, "", 0, GURL(),
+        blink::WebServiceWorkerResponseErrorUnknown);
   }
 
   scoped_ptr<ServiceWorkerFetchRequest> CopyFetchRequest(
@@ -261,8 +265,7 @@ class CacheStorageCacheTest : public testing::Test {
         base::Bind(&CacheStorageCacheTest::ErrorTypeCallback,
                    base::Unretained(this), base::Unretained(loop.get())));
     // TODO(jkarlin): These functions should use base::RunLoop().RunUntilIdle()
-    // once the cache uses a passed in MessageLoopProxy instead of the CACHE
-    // thread.
+    // once the cache uses a passed in task runner instead of the CACHE thread.
     loop->Run();
 
     return callback_error_;
@@ -375,10 +378,33 @@ class CacheStorageCacheTest : public testing::Test {
   }
 
   void CopyBody(storage::BlobDataHandle* blob_handle, std::string* output) {
+    *output = std::string();
     scoped_ptr<storage::BlobDataSnapshot> data = blob_handle->CreateSnapshot();
     const auto& items = data->items();
     for (const auto& item : items) {
-      output->append(item->bytes(), item->length());
+      switch (item->type()) {
+        case storage::DataElement::TYPE_BYTES: {
+          output->append(item->bytes(), item->length());
+          break;
+        }
+        case storage::DataElement::TYPE_DISK_CACHE_ENTRY: {
+          disk_cache::Entry* entry = item->disk_cache_entry();
+          int32 body_size = entry->GetDataSize(item->disk_cache_stream_index());
+
+          scoped_refptr<net::IOBuffer> io_buffer = new net::IOBuffer(body_size);
+          net::TestCompletionCallback callback;
+          int rv =
+              entry->ReadData(item->disk_cache_stream_index(), 0,
+                              io_buffer.get(), body_size, callback.callback());
+          if (rv == net::ERR_IO_PENDING)
+            rv = callback.WaitForResult();
+          EXPECT_EQ(body_size, rv);
+          if (rv > 0)
+            output->append(io_buffer->data(), rv);
+          break;
+        }
+        default: { ADD_FAILURE() << "invalid response blob type"; } break;
+      }
     }
   }
 
@@ -741,7 +767,8 @@ TEST_F(CacheStorageCacheTest, CaselessServiceWorkerResponseHeaders) {
   // headers so that it can quickly lookup vary headers.
   ServiceWorkerResponse response(GURL("http://www.example.com"), 200, "OK",
                                  blink::WebServiceWorkerResponseTypeDefault,
-                                 ServiceWorkerHeaderMap(), "", 0, GURL());
+                                 ServiceWorkerHeaderMap(), "", 0, GURL(),
+                                 blink::WebServiceWorkerResponseErrorUnknown);
   response.headers["content-type"] = "foo";
   response.headers["Content-Type"] = "bar";
   EXPECT_EQ("bar", response.headers["content-type"]);

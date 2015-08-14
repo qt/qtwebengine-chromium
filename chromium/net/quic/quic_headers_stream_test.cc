@@ -7,7 +7,7 @@
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
-#include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/spdy/spdy_protocol.h"
@@ -55,10 +55,16 @@ class MockVisitor : public SpdyFramerVisitorInterface {
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId last_accepted_stream_id,
                               SpdyGoAwayStatus status));
-  MOCK_METHOD5(OnHeaders, void(SpdyStreamId stream_id, bool has_priority,
-                               SpdyPriority priority, bool fin, bool end));
-  MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId stream_id,
-                                    uint32 delta_window_size));
+  MOCK_METHOD7(OnHeaders,
+               void(SpdyStreamId stream_id,
+                    bool has_priority,
+                    SpdyPriority priority,
+                    SpdyStreamId parent_stream_id,
+                    bool exclusive,
+                    bool fin,
+                    bool end));
+  MOCK_METHOD2(OnWindowUpdate,
+               void(SpdyStreamId stream_id, int delta_window_size));
   MOCK_METHOD2(OnCredentialFrameData, bool(const char* credential_data,
                                            size_t len));
   MOCK_METHOD1(OnBlocked, void(SpdyStreamId stream_id));
@@ -66,12 +72,11 @@ class MockVisitor : public SpdyFramerVisitorInterface {
                                    SpdyStreamId promised_stream_id,
                                    bool end));
   MOCK_METHOD2(OnContinuation, void(SpdyStreamId stream_id, bool end));
-  MOCK_METHOD6(OnAltSvc, void(SpdyStreamId stream_id,
-                              uint32 max_age,
-                              uint16 port,
-                              StringPiece protocol_id,
-                              StringPiece host,
-                              StringPiece origin));
+  MOCK_METHOD3(OnAltSvc,
+               void(SpdyStreamId stream_id,
+                    StringPiece origin,
+                    const SpdyAltSvcWireFormat::AlternativeServiceVector&
+                        altsvc_vector));
   MOCK_METHOD2(OnUnknownFrame, bool(SpdyStreamId stream_id, int frame_type));
 };
 
@@ -107,9 +112,9 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<TestParams> {
       : connection_(
             new StrictMock<MockConnection>(perspective(), GetVersion())),
         session_(connection_),
-        headers_stream_(QuicSessionPeer::GetHeadersStream(&session_)),
+        headers_stream_(QuicSpdySessionPeer::GetHeadersStream(&session_)),
         body_("hello world"),
-        framer_(SPDY4) {
+        framer_(HTTP2) {
     headers_[":version"]  = "HTTP/1.1";
     headers_[":status"] = "200 Ok";
     headers_["content-length"] = "11";
@@ -119,9 +124,9 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<TestParams> {
     VLOG(1) << GetParam();
   }
 
-  QuicConsumedData SaveIov(const IOVector& data) {
-    const iovec* iov = data.iovec();
-    int count = data.Capacity();
+  QuicConsumedData SaveIov(const QuicIOVector& data) {
+    const iovec* iov = data.iov;
+    int count = data.iov_count;
     for (int i = 0 ; i < count; ++i) {
       saved_data_.append(static_cast<char*>(iov[i].iov_base), iov[i].iov_len);
     }
@@ -159,11 +164,17 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<TestParams> {
 
     // Parse the outgoing data and check that it matches was was written.
     if (type == SYN_STREAM) {
-      EXPECT_CALL(visitor_, OnHeaders(stream_id, kHasPriority, priority, fin,
-                                      kFrameComplete));
+      EXPECT_CALL(visitor_, OnHeaders(stream_id, kHasPriority, priority,
+                                      /*parent_stream_id=*/0,
+                                      /*exclusive=*/false,
+
+                                      fin, kFrameComplete));
     } else {
-      EXPECT_CALL(visitor_, OnHeaders(stream_id, !kHasPriority,
-                                      /*priority=*/0, fin, kFrameComplete));
+      EXPECT_CALL(visitor_,
+                  OnHeaders(stream_id, !kHasPriority,
+                            /*priority=*/0,
+                            /*parent_stream_id=*/0,
+                            /*exclusive=*/false, fin, kFrameComplete));
     }
     EXPECT_CALL(visitor_, OnControlFrameHeaderData(stream_id, _, _))
         .WillRepeatedly(WithArgs<1, 2>(
@@ -207,7 +218,7 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<TestParams> {
   static const bool kHasPriority = true;
 
   StrictMock<MockConnection>* connection_;
-  StrictMock<MockSession> session_;
+  StrictMock<MockQuicSpdySession> session_;
   QuicHeadersStream* headers_stream_;
   SpdyHeaderBlock headers_;
   string body_;

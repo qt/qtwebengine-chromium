@@ -17,6 +17,7 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_utils.h"
+#include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/spdy/spdy_frame_builder.h"
 #include "net/tools/quic/quic_per_connection_packet_writer.h"
@@ -337,56 +338,50 @@ void PacketSavingConnection::SendOrQueuePacket(QueuedPacket packet) {
       NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA);
 }
 
-MockSession::MockSession(QuicConnection* connection)
-    : QuicSession(connection, DefaultQuicConfig()) {
-  InitializeSession();
+MockQuicSpdySession::MockQuicSpdySession(QuicConnection* connection)
+    : QuicSpdySession(connection, DefaultQuicConfig()) {
+  crypto_stream_.reset(new QuicCryptoStream(this));
+  Initialize();
   ON_CALL(*this, WritevData(_, _, _, _, _, _))
       .WillByDefault(testing::Return(QuicConsumedData(0, false)));
 }
 
-MockSession::~MockSession() {
+MockQuicSpdySession::~MockQuicSpdySession() {
 }
 
-TestSession::TestSession(QuicConnection* connection, const QuicConfig& config)
-    : QuicSession(connection, config),
-      crypto_stream_(nullptr) {
-  InitializeSession();
+TestQuicSpdyServerSession::TestQuicSpdyServerSession(
+    QuicConnection* connection,
+    const QuicConfig& config,
+    const QuicCryptoServerConfig* crypto_config)
+    : QuicSpdySession(connection, config) {
+  crypto_stream_.reset(new QuicCryptoServerStream(crypto_config, this));
+  Initialize();
 }
 
-TestSession::~TestSession() {}
-
-void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
-  crypto_stream_ = stream;
+TestQuicSpdyServerSession::~TestQuicSpdyServerSession() {
 }
 
-QuicCryptoStream* TestSession::GetCryptoStream() {
-  return crypto_stream_;
+QuicCryptoServerStream* TestQuicSpdyServerSession::GetCryptoStream() {
+  return crypto_stream_.get();
 }
 
-TestClientSession::TestClientSession(QuicConnection* connection,
-                                     const QuicConfig& config)
-    : QuicClientSessionBase(connection, config),
-      crypto_stream_(nullptr) {
-  EXPECT_CALL(*this, OnProofValid(_)).Times(AnyNumber());
-  InitializeSession();
+TestQuicSpdyClientSession::TestQuicSpdyClientSession(
+    QuicConnection* connection,
+    const QuicConfig& config,
+    const QuicServerId& server_id,
+    QuicCryptoClientConfig* crypto_config)
+    : QuicClientSessionBase(connection, config) {
+  crypto_stream_.reset(new QuicCryptoClientStream(
+      server_id, this, CryptoTestUtils::ProofVerifyContextForTesting(),
+      crypto_config));
+  Initialize();
 }
 
-TestClientSession::~TestClientSession() {}
-
-void TestClientSession::SetCryptoStream(QuicCryptoStream* stream) {
-  crypto_stream_ = stream;
+TestQuicSpdyClientSession::~TestQuicSpdyClientSession() {
 }
 
-QuicCryptoStream* TestClientSession::GetCryptoStream() {
-  return crypto_stream_;
-}
-
-TestServerSession::TestServerSession(const QuicConfig& config,
-                                     QuicConnection* connection)
-    : QuicServerSession(config, connection, nullptr) {
-}
-
-TestServerSession::~TestServerSession() {
+QuicCryptoClientStream* TestQuicSpdyClientSession::GetCryptoStream() {
+  return crypto_stream_.get();
 }
 
 MockPacketWriter::MockPacketWriter() {
@@ -538,7 +533,7 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
   header.fec_flag = false;
   header.is_in_fec_group = NOT_IN_FEC_GROUP;
   header.fec_group = 0;
-  QuicStreamFrame stream_frame(1, false, 0, MakeIOVector(data));
+  QuicStreamFrame stream_frame(1, false, 0, StringPiece(data));
   QuicFrame frame(&stream_frame);
   QuicFrames frames;
   frames.push_back(frame);
@@ -549,7 +544,7 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
       BuildUnsizedDataPacket(&framer, header, frames));
   EXPECT_TRUE(packet != nullptr);
   char buffer[kMaxPacketSize];
-  scoped_ptr<QuicEncryptedPacket> encrypted(framer.EncryptPacket(
+  scoped_ptr<QuicEncryptedPacket> encrypted(framer.EncryptPayload(
       ENCRYPTION_NONE, sequence_number, *packet, buffer, kMaxPacketSize));
   EXPECT_TRUE(encrypted != nullptr);
   return encrypted->Clone();
@@ -576,15 +571,24 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
   header.fec_flag = false;
   header.is_in_fec_group = NOT_IN_FEC_GROUP;
   header.fec_group = 0;
+  QuicStreamFrame stream_frame(1, false, 0, StringPiece(data));
+  QuicFrame frame(&stream_frame);
   QuicFrames frames;
-  QuicFramer framer(versions ? *versions : QuicSupportedVersions(),
+  frames.push_back(frame);
+  QuicFramer framer(versions != nullptr ? *versions : QuicSupportedVersions(),
                     QuicTime::Zero(), Perspective::IS_CLIENT);
-  // Build a packet with zero frames, which is an error.
+
   scoped_ptr<QuicPacket> packet(
       BuildUnsizedDataPacket(&framer, header, frames));
   EXPECT_TRUE(packet != nullptr);
+
+  // Now set the packet's private flags byte to 0xFF, which is an invalid value.
+  reinterpret_cast<unsigned char*>(
+      packet->mutable_data())[GetStartOfEncryptedData(
+      connection_id_length, version_flag, sequence_number_length)] = 0xFF;
+
   char buffer[kMaxPacketSize];
-  scoped_ptr<QuicEncryptedPacket> encrypted(framer.EncryptPacket(
+  scoped_ptr<QuicEncryptedPacket> encrypted(framer.EncryptPayload(
       ENCRYPTION_NONE, sequence_number, *packet, buffer, kMaxPacketSize));
   EXPECT_TRUE(encrypted != nullptr);
   return encrypted->Clone();
@@ -654,7 +658,7 @@ static QuicPacket* ConstructPacketFromHandshakeMessage(
   header.fec_group = 0;
 
   QuicStreamFrame stream_frame(kCryptoStreamId, false, 0,
-                               MakeIOVector(data->AsStringPiece()));
+                               data->AsStringPiece());
 
   QuicFrame frame(&stream_frame);
   QuicFrames frames;
@@ -682,9 +686,9 @@ size_t GetPacketLengthForOneStream(
       QuicPacketCreator::StreamFramePacketOverhead(
           PACKET_8BYTE_CONNECTION_ID, include_version,
           sequence_number_length, 0u, is_in_fec_group);
-  const size_t ack_length = NullEncrypter().GetCiphertextSize(
-      QuicFramer::GetMinAckFrameSize(
-          sequence_number_length, PACKET_1BYTE_SEQUENCE_NUMBER)) +
+  const size_t ack_length =
+      NullEncrypter().GetCiphertextSize(
+          QuicFramer::GetMinAckFrameSize(PACKET_1BYTE_SEQUENCE_NUMBER)) +
       GetPacketHeaderSize(connection_id_length, include_version,
                           sequence_number_length, is_in_fec_group);
   if (stream_length < ack_length) {
@@ -786,18 +790,15 @@ MockQuicConnectionDebugVisitor::MockQuicConnectionDebugVisitor() {
 MockQuicConnectionDebugVisitor::~MockQuicConnectionDebugVisitor() {
 }
 
-void SetupCryptoClientStreamForTest(
-    QuicServerId server_id,
-    bool supports_stateless_rejects,
-    QuicTime::Delta connection_start_time,
-    QuicCryptoClientConfig* crypto_client_config,
-    PacketSavingConnection** client_connection,
-    TestClientSession** client_session,
-    QuicCryptoClientStream** client_stream) {
+void CreateClientSessionForTest(QuicServerId server_id,
+                                bool supports_stateless_rejects,
+                                QuicTime::Delta connection_start_time,
+                                QuicCryptoClientConfig* crypto_client_config,
+                                PacketSavingConnection** client_connection,
+                                TestQuicSpdyClientSession** client_session) {
   CHECK(crypto_client_config);
   CHECK(client_connection);
   CHECK(client_session);
-  CHECK(client_stream);
   CHECK(!connection_start_time.IsZero())
       << "Connections must start at non-zero times, otherwise the "
       << "strike-register will be unhappy.";
@@ -806,35 +807,26 @@ void SetupCryptoClientStreamForTest(
                           ? DefaultQuicConfigStatelessRejects()
                           : DefaultQuicConfig();
   *client_connection = new PacketSavingConnection(Perspective::IS_CLIENT);
-  *client_session = new TestClientSession(*client_connection, config);
-  *client_stream = new QuicCryptoClientStream(server_id, *client_session,
-                                              nullptr, crypto_client_config);
-  (*client_session)->SetCryptoStream(*client_stream);
+  *client_session = new TestQuicSpdyClientSession(
+      *client_connection, config, server_id, crypto_client_config);
   (*client_connection)->AdvanceTime(connection_start_time);
 }
 
-// Setup or create?
-void SetupCryptoServerStreamForTest(
-    QuicServerId server_id,
-    QuicTime::Delta connection_start_time,
-    QuicCryptoServerConfig* server_crypto_config,
-    PacketSavingConnection** server_connection,
-    TestServerSession** server_session,
-    QuicCryptoServerStream** server_stream) {
+void CreateServerSessionForTest(QuicServerId server_id,
+                                QuicTime::Delta connection_start_time,
+                                QuicCryptoServerConfig* server_crypto_config,
+                                PacketSavingConnection** server_connection,
+                                TestQuicSpdyServerSession** server_session) {
   CHECK(server_crypto_config);
   CHECK(server_connection);
   CHECK(server_session);
-  CHECK(server_stream);
   CHECK(!connection_start_time.IsZero())
       << "Connections must start at non-zero times, otherwise the "
       << "strike-register will be unhappy.";
 
   *server_connection = new PacketSavingConnection(Perspective::IS_SERVER);
-  *server_session =
-      new TestServerSession(DefaultQuicConfig(), *server_connection);
-  *server_stream =
-      new QuicCryptoServerStream(server_crypto_config, *server_session);
-  (*server_session)->InitializeSession(server_crypto_config);
+  *server_session = new TestQuicSpdyServerSession(
+      *server_connection, DefaultQuicConfig(), server_crypto_config);
 
   // We advance the clock initially because the default time is zero and the
   // strike register worries that we've just overflowed a uint32 time.

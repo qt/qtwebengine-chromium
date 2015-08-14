@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 // Include test fixture.
-GEN_INCLUDE(['chrome/browser/resources/chromeos/chromevox/testing/' +
-    'chromevox_e2e_test_base.js']);
+GEN_INCLUDE(['chromevox_e2e_test_base.js']);
 
 /**
  * Base test fixture for ChromeVox Next end to end tests.
@@ -31,8 +30,8 @@ ChromeVoxNextE2ETest.prototype = {
     callback = this.newCallback(callback);
     chrome.automation.getDesktop(function(r) {
       var listener = function(evt) {
-        if (!evt.target.attributes.url ||
-            evt.target.attributes.url.indexOf('test') == -1)
+        if (!evt.target.docUrl ||
+            evt.target.docUrl.indexOf('test') == -1)
           return;
 
         r.removeEventListener(listener);

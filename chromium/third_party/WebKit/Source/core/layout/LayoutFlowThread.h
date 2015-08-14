@@ -48,7 +48,7 @@ typedef ListHashSet<LayoutMultiColumnSet*> LayoutMultiColumnSetList;
 class CORE_EXPORT LayoutFlowThread: public LayoutBlockFlow {
 public:
     LayoutFlowThread();
-    virtual ~LayoutFlowThread() { };
+    virtual ~LayoutFlowThread() { }
 
     virtual bool isLayoutFlowThread() const override final { return true; }
     virtual bool isLayoutMultiColumnFlowThread() const { return false; }
@@ -64,13 +64,13 @@ public:
 
     // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
     // flow thread, since the flow thread is not in a spanner's containing block chain (since the
-    // containing block is the multicol container). If the spanner follows right after a column set
-    // (as opposed to following another spanner), we may have to stretch the flow thread to ensure
-    // completely filled columns in the preceding column set. Return this adjustment, if any.
-    virtual LayoutUnit skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) { return LayoutUnit(); }
+    // containing block is the multicol container).
+    virtual void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) { }
 
     virtual void flowThreadDescendantWasInserted(LayoutObject*) { }
     virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) { }
+    virtual void flowThreadDescendantStyleWillChange(LayoutObject*, StyleDifference, const ComputedStyle& newStyle) { }
+    virtual void flowThreadDescendantStyleDidChange(LayoutObject*, StyleDifference, const ComputedStyle& oldStyle) { }
 
     virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
 
@@ -93,9 +93,7 @@ public:
     virtual void setPageBreak(LayoutUnit /*offset*/, LayoutUnit /*spaceShortage*/) { }
     virtual void updateMinimumPageHeight(LayoutUnit /*offset*/, LayoutUnit /*minHeight*/) { }
 
-    bool columnSetsHaveUniformLogicalHeight() const { return m_columnSetsHaveUniformLogicalHeight; }
-
-    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = 0) { return false; }
+    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) { return false; }
 
     virtual bool isPageLogicalHeightKnown() const { return true; }
     bool pageLogicalSizeChanged() const { return m_pageLogicalSizeChanged; }
@@ -113,9 +111,6 @@ public:
 
     virtual LayoutPoint visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const = 0;
 
-    // Used to estimate the maximum height of the flow thread.
-    static LayoutUnit maxLogicalHeight() { return LayoutUnit::max() / 2; }
-
     virtual LayoutMultiColumnSet* columnSetAtBlockOffset(LayoutUnit) const = 0;
 
     virtual const char* name() const = 0;
@@ -132,7 +127,7 @@ protected:
     public:
         MultiColumnSetSearchAdapter(LayoutUnit offset)
             : m_offset(offset)
-            , m_result(0)
+            , m_result(nullptr)
         {
         }
 
@@ -150,7 +145,6 @@ protected:
     MultiColumnSetIntervalTree m_multiColumnSetIntervalTree;
 
     bool m_columnSetsInvalidated : 1;
-    bool m_columnSetsHaveUniformLogicalHeight : 1;
     bool m_pageLogicalSizeChanged : 1;
 };
 

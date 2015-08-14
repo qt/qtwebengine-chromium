@@ -33,9 +33,10 @@
 
 [
     ActiveDOMObject,
-    Constructor(DOMString url, optional EventSourceInit eventSourceInit),
+    Constructor(DOMString url, optional EventSourceInit eventSourceInitDict),
     ConstructorCallWith=ExecutionContext,
     Exposed=(Window,Worker),
+    GarbageCollected,
     RaisesException=Constructor,
 ] interface EventSource : EventTarget {
     readonly attribute DOMString url;

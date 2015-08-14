@@ -272,7 +272,7 @@ bool ShouldSetJobLevel(const base::CommandLine& cmd_line) {
     return true;
 
   // ...or there is a job but the JOB_OBJECT_LIMIT_BREAKAWAY_OK limit is set.
-  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {0};
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {};
   if (!::QueryInformationJobObject(NULL,
                                    JobObjectExtendedLimitInformation, &job_info,
                                    sizeof(job_info), NULL)) {
@@ -366,7 +366,8 @@ bool AddGenericPolicy(sandbox::TargetPolicy* policy) {
     LOG(WARNING) << "SANITIZER_COVERAGE_DIR was not set, coverage won't work.";
   } else {
     std::wstring coverage_dir;
-    wchar_t* coverage_dir_str = WriteInto(&coverage_dir, coverage_dir_size);
+    wchar_t* coverage_dir_str =
+        base::WriteInto(&coverage_dir, coverage_dir_size);
     coverage_dir_size = ::GetEnvironmentVariable(
         L"SANITIZER_COVERAGE_DIR", coverage_dir_str, coverage_dir_size);
     CHECK(coverage_dir.size() == coverage_dir_size);
@@ -573,6 +574,17 @@ void AddBaseHandleClosePolicy(sandbox::TargetPolicy* policy) {
   base::string16 object_path = PrependWindowsSessionPath(
       L"\\BaseNamedObjects\\windows_shell_global_counters");
   policy->AddKernelObjectToClose(L"Section", object_path.data());
+}
+
+void AddAppContainerPolicy(sandbox::TargetPolicy* policy, const wchar_t* sid) {
+  if (base::win::GetVersion() == base::win::VERSION_WIN8 ||
+      base::win::GetVersion() == base::win::VERSION_WIN8_1) {
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
+    if (command_line.HasSwitch(switches::kEnableAppContainer)) {
+      policy->SetLowBox(sid);
+    }
+  }
 }
 
 bool InitBrokerServices(sandbox::BrokerServices* broker_services) {

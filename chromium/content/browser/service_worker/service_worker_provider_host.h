@@ -51,13 +51,15 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   using GetRegistrationForReadyCallback =
       base::Callback<void(ServiceWorkerRegistration* reigstration)>;
 
-  // If |render_frame_id| is MSG_ROUTING_NONE, this provider host works for the
-  // worker context, i.e. ServiceWorker or SharedWorker.
+  // When this provider host is for a Service Worker context, |route_id| is
+  // MSG_ROUTING_NONE. When this provider host is for a Document,
+  // |route_id| is the frame ID of the Document. When this provider host is for
+  // a Shared Worker, |route_id| is the Shared Worker route ID.
   // |provider_type| gives additional information whether the provider is
   // created for controller (ServiceWorker) or controllee (Document or
   // SharedWorker).
   ServiceWorkerProviderHost(int render_process_id,
-                            int render_frame_id,
+                            int route_id,
                             int provider_id,
                             ServiceWorkerProviderType provider_type,
                             base::WeakPtr<ServiceWorkerContextCore> context,
@@ -67,7 +69,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   const std::string& client_uuid() const { return client_uuid_; }
   int process_id() const { return render_process_id_; }
   int provider_id() const { return provider_id_; }
-  int frame_id() const { return render_frame_id_; }
+  int frame_id() const;
+  int route_id() const { return route_id_; }
 
   bool IsHostToRunningServiceWorker() {
     return running_hosted_version_.get() != NULL;
@@ -155,11 +158,12 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   // Dispatches message event to the document.
   void PostMessage(
+      ServiceWorkerVersion* version,
       const base::string16& message,
       const std::vector<TransferredMessagePort>& sent_message_ports);
 
   // Activates the WebContents associated with
-  // { render_process_id_, render_frame_id_ }.
+  // { render_process_id_, route_id_ }.
   // Runs the |callback| with the updated ServiceWorkerClientInfo in parameter.
   void Focus(const GetClientInfoCallback& callback);
 
@@ -223,11 +227,23 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // for current document.
   ServiceWorkerRegistration* MatchRegistration() const;
 
+  // Called when our controller has been terminated and doomed due to an
+  // exceptional condition like it could no longer be read from the script
+  // cache.
   void NotifyControllerLost();
 
  private:
   friend class ServiceWorkerProviderHostTest;
   friend class ServiceWorkerWriteToCacheJobTest;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest, Update_SameScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
+                           Update_SameSizeScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
+                           Update_TruncatedScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
+                           Update_ElongatedScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
+                           Update_EmptyScript);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateBefore24Hours);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
@@ -273,7 +289,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   std::string client_uuid_;
   int render_process_id_;
-  int render_frame_id_;
+  int route_id_;
   int render_thread_id_;
   int provider_id_;
   ServiceWorkerProviderType provider_type_;

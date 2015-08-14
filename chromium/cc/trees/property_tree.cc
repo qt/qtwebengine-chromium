@@ -23,6 +23,12 @@ template <typename T>
 PropertyTree<T>::~PropertyTree() {
 }
 
+TransformTree::TransformTree() : source_to_parent_updates_allowed_(true) {
+}
+
+TransformTree::~TransformTree() {
+}
+
 template <typename T>
 int PropertyTree<T>::Insert(const T& tree_node, int parent_id) {
   DCHECK_GT(nodes_.size(), 0u);
@@ -56,9 +62,15 @@ TransformNodeData::TransformNodeData()
       to_screen_is_animated(false),
       flattens_inherited_transform(false),
       node_and_ancestors_are_flat(true),
+      node_and_ancestors_have_only_integer_translation(true),
       scrolls(false),
       needs_sublayer_scale(false),
-      layer_scale_factor(1.0f) {
+      affected_by_inner_viewport_bounds_delta_x(false),
+      affected_by_inner_viewport_bounds_delta_y(false),
+      affected_by_outer_viewport_bounds_delta_x(false),
+      affected_by_outer_viewport_bounds_delta_y(false),
+      layer_scale_factor(1.0f),
+      post_local_scale_factor(1.0f) {
 }
 
 TransformNodeData::~TransformNodeData() {
@@ -83,6 +95,16 @@ void TransformNodeData::update_post_local_transform(
 }
 
 ClipNodeData::ClipNodeData() : transform_id(-1), target_id(-1) {
+}
+
+OpacityNodeData::OpacityNodeData() : opacity(1.f), screen_space_opacity(1.f) {
+}
+
+void TransformTree::clear() {
+  PropertyTree<TransformNode>::clear();
+
+  nodes_affected_by_inner_viewport_bounds_delta_.clear();
+  nodes_affected_by_outer_viewport_bounds_delta_.clear();
 }
 
 bool TransformTree::ComputeTransform(int source_id,
@@ -136,18 +158,24 @@ bool TransformTree::Are2DAxisAligned(int source_id, int dest_id) const {
          transform.Preserves2dAxisAlignment();
 }
 
+bool TransformTree::NeedsSourceToParentUpdate(TransformNode* node) {
+  return (source_to_parent_updates_allowed() &&
+          node->parent_id != node->data.source_node_id);
+}
+
 void TransformTree::UpdateTransforms(int id) {
   TransformNode* node = Node(id);
   TransformNode* parent_node = parent(node);
   TransformNode* target_node = Node(node->data.target_id);
   if (node->data.needs_local_transform_update ||
-      node->parent_id != node->data.source_node_id)
+      NeedsSourceToParentUpdate(node))
     UpdateLocalTransform(node);
   UpdateScreenSpaceTransform(node, parent_node, target_node);
   UpdateSublayerScale(node);
   UpdateTargetSpaceTransform(node, target_node);
   UpdateIsAnimated(node, parent_node);
   UpdateSnapping(node);
+  UpdateNodeAndAncestorsHaveIntegerTranslations(node, parent_node);
 }
 
 bool TransformTree::IsDescendant(int desc_id, int source_id) const {
@@ -188,12 +216,21 @@ bool TransformTree::CombineTransformsBetween(int source_id,
   // path from the source to the destination (this is traversing upward), and
   // then we visit these nodes in reverse order, flattening as needed. We
   // early-out if we get to a node whose target node is the destination, since
-  // we can then re-use the target space transform stored at that node.
+  // we can then re-use the target space transform stored at that node. However,
+  // we cannot re-use a stored target space transform if the destination has a
+  // zero sublayer scale, since stored target space transforms have sublayer
+  // scale baked in, but we need to compute an unscaled transform.
   std::vector<int> source_to_destination;
   source_to_destination.push_back(current->id);
   current = parent(current);
+  bool destination_has_non_zero_sublayer_scale =
+      dest->data.sublayer_scale.x() != 0.f &&
+      dest->data.sublayer_scale.y() != 0.f;
+  DCHECK(destination_has_non_zero_sublayer_scale ||
+         !dest->data.ancestors_are_invertible);
   for (; current && current->id > dest_id; current = parent(current)) {
-    if (current->data.target_id == dest_id &&
+    if (destination_has_non_zero_sublayer_scale &&
+        current->data.target_id == dest_id &&
         current->data.content_target_id == dest_id)
       break;
     source_to_destination.push_back(current->id);
@@ -230,8 +267,10 @@ bool TransformTree::CombineTransformsBetween(int source_id,
         SkDoubleToMScalar(1e-4)));
   }
 
-  for (int i = source_to_destination.size() - 1; i >= 0; i--) {
-    const TransformNode* node = Node(source_to_destination[i]);
+  size_t source_to_destination_size = source_to_destination.size();
+  for (size_t i = 0; i < source_to_destination_size; ++i) {
+    size_t index = source_to_destination_size - 1 - i;
+    const TransformNode* node = Node(source_to_destination[index]);
     if (node->data.flattens_inherited_transform)
       combined_transform.FlattenTo2d();
     combined_transform.PreconcatTransform(node->data.to_parent);
@@ -273,14 +312,28 @@ bool TransformTree::CombineInversesBetween(int source_id,
 
 void TransformTree::UpdateLocalTransform(TransformNode* node) {
   gfx::Transform transform = node->data.post_local;
-  gfx::Vector2dF source_to_parent;
-  if (node->parent_id != node->data.source_node_id) {
+  if (NeedsSourceToParentUpdate(node)) {
     gfx::Transform to_parent;
     ComputeTransform(node->data.source_node_id, node->parent_id, &to_parent);
-    source_to_parent = to_parent.To2dTranslation();
+    node->data.source_to_parent = to_parent.To2dTranslation();
   }
-  transform.Translate(source_to_parent.x() - node->data.scroll_offset.x(),
-                      source_to_parent.y() - node->data.scroll_offset.y());
+
+  gfx::Vector2dF fixed_position_adjustment;
+  if (node->data.affected_by_inner_viewport_bounds_delta_x)
+    fixed_position_adjustment.set_x(inner_viewport_bounds_delta_.x());
+  else if (node->data.affected_by_outer_viewport_bounds_delta_x)
+    fixed_position_adjustment.set_x(outer_viewport_bounds_delta_.x());
+
+  if (node->data.affected_by_inner_viewport_bounds_delta_y)
+    fixed_position_adjustment.set_y(inner_viewport_bounds_delta_.y());
+  else if (node->data.affected_by_outer_viewport_bounds_delta_y)
+    fixed_position_adjustment.set_y(outer_viewport_bounds_delta_.y());
+
+  transform.Translate(
+      node->data.source_to_parent.x() - node->data.scroll_offset.x() +
+          fixed_position_adjustment.x(),
+      node->data.source_to_parent.y() - node->data.scroll_offset.y() +
+          fixed_position_adjustment.y());
   transform.PreconcatTransform(node->data.local);
   transform.PreconcatTransform(node->data.pre_local);
   node->data.set_to_parent(transform);
@@ -380,6 +433,70 @@ void TransformTree::UpdateSnapping(TransformNode* node) {
                                                 -translation.y(), 0);
 
   node->data.scroll_snap = translation;
+}
+
+void TransformTree::SetInnerViewportBoundsDelta(gfx::Vector2dF bounds_delta) {
+  if (inner_viewport_bounds_delta_ == bounds_delta)
+    return;
+
+  inner_viewport_bounds_delta_ = bounds_delta;
+
+  if (nodes_affected_by_inner_viewport_bounds_delta_.empty())
+    return;
+
+  set_needs_update(true);
+  for (int i : nodes_affected_by_inner_viewport_bounds_delta_)
+    Node(i)->data.needs_local_transform_update = true;
+}
+
+void TransformTree::SetOuterViewportBoundsDelta(gfx::Vector2dF bounds_delta) {
+  if (outer_viewport_bounds_delta_ == bounds_delta)
+    return;
+
+  outer_viewport_bounds_delta_ = bounds_delta;
+
+  if (nodes_affected_by_outer_viewport_bounds_delta_.empty())
+    return;
+
+  set_needs_update(true);
+  for (int i : nodes_affected_by_outer_viewport_bounds_delta_)
+    Node(i)->data.needs_local_transform_update = true;
+}
+
+void TransformTree::AddNodeAffectedByInnerViewportBoundsDelta(int node_id) {
+  nodes_affected_by_inner_viewport_bounds_delta_.push_back(node_id);
+}
+
+void TransformTree::AddNodeAffectedByOuterViewportBoundsDelta(int node_id) {
+  nodes_affected_by_outer_viewport_bounds_delta_.push_back(node_id);
+}
+
+bool TransformTree::HasNodesAffectedByInnerViewportBoundsDelta() const {
+  return !nodes_affected_by_inner_viewport_bounds_delta_.empty();
+}
+
+bool TransformTree::HasNodesAffectedByOuterViewportBoundsDelta() const {
+  return !nodes_affected_by_outer_viewport_bounds_delta_.empty();
+}
+
+void OpacityTree::UpdateOpacities(int id) {
+  OpacityNode* node = Node(id);
+  node->data.screen_space_opacity = node->data.opacity;
+
+  OpacityNode* parent_node = parent(node);
+  if (parent_node)
+    node->data.screen_space_opacity *= parent_node->data.screen_space_opacity;
+}
+
+void TransformTree::UpdateNodeAndAncestorsHaveIntegerTranslations(
+    TransformNode* node,
+    TransformNode* parent_node) {
+  node->data.node_and_ancestors_have_only_integer_translation =
+      node->data.to_parent.IsIdentityOrIntegerTranslation();
+  if (parent_node)
+    node->data.node_and_ancestors_have_only_integer_translation =
+        node->data.node_and_ancestors_have_only_integer_translation &&
+        parent_node->data.node_and_ancestors_have_only_integer_translation;
 }
 
 PropertyTrees::PropertyTrees() : needs_rebuild(true), sequence_number(0) {

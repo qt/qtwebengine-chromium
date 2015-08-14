@@ -30,6 +30,7 @@
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/system_headers/linux_futex.h"
 #include "sandbox/linux/system_headers/linux_syscalls.h"
+#include "sandbox/linux/system_headers/linux_time.h"
 
 // PNaCl toolchain does not provide sys/ioctl.h header.
 #if !defined(OS_NACL_NONSFI)
@@ -304,11 +305,13 @@ ResultExpr RestrictClockID() {
   return If(
 #if defined(OS_CHROMEOS)
              // Allow the special clock for Chrome OS used by Chrome tracing.
-             clockid == base::TimeTicks::kClockSystemTrace ||
+             clockid == base::TraceTicks::kClockSystemTrace ||
 #endif
                  clockid == CLOCK_MONOTONIC ||
+                 clockid == CLOCK_MONOTONIC_COARSE ||
                  clockid == CLOCK_PROCESS_CPUTIME_ID ||
                  clockid == CLOCK_REALTIME ||
+                 clockid == CLOCK_REALTIME_COARSE ||
                  clockid == CLOCK_THREAD_CPUTIME_ID,
              Allow()).Else(CrashSIGSYS());
 }

@@ -83,20 +83,20 @@ WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::MatchedRule);
 
 namespace blink {
 
-// FIXME: oilpan: when transition types are gone this class can be replaced with HeapVector.
-class StyleRuleList final : public RefCountedWillBeGarbageCollected<StyleRuleList> {
-public:
-    static PassRefPtrWillBeRawPtr<StyleRuleList> create() { return adoptRefWillBeNoop(new StyleRuleList()); }
-
-    DEFINE_INLINE_TRACE()
-    {
 #if ENABLE(OILPAN)
-        visitor->trace(m_list);
-#endif
-    }
+using StyleRuleList = HeapVector<Member<StyleRule>>;
+#else
+class StyleRuleList final : public RefCounted<StyleRuleList> {
+public:
+    static PassRefPtr<StyleRuleList> create() { return adoptRef(new StyleRuleList()); }
 
-    WillBeHeapVector<RawPtrWillBeMember<StyleRule>> m_list;
+    void append(StyleRule* rule) { m_list.append(rule); }
+    StyleRule* at(size_t index) const { return m_list[index]; }
+    size_t size() const { return m_list.size(); }
+
+    Vector<StyleRule*> m_list;
 };
+#endif
 
 // ElementRuleCollector is designed to be used as a stack object.
 // Create one, ask what rules the ElementResolveContext matches
@@ -118,38 +118,27 @@ public:
     bool scopeContainsLastMatchedElement() const { return m_scopeContainsLastMatchedElement; }
     bool hasAnyMatchingRules(RuleSet*);
 
-    MatchResult& matchedResult();
+    const MatchResult& matchedResult() const;
     PassRefPtrWillBeRawPtr<StyleRuleList> matchedStyleRuleList();
     PassRefPtrWillBeRawPtr<CSSRuleList> matchedCSSRuleList();
 
-    void collectMatchingRules(const MatchRequest&, RuleRange&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
-    void collectMatchingShadowHostRules(const MatchRequest&, RuleRange&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
+    void collectMatchingRules(const MatchRequest&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
+    void collectMatchingShadowHostRules(const MatchRequest&, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
 
 private:
-    void collectRuleIfMatches(const RuleData&, CascadeOrder, const MatchRequest&, RuleRange&);
-
     template<typename RuleDataListType>
-    void collectMatchingRulesForList(const RuleDataListType* rules, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
-    {
-        if (!rules)
-            return;
+    void collectMatchingRulesForList(const RuleDataListType*, CascadeOrder, const MatchRequest&);
 
-        for (const auto& rule : *rules)
-            collectRuleIfMatches(rule, cascadeOrder, matchRequest, ruleRange);
-    }
+    void didMatchRule(const RuleData&, const SelectorChecker::MatchResult&, CascadeOrder, const MatchRequest&);
 
-    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::MatchResult*);
-
-    CSSRuleList* nestedRuleList(CSSRule*);
     template<class CSSRuleCollection>
     CSSRule* findStyleRule(CSSRuleCollection*, StyleRule*);
     void appendCSSOMWrapperForRule(CSSStyleSheet*, StyleRule*);
 
     void sortMatchedRules();
-    void addMatchedRule(const RuleData*, unsigned specificity, CascadeOrder, unsigned styleSheetIndex, const CSSStyleSheet* parentStyleSheet);
 
     StaticCSSRuleList* ensureRuleList();
     StyleRuleList* ensureStyleRuleList();

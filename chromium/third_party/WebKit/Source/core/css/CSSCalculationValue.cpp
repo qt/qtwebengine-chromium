@@ -51,6 +51,7 @@ static CalculationCategory unitCategory(CSSPrimitiveValue::UnitType type)
 {
     switch (type) {
     case CSSPrimitiveValue::CSS_NUMBER:
+    case CSSPrimitiveValue::CSS_INTEGER:
         return CalcNumber;
     case CSSPrimitiveValue::CSS_PERCENTAGE:
         return CalcPercent;
@@ -116,6 +117,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::CSS_DPI:
     case CSSPrimitiveValue::CSS_DPCM:
     case CSSPrimitiveValue::CSS_FR:
+    case CSSPrimitiveValue::CSS_INTEGER:
         return true;
     case CSSPrimitiveValue::CSS_UNKNOWN:
     case CSSPrimitiveValue::CSS_CUSTOM_IDENT:
@@ -127,8 +129,6 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::CSS_RECT:
     case CSSPrimitiveValue::CSS_RGBCOLOR:
     case CSSPrimitiveValue::CSS_PAIR:
-    case CSSPrimitiveValue::CSS_UNICODE_RANGE:
-    case CSSPrimitiveValue::CSS_COUNTER_NAME:
     case CSSPrimitiveValue::CSS_SHAPE:
     case CSSPrimitiveValue::CSS_QUAD:
     case CSSPrimitiveValue::CSS_CALC:
@@ -136,6 +136,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::CSS_CALC_PERCENTAGE_WITH_LENGTH:
     case CSSPrimitiveValue::CSS_PROPERTY_ID:
     case CSSPrimitiveValue::CSS_VALUE_ID:
+    case CSSPrimitiveValue::CSS_QEM:
         return false;
     };
     ASSERT_NOT_REACHED();

@@ -9,6 +9,8 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "content/common/resource_messages.h"
 #include "content/browser/loader/resource_message_delegate.h"
@@ -26,6 +28,14 @@
 namespace content {
 
 namespace {
+
+// Field trial constants
+const char kThrottleCoalesceFieldTrial[] = "RequestThrottlingAndCoalescing";
+const char kThrottleCoalesceFieldTrialThrottle[] = "Throttle";
+const char kThrottleCoalesceFieldTrialCoalesce[] = "Coalesce";
+
+const char kRequestLimitFieldTrial[] = "OutstandingRequestLimiting";
+const char kRequestLimitFieldTrialGroupPrefix[] = "Limit";
 
 // Post ResourceScheduler histograms of the following forms:
 // If |histogram_suffix| is NULL or the empty string:
@@ -337,7 +347,20 @@ class ResourceScheduler::Client {
     }
   }
 
-  RequestSet RemoveAllRequests() {
+  RequestSet StartAndRemoveAllRequests() {
+    // First start any pending requests so that they will be moved into
+    // in_flight_requests_. This may exceed the limits
+    // kMaxNumDelayableRequestsPerClient, kMaxNumDelayableRequestsPerHost and
+    // kMaxNumThrottledRequestsPerClient, so this method must not do anything
+    // that depends on those limits before calling ClearInFlightRequests()
+    // below.
+    while (!pending_requests_.IsEmpty()) {
+      ScheduledResourceRequest* request =
+          *pending_requests_.GetNextHighestIterator();
+      pending_requests_.Erase(request);
+      // StartRequest() may modify pending_requests_. TODO(ricea): Does it?
+      StartRequest(request);
+    }
     RequestSet unowned_requests;
     for (RequestSet::iterator it = in_flight_requests_.begin();
          it != in_flight_requests_.end(); ++it) {
@@ -664,12 +687,18 @@ class ResourceScheduler::Client {
   //
   //  The following rules are followed:
   //
+  //  All types of requests:
+  //   * If an outstanding request limit is in place, only that number
+  //     of requests may be in flight for a single client at the same time.
+  //
   //  ACTIVE_AND_LOADING and UNTHROTTLED Clients follow these rules:
   //   * Non-delayable, High-priority and request-priority capable requests are
   //     issued immediately.
   //   * Low priority requests are delayable.
-  //   * Allow one delayable request to load at a time while layout-blocking
-  //     requests are loading or the body tag has not yet been parsed.
+  //   * While layout-blocking requests are loading or the body tag has not
+  //     yet been parsed, limit the number of delayable requests that may be
+  //     in flight (to 1 by default, or to zero if there's an outstanding
+  //     request limit in place).
   //   * If no high priority or layout-blocking requests are in flight, start
   //     loading delayable requests.
   //   * Never exceed 10 delayable requests in flight per client.
@@ -714,6 +743,12 @@ class ResourceScheduler::Client {
       return START_REQUEST;
     }
 
+    // Implementation of the kRequestLimitFieldTrial.
+    if (scheduler_->limit_outstanding_requests() &&
+        in_flight_requests_.size() >= scheduler_->outstanding_request_limit()) {
+      return DO_NOT_START_REQUEST_AND_STOP_SEARCHING;
+    }
+
     net::HostPortPair host_port_pair =
         net::HostPortPair::FromURL(url_request.url());
     net::HttpServerProperties& http_server_properties =
@@ -752,7 +787,10 @@ class ResourceScheduler::Client {
         in_flight_requests_.size() > in_flight_delayable_count_;
     if (have_immediate_requests_in_flight &&
         (!has_body_ || total_layout_blocking_count_ != 0) &&
-        in_flight_delayable_count_ != 0) {
+        // Do not allow a low priority request through in parallel if
+        // we are in a limit field trial.
+        (scheduler_->limit_outstanding_requests() ||
+         in_flight_delayable_count_ != 0)) {
       return DO_NOT_START_REQUEST_AND_STOP_SEARCHING;
     }
 
@@ -820,15 +858,31 @@ ResourceScheduler::ResourceScheduler()
       should_throttle_(false),
       active_clients_loading_(0),
       coalesced_clients_(0),
+      limit_outstanding_requests_(false),
+      outstanding_request_limit_(0),
       coalescing_timer_(new base::Timer(true /* retain_user_task */,
                                         true /* is_repeating */)) {
   std::string throttling_trial_group =
-      base::FieldTrialList::FindFullName("RequestThrottlingAndCoalescing");
-  if (throttling_trial_group == "Throttle") {
+      base::FieldTrialList::FindFullName(kThrottleCoalesceFieldTrial);
+  if (throttling_trial_group == kThrottleCoalesceFieldTrialThrottle) {
     should_throttle_ = true;
-  } else if (throttling_trial_group == "Coalesce") {
+  } else if (throttling_trial_group == kThrottleCoalesceFieldTrialCoalesce) {
     should_coalesce_ = true;
     should_throttle_ = true;
+  }
+
+  std::string outstanding_limit_trial_group =
+      base::FieldTrialList::FindFullName(kRequestLimitFieldTrial);
+  std::vector<std::string> split_group(
+      base::SplitString(outstanding_limit_trial_group, "=",
+                        base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL));
+  int outstanding_limit = 0;
+  if (split_group.size() == 2 &&
+      split_group[0] == kRequestLimitFieldTrialGroupPrefix &&
+      base::StringToInt(split_group[1], &outstanding_limit) &&
+      outstanding_limit > 0) {
+    limit_outstanding_requests_ = true;
+    outstanding_request_limit_ = outstanding_limit;
   }
 }
 
@@ -918,10 +972,10 @@ void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
     return;
 
   Client* client = it->second;
-  // FYI, ResourceDispatcherHost cancels all of the requests after this function
-  // is called. It should end up canceling all of the requests except for a
-  // cross-renderer navigation.
-  RequestSet client_unowned_requests = client->RemoveAllRequests();
+  // ResourceDispatcherHost cancels all requests except for cross-renderer
+  // navigations, async revalidations and detachable requests after
+  // OnClientDeleted() returns.
+  RequestSet client_unowned_requests = client->StartAndRemoveAllRequests();
   for (RequestSet::iterator it = client_unowned_requests.begin();
        it != client_unowned_requests.end(); ++it) {
     unowned_requests_.insert(*it);
@@ -1003,6 +1057,14 @@ bool ResourceScheduler::IsClientVisibleForTesting(int child_id, int route_id) {
   Client* client = GetClient(child_id, route_id);
   DCHECK(client);
   return client->is_visible();
+}
+
+bool ResourceScheduler::HasLoadingClients() const {
+  for (const auto& client : client_map_) {
+    if (!client.second->is_loaded())
+      return true;
+  }
+  return false;
 }
 
 ResourceScheduler::Client* ResourceScheduler::GetClient(int child_id,

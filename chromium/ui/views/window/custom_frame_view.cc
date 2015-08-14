@@ -20,6 +20,7 @@
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/resources/grit/views_resources.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/widget.h"
@@ -47,12 +48,15 @@ const int kCaptionButtonHeightWithPadding = 19;
 const int kTitlebarTopAndBottomEdgeThickness = 2;
 // The icon is inset 2 px from the left frame border.
 const int kIconLeftSpacing = 2;
-// The icon never shrinks below 16 px on a side.
-const int kIconMinimumSize = 16;
 // The space between the window icon and the title text.
 const int kTitleIconOffsetX = 4;
 // The space between the title text and the caption buttons.
 const int kTitleCaptionSpacing = 5;
+
+#if !defined(OS_WIN)
+// The icon never shrinks below 16 px on a side.
+const int kIconMinimumSize = 16;
+#endif
 
 #if defined(OS_CHROMEOS)
 // Chrome OS uses a dark gray.
@@ -333,9 +337,9 @@ bool CustomFrameView::ShouldShowTitleBarAndBorder() const {
   if (frame_->IsFullscreen())
     return false;
 
-  if (ViewsDelegate::views_delegate) {
-    return !ViewsDelegate::views_delegate->WindowManagerProvidesTitleBar(
-                frame_->IsMaximized());
+  if (ViewsDelegate::GetInstance()) {
+    return !ViewsDelegate::GetInstance()->WindowManagerProvidesTitleBar(
+        frame_->IsMaximized());
   }
 
   return true;

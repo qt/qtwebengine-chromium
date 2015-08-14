@@ -50,12 +50,12 @@ ScrollAnimator::~ScrollAnimator()
 {
 }
 
-ScrollResultOneDimensional ScrollAnimator::scroll(ScrollbarOrientation orientation, ScrollGranularity, float step, float delta)
+ScrollResultOneDimensional ScrollAnimator::userScroll(ScrollbarOrientation orientation, ScrollGranularity, float step, float delta)
 {
     float& currentPos = (orientation == HorizontalScrollbar) ? m_currentPosX : m_currentPosY;
     float newPos = clampScrollPosition(orientation, currentPos + step * delta);
     if (currentPos == newPos)
-        return ScrollResultOneDimensional(false);
+        return ScrollResultOneDimensional(false, delta);
 
     float usedDelta = (newPos - currentPos) / step;
     currentPos = newPos;
@@ -84,7 +84,7 @@ ScrollResult ScrollAnimator::handleWheelEvent(const PlatformWheelEvent& e)
     float deltaX = canScrollX ? e.deltaX() : 0;
     float deltaY = canScrollY ? e.deltaY() : 0;
 
-    ScrollResult result(false);
+    ScrollResult result;
 
 #if !OS(MACOSX)
     ScrollGranularity granularity = e.hasPreciseScrollingDeltas() ? ScrollByPrecisePixel : ScrollByPixel;
@@ -92,53 +92,43 @@ ScrollResult ScrollAnimator::handleWheelEvent(const PlatformWheelEvent& e)
     ScrollGranularity granularity = ScrollByPixel;
 #endif
 
-    IntSize maxForwardScrollDelta = m_scrollableArea->maximumScrollPosition() - m_scrollableArea->scrollPosition();
-    IntSize maxBackwardScrollDelta = m_scrollableArea->scrollPosition() - m_scrollableArea->minimumScrollPosition();
-    if ((deltaX < 0 && maxForwardScrollDelta.width() > 0)
-        || (deltaX > 0 && maxBackwardScrollDelta.width() > 0)
-        || (deltaY < 0 && maxForwardScrollDelta.height() > 0)
-        || (deltaY > 0 && maxBackwardScrollDelta.height() > 0)) {
-        result.didScroll = true;
-
-        if (deltaY) {
-            if (e.granularity() == ScrollByPageWheelEvent) {
-                bool negative = deltaY < 0;
-                deltaY = m_scrollableArea->pageStep(VerticalScrollbar);
-                if (negative)
-                    deltaY = -deltaY;
-            }
-
-            ScrollResultOneDimensional resultY = scroll(
-                VerticalScrollbar, granularity, m_scrollableArea->pixelStep(VerticalScrollbar), -deltaY);
-
-            if (e.granularity() != ScrollByPageWheelEvent) {
-                if (resultY.didScroll)
-                    result.unusedScrollDeltaY = -resultY.unusedScrollDelta;
-                else
-                    result.unusedScrollDeltaY = deltaY;
-            }
+    if (deltaY) {
+        if (e.granularity() == ScrollByPageWheelEvent) {
+            bool negative = deltaY < 0;
+            deltaY = m_scrollableArea->pageStep(VerticalScrollbar);
+            if (negative)
+                deltaY = -deltaY;
         }
 
-        if (deltaX) {
-            if (e.granularity() == ScrollByPageWheelEvent) {
-                bool negative = deltaX < 0;
-                deltaX = m_scrollableArea->pageStep(HorizontalScrollbar);
-                if (negative)
-                    deltaX = -deltaX;
-            }
-
-            ScrollResultOneDimensional resultX = scroll(
-                HorizontalScrollbar, granularity, m_scrollableArea->pixelStep(HorizontalScrollbar), -deltaX);
-
-            if (e.granularity() != ScrollByPageWheelEvent) {
-                if (resultX.didScroll)
-                    result.unusedScrollDeltaX = -resultX.unusedScrollDelta;
-                else
-                    result.unusedScrollDeltaX = deltaX;
-            }
+        ScrollResultOneDimensional resultY = userScroll(
+            VerticalScrollbar, granularity, m_scrollableArea->pixelStep(VerticalScrollbar), -deltaY);
+        result.didScrollY = resultY.didScroll;
+        if (e.granularity() != ScrollByPageWheelEvent) {
+            if (resultY.didScroll)
+                result.unusedScrollDeltaY = -resultY.unusedScrollDelta;
+            else
+                result.unusedScrollDeltaY = deltaY;
         }
     }
 
+    if (deltaX) {
+        if (e.granularity() == ScrollByPageWheelEvent) {
+            bool negative = deltaX < 0;
+            deltaX = m_scrollableArea->pageStep(HorizontalScrollbar);
+            if (negative)
+                deltaX = -deltaX;
+        }
+
+        ScrollResultOneDimensional resultX = userScroll(
+            HorizontalScrollbar, granularity, m_scrollableArea->pixelStep(HorizontalScrollbar), -deltaX);
+        result.didScrollX = resultX.didScroll;
+        if (e.granularity() != ScrollByPageWheelEvent) {
+            if (resultX.didScroll)
+                result.unusedScrollDeltaX = -resultX.unusedScrollDelta;
+            else
+                result.unusedScrollDeltaX = deltaX;
+        }
+    }
     return result;
 }
 
@@ -155,10 +145,7 @@ FloatPoint ScrollAnimator::currentPosition() const
 
 void ScrollAnimator::notifyPositionChanged()
 {
-    if (!m_scrollableArea->shouldUseIntegerScrollOffset())
-        m_scrollableArea->setScrollOffsetFromAnimation(DoublePoint(m_currentPosX, m_currentPosY));
-    else
-        m_scrollableArea->setScrollOffsetFromAnimation(IntPoint(m_currentPosX, m_currentPosY));
+    m_scrollableArea->scrollPositionChanged(DoublePoint(m_currentPosX, m_currentPosY), UserScroll);
 }
 
 float ScrollAnimator::clampScrollPosition(ScrollbarOrientation orientation, float pos)

@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "net/quic/congestion_control/prr_sender.h"
 #include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/crypto/crypto_protocol.h"
@@ -34,8 +34,7 @@ TcpCubicSender::TcpCubicSender(const QuicClock* clock,
                                QuicPacketCount initial_tcp_congestion_window,
                                QuicPacketCount max_tcp_congestion_window,
                                QuicConnectionStats* stats)
-    : hybrid_slow_start_(clock),
-      cubic_(clock),
+    : cubic_(clock),
       rtt_stats_(rtt_stats),
       stats_(stats),
       reno_(reno),
@@ -61,9 +60,24 @@ void TcpCubicSender::SetFromConfig(const QuicConfig& config,
                                    Perspective perspective) {
   if (perspective == Perspective::IS_SERVER) {
     if (config.HasReceivedConnectionOptions() &&
+        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW03)) {
+      // Initial window experiment.
+      congestion_window_ = 3;
+    }
+    if (config.HasReceivedConnectionOptions() &&
         ContainsQuicTag(config.ReceivedConnectionOptions(), kIW10)) {
       // Initial window experiment.
       congestion_window_ = 10;
+    }
+    if (config.HasReceivedConnectionOptions() &&
+        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW20)) {
+      // Initial window experiment.
+      congestion_window_ = 20;
+    }
+    if (config.HasReceivedConnectionOptions() &&
+        ContainsQuicTag(config.ReceivedConnectionOptions(), kIW50)) {
+      // Initial window experiment.
+      congestion_window_ = 50;
     }
     if (config.HasReceivedConnectionOptions() &&
         ContainsQuicTag(config.ReceivedConnectionOptions(), kMIN1)) {
@@ -100,7 +114,7 @@ bool TcpCubicSender::ResumeConnectionState(
   // Make sure CWND is in appropriate range (in case of bad data).
   QuicPacketCount new_congestion_window =
       bandwidth.ToBytesPerPeriod(rtt_ms) / kMaxPacketSize;
-  congestion_window_ = max(min(new_congestion_window, kMaxTcpCongestionWindow),
+  congestion_window_ = max(min(new_congestion_window, kMaxResumptionCwnd),
                            kMinCongestionWindowForBandwidthResumption);
 
   // TODO(rjshade): Set appropriate CWND when previous connection was in slow

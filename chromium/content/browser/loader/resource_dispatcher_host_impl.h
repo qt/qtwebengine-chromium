@@ -108,9 +108,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Notify the ResourceDispatcherHostImpl of a resource context destruction.
   void RemoveResourceContext(ResourceContext* context);
 
-  // Resumes a request that deferred at response start.
-  void ResumeResponseDeferredAtStart(const GlobalRequestID& id);
-
   // Force cancels any pending requests for the given |context|. This is
   // necessary to ensure that before |context| goes away, all requests
   // for it are dead.
@@ -437,7 +434,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       ResourceContext* resource_context);
 
   // Wraps |handler| in the standard resource handlers for normal resource
-  // loading and navigation requests. This adds BufferedResourceHandler and
+  // loading and navigation requests. This adds MimeTypeResourceHandler and
   // ResourceThrottles.
   scoped_ptr<ResourceHandler> AddStandardHandlers(
       net::URLRequest* request,
@@ -505,8 +502,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       RegisteredTempFiles;  // key is child process id
   RegisteredTempFiles registered_temp_files_;
 
-  // A timer that periodically calls UpdateLoadStates while pending_requests_
-  // is not empty.
+  // A timer that periodically calls UpdateLoadInfo while pending_loaders_ is
+  // not empty and at least one RenderViewHost is loading.
   scoped_ptr<base::RepeatingTimer<ResourceDispatcherHostImpl> >
       update_load_states_timer_;
 
@@ -577,7 +574,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   std::set<const ResourceContext*> active_resource_contexts_;
 
   typedef std::map<GlobalRequestID,
-                   ObserverList<ResourceMessageDelegate>*> DelegateMap;
+                   base::ObserverList<ResourceMessageDelegate>*> DelegateMap;
   DelegateMap delegate_map_;
 
   scoped_ptr<ResourceScheduler> scheduler_;

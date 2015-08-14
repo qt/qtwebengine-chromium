@@ -35,8 +35,8 @@ scoped_refptr<DrmBuffer> AllocateBuffer(const scoped_refptr<DrmDevice>& drm,
 
 }  // namespace
 
-DrmSurface::DrmSurface(DrmWindow* window_delegate)
-    : window_delegate_(window_delegate), buffers_(), front_buffer_(0) {
+DrmSurface::DrmSurface(DrmWindow* window)
+    : window_(window), weak_ptr_factory_(this) {
 }
 
 DrmSurface::~DrmSurface() {
@@ -51,48 +51,65 @@ void DrmSurface::ResizeCanvas(const gfx::Size& viewport_size) {
       viewport_size.width(), viewport_size.height(), kOpaque_SkAlphaType);
   surface_ = skia::AdoptRef(SkSurface::NewRaster(info));
 
-  HardwareDisplayController* controller = window_delegate_->GetController();
+  HardwareDisplayController* controller = window_->GetController();
   if (!controller)
     return;
 
   // For the display buffers use the mode size since a |viewport_size| smaller
   // than the display size will not scanout.
-  for (size_t i = 0; i < arraysize(buffers_); ++i)
-    buffers_[i] = AllocateBuffer(controller->GetAllocationDrmDevice(),
+  front_buffer_ = AllocateBuffer(controller->GetAllocationDrmDevice(),
                                  controller->GetModeSize());
+  back_buffer_ = AllocateBuffer(controller->GetAllocationDrmDevice(),
+                                controller->GetModeSize());
 }
 
 void DrmSurface::PresentCanvas(const gfx::Rect& damage) {
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
-  DCHECK(buffers_[front_buffer_ ^ 1].get());
-  window_delegate_->QueueOverlayPlane(
-      OverlayPlane(buffers_[front_buffer_ ^ 1]));
+  // Create a snapshot of the requested drawing. If we get here again before
+  // presenting, just add the additional damage.
+  pending_image_damage_.Union(damage);
+  pending_image_ = skia::AdoptRef(surface_->newImageSnapshot());
 
-  UpdateNativeSurface(damage);
-  window_delegate_->SchedulePageFlip(true /* is_sync */,
-                                     base::Bind(&base::DoNothing));
-
-  // Update our front buffer pointer.
-  front_buffer_ ^= 1;
+  if (!pending_pageflip_)
+    SchedulePageFlip();
 }
 
 scoped_ptr<gfx::VSyncProvider> DrmSurface::CreateVSyncProvider() {
-  return make_scoped_ptr(new DrmVSyncProvider(window_delegate_));
+  return make_scoped_ptr(new DrmVSyncProvider(window_));
 }
 
-void DrmSurface::UpdateNativeSurface(const gfx::Rect& damage) {
-  SkCanvas* canvas = buffers_[front_buffer_ ^ 1]->GetCanvas();
+void DrmSurface::SchedulePageFlip() {
+  DCHECK(back_buffer_);
+  SkCanvas* canvas = back_buffer_->GetCanvas();
 
   // The DrmSurface is double buffered, so the current back buffer is
   // missing the previous update. Expand damage region.
-  SkRect real_damage = RectToSkRect(UnionRects(damage, last_damage_));
+  SkRect real_damage =
+      RectToSkRect(UnionRects(pending_image_damage_, last_damage_));
 
   // Copy damage region.
-  skia::RefPtr<SkImage> image = skia::AdoptRef(surface_->newImageSnapshot());
-  canvas->drawImageRect(image.get(), &real_damage, real_damage, NULL);
+  canvas->drawImageRect(pending_image_.get(), &real_damage, real_damage, NULL);
+  last_damage_ = pending_image_damage_;
 
-  last_damage_ = damage;
+  pending_image_ = nullptr;
+  pending_image_damage_ = gfx::Rect();
+
+  window_->QueueOverlayPlane(OverlayPlane(back_buffer_));
+
+  // Update our front buffer pointer.
+  std::swap(front_buffer_, back_buffer_);
+  pending_pageflip_ = window_->SchedulePageFlip(
+      false /* is_sync */,
+      base::Bind(&DrmSurface::OnPageFlip, weak_ptr_factory_.GetWeakPtr()));
+}
+
+void DrmSurface::OnPageFlip(gfx::SwapResult result) {
+  pending_pageflip_ = false;
+  if (!pending_image_)
+    return;
+
+  SchedulePageFlip();
 }
 
 }  // namespace ui

@@ -59,6 +59,7 @@
 #include "core/html/track/TextTrackList.h"
 #include "core/html/track/VideoTrack.h"
 #include "core/html/track/VideoTrackList.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutVideo.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
@@ -260,6 +261,8 @@ enum AutoplayMetrics {
     AutoplayManualStart = 3,
     // Autoplay was (re)enabled through a user-gesture triggered load()
     AutoplayEnabledThroughLoad = 4,
+    // Autoplay disabled by sandbox flags.
+    AutoplayDisabledBySandbox = 5,
     // This enum value must be last.
     NumberOfAutoplayMetrics,
 };
@@ -354,10 +357,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     , m_processingPreferenceChange(false)
     , m_remoteRoutesAvailable(false)
     , m_playingRemotely(false)
-#if ENABLE(OILPAN)
     , m_isFinalizing(false)
-    , m_closeMediaSourceWhenFinalizing(false)
-#endif
     , m_initialPlayWithoutUserGestures(false)
     , m_autoplayMediaCounted(false)
     , m_audioTracks(AudioTrackList::create(*this))
@@ -367,6 +367,9 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     , m_audioSourceNode(nullptr)
 #endif
 {
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(this);
+#endif
     ASSERT(RuntimeEnabledFeatures::mediaEnabled());
 
     WTF_LOG(Media, "HTMLMediaElement::HTMLMediaElement(%p)", this);
@@ -381,23 +384,9 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
 HTMLMediaElement::~HTMLMediaElement()
 {
     WTF_LOG(Media, "HTMLMediaElement::~HTMLMediaElement(%p)", this);
-
-#if ENABLE(OILPAN)
-    // If the HTMLMediaElement dies with the document we are not
-    // allowed to touch the document to adjust delay load event counts
-    // because the document could have been already
-    // destructed. However, if the HTMLMediaElement dies with the
-    // document there is no need to change the delayed load counts
-    // because no load event will fire anyway. If the document is
-    // still alive we do have to decrement the load delay counts. We
-    // determine if the document is alive via the ActiveDOMObject
-    // which is a context lifecycle observer. If the Document has been
-    // destructed ActiveDOMObject::executionContext() returns 0.
-    if (ActiveDOMObject::executionContext())
-        setShouldDelayLoadEvent(false);
-#else
+#if !ENABLE(OILPAN)
     // HTMLMediaElement and m_asyncEventQueue always become unreachable
-    // together. So HTMLMediaElemenet and m_asyncEventQueue are destructed in
+    // together. So HTMLMediaElement and m_asyncEventQueue are destructed in
     // the same GC. We don't need to close it explicitly in Oilpan.
     m_asyncEventQueue->close();
 
@@ -412,38 +401,64 @@ HTMLMediaElement::~HTMLMediaElement()
         m_mediaController->removeMediaElement(this);
         m_mediaController = nullptr;
     }
-#endif
-
-#if ENABLE(OILPAN)
-    if (m_closeMediaSourceWhenFinalizing)
-        closeMediaSource();
-#else
     closeMediaSource();
 
     removeElementFromDocumentMap(this, &document());
-#endif
 
     // Destroying the player may cause a resource load to be canceled,
     // which could result in userCancelledLoad() being called back.
-    // Setting m_completelyLoaded ensures that such a call will not cause
+    // Setting m_isFinalizing ensures that such a call will not cause
     // us to dispatch an abort event, which would result in a crash.
     // See http://crbug.com/233654 for more details.
-    m_completelyLoaded = true;
+    m_isFinalizing = true;
 
-    // With Oilpan load events on the Document are always delayed during
-    // sweeping so we don't need to explicitly increment and decrement
-    // load event delay counts.
-#if !ENABLE(OILPAN)
     // Destroying the player may cause a resource load to be canceled,
     // which could result in Document::dispatchWindowLoadEvent() being
     // called via ResourceFetch::didLoadResource() then
-    // FrameLoader::loadDone(). To prevent load event dispatching during
+    // FrameLoader::checkCompleted(). To prevent load event dispatching during
     // object destruction, we use Document::incrementLoadEventDelayCount().
     // See http://crbug.com/275223 for more details.
     document().incrementLoadEventDelayCount();
+
+    clearMediaPlayerAndAudioSourceProviderClientWithoutLocking();
+
+    document().decrementLoadEventDelayCount();
 #endif
 
+#if ENABLE(WEB_AUDIO)
+    // m_audioSourceNode is explicitly cleared by AudioNode::dispose().
+    // Since AudioNode::dispose() is guaranteed to be always called before
+    // the AudioNode is destructed, m_audioSourceNode is explicitly cleared
+    // even if the AudioNode and the HTMLMediaElement die together.
+    ASSERT(!m_audioSourceNode);
+#endif
+}
+
 #if ENABLE(OILPAN)
+void HTMLMediaElement::dispose()
+{
+    // If the HTMLMediaElement dies with the Document we are not
+    // allowed to touch the Document to adjust delay load event counts
+    // from the destructor, as the Document could have been already
+    // destructed.
+    //
+    // Work around that restriction by accessing the Document from
+    // a prefinalizer action instead, updating its delayed load count.
+    // If needed - if the Document has been detached and informed its
+    // ContextLifecycleObservers (which HTMLMediaElement is) that
+    // it is being destroyed, the connection to the Document will
+    // have been severed already, but in that case there is no need
+    // to update the delayed load count. But if the Document hasn't
+    // been detached cleanly from any frame or it isn't dying in the
+    // same GC, we do update the delayed load count from the prefinalizer.
+    if (ActiveDOMObject::executionContext())
+        setShouldDelayLoadEvent(false);
+
+    // If the MediaSource object survived, notify that the media element
+    // didn't.
+    if (Heap::isHeapObjectAlive(m_mediaSource))
+        closeMediaSource();
+
     // Oilpan: the player must be released, but the player object
     // cannot safely access this player client any longer as parts of
     // it may have been finalized already (like the media element's
@@ -456,27 +471,8 @@ HTMLMediaElement::~HTMLMediaElement()
     // could then be removed (along with the state bit it depends on.)
     // crbug.com/378229
     m_isFinalizing = true;
-#endif
 
-    // m_audioSourceNode is explicitly cleared by AudioNode::dispose().
-    // Since AudioNode::dispose() is guaranteed to be always called before
-    // the AudioNode is destructed, m_audioSourceNode is explicitly cleared
-    // even if the AudioNode and the HTMLMediaElement die together.
-#if ENABLE(WEB_AUDIO)
-    ASSERT(!m_audioSourceNode);
-#endif
     clearMediaPlayerAndAudioSourceProviderClientWithoutLocking();
-
-#if !ENABLE(OILPAN)
-    document().decrementLoadEventDelayCount();
-#endif
-}
-
-#if ENABLE(OILPAN)
-void HTMLMediaElement::setCloseMediaSourceWhenFinalizing()
-{
-    ASSERT(!m_closeMediaSourceWhenFinalizing);
-    m_closeMediaSourceWhenFinalizing = true;
 }
 #endif
 
@@ -1162,7 +1158,7 @@ void HTMLMediaElement::textTrackModeChanged(TextTrack* track)
     if (track->trackType() == TextTrack::TrackElement)
         track->setHasBeenConfigured(true);
 
-    configureTextTrackDisplay(AssumeVisibleChange);
+    configureTextTrackDisplay();
 
     ASSERT(textTracks()->contains(track));
     textTracks()->scheduleChangeEvent();
@@ -1535,9 +1531,12 @@ void HTMLMediaElement::setReadyState(ReadyState state)
                 scheduleEvent(EventTypeNames::playing);
         }
 
-        if (m_autoplaying && m_paused && autoplay() && !document().isSandboxed(SandboxAutomaticFeatures)) {
+        if (m_autoplaying && m_paused && autoplay()) {
             autoplayMediaEncountered();
-            if (!m_userGestureRequiredForPlay) {
+
+            if (document().isSandboxed(SandboxAutomaticFeatures)) {
+                recordAutoplayMetric(AutoplayDisabledBySandbox);
+            } else if (!m_userGestureRequiredForPlay) {
                 m_paused = false;
                 invalidateCachedTime();
                 scheduleEvent(EventTypeNames::play);
@@ -1914,8 +1913,11 @@ void HTMLMediaElement::play()
 
     if (!UserGestureIndicator::processingUserGesture()) {
         autoplayMediaEncountered();
-        if (m_userGestureRequiredForPlay)
+        if (m_userGestureRequiredForPlay) {
+            String message = ExceptionMessages::failedToExecute("play", "HTMLMediaElement", "API can only be initiated by a user gesture.");
+            document().executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message));
             return;
+        }
     } else if (m_userGestureRequiredForPlay) {
         if (m_autoplayMediaCounted)
             recordAutoplayMetric(AutoplayManualStart);
@@ -2488,6 +2490,10 @@ void HTMLMediaElement::honorUserPreferencesForAutomaticTextTrackSelection()
     if (m_closedCaptionsVisible)
         configuration.forceEnableSubtitleOrCaptionTrack = true;
 
+    Settings* settings = document().settings();
+    if (settings)
+        configuration.textTrackKindUserPreference = settings->textTrackKindUserPreference();
+
     AutomaticTrackSelection trackSelection(configuration);
     trackSelection.perform(*m_textTracks);
 
@@ -2774,17 +2780,6 @@ void HTMLMediaElement::mediaPlayerPlaybackStateChanged()
         playInternal();
 }
 
-void HTMLMediaElement::mediaPlayerRequestFullscreen()
-{
-    WTF_LOG(Media, "HTMLMediaElement::mediaPlayerRequestFullscreen(%p)", this);
-
-    // The player is responsible for only invoking this callback in response to
-    // user interaction or when it is technically required to play the video.
-    UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
-
-    enterFullscreen();
-}
-
 void HTMLMediaElement::mediaPlayerRequestSeek(double time)
 {
     // The player is the source of this seek request.
@@ -2993,7 +2988,7 @@ void HTMLMediaElement::userCancelledLoad()
     // 1 - The user agent should cancel the fetching process.
     clearMediaPlayer(-1);
 
-    if (m_networkState == NETWORK_EMPTY || m_completelyLoaded)
+    if (m_networkState == NETWORK_EMPTY || m_completelyLoaded || m_isFinalizing)
         return;
 
     // 2 - Set the error attribute to a new MediaError object whose code attribute is set to MEDIA_ERR_ABORTED.
@@ -3062,8 +3057,8 @@ void HTMLMediaElement::clearMediaPlayer(int flags)
     if (mediaControls())
         mediaControls()->refreshCastButtonVisibility();
 
-    if (m_textTracks)
-        configureTextTrackDisplay(AssumeNoVisibleChange);
+    if (layoutObject())
+        layoutObject()->setShouldDoFullPaintInvalidation();
 }
 
 void HTMLMediaElement::stop()
@@ -3272,6 +3267,28 @@ void HTMLMediaElement::setClosedCaptionsVisible(bool closedCaptionVisible)
     updateTextTrackDisplay();
 }
 
+void HTMLMediaElement::setTextTrackKindUserPreferenceForAllMediaElements(Document* document)
+{
+    WeakMediaElementSet elements = documentToElementSetMap().get(document);
+    for (const auto& element : elements)
+        element->automaticTrackSelectionForUpdatedUserPreference();
+}
+
+void HTMLMediaElement::automaticTrackSelectionForUpdatedUserPreference()
+{
+    markCaptionAndSubtitleTracksAsUnconfigured();
+    m_processingPreferenceChange = true;
+    m_closedCaptionsVisible = false;
+    honorUserPreferencesForAutomaticTextTrackSelection();
+    m_processingPreferenceChange = false;
+
+    // If a track is set to 'showing' post performing automatic track selection,
+    // set closed captions state to visible to update the CC button and display the track.
+    if (m_textTracks)
+        m_closedCaptionsVisible = m_textTracks->hasShowingTracks();
+    updateTextTrackDisplay();
+}
+
 void HTMLMediaElement::markCaptionAndSubtitleTracksAsUnconfigured()
 {
     if (!m_textTracks)
@@ -3383,7 +3400,7 @@ CueTimeline& HTMLMediaElement::cueTimeline()
     return *m_cueTimeline;
 }
 
-void HTMLMediaElement::configureTextTrackDisplay(VisibilityChangeAssumption assumption)
+void HTMLMediaElement::configureTextTrackDisplay()
 {
     ASSERT(m_textTracks);
     WTF_LOG(Media, "HTMLMediaElement::configureTextTrackDisplay(%p)", this);
@@ -3391,20 +3408,7 @@ void HTMLMediaElement::configureTextTrackDisplay(VisibilityChangeAssumption assu
     if (m_processingPreferenceChange)
         return;
 
-    bool haveVisibleTextTrack = false;
-    for (unsigned i = 0; i < m_textTracks->length(); ++i) {
-        if (m_textTracks->item(i)->mode() == TextTrack::showingKeyword()) {
-            haveVisibleTextTrack = true;
-            break;
-        }
-    }
-
-    if (assumption == AssumeNoVisibleChange
-        && m_haveVisibleTextTrack == haveVisibleTextTrack) {
-        cueTimeline().updateActiveCues(currentTime());
-        return;
-    }
-    m_haveVisibleTextTrack = haveVisibleTextTrack;
+    m_haveVisibleTextTrack = m_textTracks->hasShowingTracks();
     m_closedCaptionsVisible = m_haveVisibleTextTrack;
 
     if (!m_haveVisibleTextTrack && !mediaControls())
@@ -3675,7 +3679,7 @@ void HTMLMediaElement::selectInitialTracksIfNecessary()
 #if ENABLE(WEB_AUDIO)
 void HTMLMediaElement::clearWeakMembers(Visitor* visitor)
 {
-    if (!visitor->isHeapObjectAlive(m_audioSourceNode) && audioSourceProvider())
+    if (!Heap::isHeapObjectAlive(m_audioSourceNode) && audioSourceProvider())
         audioSourceProvider()->setClient(nullptr);
 }
 #endif

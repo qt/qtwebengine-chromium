@@ -58,14 +58,14 @@ static unsigned nextSequenceNumber()
 
 }
 
-PassRefPtrWillBeRawPtr<Animation> Animation::create(AnimationEffect* source, AnimationTimeline* timeline)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(AnimationEffect* effect, AnimationTimeline* timeline)
 {
     if (!timeline) {
         // FIXME: Support creating animations without a timeline.
         return nullptr;
     }
 
-    RefPtrWillBeRawPtr<Animation> animation = adoptRefWillBeNoop(new Animation(timeline->document()->contextDocument().get(), *timeline, source));
+    RefPtrWillBeRawPtr<Animation> animation = adoptRefWillBeNoop(new Animation(timeline->document()->contextDocument().get(), *timeline, effect));
     animation->suspendIfNeeded();
 
     if (timeline) {
@@ -82,6 +82,8 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
     , m_playbackRate(1)
     , m_startTime(nullValue())
     , m_holdTime(0)
+    , m_startClip(-std::numeric_limits<double>::infinity())
+    , m_endClip(std::numeric_limits<double>::infinity())
     , m_sequenceNumber(nextSequenceNumber())
     , m_content(content)
     , m_timeline(&timeline)
@@ -99,7 +101,7 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
     if (m_content) {
         if (m_content->animation()) {
             m_content->animation()->cancel();
-            m_content->animation()->setSource(0);
+            m_content->animation()->setEffect(0);
         }
         m_content->attach(this);
     }
@@ -120,19 +122,19 @@ Animation::~Animation()
 #if !ENABLE(OILPAN)
 void Animation::detachFromTimeline()
 {
-    dispose();
     m_timeline = nullptr;
+    ActiveDOMObject::clearContext();
 }
 #endif
 
-double Animation::sourceEnd() const
+double Animation::effectEnd() const
 {
     return m_content ? m_content->endTimeInternal() : 0;
 }
 
 bool Animation::limited(double currentTime) const
 {
-    return (m_playbackRate < 0 && currentTime <= 0) || (m_playbackRate > 0 && currentTime >= sourceEnd());
+    return (m_playbackRate < 0 && currentTime <= 0) || (m_playbackRate > 0 && currentTime >= effectEnd());
 }
 
 void Animation::setCurrentTime(double newCurrentTime)
@@ -187,15 +189,15 @@ void Animation::updateCurrentTimingState(TimingUpdateReason reason)
                 // seek of the timeline.
                 newCurrentTime = calculateCurrentTime();
             } else if (!limited(m_holdTime)) {
-                // The hold time became unlimited, eg. due to the source content
+                // The hold time became unlimited, eg. due to the effect
                 // becoming longer.
-                newCurrentTime = clampTo<double>(calculateCurrentTime(), 0, sourceEnd());
+                newCurrentTime = clampTo<double>(calculateCurrentTime(), 0, effectEnd());
             }
         }
         setCurrentTimeInternal(newCurrentTime, reason);
     } else if (limited(calculateCurrentTime())) {
         m_held = true;
-        m_holdTime = m_playbackRate < 0 ? 0 : sourceEnd();
+        m_holdTime = m_playbackRate < 0 ? 0 : effectEnd();
     }
 }
 
@@ -253,7 +255,7 @@ void Animation::preCommit(int compositorGroup, bool startOnCompositor)
     PlayStateUpdateScope updateScope(*this, TimingUpdateOnDemand, DoNotSetCompositorPending);
 
     bool softChange = m_compositorState && (paused() || m_compositorState->playbackRate != m_playbackRate);
-    bool hardChange = m_compositorState && (m_compositorState->sourceChanged || m_compositorState->startTime != m_startTime);
+    bool hardChange = m_compositorState && (m_compositorState->effectChanged || m_compositorState->startTime != m_startTime);
 
     // FIXME: softChange && !hardChange should generate a Pause/ThenStart,
     // not a Cancel, but we can't communicate these to the compositor yet.
@@ -365,8 +367,7 @@ void Animation::notifyStartTime(double timelineTime)
 
         // FIXME: This avoids marking this animation as outdated needlessly when a start time
         // is notified, but we should refactor how outdating works to avoid this.
-        m_outdated = false;
-
+        clearOutdated();
         m_currentTimePending = false;
     }
 }
@@ -419,8 +420,8 @@ void Animation::setStartTimeInternal(double newStartTime)
         // Force a new, limited, current time.
         m_held = false;
         double currentTime = calculateCurrentTime();
-        if (m_playbackRate > 0 && currentTime > sourceEnd()) {
-            currentTime = sourceEnd();
+        if (m_playbackRate > 0 && currentTime > effectEnd()) {
+            currentTime = effectEnd();
         } else if (m_playbackRate < 0 && currentTime < 0) {
             currentTime = 0;
         }
@@ -438,23 +439,29 @@ void Animation::setStartTimeInternal(double newStartTime)
     }
 }
 
-void Animation::setSource(AnimationEffect* newSource)
+bool Animation::clipped(double time)
 {
-    if (m_content == newSource)
+    ASSERT(!isNull(time));
+    return time <= m_startClip || time > m_endClip + effectEnd();
+}
+
+void Animation::setEffect(AnimationEffect* newEffect)
+{
+    if (m_content == newEffect)
         return;
-    PlayStateUpdateScope updateScope(*this, TimingUpdateOnDemand, SetCompositorPendingWithSourceChanged);
+    PlayStateUpdateScope updateScope(*this, TimingUpdateOnDemand, SetCompositorPendingWithEffectChanged);
 
     double storedCurrentTime = currentTimeInternal();
     if (m_content)
         m_content->detach();
-    m_content = newSource;
-    if (newSource) {
+    m_content = newEffect;
+    if (newEffect) {
         // FIXME: This logic needs to be updated once groups are implemented
-        if (newSource->animation()) {
-            newSource->animation()->cancel();
-            newSource->animation()->setSource(0);
+        if (newEffect->animation()) {
+            newEffect->animation()->cancel();
+            newEffect->animation()->setEffect(0);
         }
-        newSource->attach(this);
+        newEffect->attach(this);
         setOutdated();
     }
     setCurrentTimeInternal(storedCurrentTime, TimingUpdateOnDemand);
@@ -551,12 +558,12 @@ void Animation::play()
     if (!m_content)
         return;
     double currentTime = this->currentTimeInternal();
-    if (m_playbackRate > 0 && (currentTime < 0 || currentTime >= sourceEnd())) {
+    if (m_playbackRate > 0 && (currentTime < 0 || currentTime >= effectEnd())) {
         m_startTime = nullValue();
         setCurrentTimeInternal(0, TimingUpdateOnDemand);
-    } else if (m_playbackRate < 0 && (currentTime <= 0 || currentTime > sourceEnd())) {
+    } else if (m_playbackRate < 0 && (currentTime <= 0 || currentTime > effectEnd())) {
         m_startTime = nullValue();
-        setCurrentTimeInternal(sourceEnd(), TimingUpdateOnDemand);
+        setCurrentTimeInternal(effectEnd(), TimingUpdateOnDemand);
     }
 }
 
@@ -577,12 +584,12 @@ void Animation::finish(ExceptionState& exceptionState)
     if (!m_playbackRate || playStateInternal() == Idle) {
         return;
     }
-    if (m_playbackRate > 0 && sourceEnd() == std::numeric_limits<double>::infinity()) {
-        exceptionState.throwDOMException(InvalidStateError, "Animation has source content whose end time is infinity.");
+    if (m_playbackRate > 0 && effectEnd() == std::numeric_limits<double>::infinity()) {
+        exceptionState.throwDOMException(InvalidStateError, "Animation has effect whose end time is infinity.");
         return;
     }
 
-    double newCurrentTime = m_playbackRate < 0 ? 0 : sourceEnd();
+    double newCurrentTime = m_playbackRate < 0 ? 0 : effectEnd();
     setCurrentTimeInternal(newCurrentTime, TimingUpdateOnDemand);
     if (!paused()) {
         m_startTime = calculateStartTime(newCurrentTime);
@@ -675,8 +682,19 @@ void Animation::setPlaybackRateInternal(double playbackRate)
     setCurrentTimeInternal(storedCurrentTime, TimingUpdateOnDemand);
 }
 
+void Animation::clearOutdated()
+{
+    if (!m_outdated)
+        return;
+    m_outdated = false;
+    if (m_timeline)
+        m_timeline->clearOutdatedAnimation(this);
+}
+
 void Animation::setOutdated()
 {
+    if (m_outdated)
+        return;
     m_outdated = true;
     if (m_timeline)
         m_timeline->setOutdatedAnimation(this);
@@ -685,7 +703,7 @@ void Animation::setOutdated()
 bool Animation::canStartAnimationOnCompositor() const
 {
     // FIXME: Timeline playback rates should be compositable
-    if (m_playbackRate == 0 || (std::isinf(sourceEnd()) && m_playbackRate < 0) || (timeline() && timeline()->playbackRate() != 1))
+    if (m_playbackRate == 0 || (std::isinf(effectEnd()) && m_playbackRate < 0) || (timeline() && timeline()->playbackRate() != 1))
         return false;
 
     return m_timeline && m_content && m_content->isAnimation() && playing();
@@ -708,33 +726,33 @@ bool Animation::maybeStartAnimationOnCompositor()
 
     double startTime = timeline()->zeroTime() + startTimeInternal();
     if (reversed) {
-        startTime -= sourceEnd() / fabs(m_playbackRate);
+        startTime -= effectEnd() / fabs(m_playbackRate);
     }
 
     double timeOffset = 0;
     if (std::isnan(startTime)) {
-        timeOffset = reversed ? sourceEnd() - currentTimeInternal() : currentTimeInternal();
+        timeOffset = reversed ? effectEnd() - currentTimeInternal() : currentTimeInternal();
         timeOffset = timeOffset / fabs(m_playbackRate);
     }
     ASSERT(m_compositorGroup != 0);
     return toKeyframeEffect(m_content.get())->maybeStartAnimationOnCompositor(m_compositorGroup, startTime, timeOffset, m_playbackRate);
 }
 
-void Animation::setCompositorPending(bool sourceChanged)
+void Animation::setCompositorPending(bool effectChanged)
 {
     // FIXME: KeyframeEffect could notify this directly?
     if (!hasActiveAnimationsOnCompositor()) {
         destroyCompositorPlayer();
         m_compositorState.release();
     }
-    if (sourceChanged && m_compositorState) {
-        m_compositorState->sourceChanged = true;
+    if (effectChanged && m_compositorState) {
+        m_compositorState->effectChanged = true;
     }
     if (m_compositorPending || m_isPausedForTesting) {
         return;
     }
 
-    if (sourceChanged || !m_compositorState
+    if (effectChanged || !m_compositorState
         || !playing() || m_compositorState->playbackRate != m_playbackRate
         || m_compositorState->startTime != m_startTime) {
         m_compositorPending = true;
@@ -779,11 +797,23 @@ bool Animation::update(TimingUpdateReason reason)
 
     PlayStateUpdateScope updateScope(*this, reason, DoNotSetCompositorPending);
 
-    m_outdated = false;
+    clearOutdated();
     bool idle = playStateInternal() == Idle;
 
     if (m_content) {
-        double inheritedTime = idle || isNull(m_timeline->currentTimeInternal()) ? nullValue() : currentTimeInternal();
+        double inheritedTime = idle || isNull(m_timeline->currentTimeInternal())
+            ? nullValue()
+            : currentTimeInternal();
+
+        if (!isNull(inheritedTime)) {
+            double timeForClipping = m_held && (!limited(inheritedTime) || isNull(m_startTime))
+                // Use hold time when there is no start time.
+                ? inheritedTime
+                // Use calculated current time when the animation is limited.
+                : calculateCurrentTime();
+            if (clipped(timeForClipping))
+                inheritedTime = nullValue();
+        }
         // Special case for end-exclusivity when playing backwards.
         if (inheritedTime == 0 && m_playbackRate < 0)
             inheritedTime = -1;
@@ -792,34 +822,68 @@ bool Animation::update(TimingUpdateReason reason)
 
     if ((idle || limited()) && !m_finished) {
         if (reason == TimingUpdateForAnimationFrame && (idle || hasStartTime())) {
-            const AtomicString& eventType = EventTypeNames::finish;
-            if (executionContext() && hasEventListeners(eventType)) {
-                double eventCurrentTime = currentTimeInternal() * 1000;
-                m_pendingFinishedEvent = AnimationPlayerEvent::create(eventType, eventCurrentTime, timeline()->currentTime());
-                m_pendingFinishedEvent->setTarget(this);
-                m_pendingFinishedEvent->setCurrentTarget(this);
-                m_timeline->document()->enqueueAnimationFrameEvent(m_pendingFinishedEvent);
+            if (idle) {
+                // TODO(dstockwell): Fire the cancel event.
+            } else {
+                const AtomicString& eventType = EventTypeNames::finish;
+                if (executionContext() && hasEventListeners(eventType)) {
+                    double eventCurrentTime = currentTimeInternal() * 1000;
+                    m_pendingFinishedEvent = AnimationPlayerEvent::create(eventType, eventCurrentTime, timeline()->currentTime());
+                    m_pendingFinishedEvent->setTarget(this);
+                    m_pendingFinishedEvent->setCurrentTarget(this);
+                    m_timeline->document()->enqueueAnimationFrameEvent(m_pendingFinishedEvent);
+                }
             }
             m_finished = true;
         }
     }
     ASSERT(!m_outdated);
-    return !m_finished;
+    return !m_finished || std::isfinite(timeToEffectChange());
 }
 
 double Animation::timeToEffectChange()
 {
     ASSERT(!m_outdated);
-    if (m_held || !hasStartTime())
+    if (!hasStartTime())
         return std::numeric_limits<double>::infinity();
+
+    double currentTime = calculateCurrentTime();
+    if (m_held) {
+        if (limited(currentTime)) {
+            if (m_playbackRate > 0 && m_endClip + effectEnd() > currentTime)
+                return m_endClip + effectEnd() - currentTime;
+            if (m_playbackRate < 0 && m_startClip <= currentTime)
+                return m_startClip - currentTime;
+        }
+        return std::numeric_limits<double>::infinity();
+    }
+
     if (!m_content)
         return -currentTimeInternal() / m_playbackRate;
     double result = m_playbackRate > 0
         ? m_content->timeToForwardsEffectChange() / m_playbackRate
         : m_content->timeToReverseEffectChange() / -m_playbackRate;
+
     return !hasActiveAnimationsOnCompositor() && m_content->phase() == AnimationEffect::PhaseActive
         ? 0
-        : result;
+        : clipTimeToEffectChange(result);
+}
+
+double Animation::clipTimeToEffectChange(double result) const
+{
+    double currentTime = calculateCurrentTime();
+    if (m_playbackRate > 0) {
+        if (currentTime <= m_startClip)
+            result = std::min(result, (m_startClip - currentTime) / m_playbackRate);
+        else if (currentTime < m_endClip + effectEnd())
+            result = std::min(result, (m_endClip + effectEnd() - currentTime) / m_playbackRate);
+    } else {
+        if (currentTime >= m_endClip + effectEnd())
+            result = std::min(result, (currentTime - m_endClip + effectEnd()) / -m_playbackRate);
+        else if (currentTime > m_startClip)
+            result = std::min(result, (currentTime - m_startClip) / -m_playbackRate);
+    }
+    return result;
 }
 
 void Animation::cancel()
@@ -836,7 +900,8 @@ void Animation::cancel()
     m_startTime = nullValue();
     m_currentTimePending = false;
 
-    InspectorInstrumentation::didCancelAnimation(timeline()->document(), this);
+    if (timeline())
+        InspectorInstrumentation::didCancelAnimation(timeline()->document(), this);
 }
 
 void Animation::beginUpdatingState()
@@ -936,11 +1001,11 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
         bool wasActive = oldPlayState == Pending || oldPlayState == Running;
         bool isActive = newPlayState == Pending || newPlayState == Running;
         if (!wasActive && isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations," TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "KeyframeEffect", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
         else if (wasActive && !isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations," TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "KeyframeEffect", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations,devtools.timeline", "Animation", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
         else
-            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations," TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "KeyframeEffect", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
     }
 
     // Ordering is important, the ready promise should resolve/reject before
@@ -986,7 +1051,7 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
     case SetCompositorPending:
         m_animation->setCompositorPending();
         break;
-    case SetCompositorPendingWithSourceChanged:
+    case SetCompositorPendingWithEffectChanged:
         m_animation->setCompositorPending(true);
         break;
     case DoNotSetCompositorPending:

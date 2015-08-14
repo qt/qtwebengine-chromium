@@ -26,6 +26,7 @@
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/range/range.h"
+#include "ui/gfx/range/range_f.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/text_constants.h"
@@ -146,18 +147,16 @@ struct LineSegment {
   ~LineSegment();
 
   // X coordinates of this line segment in text space.
-  Range x_range;
+  RangeF x_range;
 
   // The character range this segment corresponds to.
   Range char_range;
 
-  // The width of this line segment in text space. This could be slightly
-  // different from x_range.length().
-  // TODO(mukai): Fix Range to support float values and merge it into x_range.
-  float width;
-
   // Index of the text run that generated this segment.
   size_t run;
+
+  // Returns the width of this line segment in text space.
+  float width() const { return x_range.length(); }
 };
 
 // A line of display text, comprised of a line segment list and some metrics.
@@ -416,7 +415,7 @@ class GFX_EXPORT RenderText {
 
   // Returns true if the position is a valid logical index into text(). Indices
   // amid multi-character graphemes are allowed here, unlike IsValidCursorIndex.
-  virtual bool IsValidLogicalIndex(size_t index);
+  virtual bool IsValidLogicalIndex(size_t index) const;
 
   // Get the visual bounds of a cursor at |caret|. These bounds typically
   // represent a vertical line if |insert_mode| is true. Pass false for
@@ -442,7 +441,7 @@ class GFX_EXPORT RenderText {
 
   // Return a SelectionModel with the cursor at the current selection's start.
   // The returned value represents a cursor/caret position without a selection.
-  SelectionModel GetSelectionModelForSelectionStart();
+  SelectionModel GetSelectionModelForSelectionStart() const;
 
   // Sets shadows to drawn with text.
   void set_shadows(const ShadowValues& shadows) { shadows_ = shadows; }
@@ -604,7 +603,7 @@ class GFX_EXPORT RenderText {
   // |given_text| should be either |display_text_| or |layout_text_|
   // depending on the elide state.
   size_t TextIndexToGivenTextIndex(const base::string16& given_text,
-                                   size_t index);
+                                   size_t index) const;
 
   // Adjust ranged styles to accommodate a new text length.
   void UpdateStyleLengths();
@@ -637,6 +636,10 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_SufficientWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_WordWrapBehavior);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_LineBreakerBehavior);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest,
+                           Multiline_SurrogatePairsOrCombiningChars);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_ZeroWidthChars);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, NewlineWithoutMultilineFlag);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GlyphBounds);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_GlyphBounds);

@@ -114,7 +114,6 @@
     ['OS!="ios"', {
       'includes': [
         '../apps/apps.gypi',
-        'app_installer/app_installer.gypi',
         'chrome_child.gypi',
         'chrome_debugger.gypi',
         'chrome_dll.gypi',
@@ -350,6 +349,7 @@
     ['OS=="linux"',
       { 'targets': [
         {
+          # GN version: //chrome:linux_symbols
           'target_name': 'linux_symbols',
           'type': 'none',
           'conditions': [
@@ -358,14 +358,15 @@
                 {
                   'action_name': 'dump_symbols',
                   'inputs': [
-                    '<(DEPTH)/build/linux/dump_app_syms',
+                    '<(DEPTH)/build/linux/dump_app_syms.py',
                     '<(PRODUCT_DIR)/dump_syms',
                     '<(PRODUCT_DIR)/chrome',
                   ],
                   'outputs': [
                     '<(PRODUCT_DIR)/chrome.breakpad.<(target_arch)',
                   ],
-                  'action': ['<(DEPTH)/build/linux/dump_app_syms',
+                  'action': ['python',
+                             '<(DEPTH)/build/linux/dump_app_syms.py',
                              '<(PRODUCT_DIR)/dump_syms',
                              '<(linux_strip_binary)',
                              '<(PRODUCT_DIR)/chrome',
@@ -574,10 +575,12 @@
           'type': 'none',
           'dependencies': [
             'activity_type_ids_java',
+            'chrome_locale_paks',
             'chrome_resources.gyp:chrome_strings',
             'chrome_strings_grd',
             'chrome_version_java',
-            'connection_security_helper_security_levels_java',
+            'connection_security_security_levels_java',
+            'connectivity_check_result_java',
             'document_tab_model_info_proto_java',
             'profile_account_management_metrics_java',
             'content_setting_java',
@@ -587,6 +590,8 @@
             'resource_id_java',
             'tab_load_status_java',
             '../base/base.gyp:base',
+            '../chrome/android/chrome_apk.gyp:custom_tabs_service_aidl',
+            '../components/components.gyp:app_restrictions_resources',
             '../components/components.gyp:bookmarks_java',
             '../components/components.gyp:dom_distiller_core_java',
             '../components/components.gyp:enhanced_bookmarks_java_enums_srcjar',
@@ -594,6 +599,7 @@
             '../components/components.gyp:invalidation_java',
             '../components/components.gyp:navigation_interception_java',
             '../components/components.gyp:service_tab_launcher_java',
+            '../components/components.gyp:policy_java',
             '../components/components.gyp:precache_java',
             '../components/components.gyp:variations_java',
             '../components/components.gyp:web_contents_delegate_android_java',
@@ -603,11 +609,15 @@
             '../sync/sync.gyp:sync_java',
             '../third_party/android_data_chart/android_data_chart.gyp:android_data_chart_java',
             '../third_party/android_media/android_media.gyp:android_media_java',
+            '../third_party/android_protobuf/android_protobuf.gyp:protobuf_nano_javalib',
             '../third_party/android_swipe_refresh/android_swipe_refresh.gyp:android_swipe_refresh_java',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_mediarouter_javalib',
+            '../third_party/android_tools/android_tools.gyp:android_support_v7_recyclerview_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
             '../third_party/android_tools/android_tools.gyp:google_play_services_javalib',
+            '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_javalib',
+            '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
@@ -615,10 +625,25 @@
             'has_java_resources': 1,
             'R_package': 'org.chromium.chrome',
             'R_package_relpath': 'org/chromium/chrome',
-            # Include xml string files generated from generated_resources.grd
-            'res_extra_dirs': ['<(SHARED_INTERMEDIATE_DIR)/chrome/java/res'],
-            'res_extra_files': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(SHARED_INTERMEDIATE_DIR)/chrome" app/generated_resources.grd)'],
+            # Include channel-specific resources and xml string files generated
+            # from generated_resources.grd
+            'res_channel_dir': '<(java_in_dir)/res_default',
+            'res_extra_dirs': [
+              '<(res_channel_dir)',
+              '<(SHARED_INTERMEDIATE_DIR)/chrome/java/res',
+            ],
+            'res_extra_files': [
+              '<!@(find <(res_channel_dir) -type f)',
+              '<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(SHARED_INTERMEDIATE_DIR)/chrome" app/generated_resources.grd)',
+            ],
           },
+          'conditions': [
+            ['configuration_policy != 1', {
+              'dependencies!': [
+                '../components/components.gyp:app_restrictions_resources',
+              ],
+            }],
+          ],
           'includes': [
             '../build/java.gypi',
           ],
@@ -632,6 +657,18 @@
           },
           'includes': [
             '../build/java_strings_grd.gypi',
+          ],
+        },
+        {
+          # GN: //chrome/android:chrome_locale_paks
+          'target_name': 'chrome_locale_paks',
+          'type': 'none',
+          'variables': {
+            'locale_pak_files': [ '<@(chrome_android_pak_locale_resources)' ],
+          },
+          'includes': [
+            'chrome_android_paks.gypi',
+            '../build/android/locale_pak_resources.gypi',
           ],
         },
         {
@@ -692,7 +729,6 @@
             '../net/net.gyp:net',
             '../printing/printing.gyp:printing',
             '../skia/skia.gyp:skia',
-            '../third_party/libjingle/libjingle.gyp:libjingle',
           ],
           'sources': [
             # Note: sources list duplicated in GN build.

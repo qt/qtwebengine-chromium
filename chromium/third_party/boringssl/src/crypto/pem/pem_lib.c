@@ -331,8 +331,9 @@ int PEM_ASN1_write_bio(i2d_of_void *i2d, const char *name, BIO *bp,
 		if (kstr == NULL)
 			{
 			klen = 0;
-			if (callback)
-				klen=(*callback)(buf,PEM_BUFSIZE,1,u);
+			if (!callback)
+				callback = PEM_def_callback;
+ 			klen=(*callback)(buf,PEM_BUFSIZE,1,u);
 			if (klen <= 0)
 				{
 				OPENSSL_PUT_ERROR(PEM, PEM_ASN1_write_bio, PEM_R_READ_KEY);
@@ -403,8 +404,8 @@ int PEM_do_header(EVP_CIPHER_INFO *cipher, unsigned char *data, long *plen,
 	if (cipher->cipher == NULL) return(1);
 
 	klen = 0;
-	if (callback)
-		klen=callback(buf,PEM_BUFSIZE,0,u);
+	if (!callback) callback = PEM_def_callback;
+	klen=callback(buf,PEM_BUFSIZE,0,u);
 	if (klen <= 0)
 		{
 		OPENSSL_PUT_ERROR(PEM, PEM_do_header, PEM_R_BAD_PASSWORD_READ);
@@ -436,11 +437,18 @@ int PEM_do_header(EVP_CIPHER_INFO *cipher, unsigned char *data, long *plen,
 	}
 
 static const EVP_CIPHER* cipher_by_name(const char *name) {
-  if (strcmp(name, "DES-CBC") == 0) {
+  /* This is similar to the (deprecated) function |EVP_get_cipherbyname|. */
+  if (0 == strcmp(name, SN_rc4)) {
+    return EVP_rc4();
+  } else if (0 == strcmp(name, SN_des_cbc)) {
     return EVP_des_cbc();
-  } else if (strcmp(name, "AES-128-CBC") == 0) {
+  } else if (0 == strcmp(name, SN_des_ede3_cbc)) {
+    return EVP_des_ede3_cbc();
+  } else if (0 == strcmp(name, SN_aes_128_cbc)) {
     return EVP_aes_128_cbc();
-  } else if (strcmp(name,  "AES-256-CBC") == 0) {
+  } else if (0 == strcmp(name, SN_aes_192_cbc)) {
+    return EVP_aes_192_cbc();
+  } else if (0 == strcmp(name, SN_aes_256_cbc)) {
     return EVP_aes_256_cbc();
   } else {
     return NULL;
@@ -811,3 +819,17 @@ int pem_check_suffix(const char *pem_str, const char *suffix)
 	return p - pem_str;
 	}
 
+int PEM_def_callback(char *buf, int size, int rwflag, void *userdata)
+	{
+	if (!buf || !userdata)
+		{
+		return 0;
+		}
+	size_t len = strlen((char *) userdata);
+	if (len >= (size_t) size)
+		{
+		return 0;
+		}
+	strcpy(buf, (char *) userdata);
+	return len;
+	}

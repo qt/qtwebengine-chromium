@@ -26,7 +26,7 @@ template<typename Table> class HeapHashTableBacking;
 template<typename ValueArg, size_t inlineCapacity> class HeapListHashSetAllocator;
 class InlinedGlobalMarkingVisitor;
 template<ThreadAffinity affinity> class ThreadLocalPersistents;
-template<typename T, typename RootsAccessor = ThreadLocalPersistents<ThreadingTrait<T>::Affinity>> class Persistent;
+template<typename T> class Persistent;
 
 // Template to determine if a class is a GarbageCollectedMixin by checking if it
 // has IsGarbageCollectedMixinMarker
@@ -112,16 +112,15 @@ class PLATFORM_EXPORT GarbageCollectedMixin {
 public:
     typedef int IsGarbageCollectedMixinMarker;
     virtual void adjustAndMark(Visitor*) const = 0;
-    virtual bool isHeapObjectAlive(Visitor*) const = 0;
     virtual void trace(Visitor*) { }
     virtual void adjustAndMark(InlinedGlobalMarkingVisitor) const = 0;
-    virtual bool isHeapObjectAlive(InlinedGlobalMarkingVisitor) const = 0;
     virtual void trace(InlinedGlobalMarkingVisitor);
+    virtual bool isHeapObjectAlive() const = 0;
 };
 
 #define DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(VISITOR, TYPE)           \
     public:                                                             \
-    virtual void adjustAndMark(VISITOR visitor) const override          \
+    void adjustAndMark(VISITOR visitor) const override                  \
     {                                                                   \
         typedef WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<TYPE>::Type, blink::GarbageCollected> IsSubclassOfGarbageCollected; \
         static_assert(IsSubclassOfGarbageCollected::value, "only garbage collected objects can have garbage collected mixins"); \
@@ -132,11 +131,7 @@ public:
         }                                                               \
         visitor->mark(static_cast<const TYPE*>(this), &blink::TraceTrait<TYPE>::trace); \
     }                                                                   \
-    virtual bool isHeapObjectAlive(VISITOR visitor) const override      \
-    {                                                                   \
-        return visitor->isHeapObjectAlive(this);                        \
-    }                                                                   \
-private:
+    private:
 
 // A C++ object's vptr will be initialized to its leftmost base's vtable after
 // the constructors of all its subclasses have run, so if a subclass constructor
@@ -157,24 +152,18 @@ private:
 //    GarbageCollectedMixinConstructorMarker's constructor takes care of
 //    this and the field is declared by way of USING_GARBAGE_COLLECTED_MIXIN().
 
-// TODO(inferno): Remove forbidGCDuringConstruction() function once UBSan VPTR supports
-// function attribute level blacklisting. See crbug.com/476073.
-#define DEFINE_GARBAGE_COLLECTED_MIXIN_CONSTRUCTOR_MARKER(TYPE)                         \
-public:                                                                                 \
-    ALWAYS_INLINE static void forbidGCDuringConstruction(void* object)                  \
-    {                                                                                   \
+#define DEFINE_GARBAGE_COLLECTED_MIXIN_CONSTRUCTOR_MARKER(TYPE)         \
+    public:                                                             \
+    GC_PLUGIN_IGNORE("crbug.com/456823") NO_SANITIZE_UNRELATED_CAST     \
+    void* operator new(size_t size)                                     \
+{                                                                       \
+        void* object = TYPE::allocateObject(size, IsEagerlyFinalizedType<TYPE>::value); \
         ThreadState* state = ThreadStateFor<ThreadingTrait<TYPE>::Affinity>::state();   \
         state->enterGCForbiddenScopeIfNeeded(&(reinterpret_cast<TYPE*>(object)->m_mixinConstructorMarker)); \
-    }                                                                                   \
-    GC_PLUGIN_IGNORE("crbug.com/456823")                                                \
-    void* operator new(size_t size)                                                     \
-    {                                                                                   \
-        void* object = TYPE::allocateObject(size);                                      \
-        forbidGCDuringConstruction(object);                                             \
-        return object;                                                                  \
-    }                                                                                   \
-    GarbageCollectedMixinConstructorMarker m_mixinConstructorMarker;                    \
-private:
+        return object;                                                  \
+    }                                                                   \
+    GarbageCollectedMixinConstructorMarker m_mixinConstructorMarker;    \
+    private:
 
 // Mixins that wrap/nest others requires extra handling:
 //
@@ -195,10 +184,16 @@ private:
 // when the "operator new" for B runs, and leaving the forbidden GC scope
 // when the constructor of the recorded GarbageCollectedMixinConstructorMarker
 // runs.
-#define USING_GARBAGE_COLLECTED_MIXIN(TYPE)                       \
-    DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::Visitor*, TYPE) \
+#define USING_GARBAGE_COLLECTED_MIXIN(TYPE)                             \
+    DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::Visitor*, TYPE)       \
     DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::InlinedGlobalMarkingVisitor, TYPE) \
-    DEFINE_GARBAGE_COLLECTED_MIXIN_CONSTRUCTOR_MARKER(TYPE)
+    DEFINE_GARBAGE_COLLECTED_MIXIN_CONSTRUCTOR_MARKER(TYPE)             \
+public:                                                                 \
+    bool isHeapObjectAlive() const override                             \
+    {                                                                   \
+        return Heap::isHeapObjectAlive(this);                           \
+    }                                                                   \
+private:
 
 #if ENABLE(OILPAN)
 #define WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TYPE) USING_GARBAGE_COLLECTED_MIXIN(TYPE)
@@ -408,6 +403,39 @@ private:
 #define STACK_ALLOCATED() DISALLOW_ALLOCATION()
 #define GC_PLUGIN_IGNORE(bug)
 #endif
+
+template<typename T, bool = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, GarbageCollected>::value> class NeedsAdjustAndMark;
+
+template<typename T>
+class NeedsAdjustAndMark<T, true> {
+    static_assert(sizeof(T), "T must be fully defined");
+public:
+    static const bool value = false;
+};
+template <typename T> const bool NeedsAdjustAndMark<T, true>::value;
+
+template<typename T>
+class NeedsAdjustAndMark<T, false> {
+    static_assert(sizeof(T), "T must be fully defined");
+public:
+    static const bool value = IsGarbageCollectedMixin<typename WTF::RemoveConst<T>::Type>::value;
+};
+template <typename T> const bool NeedsAdjustAndMark<T, false>::value;
+
+// TODO(sof): migrate to wtf/TypeTraits.h
+template<typename T>
+class IsFullyDefined {
+    using TrueType = char;
+    struct FalseType {
+        char dummy[2];
+    };
+
+    template<typename U, size_t sz = sizeof(U)> static TrueType isSizeofKnown(U*);
+    static FalseType isSizeofKnown(...);
+    static T& t;
+public:
+    static const bool value = sizeof(TrueType) == sizeof(isSizeofKnown(&t));
+};
 
 } // namespace blink
 

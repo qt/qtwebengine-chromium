@@ -43,6 +43,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
+#include <utility>
 
 namespace WTF {
 class OrdinalNumber;
@@ -62,6 +63,7 @@ class SecurityOrigin;
 typedef int SandboxFlags;
 typedef Vector<OwnPtr<CSPDirectiveList>> CSPDirectiveListVector;
 typedef WillBePersistentHeapVector<RefPtrWillBeMember<ConsoleMessage>> ConsoleMessageVector;
+typedef std::pair<String, ContentSecurityPolicyHeaderType> CSPHeaderAndType;
 
 class CORE_EXPORT ContentSecurityPolicy : public RefCounted<ContentSecurityPolicy> {
     WTF_MAKE_FAST_ALLOCATED(ContentSecurityPolicy);
@@ -99,6 +101,10 @@ public:
     // https://w3c.github.io/webappsec/specs/upgrade/
     static const char UpgradeInsecureRequests[];
 
+    // Suborigin Directive
+    // https://metromoxie.github.io/webappsec/specs/suborigins/index.html
+    static const char Suborigin[];
+
     enum ReportingStatus {
         SendReport,
         SuppressReport
@@ -129,10 +135,7 @@ public:
     void didReceiveHeaders(const ContentSecurityPolicyResponseHeaders&);
     void didReceiveHeader(const String&, ContentSecurityPolicyHeaderType, ContentSecurityPolicyHeaderSource);
 
-    // These functions are wrong because they assume that there is only one header.
-    // FIXME: Replace them with functions that return vectors.
-    const String& deprecatedHeader() const;
-    ContentSecurityPolicyHeaderType deprecatedHeaderType() const;
+    const PassOwnPtr<Vector<CSPHeaderAndType>> headers() const;
 
     bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
@@ -205,6 +208,7 @@ public:
     void reportInvalidPathCharacter(const String& directiveName, const String& value, const char);
     void reportInvalidPluginTypes(const String&);
     void reportInvalidSandboxFlags(const String&);
+    void reportInvalidSuboriginFlags(const String&);
     void reportInvalidSourceExpression(const String& directiveName, const String& source);
     void reportInvalidReflectedXSS(const String&);
     void reportMissingReportURI(const String&);
@@ -213,6 +217,7 @@ public:
     void reportInvalidReferrer(const String&);
     void reportReportOnlyInMeta(const String&);
     void reportMetaOutsideHead(const String&);
+    void reportSuboriginInMeta(const String&);
     void reportValueForEmptyDirective(const String& directiveName, const String& value);
 
     // If a frame is passed in, the report will be sent using it as a context. If no frame is
@@ -224,14 +229,16 @@ public:
 
     const KURL url() const;
     void enforceSandboxFlags(SandboxFlags);
+    void enforceSuborigin(const String&);
     void enforceStrictMixedContentChecking();
     String evalDisabledErrorMessage() const;
 
     void setInsecureRequestsPolicy(SecurityContext::InsecureRequestsPolicy);
-    SecurityContext::InsecureRequestsPolicy insecureRequestsPolicy() const { return m_insecureRequestsPolicy; };
+    SecurityContext::InsecureRequestsPolicy insecureRequestsPolicy() const { return m_insecureRequestsPolicy; }
 
     bool urlMatchesSelf(const KURL&) const;
     bool protocolMatchesSelf(const KURL&) const;
+    bool selfMatchesInnerURL() const;
 
     bool experimentalFeaturesEnabled() const;
 
@@ -280,6 +287,7 @@ private:
 
     // State flags used to configure the environment after parsing a policy.
     SandboxFlags m_sandboxMask;
+    String m_suboriginName;
     bool m_enforceStrictMixedContentChecking;
     ReferrerPolicy m_referrerPolicy;
     String m_disableEvalErrorMessage;

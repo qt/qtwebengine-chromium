@@ -41,11 +41,11 @@
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "bindings/core/v8/V8SharedWorkerGlobalScope.h"
 #include "bindings/core/v8/V8WorkerGlobalScope.h"
-#include "bindings/core/v8/WorkerThreadDebugger.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "core/events/ErrorEvent.h"
 #include "core/frame/DOMTimer.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/inspector/WorkerThreadDebugger.h"
 #include "core/workers/SharedWorkerGlobalScope.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerObjectProxy.h"
@@ -157,7 +157,7 @@ bool WorkerScriptController::initializeContextIfNeeded()
         return false;
     }
 
-    V8DOMWrapper::associateObjectWithWrapper(isolate(), &m_workerGlobalScope, wrapperTypeInfo, jsWorkerGlobalScope);
+    jsWorkerGlobalScope = V8DOMWrapper::associateObjectWithWrapper(isolate(), &m_workerGlobalScope, wrapperTypeInfo, jsWorkerGlobalScope);
 
     // Insert the object instance as the prototype of the shadow object.
     v8::Local<v8::Object> globalObject = v8::Local<v8::Object>::Cast(m_scriptState->context()->Global()->GetPrototype());

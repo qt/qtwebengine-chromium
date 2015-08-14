@@ -38,7 +38,6 @@ public:
     static LayoutListMarker* createAnonymous(LayoutListItem*);
 
     virtual ~LayoutListMarker();
-    virtual void destroy() override;
 
     const String& text() const { return m_text; }
 
@@ -58,6 +57,9 @@ public:
 
     virtual const char* name() const override { return "LayoutListMarker"; }
 
+protected:
+    virtual void willBeDestroyed() override;
+
 private:
     LayoutListMarker(LayoutListItem*);
 
@@ -69,7 +71,7 @@ private:
 
     virtual void layout() override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     virtual InlineBox* createInlineBox() override;
 

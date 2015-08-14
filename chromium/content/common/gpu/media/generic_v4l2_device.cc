@@ -36,7 +36,8 @@ namespace content {
 namespace {
 const char kDecoderDevice[] = "/dev/video-dec";
 const char kEncoderDevice[] = "/dev/video-enc";
-const char kImageProcessorDevice[] = "/dev/gsc0";
+const char kImageProcessorDevice[] = "/dev/image-proc0";
+const char kJpegDecoderDevice[] = "/dev/jpeg-dec";
 }
 
 GenericV4L2Device::GenericV4L2Device(Type type)
@@ -143,6 +144,9 @@ bool GenericV4L2Device::Initialize() {
     case kImageProcessor:
       device_path = kImageProcessorDevice;
       break;
+    case kJpegDecoder:
+      device_path = kJpegDecoderDevice;
+      break;
   }
 
   DVLOG(2) << "Initialize(): opening device: " << device_path;
@@ -153,8 +157,9 @@ bool GenericV4L2Device::Initialize() {
     return false;
   }
 #if defined(USE_LIBV4L2)
-  if (HANDLE_EINTR(v4l2_fd_open(device_fd_.get(), V4L2_DISABLE_CONVERSION)) !=
-      -1) {
+  if (type_ == kEncoder &&
+      HANDLE_EINTR(v4l2_fd_open(device_fd_.get(), V4L2_DISABLE_CONVERSION)) !=
+          -1) {
     DVLOG(2) << "Using libv4l2 for " << device_path;
     use_libv4l2_ = true;
   }
@@ -251,8 +256,8 @@ EGLImageKHR GenericV4L2Device::CreateEGLImage(EGLDisplay egl_display,
     if (v4l2_plane + 1 < num_v4l2_planes) {
       ++v4l2_plane;
     } else {
-      plane_offset += media::VideoFrame::PlaneAllocationSize(
-          vf_format, plane, frame_buffer_size);
+      plane_offset += media::VideoFrame::PlaneSize(
+          vf_format, plane, frame_buffer_size).GetArea();
     }
   }
 

@@ -37,14 +37,30 @@
    Select cast mode
   </message>
 
-  <!-- Route Details -->
-  <message name="IDS_MEDIA_ROUTER_BACK_TO_SINK_PICKER" desc="Label of back to sink picker button.">
-    Back to device list
+  <!-- Issue Actions -->
+  <message name="IDS_MEDIA_ROUTER_CANCEL_BUTTON" desc="Text of Cancel button.">
+    Cancel
   </message>
+  <message name="IDS_MEDIA_ROUTER_DISMISS_BUTTON" desc="Text of Dismiss button.">
+    Dismiss
+  </message>
+  <message name="IDS_MEDIA_ROUTER_LEARN_MORE_BUTTON" desc="Text of Learn More button.">
+    Learn More
+  </message>
+  <message name="IDS_MEDIA_ROUTER_OK_BUTTON" desc="Text of Ok button.">
+    Ok
+  </message>
+
+  <!-- Route Details -->
   <message name="IDS_MEDIA_ROUTER_CASTING_ACTIVITY_STATUS" desc="Label of activity status.">
     Casting to <ph name="sinkName">$1<ex>Living Room TV</ex></ph>
   </message>
   <message name="IDS_MEDIA_ROUTER_STOP_CASTING_BUTTON" desc="Text of Stop casting button.">
     Stop casting
+  </message>
+
+  <!-- Sink List -->
+  <message name="IDS_MEDIA_ROUTER_DEVICE_MISSING" desc="Text to display when no devices are found.">
+    Device missing?
   </message>
 </grit-part>

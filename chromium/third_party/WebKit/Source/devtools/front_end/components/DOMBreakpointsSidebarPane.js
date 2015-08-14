@@ -36,6 +36,7 @@ WebInspector.DOMBreakpointsSidebarPane = function()
 {
     WebInspector.BreakpointsSidebarPaneBase.call(this, WebInspector.UIString("DOM Breakpoints"));
     this._domBreakpointsSetting = WebInspector.settings.createLocalSetting("domBreakpoints", []);
+    this.listElement.classList.add("dom-breakpoints-list");
 
     this._breakpointElements = {};
 
@@ -223,23 +224,20 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
         element._type = type;
         element.addEventListener("contextmenu", this._contextMenu.bind(this, node, type), true);
 
-        var checkboxElement = createElement("input");
-        checkboxElement.className = "checkbox-elem";
-        checkboxElement.type = "checkbox";
-        checkboxElement.checked = enabled;
-        checkboxElement.addEventListener("click", this._checkboxClicked.bind(this, node, type), false);
-        element._checkboxElement = checkboxElement;
-        element.appendChild(checkboxElement);
+        var checkboxLabel = createCheckboxLabel("", enabled);
+        checkboxLabel.addEventListener("click", this._checkboxClicked.bind(this, node, type), false);
+        element._checkboxElement = checkboxLabel.checkboxElement;
+        element.appendChild(checkboxLabel);
 
-        var labelElement = createElement("span");
+        var labelElement = createElementWithClass("div", "dom-breakpoint");
         element.appendChild(labelElement);
 
         var linkifiedNode = WebInspector.DOMPresentationUtils.linkifyNodeReference(node);
         linkifiedNode.classList.add("monospace");
+        linkifiedNode.style.display = "block";
         labelElement.appendChild(linkifiedNode);
 
         var description = createElement("div");
-        description.className = "source-text";
         description.textContent = this._breakpointTypeLabels[type];
         labelElement.appendChild(description);
 
@@ -426,16 +424,11 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
  */
 WebInspector.DOMBreakpointsSidebarPane.Proxy = function(pane, panel)
 {
-    WebInspector.Widget.__assert(!pane.titleElement.firstChild, "Cannot create proxy for a sidebar pane with a toolbar");
-
     WebInspector.SidebarPane.call(this, pane.title());
     this.registerRequiredCSS("components/breakpointsList.css");
 
     this._wrappedPane = pane;
     this._panel = panel;
-
-    this.bodyElement.remove();
-    this.bodyElement = this._wrappedPane.bodyElement;
 }
 
 WebInspector.DOMBreakpointsSidebarPane.Proxy.prototype = {
@@ -460,8 +453,8 @@ WebInspector.DOMBreakpointsSidebarPane.Proxy.prototype = {
 
     _reattachBody: function()
     {
-        if (this.bodyElement.parentNode !== this.element)
-            this.element.appendChild(this.bodyElement);
+        if (this._wrappedPane.element.parentNode !== this.element)
+            this._wrappedPane.show(this.element);
     },
 
     __proto__: WebInspector.SidebarPane.prototype

@@ -165,7 +165,7 @@
 
 .service-workers-button {
     -webkit-mask-image: url(Images/toolbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 144px;
+    -webkit-mask-size: 352px 144px;
     background-color: rgba(0, 0, 0, 0.75);
     height: 24px;
     opacity: 0.8;
@@ -234,6 +234,17 @@
 
 .service-workers-info {
     display: flex;
+}
+
+.service-worker-client {
+   display: inline;
+}
+
+.service-worker-client-focus {
+   color: #00e;
+   cursor: pointer;
+   padding-left: 4px;
+   text-decoration: underline;
 }
 
 .service-workers-color-0 {

@@ -15,41 +15,48 @@ namespace blink {
 
 class PLATFORM_EXPORT DrawingDisplayItem : public DisplayItem {
 public:
-    static PassOwnPtr<DrawingDisplayItem> create(const DisplayItemClientWrapper& client, Type type, PassRefPtr<const SkPicture> picture)
-    {
-        return adoptPtr(new DrawingDisplayItem(client, type, picture));
-    }
+#if ENABLE(ASSERT)
+    enum UnderInvalidationCheckingMode {
+        CheckPicture, // Check if the new picture and the old picture are the same
+        CheckBitmap, // Check if the new picture and the old picture produce the same bitmap
+    };
+#endif
 
-    virtual void replay(GraphicsContext&);
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
-    virtual bool drawsContent() const override;
-
-    PassRefPtr<const SkPicture> picture() const { return m_picture; }
-
-    DrawingDisplayItem(const DisplayItemClientWrapper& client, Type type, PassRefPtr<const SkPicture> picture)
+    DrawingDisplayItem(const DisplayItemClientWrapper& client
+        , Type type
+        , PassRefPtr<const SkPicture> picture
+#if ENABLE(ASSERT)
+        , UnderInvalidationCheckingMode underInvalidationCheckingMode = CheckPicture
+#endif
+        )
         : DisplayItem(client, type)
         , m_picture(picture && picture->approximateOpCount() ? picture : nullptr)
 #if ENABLE(ASSERT)
-        , m_skipUnderInvalidationChecking(false)
+        , m_underInvalidationCheckingMode(underInvalidationCheckingMode)
 #endif
     {
         ASSERT(isDrawingType(type));
     }
 
+    virtual void replay(GraphicsContext&);
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    bool drawsContent() const override;
+
+    const SkPicture* picture() const { return m_picture.get(); }
+
 #if ENABLE(ASSERT)
-    void setSkipUnderInvalidationChecking() { m_skipUnderInvalidationChecking = true; }
-    bool skipUnderInvalidationChecking() const { return m_skipUnderInvalidationChecking; }
+    UnderInvalidationCheckingMode underInvalidationCheckingMode() const { return m_underInvalidationCheckingMode; }
 #endif
 
 private:
 #ifndef NDEBUG
-    virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
+    void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
 
     RefPtr<const SkPicture> m_picture;
 
 #if ENABLE(ASSERT)
-    bool m_skipUnderInvalidationChecking;
+    UnderInvalidationCheckingMode m_underInvalidationCheckingMode;
 #endif
 };
 

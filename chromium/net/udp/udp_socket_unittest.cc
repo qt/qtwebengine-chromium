@@ -9,11 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -202,7 +203,7 @@ void UDPSocketTest::ConnectTest(bool use_nonblocking_io) {
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   // Client sends to the server.
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&UDPSocketTest::WriteSocketIgnoreResult,
                  base::Unretained(this), client.get(), simple_message));
@@ -264,9 +265,9 @@ TEST_F(UDPSocketTest, ConnectNonBlocking) {
 // root permissions on OSX 10.7+.
 TEST_F(UDPSocketTest, DISABLED_Broadcast) {
 #elif defined(OS_ANDROID)
-// It is also disabled for Android because it is extremely flaky.
-// The first call to SendToSocket returns -109 (Address not reachable)
-// in some unpredictable cases. crbug.com/139144.
+// Disabled for Android because devices attached to testbots don't have default
+// network, so broadcasting to 255.255.255.255 returns error -109 (Address not
+// reachable). crbug.com/139144.
 TEST_F(UDPSocketTest, DISABLED_Broadcast) {
 #else
 TEST_F(UDPSocketTest, Broadcast) {
@@ -343,15 +344,10 @@ class TestPrng {
   DISALLOW_COPY_AND_ASSIGN(TestPrng);
 };
 
-#if defined(OS_ANDROID)
-// Disabled on Android for lack of 192.168.1.13. crbug.com/161245
-TEST_F(UDPSocketTest, DISABLED_ConnectRandomBind) {
-#else
 TEST_F(UDPSocketTest, ConnectRandomBind) {
-#endif
   std::vector<UDPClientSocket*> sockets;
   IPEndPoint peer_address;
-  CreateUDPAddress("192.168.1.13", 53, &peer_address);
+  CreateUDPAddress("127.0.0.1", 53, &peer_address);
 
   // Create and connect sockets and save port numbers.
   std::deque<int> used_ports;

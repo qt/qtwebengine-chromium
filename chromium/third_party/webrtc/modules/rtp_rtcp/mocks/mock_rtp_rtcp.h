@@ -126,8 +126,6 @@ class MockRtpRtcp : public RtpRtcp {
            bool retransmission));
   MOCK_METHOD1(TimeToSendPadding,
       size_t(size_t bytes));
-  MOCK_CONST_METHOD2(GetSendSideDelay,
-      bool(int* avg_send_delay_ms, int* max_send_delay_ms));
   MOCK_METHOD2(RegisterRtcpObservers,
       void(RtcpIntraFrameObserver* intraFrameCallback,
            RtcpBandwidthObserver* bandwidthCallback));
@@ -163,8 +161,6 @@ class MockRtpRtcp : public RtpRtcp {
       int32_t(const uint64_t pictureID));
   MOCK_METHOD1(SendRTCPSliceLossIndication,
       int32_t(const uint8_t pictureID));
-  MOCK_METHOD0(ResetSendDataCountersRTP,
-      int32_t());
   MOCK_CONST_METHOD2(DataCountersRTP,
       int32_t(size_t *bytesSent, uint32_t *packetsSent));
   MOCK_CONST_METHOD2(GetSendStreamDataCounters,
@@ -173,10 +169,6 @@ class MockRtpRtcp : public RtpRtcp {
       int32_t(RTCPSenderInfo* senderInfo));
   MOCK_CONST_METHOD1(RemoteRTCPStat,
       int32_t(std::vector<RTCPReportBlock>* receiveBlocks));
-  MOCK_METHOD2(AddRTCPReportBlock,
-      int32_t(const uint32_t SSRC, const RTCPReportBlock* receiveBlock));
-  MOCK_METHOD1(RemoveRTCPReportBlock,
-      int32_t(const uint32_t SSRC));
   MOCK_METHOD4(SetRTCPApplicationSpecificData,
       int32_t(const uint8_t subType, const uint32_t name, const uint8_t* data, const uint16_t length));
   MOCK_METHOD1(SetRTCPVoIPMetrics,

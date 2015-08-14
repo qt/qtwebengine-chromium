@@ -57,42 +57,40 @@ class IPC_MOJO_EXPORT ChannelMojo
       base::Callback<void(mojo::ScopedMessagePipeHandle,
                           mojo::embedder::ChannelInfo*)>;
 
-  class Delegate {
-   public:
-    virtual ~Delegate() {}
-    virtual base::WeakPtr<Delegate> ToWeakPtr() = 0;
-    virtual void OnChannelCreated(base::WeakPtr<ChannelMojo> channel) = 0;
-  };
-
   // True if ChannelMojo should be used regardless of the flag.
   static bool ShouldBeUsed();
 
   // Create ChannelMojo. A bootstrap channel is created as well.
-  // |host| must not be null for server channels.
+  // |broker| must outlive the newly created channel.
   static scoped_ptr<ChannelMojo> Create(
-      Delegate* delegate,
       scoped_refptr<base::TaskRunner> io_runner,
       const ChannelHandle& channel_handle,
       Mode mode,
-      Listener* listener);
+      Listener* listener,
+      AttachmentBroker* broker);
 
   // Create a factory object for ChannelMojo.
   // The factory is used to create Mojo-based ChannelProxy family.
   // |host| must not be null.
+  // TODO(erikchen): Remove default parameter for |broker|. It exists only to
+  // make the upcoming refactor decomposable into smaller CLs.
+  // http://crbug.com/493414.
+  // |broker| must outlive the factory and all channels it creates.
   static scoped_ptr<ChannelFactory> CreateServerFactory(
-      Delegate* delegate,
       scoped_refptr<base::TaskRunner> io_runner,
-      const ChannelHandle& channel_handle);
+      const ChannelHandle& channel_handle,
+      AttachmentBroker* broker = nullptr);
 
+  // TODO(erikchen): Remove default parameter for |broker|. It exists only to
+  // make the upcoming refactor decomposable into smaller CLs.
+  // http://crbug.com/493414.
+  // |broker| must outlive the factory and all channels it creates.
   static scoped_ptr<ChannelFactory> CreateClientFactory(
-      Delegate* delegate,
       scoped_refptr<base::TaskRunner> io_runner,
-      const ChannelHandle& channel_handle);
+      const ChannelHandle& channel_handle,
+      AttachmentBroker* broker = nullptr);
 
   ~ChannelMojo() override;
-
-  // ChannelMojoHost tells the client handle using this API.
-  void OnClientLaunched(base::ProcessHandle handle);
 
   // Channel implementation
   bool Connect() override;
@@ -125,11 +123,11 @@ class IPC_MOJO_EXPORT ChannelMojo
   void OnPipeError(internal::MessagePipeReader* reader) override;
 
  protected:
-  ChannelMojo(Delegate* delegate,
-              scoped_refptr<base::TaskRunner> io_runner,
+  ChannelMojo(scoped_refptr<base::TaskRunner> io_runner,
               const ChannelHandle& channel_handle,
               Mode mode,
-              Listener* listener);
+              Listener* listener,
+              AttachmentBroker* broker);
 
   void CreateMessagingPipe(mojo::embedder::ScopedPlatformHandle handle,
                            const CreateMessagingPipeCallback& callback);
@@ -153,7 +151,7 @@ class IPC_MOJO_EXPORT ChannelMojo
   // notifications invoked by them.
   typedef internal::MessagePipeReader::DelayedDeleter ReaderDeleter;
 
-  void InitOnIOThread(ChannelMojo::Delegate* delegate);
+  void InitOnIOThread();
 
   static void CreateMessagingPipeOnIOThread(
       mojo::embedder::ScopedPlatformHandle handle,
@@ -164,15 +162,13 @@ class IPC_MOJO_EXPORT ChannelMojo
                               mojo::embedder::ChannelInfo* channel_info);
 
   scoped_ptr<MojoBootstrap> bootstrap_;
-  base::WeakPtr<Delegate> delegate_;
-  Mode mode_;
   Listener* listener_;
   base::ProcessId peer_pid_;
   scoped_refptr<base::TaskRunner> io_runner_;
   scoped_ptr<mojo::embedder::ChannelInfo,
              ChannelInfoDeleter> channel_info_;
 
-  // Guards |message_reader_| and |pending_messages_|
+  // Guards |message_reader_|, |waiting_connect_| and |pending_messages_|
   //
   // * The contents of |pending_messages_| can be modified from any thread.
   // * |message_reader_| is modified only from the IO thread,
@@ -180,6 +176,7 @@ class IPC_MOJO_EXPORT ChannelMojo
   base::Lock lock_;
   scoped_ptr<internal::MessagePipeReader, ReaderDeleter> message_reader_;
   ScopedVector<Message> pending_messages_;
+  bool waiting_connect_;
 
   scoped_ptr<ScopedIPCSupport> ipc_support_;
 

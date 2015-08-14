@@ -57,6 +57,7 @@
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutPart.h"
@@ -65,7 +66,6 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/page/EditorClient.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
@@ -99,6 +99,7 @@ FrameSelection::FrameSelection(LocalFrame* frame)
     , m_xPosForVerticalArrowNavigation(NoXPosForVerticalArrowNavigation())
     , m_observingVisibleSelection(false)
     , m_granularity(CharacterGranularity)
+    , m_previousCaretVisibility(Hidden)
     , m_caretBlinkTimer(this, &FrameSelection::caretBlinkTimerFired)
     , m_caretRectDirty(true)
     , m_shouldPaintCaret(true)
@@ -191,15 +192,16 @@ static void adjustEndpointsAtBidiBoundary(VisiblePosition& visibleBase, VisibleP
     }
 }
 
-void FrameSelection::setNonDirectionalSelectionIfNeeded(const VisibleSelection& passedNewSelection, TextGranularity granularity,
+template <typename Strategy>
+void FrameSelection::setNonDirectionalSelectionIfNeededAlgorithm(const VisibleSelection& passedNewSelection, TextGranularity granularity,
     EndPointsAdjustmentMode endpointsAdjustmentMode)
 {
     VisibleSelection newSelection = passedNewSelection;
     bool isDirectional = shouldAlwaysUseDirectionalSelection(m_frame) || newSelection.isDirectional();
 
-    VisiblePosition base = m_originalBase.isNotNull() ? m_originalBase : newSelection.visibleBase();
+    VisiblePosition base = m_originalBase.isNotNull() ? m_originalBase : VisiblePosition(Strategy::selectionBase(newSelection));
     VisiblePosition newBase = base;
-    VisiblePosition extent = newSelection.visibleExtent();
+    VisiblePosition extent(Strategy::selectionExtent(newSelection));
     VisiblePosition newExtent = extent;
     if (endpointsAdjustmentMode == AdjustEndpointsAtBidiBoundary)
         adjustEndpointsAtBidiBoundary(newBase, newExtent);
@@ -209,16 +211,30 @@ void FrameSelection::setNonDirectionalSelectionIfNeeded(const VisibleSelection& 
         newSelection.setBase(newBase);
         newSelection.setExtent(newExtent);
     } else if (m_originalBase.isNotNull()) {
-        if (m_selection.base() == newSelection.base())
+        if (Strategy::selectionBase(m_selection) == Strategy::selectionBase(newSelection))
             newSelection.setBase(m_originalBase);
         m_originalBase.clear();
     }
 
     newSelection.setIsDirectional(isDirectional); // Adjusting base and extent will make newSelection always directional
-    if (m_selection == newSelection)
+    if (Strategy::equalSelections(m_selection, newSelection))
         return;
 
     setSelection(newSelection, granularity);
+}
+
+void FrameSelection::setNonDirectionalSelectionIfNeeded(const VisibleSelection& passedNewSelection, TextGranularity granularity, EndPointsAdjustmentMode endpointsAdjustmentMode)
+{
+    if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return setNonDirectionalSelectionIfNeededAlgorithm<VisibleSelection::InComposedTree>(passedNewSelection, granularity, endpointsAdjustmentMode);
+    setNonDirectionalSelectionIfNeededAlgorithm<VisibleSelection::InDOMTree>(passedNewSelection, granularity, endpointsAdjustmentMode);
+}
+
+static bool areEquivalentSelections(const VisibleSelection& selection1, const VisibleSelection& selection2)
+{
+    if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return VisibleSelection::InComposedTree::equalSelections(selection1, selection2);
+    return VisibleSelection::InDOMTree::equalSelections(selection1, selection2);
 }
 
 void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelectionOptions options, CursorAlignOnScroll align, TextGranularity granularity)
@@ -242,6 +258,8 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     // if document->frame() == m_frame we can get into an infinite loop
     if (s.base().anchorNode()) {
         Document& document = *s.base().document();
+        // TODO(hajimehoshi): validateSelection already checks if the selection
+        // is valid, thus we don't need this 'if' clause any more.
         if (document.frame() && document.frame() != m_frame && document != m_frame->document()) {
             RefPtrWillBeRawPtr<LocalFrame> guard(document.frame());
             document.frame()->selection().setSelection(s, options, align, granularity);
@@ -262,7 +280,7 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     if (shouldClearTypingStyle)
         clearTypingStyle();
 
-    if (m_selection == s) {
+    if (areEquivalentSelections(m_selection, s)) {
         // Even if selection was not changed, selection offsets may have been changed.
         m_frame->inputMethodController().cancelCompositionIfSelectionIsInvalid();
         notifyLayoutObjectOfSelectionChange(userTriggered);
@@ -288,6 +306,13 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     m_xPosForVerticalArrowNavigation = NoXPosForVerticalArrowNavigation();
     selectFrameElementInParentIfFullySelected();
     notifyLayoutObjectOfSelectionChange(userTriggered);
+    // If the selections are same in the DOM tree but not in the composed tree,
+    // don't fire events. For example, if the selection crosses shadow tree
+    // boundary, selection for the DOM tree is shrunk while that for the
+    // composed tree is not. Additionally, this case occurs in some edge cases.
+    // See also: editing/pasteboard/4076267-3.html
+    if (VisibleSelection::InDOMTree::equalSelections(oldSelection, m_selection))
+        return;
     m_frame->editor().respondToChangedSelection(oldSelection, options);
     if (userTriggered == UserTriggered) {
         ScrollAlignment alignment;
@@ -381,7 +406,7 @@ void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, boo
 
 static Position updatePositionAfterAdoptingTextReplacement(const Position& position, CharacterData* node, unsigned offset, unsigned oldLength, unsigned newLength)
 {
-    if (!position.anchorNode() || position.anchorNode() != node || position.anchorType() != Position::PositionIsOffsetInAnchor)
+    if (!position.anchorNode() || position.anchorNode() != node || position.anchorType() != PositionAnchorType::OffsetInAnchor)
         return position;
 
     // See: http://www.w3.org/TR/DOM-Level-2-Traversal-Range/ranges.html#Level-2-Range-Mutation
@@ -423,7 +448,7 @@ void FrameSelection::didUpdateCharacterData(CharacterData* node, unsigned offset
 
 static Position updatePostionAfterAdoptingTextNodesMerged(const Position& position, const Text& oldNode, unsigned offset)
 {
-    if (!position.anchorNode() || position.anchorType() != Position::PositionIsOffsetInAnchor)
+    if (!position.anchorNode() || position.anchorType() != PositionAnchorType::OffsetInAnchor)
         return position;
 
     ASSERT(position.offsetInContainerNode() >= 0);
@@ -451,7 +476,7 @@ void FrameSelection::didMergeTextNodes(const Text& oldNode, unsigned offset)
 
 static Position updatePostionAfterAdoptingTextNodeSplit(const Position& position, const Text& oldNode)
 {
-    if (!position.anchorNode() || position.anchorNode() != &oldNode || position.anchorType() != Position::PositionIsOffsetInAnchor)
+    if (!position.anchorNode() || position.anchorNode() != &oldNode || position.anchorType() != PositionAnchorType::OffsetInAnchor)
         return position;
     // See: http://www.w3.org/TR/DOM-Level-2-Traversal-Range/ranges.html#Level-2-Range-Mutation
     ASSERT(position.offsetInContainerNode() >= 0);
@@ -494,15 +519,14 @@ TextDirection FrameSelection::directionOfSelection()
 {
     InlineBox* startBox = nullptr;
     InlineBox* endBox = nullptr;
-    int unusedOffset;
     // Cache the VisiblePositions because visibleStart() and visibleEnd()
     // can cause layout, which has the potential to invalidate lineboxes.
     VisiblePosition startPosition = m_selection.visibleStart();
     VisiblePosition endPosition = m_selection.visibleEnd();
     if (startPosition.isNotNull())
-        startPosition.getInlineBoxAndOffset(startBox, unusedOffset);
+        startBox = startPosition.computeInlineBoxPosition().inlineBox;
     if (endPosition.isNotNull())
-        endPosition.getInlineBoxAndOffset(endBox, unusedOffset);
+        endBox = endPosition.computeInlineBoxPosition().inlineBox;
     if (startBox && endBox && startBox->direction() == endBox->direction())
         return startBox->direction();
 
@@ -1223,11 +1247,6 @@ void FrameSelection::setExtent(const VisiblePosition &pos, EUserTriggered userTr
     setSelection(VisibleSelection(m_selection.base(), pos.deepEquivalent(), pos.affinity(), selectionHasDirection), CloseTyping | ClearTypingStyle | userTriggered);
 }
 
-LayoutBlock* FrameSelection::caretLayoutObject() const
-{
-    return CaretBase::caretLayoutObject(m_selection.start().deprecatedNode());
-}
-
 static bool isNonOrphanedCaret(const VisibleSelection& selection)
 {
     return selection.isCaret() && !selection.start().isOrphan() && !selection.end().isOrphan();
@@ -1236,6 +1255,11 @@ static bool isNonOrphanedCaret(const VisibleSelection& selection)
 static bool isTextFormControl(const VisibleSelection& selection)
 {
     return enclosingTextFormControl(selection.start());
+}
+
+LayoutBlock* FrameSelection::caretLayoutObject() const
+{
+    return CaretBase::caretLayoutObject(m_selection.start().anchorNode());
 }
 
 IntRect FrameSelection::absoluteCaretBounds()
@@ -1272,7 +1296,10 @@ void FrameSelection::invalidateCaretRect()
     LayoutRect newRect = localCaretRect(m_selection, PositionWithAffinity(m_selection.start(), m_selection.affinity()), layoutObject);
     Node* newNode = layoutObject ? layoutObject->node() : nullptr;
 
-    if (!m_caretBlinkTimer.isActive() && newNode == m_previousCaretNode && newRect == m_previousCaretRect)
+    if (!m_caretBlinkTimer.isActive()
+        && newNode == m_previousCaretNode
+        && newRect == m_previousCaretRect
+        && caretVisibility() == m_previousCaretVisibility)
         return;
 
     LayoutView* view = m_frame->document()->layoutView();
@@ -1283,6 +1310,7 @@ void FrameSelection::invalidateCaretRect()
 
     m_previousCaretNode = newNode;
     m_previousCaretRect = newRect;
+    m_previousCaretVisibility = caretVisibility();
 }
 
 void FrameSelection::paintCaret(GraphicsContext* context, const LayoutPoint& paintOffset, const LayoutRect& clipRect)
@@ -1293,8 +1321,11 @@ void FrameSelection::paintCaret(GraphicsContext* context, const LayoutPoint& pai
     }
 }
 
-bool FrameSelection::contains(const LayoutPoint& point)
+template <typename Strategy>
+bool FrameSelection::containsAlgorithm(const LayoutPoint& point)
 {
+    using PositionType = typename Strategy::PositionType;
+
     Document* document = m_frame->document();
 
     // Treat a collapsed selection like no selection.
@@ -1314,14 +1345,22 @@ bool FrameSelection::contains(const LayoutPoint& point)
     if (visiblePos.isNull())
         return false;
 
-    if (m_selection.visibleStart().isNull() || m_selection.visibleEnd().isNull())
+    VisiblePosition visibleStart = Strategy::selectionVisibleStart(m_selection);
+    VisiblePosition visibleEnd = Strategy::selectionVisibleEnd(m_selection);
+    if (visibleStart.isNull() || visibleEnd.isNull())
         return false;
 
-    Position start(m_selection.visibleStart().deepEquivalent());
-    Position end(m_selection.visibleEnd().deepEquivalent());
-    Position p(visiblePos.deepEquivalent());
+    PositionType start(Strategy::toPositionType(visibleStart.deepEquivalent()));
+    PositionType end(Strategy::toPositionType(visibleEnd.deepEquivalent()));
+    PositionType pos(Strategy::toPositionType(visiblePos.deepEquivalent()));
+    return start.compareTo(pos) <= 0 && pos.compareTo(end) <= 0;
+}
 
-    return comparePositions(start, p) <= 0 && comparePositions(p, end) <= 0;
+bool FrameSelection::contains(const LayoutPoint& point)
+{
+    if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return containsAlgorithm<VisibleSelection::InComposedTree>(point);
+    return containsAlgorithm<VisibleSelection::InDOMTree>(point);
 }
 
 // Workaround for the fact that it's hard to delete a frame.
@@ -1366,8 +1405,8 @@ void FrameSelection::selectFrameElementInParentIfFullySelected()
 
     // Create compute positions before and after the element.
     unsigned ownerElementNodeIndex = ownerElement->nodeIndex();
-    VisiblePosition beforeOwnerElement(VisiblePosition(Position(ownerElementParent, ownerElementNodeIndex, Position::PositionIsOffsetInAnchor)));
-    VisiblePosition afterOwnerElement(VisiblePosition(Position(ownerElementParent, ownerElementNodeIndex + 1, Position::PositionIsOffsetInAnchor), VP_UPSTREAM_IF_POSSIBLE));
+    VisiblePosition beforeOwnerElement(VisiblePosition(Position(ownerElementParent, ownerElementNodeIndex)));
+    VisiblePosition afterOwnerElement(VisiblePosition(Position(ownerElementParent, ownerElementNodeIndex + 1), VP_UPSTREAM_IF_POSSIBLE));
 
     // Focus on the parent frame, and then select from before this element to after.
     VisibleSelection newSelection(beforeOwnerElement, afterOwnerElement);
@@ -1421,18 +1460,27 @@ bool FrameSelection::setSelectedRange(Range* range, EAffinity affinity, Directoi
     if (!range || !range->startContainer() || !range->endContainer())
         return false;
     ASSERT(range->startContainer()->document() == range->endContainer()->document());
+    return setSelectedRange(EphemeralRange(range), affinity, directional, options);
+}
+
+bool FrameSelection::setSelectedRange(const EphemeralRange& range, EAffinity affinity, DirectoinalOption directional, SetSelectionOptions options)
+{
+    if (range.isNull())
+        return false;
 
     // Non-collapsed ranges are not allowed to start at the end of a line that is wrapped,
     // they start at the beginning of the next line instead
     m_logicalRange = nullptr;
     stopObservingVisibleSelectionChangeIfNecessary();
 
-    VisibleSelection newSelection(range, affinity, directional == Directional);
+    // Since |FrameSeleciton::setSelection()| dispatches events and DOM tree
+    // can be modified by event handlers, we should create |Range| object before
+    // calling it.
+    m_logicalRange = Range::create(range.document(), range.startPosition(), range.endPosition());
+
+    VisibleSelection newSelection(range.startPosition(), range.endPosition(), affinity, directional == Directional);
     setSelection(newSelection, options);
-
-    m_logicalRange = range->cloneRange();
     startObservingVisibleSelectionChange();
-
     return true;
 }
 
@@ -1663,15 +1711,42 @@ void FrameSelection::setFocusedNodeIfNeeded()
         m_frame->page()->focusController().setFocusedElement(0, m_frame);
 }
 
+template <typename Strategy>
+String extractSelectedTextAlgorithm(const FrameSelection& selection, TextIteratorBehavior behavior)
+{
+    using PositionType = typename Strategy::PositionType;
+
+    PositionType start;
+    PositionType end;
+    VisibleSelection visibleSelection = selection.selection();
+    VisibleSelection::normalizePositions(Strategy::selectionStart(visibleSelection), Strategy::selectionEnd(visibleSelection), &start, &end);
+    // We remove '\0' characters because they are not visibly rendered to the user.
+    return plainText(start, end, behavior).replace(0, "");
+}
+
 static String extractSelectedText(const FrameSelection& selection, TextIteratorBehavior behavior)
 {
-    // We remove '\0' characters because they are not visibly rendered to the user.
-    return plainText(selection.toNormalizedRange().get(), behavior).replace(0, "");
+    if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return extractSelectedTextAlgorithm<VisibleSelection::InComposedTree>(selection, behavior);
+    return extractSelectedTextAlgorithm<VisibleSelection::InDOMTree>(selection, behavior);
+}
+
+template <typename Strategy>
+static String extractSelectedHTMLAlgorithm(const FrameSelection& selection)
+{
+    using PositionType = typename Strategy::PositionType;
+    PositionType start;
+    PositionType end;
+    VisibleSelection visibleSelection = selection.selection();
+    VisibleSelection::normalizePositions(Strategy::selectionStart(visibleSelection), Strategy::selectionEnd(visibleSelection), &start, &end);
+    return createMarkup(start, end, AnnotateForInterchange, ConvertBlocksToInlines::NotConvert, ResolveNonLocalURLs);
 }
 
 String FrameSelection::selectedHTMLForClipboard() const
 {
-    return createMarkup(m_selection.toNormalizedRange().get(), AnnotateForInterchange, false, ResolveNonLocalURLs);
+    if (!RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
+        return extractSelectedHTMLAlgorithm<VisibleSelection::InDOMTree>(*this);
+    return extractSelectedHTMLAlgorithm<VisibleSelection::InComposedTree>(*this);
 }
 
 String FrameSelection::selectedText() const
@@ -1940,7 +2015,6 @@ GranularityStrategy* FrameSelection::granularityStrategy()
 
 void FrameSelection::moveRangeSelectionExtent(const IntPoint& contentsPoint)
 {
-    TRACE_EVENT0("blink", "FrameSelection::moveRangeSelectionExtent");
     if (isNone())
         return;
 

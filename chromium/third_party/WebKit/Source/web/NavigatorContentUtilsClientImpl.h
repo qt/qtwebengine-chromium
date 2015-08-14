@@ -10,21 +10,21 @@
 
 namespace blink {
 
-class WebViewImpl;
+class WebLocalFrameImpl;
 
 class NavigatorContentUtilsClientImpl final : public NavigatorContentUtilsClient {
 public:
-    static PassOwnPtr<NavigatorContentUtilsClientImpl> create(WebViewImpl*);
-    virtual ~NavigatorContentUtilsClientImpl() { }
+    static PassOwnPtr<NavigatorContentUtilsClientImpl> create(WebLocalFrameImpl*);
+    ~NavigatorContentUtilsClientImpl() override { }
 
-    virtual void registerProtocolHandler(const String& scheme, const KURL&, const String& title) override;
-    virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const KURL&) override;
-    virtual void unregisterProtocolHandler(const String& scheme, const KURL&) override;
+    void registerProtocolHandler(const String& scheme, const KURL&, const String& title) override;
+    CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const KURL&) override;
+    void unregisterProtocolHandler(const String& scheme, const KURL&) override;
 
 private:
-    explicit NavigatorContentUtilsClientImpl(WebViewImpl*);
+    explicit NavigatorContentUtilsClientImpl(WebLocalFrameImpl*);
 
-    WebViewImpl* m_webView;
+    WebLocalFrameImpl* m_webFrame;
 };
 
 } // namespace blink

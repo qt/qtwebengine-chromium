@@ -59,12 +59,12 @@ class RTCPeerConnection final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<RTCPeerConnection>
     , public WebRTCPeerConnectionHandlerClient
     , public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCPeerConnection>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(RTCPeerConnection);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCPeerConnection);
 public:
     static RTCPeerConnection* create(ExecutionContext*, const Dictionary&, const Dictionary&, ExceptionState&);
-    virtual ~RTCPeerConnection();
+    ~RTCPeerConnection() override;
 
     void createOffer(RTCSessionDescriptionCallback*, RTCErrorCallback*, const Dictionary&, ExceptionState&);
 
@@ -120,36 +120,37 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(datachannel);
 
     // WebRTCPeerConnectionHandlerClient
-    virtual void negotiationNeeded() override;
-    virtual void didGenerateICECandidate(const WebRTCICECandidate&) override;
-    virtual void didChangeSignalingState(SignalingState) override;
-    virtual void didChangeICEGatheringState(ICEGatheringState) override;
-    virtual void didChangeICEConnectionState(ICEConnectionState) override;
-    virtual void didAddRemoteStream(const WebMediaStream&) override;
-    virtual void didRemoveRemoteStream(const WebMediaStream&) override;
-    virtual void didAddRemoteDataChannel(WebRTCDataChannelHandler*) override;
-    virtual void releasePeerConnectionHandler() override;
-    virtual void closePeerConnection() override;
+    void negotiationNeeded() override;
+    void didGenerateICECandidate(const WebRTCICECandidate&) override;
+    void didChangeSignalingState(SignalingState) override;
+    void didChangeICEGatheringState(ICEGatheringState) override;
+    void didChangeICEConnectionState(ICEConnectionState) override;
+    void didAddRemoteStream(const WebMediaStream&) override;
+    void didRemoveRemoteStream(const WebMediaStream&) override;
+    void didAddRemoteDataChannel(WebRTCDataChannelHandler*) override;
+    void releasePeerConnectionHandler() override;
+    void closePeerConnection() override;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject
-    virtual void suspend() override;
-    virtual void resume() override;
-    virtual void stop() override;
+    void suspend() override;
+    void resume() override;
+    void stop() override;
     // We keep the this object alive until either stopped or closed.
-    virtual bool hasPendingActivity() const override
+    bool hasPendingActivity() const override
     {
         return !m_closed && !m_stopped;
     }
 
+    // Oilpan: need to eagerly finalize m_peerHandler
+    EAGERLY_FINALIZE();
     DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCPeerConnection(ExecutionContext*, RTCConfiguration*, WebMediaConstraints, ExceptionState&);
-
 
     static RTCConfiguration* parseConfiguration(const Dictionary&, ExceptionState&);
     static RTCOfferOptions* parseOfferOptions(const Dictionary&, ExceptionState&);

@@ -34,7 +34,6 @@ using blink::WebPoint;
 using blink::WebString;
 
 using base::trace_event::TraceLog;
-using base::trace_event::TraceOptions;
 
 namespace content {
 
@@ -89,8 +88,6 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                         OnDispatchOnInspectorBackend)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_InspectElement, OnInspectElement)
-    IPC_MESSAGE_HANDLER(DevToolsAgentMsg_AddMessageToConsole,
-                        OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(DevToolsMsg_SetupDevToolsClient, OnSetupDevToolsClient)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -137,8 +134,8 @@ void DevToolsAgent::didExitDebugLoop() {
 void DevToolsAgent::enableTracing(const WebString& category_filter) {
   TraceLog* trace_log = TraceLog::GetInstance();
   trace_log->SetEnabled(
-      base::trace_event::CategoryFilter(category_filter.utf8()),
-      TraceLog::RECORDING_MODE, TraceOptions());
+      base::trace_event::TraceConfig(category_filter.utf8(), ""),
+      TraceLog::RECORDING_MODE);
 }
 
 void DevToolsAgent::disableTracing() {
@@ -230,8 +227,8 @@ void DevToolsAgent::OnInspectElement(
   }
 }
 
-void DevToolsAgent::OnAddMessageToConsole(ConsoleMessageLevel level,
-                                          const std::string& message) {
+void DevToolsAgent::AddMessageToConsole(ConsoleMessageLevel level,
+                                        const std::string& message) {
   WebLocalFrame* web_frame = frame_->GetWebFrame();
   if (!web_frame)
     return;
@@ -261,13 +258,14 @@ void DevToolsAgent::ContinueProgram() {
     web_agent->continueProgram();
 }
 
-void DevToolsAgent::OnSetupDevToolsClient() {
+void DevToolsAgent::OnSetupDevToolsClient(
+    const std::string& compatibility_script) {
   // We only want to register once; and only in main frame.
   DCHECK(!frame_->GetWebFrame() || !frame_->GetWebFrame()->parent());
   if (is_devtools_client_)
     return;
   is_devtools_client_ = true;
-  new DevToolsClient(frame_);
+  new DevToolsClient(frame_, compatibility_script);
 }
 
 WebDevToolsAgent* DevToolsAgent::GetWebAgent() {

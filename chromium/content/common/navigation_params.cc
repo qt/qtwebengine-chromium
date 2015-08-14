@@ -4,9 +4,24 @@
 
 #include "content/common/navigation_params.h"
 
+#include "base/command_line.h"
 #include "base/memory/ref_counted_memory.h"
+#include "content/public/common/content_switches.h"
 
 namespace content {
+
+// PlzNavigate
+bool ShouldMakeNetworkRequestForURL(const GURL& url) {
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBrowserSideNavigation));
+
+  // Data URLs, Javascript URLs and about:blank should not send a request to the
+  // network stack.
+  // TODO(clamy): same document navigations should not send requests to the
+  // network stack. Neither should pushState/popState.
+  return !url.SchemeIs(url::kDataScheme) && url != GURL(url::kAboutBlankURL) &&
+         !url.SchemeIs(url::kJavaScriptScheme);
+}
 
 CommonNavigationParams::CommonNavigationParams()
     : transition(ui::PAGE_TRANSITION_LINK),
@@ -85,6 +100,8 @@ RequestNavigationParams::RequestNavigationParams()
       request_time(base::Time::Now()),
       page_id(-1),
       nav_entry_id(0),
+      is_same_document_history_load(false),
+      has_committed_real_load(false),
       intended_as_new_entry(false),
       pending_history_list_offset(-1),
       current_history_list_offset(-1),
@@ -101,6 +118,8 @@ RequestNavigationParams::RequestNavigationParams(
     const PageState& page_state,
     int32 page_id,
     int nav_entry_id,
+    bool is_same_document_history_load,
+    bool has_committed_real_load,
     bool intended_as_new_entry,
     int pending_history_list_offset,
     int current_history_list_offset,
@@ -114,6 +133,8 @@ RequestNavigationParams::RequestNavigationParams(
       page_state(page_state),
       page_id(page_id),
       nav_entry_id(nav_entry_id),
+      is_same_document_history_load(is_same_document_history_load),
+      has_committed_real_load(has_committed_real_load),
       intended_as_new_entry(intended_as_new_entry),
       pending_history_list_offset(pending_history_list_offset),
       current_history_list_offset(current_history_list_offset),

@@ -218,10 +218,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
                                   const Window* target,
                                   gfx::Rect* rect);
 
-  // Returns the focused text input client within this window.
-  // This function does not look at child windows.
-  ui::TextInputClient* GetFocusedTextInputClient();
-
   // Moves the cursor to the specified location relative to the window.
   void MoveCursorTo(const gfx::Point& point_in_window);
 
@@ -386,12 +382,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // to.
   void RemoveChildImpl(Window* child, Window* new_parent);
 
-  // If this Window has a layer the layer's parent is set to NULL, otherwise
-  // UnparentLayers() is invoked on all the children. |offset| is the offset
-  // relative to the nearest ancestor with a layer.
-  void UnparentLayers(bool has_layerless_ancestor,
-                      const gfx::Vector2d& offset);
-
   // If this Window has a layer it is added to |parent| and the origin set to
   // |offset|. Otherwise this recurses through the children invoking
   // ReparentLayers(). The net effect is both setting the parent of layers to
@@ -477,15 +467,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Updates the layer name based on the window's name and id.
   void UpdateLayerName();
 
-  // Returns the first ancestor (starting at |this|) with a layer. |offset| is
-  // set to the offset from |this| to the first ancestor with a layer. |offset|
-  // may be NULL.
-  Window* GetAncestorWithLayer(gfx::Vector2d* offset) {
-    return const_cast<Window*>(
-        const_cast<const Window*>(this)->GetAncestorWithLayer(offset));
-  }
-  const Window* GetAncestorWithLayer(gfx::Vector2d* offset) const;
-
   // Bounds of this window relative to the parent. This is cached as the bounds
   // of the Layer and Window are not necessarily the same. In particular bounds
   // of the Layer are relative to the first ancestor with a Layer, where as this
@@ -532,7 +513,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // See set_hit_test_bounds_override_inner().
   gfx::Insets hit_test_bounds_override_inner_;
 
-  ObserverList<WindowObserver, true> observers_;
+  base::ObserverList<WindowObserver, true> observers_;
 
   // Value struct to keep the name and deallocator for this property.
   // Key cannot be used for this purpose because it can be char* or

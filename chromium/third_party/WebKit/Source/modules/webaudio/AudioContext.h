@@ -78,7 +78,7 @@ class WaveShaperNode;
 // For thread safety between the audio thread and the main thread, it has a rendering graph locking mechanism.
 
 class MODULES_EXPORT AudioContext : public RefCountedGarbageCollectedEventTargetWithInlineData<AudioContext>, public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<AudioContext>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(AudioContext);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioContext);
     DEFINE_WRAPPERTYPEINFO();
 public:
@@ -95,7 +95,7 @@ public:
     // Create an AudioContext for rendering to the audio hardware.
     static AudioContext* create(Document&, ExceptionState&);
 
-    virtual ~AudioContext();
+    ~AudioContext() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -103,17 +103,20 @@ public:
     bool isOfflineContext() { return m_isOfflineContext; }
 
     // Document notification
-    virtual void stop() override final;
-    virtual bool hasPendingActivity() const override;
+    void stop() final;
+    bool hasPendingActivity() const override;
 
     AudioDestinationNode* destination() { return m_destinationNode.get(); }
 
-    // currentSampleFrame() and currentTime() can be called from both the main
-    // thread and the audio thread. Note that, however, they return the cached
-    // value instead of actual current ones when they are accessed from the main
-    // thread. See: crbug.com/431874
-    size_t currentSampleFrame() const;
-    double currentTime() const;
+    size_t currentSampleFrame() const
+    {
+        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentSampleFrame() : 0;
+    }
+
+    double currentTime() const
+    {
+        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentTime() : 0;
+    }
 
     float sampleRate() const { return m_destinationNode ? m_destinationNode->handler().sampleRate() : 0; }
 
@@ -213,8 +216,8 @@ public:
     static unsigned maxNumberOfChannels() { return MaxNumberOfChannels;}
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override final;
-    virtual ExecutionContext* executionContext() const override final;
+    const AtomicString& interfaceName() const final;
+    ExecutionContext* executionContext() const final;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
@@ -282,14 +285,9 @@ private:
     void resolvePromisesForResume();
     void resolvePromisesForResumeOnMainThread();
 
-    void resolvePromisesForSuspend();
-    void resolvePromisesForSuspendOnMainThread();
-
     // Vector of promises created by resume(). It takes time to handle them, so we collect all of
     // the promises here until they can be resolved or rejected.
     WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver>> m_resumeResolvers;
-    // Like m_resumeResolvers but for suspend().
-    WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver>> m_suspendResolvers;
     void rejectPendingResolvers();
 
     // True if we're in the process of resolving promises for resume().  Resolving can take some
@@ -315,9 +313,6 @@ private:
 
     // The Promise that is returned by close();
     RefPtrWillBeMember<ScriptPromiseResolver> m_closeResolver;
-
-    // Follows the destination's currentSampleFrame, but might be slightly behind due to locking.
-    size_t m_cachedSampleFrame;
 
     // Tries to handle AudioBufferSourceNodes that were started but became disconnected or was never
     // connected. Because these never get pulled anymore, they will stay around forever. So if we

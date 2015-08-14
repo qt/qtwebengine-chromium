@@ -8,6 +8,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -32,13 +33,14 @@ void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
 TEST(HeadsUpDisplayLayerImplTest, ResourcelessSoftwareDrawAfterResourceLoss) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
+  TestTaskGraphRunner task_graph_runner;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager,
+                                  &task_graph_runner);
   host_impl.CreatePendingTree();
   host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
   scoped_ptr<HeadsUpDisplayLayerImpl> layer =
     HeadsUpDisplayLayerImpl::Create(host_impl.pending_tree(), 1);
   layer->SetBounds(gfx::Size(100, 100));
-  layer->draw_properties().ideal_contents_scale = 1.f;
 
   // Check regular hardware draw is ok.
   CheckDrawLayer(

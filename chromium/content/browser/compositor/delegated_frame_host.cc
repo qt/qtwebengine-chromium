@@ -6,6 +6,7 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/time/default_tick_clock.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/copy_output_request.h"
@@ -25,7 +26,6 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/effects/SkLumaColorFilter.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/dip_util.h"
 
 namespace content {
@@ -59,6 +59,7 @@ DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
     : client_(client),
       compositor_(nullptr),
       use_surfaces_(UseSurfacesEnabled()),
+      tick_clock_(new base::DefaultTickClock()),
       last_output_surface_id_(0),
       pending_delegated_ack_count_(0),
       skipped_frames_(false),
@@ -245,9 +246,9 @@ void DelegatedFrameHost::DidReceiveFrameFromRenderer(
   if (!frame_subscriber() || !CanCopyToVideoFrame())
     return;
 
-  const base::TimeTicks now = gfx::FrameTime::Now();
+  const base::TimeTicks now = tick_clock_->NowTicks();
   base::TimeTicks present_time;
-  if (vsync_timebase_.is_null() || vsync_interval_ <= base::TimeDelta()) {
+  if (vsync_interval_ <= base::TimeDelta()) {
     present_time = now;
   } else {
     const int64 intervals_elapsed = (now - vsync_timebase_) / vsync_interval_;
@@ -298,7 +299,8 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::DelegatedFrameData> frame_data,
     float frame_device_scale_factor,
-    const std::vector<ui::LatencyInfo>& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info,
+    std::vector<uint32_t>* satisfies_sequences) {
   DCHECK(!frame_data->render_pass_list.empty());
 
   cc::RenderPass* root_pass = frame_data->render_pass_list.back();
@@ -399,6 +401,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
           compositor_frame->metadata.latency_info.end(),
           latency_info.begin(),
           latency_info.end());
+      compositor_frame->metadata.satisfies_sequences.swap(*satisfies_sequences);
 
       gfx::Size desired_size = client_->DelegatedFrameHostDesiredSizeInDIP();
       if (desired_size != frame_size_in_dip && !desired_size.IsEmpty())
@@ -898,8 +901,7 @@ void DelegatedFrameHost::OnCompositingShuttingDown(ui::Compositor* compositor) {
 void DelegatedFrameHost::OnUpdateVSyncParameters(
     base::TimeTicks timebase,
     base::TimeDelta interval) {
-  vsync_timebase_ = timebase;
-  vsync_interval_ = interval;
+  SetVSyncParameters(timebase, interval);
   if (client_->DelegatedFrameHostIsVisible())
     client_->DelegatedFrameHostUpdateVSyncParameters(timebase, interval);
 }
@@ -975,6 +977,12 @@ void DelegatedFrameHost::ResetCompositor() {
     vsync_manager_ = NULL;
   }
   compositor_ = nullptr;
+}
+
+void DelegatedFrameHost::SetVSyncParameters(const base::TimeTicks& timebase,
+                                            const base::TimeDelta& interval) {
+  vsync_timebase_ = timebase;
+  vsync_interval_ = interval;
 }
 
 void DelegatedFrameHost::LockResources() {

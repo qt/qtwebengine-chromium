@@ -15,7 +15,15 @@
             "actionId": "settings.show",
             "location": "main-toolbar-right",
             "title": "Settings",
-            "order": 3,
+            "order": 4,
+            "elementClass": "settings-toolbar-item"
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "actionId": "settings.show",
+            "location": "elements-toolbar",
+            "title": "Settings",
+            "order": 1,
             "elementClass": "settings-toolbar-item"
         },
         {

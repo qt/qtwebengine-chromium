@@ -1207,11 +1207,10 @@ class WebRtcSdpTest : public testing::Test {
         "a=fmtp:111 0-15,66,70\r\n"
         "a=fmtp:111 ";
     std::ostringstream os;
-    os << "minptime=" << params.min_ptime
-       << "; stereo=" << params.stereo
+    os << "minptime=" << params.min_ptime << "; stereo=" << params.stereo
        << "; sprop-stereo=" << params.sprop_stereo
        << "; useinbandfec=" << params.useinband
-       << " maxaveragebitrate=" << params.maxaveragebitrate << "\r\n"
+       << "; maxaveragebitrate=" << params.maxaveragebitrate << "\r\n"
        << "a=ptime:" << params.ptime << "\r\n"
        << "a=maxptime:" << params.max_ptime << "\r\n";
     sdp += os.str();
@@ -1222,7 +1221,7 @@ class WebRtcSdpTest : public testing::Test {
     os << "m=video 9 RTP/SAVPF 99 95\r\n"
        << "a=rtpmap:99 VP8/90000\r\n"
        << "a=rtpmap:95 RTX/90000\r\n"
-       << "a=fmtp:95 apt=99;rtx-time=1000\r\n";
+       << "a=fmtp:95 apt=99;\r\n";
     sdp += os.str();
 
     // Deserialize
@@ -1699,12 +1698,7 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithDataChannelAndBandwidth) {
 
   std::string expected_sdp = kSdpString;
   expected_sdp.append(kSdpRtpDataChannelString);
-  // We want to test that serializing data content ignores bandwidth
-  // settings (it should always be the default).  Thus, we don't do
-  // the following:
-  // TODO(pthatcher): We need to temporarily allow the SDP to control
-  // this for backwards-compatibility.  Once we don't need that any
-  // more, remove this.
+  // Serializing data content shouldn't ignore bandwidth settings.
   InjectAfter("m=application 9 RTP/SAVPF 101\r\nc=IN IP4 0.0.0.0\r\n",
               "b=AS:100\r\n",
               &expected_sdp);
@@ -2260,19 +2254,11 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelAndNewPort) {
 }
 
 TEST_F(WebRtcSdpTest, DeserializeSdpWithRtpDataChannelsAndBandwidth) {
-  AddRtpDataChannel();
-  JsepSessionDescription jdesc(kDummyString);
-  // We want to test that deserializing data content ignores bandwidth
-  // settings (it should always be the default).  Thus, we don't do
-  // the following:
-  // TODO(pthatcher): We need to temporarily allow the SDP to control
-  // this for backwards-compatibility.  Once we don't need that any
-  // more, remove this.
-  DataContentDescription* dcd = static_cast<DataContentDescription*>(
-     GetFirstDataContent(&desc_)->description);
-  dcd->set_bandwidth(100 * 1000);
-  ASSERT_TRUE(jdesc.Initialize(desc_.Copy(), kSessionId, kSessionVersion));
-
+  // We want to test that deserializing data content limits bandwidth
+  // settings (it should never be greater than the default).
+  // This should prevent someone from using unlimited data bandwidth through
+  // JS and "breaking the Internet".
+  // See: https://code.google.com/p/chromium/issues/detail?id=280726
   std::string sdp_with_bandwidth = kSdpString;
   sdp_with_bandwidth.append(kSdpRtpDataChannelString);
   InjectAfter("a=mid:data_content_name\r\n",
@@ -2280,8 +2266,27 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithRtpDataChannelsAndBandwidth) {
               &sdp_with_bandwidth);
   JsepSessionDescription jdesc_with_bandwidth(kDummyString);
 
-  EXPECT_TRUE(
-      SdpDeserialize(sdp_with_bandwidth, &jdesc_with_bandwidth));
+  EXPECT_FALSE(SdpDeserialize(sdp_with_bandwidth, &jdesc_with_bandwidth));
+}
+
+TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelsAndBandwidth) {
+  AddSctpDataChannel();
+  JsepSessionDescription jdesc(kDummyString);
+  DataContentDescription* dcd = static_cast<DataContentDescription*>(
+     GetFirstDataContent(&desc_)->description);
+  dcd->set_bandwidth(100 * 1000);
+  ASSERT_TRUE(jdesc.Initialize(desc_.Copy(), kSessionId, kSessionVersion));
+
+  std::string sdp_with_bandwidth = kSdpString;
+  sdp_with_bandwidth.append(kSdpSctpDataChannelString);
+  InjectAfter("a=mid:data_content_name\r\n",
+              "b=AS:100\r\n",
+              &sdp_with_bandwidth);
+  JsepSessionDescription jdesc_with_bandwidth(kDummyString);
+
+  // SCTP has congestion control, so we shouldn't limit the bandwidth
+  // as we do for RTP.
+  EXPECT_TRUE(SdpDeserialize(sdp_with_bandwidth, &jdesc_with_bandwidth));
   EXPECT_TRUE(CompareSessionDescription(jdesc, jdesc_with_bandwidth));
 }
 
@@ -2504,7 +2509,41 @@ TEST_F(WebRtcSdpTest, DeserializeVideoFmtp) {
       "t=0 0\r\n"
       "m=video 3457 RTP/SAVPF 120\r\n"
       "a=rtpmap:120 VP8/90000\r\n"
-      "a=fmtp:120 x-google-min-bitrate=10; x-google-max-quantization=40\r\n";
+      "a=fmtp:120 x-google-min-bitrate=10;x-google-max-quantization=40\r\n";
+
+  // Deserialize
+  SdpParseError error;
+  EXPECT_TRUE(
+      webrtc::SdpDeserialize(kSdpWithFmtpString, &jdesc_output, &error));
+
+  const ContentInfo* vc = GetFirstVideoContent(jdesc_output.description());
+  ASSERT_TRUE(vc != NULL);
+  const VideoContentDescription* vcd =
+      static_cast<const VideoContentDescription*>(vc->description);
+  ASSERT_FALSE(vcd->codecs().empty());
+  cricket::VideoCodec vp8 = vcd->codecs()[0];
+  EXPECT_EQ("VP8", vp8.name);
+  EXPECT_EQ(120, vp8.id);
+  cricket::CodecParameterMap::iterator found =
+      vp8.params.find("x-google-min-bitrate");
+  ASSERT_TRUE(found != vp8.params.end());
+  EXPECT_EQ(found->second, "10");
+  found = vp8.params.find("x-google-max-quantization");
+  ASSERT_TRUE(found != vp8.params.end());
+  EXPECT_EQ(found->second, "40");
+}
+
+TEST_F(WebRtcSdpTest, DeserializeVideoFmtpWithSpace) {
+  JsepSessionDescription jdesc_output(kDummyString);
+
+  const char kSdpWithFmtpString[] =
+      "v=0\r\n"
+      "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=video 3457 RTP/SAVPF 120\r\n"
+      "a=rtpmap:120 VP8/90000\r\n"
+      "a=fmtp:120   x-google-min-bitrate=10;  x-google-max-quantization=40\r\n";
 
   // Deserialize
   SdpParseError error;

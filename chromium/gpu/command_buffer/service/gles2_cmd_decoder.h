@@ -7,26 +7,29 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_H_
 
+#include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/basictypes.h"
+#include "base/callback_forward.h"
+#include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/common/capabilities.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/common_decoder.h"
-#include "gpu/command_buffer/service/logger.h"
-#include "ui/gfx/geometry/size.h"
-#include "ui/gl/gl_context.h"
+#include "gpu/gpu_export.h"
 
 namespace gfx {
 class GLContext;
 class GLSurface;
+class Size;
 }
 
 namespace gpu {
 
-class AsyncPixelTransferDelegate;
 class AsyncPixelTransferManager;
 struct Mailbox;
 
@@ -45,10 +48,12 @@ struct ContextState;
 
 struct DisallowedFeatures {
   DisallowedFeatures()
-      : gpu_memory_manager(false) {
+      : gpu_memory_manager(false),
+        npot_support(false) {
   }
 
   bool gpu_memory_manager;
+  bool npot_support;
 };
 
 typedef base::Callback<void(const std::string& key,
@@ -171,10 +176,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   virtual void SetIgnoreCachedStateForTest(bool ignore) = 0;
 
-  // Allow the decoder to exit the current process.
-  // Defaults to |false|.
-  virtual void SetAllowExit(bool allow_exit) = 0;
-
   // Gets the QueryManager for this context.
   virtual QueryManager* GetQueryManager() = 0;
 
@@ -214,18 +215,17 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Provides detail about a lost context if one occurred.
   virtual error::ContextLostReason GetContextLostReason() = 0;
 
-  // Clears a level of a texture
+  // Clears a level sub area of a texture
   // Returns false if a GL error should be generated.
-  virtual bool ClearLevel(
-      Texture* texture,
-      unsigned target,
-      int level,
-      unsigned internal_format,
-      unsigned format,
-      unsigned type,
-      int width,
-      int height,
-      bool is_texture_immutable) = 0;
+  virtual bool ClearLevel(Texture* texture,
+                          unsigned target,
+                          int level,
+                          unsigned format,
+                          unsigned type,
+                          int xoffset,
+                          int yoffset,
+                          int width,
+                          int height) = 0;
 
   virtual ErrorState* GetErrorState() = 0;
 

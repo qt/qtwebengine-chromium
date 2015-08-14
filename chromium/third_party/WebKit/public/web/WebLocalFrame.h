@@ -6,11 +6,13 @@
 #define WebLocalFrame_h
 
 #include "WebFrame.h"
+#include "WebFrameLoadType.h"
 
 namespace blink {
 
 enum class WebAppBannerPromptReply;
 enum class WebSandboxFlags;
+enum class WebTreeScopeType;
 class WebAutofillClient;
 class WebContentSettingsClient;
 class WebDevToolsAgent;
@@ -19,6 +21,7 @@ class WebFrameClient;
 class WebNode;
 class WebScriptExecutionCallback;
 class WebSuspendableTask;
+class WebTestInterfaceFactory;
 struct WebPrintPresetOptions;
 
 // Interface for interacting with in process frames. This contains methods that
@@ -28,7 +31,7 @@ class WebLocalFrame : public WebFrame {
 public:
     // Creates a WebFrame. Delete this WebFrame by calling WebFrame::close().
     // It is valid to pass a null client pointer.
-    BLINK_EXPORT static WebLocalFrame* create(WebFrameClient*);
+    BLINK_EXPORT static WebLocalFrame* create(WebTreeScopeType, WebFrameClient*);
 
     // Returns the WebFrame associated with the current V8 context. This
     // function can return 0 if the context is associated with a Document that
@@ -57,8 +60,26 @@ public:
     virtual WebDevToolsAgent* devToolsAgent() = 0;
 
     // Navigation Ping --------------------------------------------------------
-    virtual void sendPings(const WebNode& linkNode, const WebURL& destinationURL) = 0;
+    virtual void sendPings(const WebNode& contextNode, const WebURL& destinationURL) = 0;
 
+    // Navigation ----------------------------------------------------------
+
+    // Returns a WebURLRequest corresponding to the load of the WebHistoryItem.
+    virtual WebURLRequest requestFromHistoryItem(const WebHistoryItem&, WebURLRequest::CachePolicy)
+        const = 0;
+
+    // Returns a WebURLRequest corresponding to the reload of the current
+    // HistoryItem.
+    virtual WebURLRequest requestForReload(WebFrameLoadType,
+        const WebURL& overrideURL = WebURL()) const = 0;
+
+    // Load the given URL. For history navigations, a valid WebHistoryItem
+    // should be given, as well as a WebHistoryLoadType.
+    // TODO(clamy): Remove the reload, reloadWithOverrideURL, loadHistoryItem
+    // loadRequest functions in WebFrame once RenderFrame only calls loadRequest.
+    virtual void load(const WebURLRequest&, WebFrameLoadType = WebFrameLoadType::Standard,
+        const WebHistoryItem& = WebHistoryItem(),
+        WebHistoryLoadType = WebHistoryDifferentDocumentLoad) = 0;
 
     // Navigation State -------------------------------------------------------
 
@@ -74,12 +95,6 @@ public:
     // in this frame. Used to propagate state when this frame has navigated
     // cross process.
     virtual void setCommittedFirstRealLoad() = 0;
-
-
-    // Navigation Transitions -------------------------------------------------
-    virtual void addStyleSheetByURL(const WebString& url) = 0;
-    virtual void navigateToSandboxedMarkup(const WebData& markup) = 0;
-
 
     // Orientation Changes ----------------------------------------------------
 
@@ -134,17 +149,25 @@ public:
     // |cancel| to true.
     virtual void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) = 0;
 
-    // Old version of the above function missing |requestId|.
-    // TODO(benwells): remove this once the above is rolled into chrome.
-    virtual void willShowInstallBannerPrompt(const WebVector<WebString>& platforms, WebAppBannerPromptReply*) = 0;
-
     // Image reload -----------------------------------------------------------
 
     // If the provided node is an image, reload the image bypassing the cache.
     virtual void reloadImage(const WebNode&) = 0;
+
+    // Testing ----------------------------------------------------------------
+
+    // Registers a test interface factory. Takes ownership of the factory.
+    virtual void registerTestInterface(const WebString& name, WebTestInterfaceFactory*) = 0;
+
+    // Iframe sandbox ---------------------------------------------------------
+
+    // Returns the effective sandbox flags which are inherited from their parent frame.
+    virtual WebSandboxFlags effectiveSandboxFlags() const = 0;
+
+protected:
+    explicit WebLocalFrame(WebTreeScopeType scope) : WebFrame(scope) { }
 };
 
 } // namespace blink
 
 #endif // WebLocalFrame_h
-

@@ -34,15 +34,13 @@ class WebServiceWorkerProviderImpl
   virtual void registerServiceWorker(const blink::WebURL& pattern,
                                      const blink::WebURL& script_url,
                                      WebServiceWorkerRegistrationCallbacks*);
-
-  virtual void unregisterServiceWorker(
-      const blink::WebURL& pattern,
-      WebServiceWorkerUnregistrationCallbacks*);
-
   virtual void getRegistration(const blink::WebURL& document_url,
                                WebServiceWorkerGetRegistrationCallbacks*);
+  virtual void getRegistrations(WebServiceWorkerGetRegistrationsCallbacks*);
   virtual void getRegistrationForReady(
       WebServiceWorkerGetRegistrationForReadyCallbacks*);
+
+  int provider_id() const;
 
  private:
   void RemoveProviderClient();

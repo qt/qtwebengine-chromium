@@ -13,7 +13,6 @@
 #include "storage/browser/fileapi/file_observers.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
 #include "storage/browser/fileapi/file_system_context.h"
-#include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/fileapi/file_writer_delegate.h"
 
 namespace storage {
@@ -87,6 +86,7 @@ OperationID FileSystemOperationRunner::Copy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
     CopyOrMoveOption option,
+    ErrorBehavior error_behavior,
     const CopyProgressCallback& progress_callback,
     const StatusCallback& callback) {
   base::File::Error error = base::File::FILE_OK;
@@ -100,14 +100,13 @@ OperationID FileSystemOperationRunner::Copy(
   }
   PrepareForWrite(handle.id, dest_url);
   PrepareForRead(handle.id, src_url);
-  operation->Copy(
-      src_url, dest_url, option,
-      progress_callback.is_null() ?
-          CopyProgressCallback() :
-          base::Bind(&FileSystemOperationRunner::OnCopyProgress, AsWeakPtr(),
-                     handle, progress_callback),
-      base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
-                 handle, callback));
+  operation->Copy(src_url, dest_url, option, error_behavior,
+                  progress_callback.is_null()
+                      ? CopyProgressCallback()
+                      : base::Bind(&FileSystemOperationRunner::OnCopyProgress,
+                                   AsWeakPtr(), handle, progress_callback),
+                  base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
+                             handle, callback));
   return handle.id;
 }
 
@@ -633,7 +632,7 @@ void FileSystemOperationRunner::PrepareForWrite(OperationID id,
                                                 const FileSystemURL& url) {
   if (file_system_context_->GetUpdateObservers(url.type())) {
     file_system_context_->GetUpdateObservers(url.type())->Notify(
-        &FileUpdateObserver::OnStartUpdate, MakeTuple(url));
+        &FileUpdateObserver::OnStartUpdate, base::MakeTuple(url));
   }
   write_target_urls_[id].insert(url);
 }
@@ -642,7 +641,7 @@ void FileSystemOperationRunner::PrepareForRead(OperationID id,
                                                const FileSystemURL& url) {
   if (file_system_context_->GetAccessObservers(url.type())) {
     file_system_context_->GetAccessObservers(url.type())->Notify(
-        &FileAccessObserver::OnAccess, MakeTuple(url));
+        &FileAccessObserver::OnAccess, base::MakeTuple(url));
   }
 }
 
@@ -664,7 +663,7 @@ void FileSystemOperationRunner::FinishOperation(OperationID id) {
         iter != urls.end(); ++iter) {
       if (file_system_context_->GetUpdateObservers(iter->type())) {
         file_system_context_->GetUpdateObservers(iter->type())->Notify(
-            &FileUpdateObserver::OnEndUpdate, MakeTuple(*iter));
+            &FileUpdateObserver::OnEndUpdate, base::MakeTuple(*iter));
       }
     }
     write_target_urls_.erase(found);

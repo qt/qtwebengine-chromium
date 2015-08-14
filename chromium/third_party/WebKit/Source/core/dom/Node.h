@@ -26,6 +26,7 @@
 #define Node_h
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/SimulatedClickOptions.h"
@@ -34,7 +35,7 @@
 #include "core/dom/TreeShared.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/events/EventTarget.h"
-#include "core/inspector/InspectorCounters.h"
+#include "core/inspector/InstanceCounters.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/heap/Handle.h"
@@ -73,6 +74,7 @@ class PlatformGestureEvent;
 class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 class PlatformWheelEvent;
+class PointerEvent;
 class QualifiedName;
 class RadioNodeList;
 class RegisteredEventListener;
@@ -126,7 +128,9 @@ WILL_NOT_BE_EAGERLY_TRACED_CLASS(Node);
 #endif
 
 class CORE_EXPORT Node : NODE_BASE_CLASSES {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(TreeShared<Node>);
+#if !ENABLE(OILPAN)
+    DEFINE_EVENT_TARGET_REFCOUNTING(TreeShared<Node>);
+#endif
     DEFINE_WRAPPERTYPEINFO();
     friend class TreeScope;
     friend class TreeScopeAdopter;
@@ -170,12 +174,12 @@ public:
     GC_PLUGIN_IGNORE("crbug.com/443854")
     void* operator new(size_t size)
     {
-        return allocateObject(size);
+        return allocateObject(size, false);
     }
-    static void* allocateObject(size_t size)
+    static void* allocateObject(size_t size, bool isEager)
     {
         ThreadState* state = ThreadStateFor<ThreadingTrait<Node>::Affinity>::state();
-        return Heap::allocateOnHeapIndex(state, size, NodeHeapIndex, GCInfoTrait<EventTarget>::index());
+        return Heap::allocateOnHeapIndex(state, size, isEager ? ThreadState::EagerSweepHeapIndex : ThreadState::NodeHeapIndex, GCInfoTrait<EventTarget>::index());
     }
 #else // !ENABLE(OILPAN)
     // All Nodes are placed in their own heap partition for security.
@@ -186,7 +190,7 @@ public:
 
     static void dumpStatistics();
 
-    virtual ~Node();
+    ~Node() override;
 
     // DOM methods & attributes for Node
 
@@ -206,6 +210,11 @@ public:
     Node* firstChild() const;
     Node* lastChild() const;
 
+    void prepend(const HeapVector<NodeOrString>&, ExceptionState&);
+    void append(const HeapVector<NodeOrString>&, ExceptionState&);
+    void before(const HeapVector<NodeOrString>&, ExceptionState&);
+    void after(const HeapVector<NodeOrString>&, ExceptionState&);
+    void replaceWith(const HeapVector<NodeOrString>&, ExceptionState&);
     void remove(ExceptionState&);
 
     Node* pseudoAwareNextSibling() const;
@@ -313,29 +322,13 @@ public:
     ContainerNode* nonShadowBoundaryParentNode() const;
 
     // Returns the enclosing event parent Element (or self) that, when clicked, would trigger a navigation.
-    Element* enclosingLinkEventParentOrSelf();
+    Element* enclosingLinkEventParentOrSelf() const;
 
     // These low-level calls give the caller responsibility for maintaining the integrity of the tree.
     void setPreviousSibling(Node* previous) { m_previous = previous; }
     void setNextSibling(Node* next) { m_next = next; }
 
     virtual bool canContainRangeEndPoint() const { return false; }
-
-    // FIXME: These two functions belong in editing -- "atomic node" is an editing concept.
-    Node* previousNodeConsideringAtomicNodes() const;
-    Node* nextNodeConsideringAtomicNodes() const;
-
-    // Returns the next leaf node or nullptr if there are no more.
-    // Delivers leaf nodes as if the whole DOM tree were a linear chain of its leaf nodes.
-    // Uses an editing-specific concept of what a leaf node is, and should probably be moved
-    // out of the Node class into an editing-specific source file.
-    Node* nextLeafNode() const;
-
-    // Returns the previous leaf node or nullptr if there are no more.
-    // Delivers leaf nodes as if the whole DOM tree were a linear chain of its leaf nodes.
-    // Uses an editing-specific concept of what a leaf node is, and should probably be moved
-    // out of the Node class into an editing-specific source file.
-    Node* previousLeafNode() const;
 
     bool isRootEditableElement() const;
     Element* rootEditableElement() const;
@@ -358,8 +351,8 @@ public:
     bool active() const { return isUserActionElement() && isUserActionElementActive(); }
     bool inActiveChain() const { return isUserActionElement() && isUserActionElementInActiveChain(); }
     bool hovered() const { return isUserActionElement() && isUserActionElementHovered(); }
-    // Note: As a shadow host whose tabStop=false may become focused state when an inner element
-    // gets focused in its shadow, in that case more than one elements in a document can return
+    // Note: As a shadow host whose root with delegatesFocus=false may become focused state when
+    // an inner element gets focused, in that case more than one elements in a document can return
     // true for |focused()|.  Use Element::isFocusedElementInDocument() or Document::focusedElement()
     // to check which element is exactly focused.
     bool focused() const { return isUserActionElement() && isUserActionElementFocused(); }
@@ -462,11 +455,12 @@ public:
     // Returns true if the node has a non-empty bounding box in layout.
     // This does not 100% guarantee the user can see it, but is pretty close.
     // Note: This method only works properly after layout has occurred.
+    // DEPRECATED: Use Element::hasNonEmptyLayoutSize() instead.
     bool hasNonEmptyBoundingBox() const;
 
     unsigned nodeIndex() const;
 
-    // Returns the DOM ownerDocument attribute. This method never returns NULL, except in the case
+    // Returns the DOM ownerDocument attribute. This method never returns null, except in the case
     // of a Document node.
     Document* ownerDocument() const;
 
@@ -517,7 +511,7 @@ public:
 
     // As layoutObject() includes a branch you should avoid calling it repeatedly in hot code paths.
     // Note that if a Node has a layoutObject, it's parentNode is guaranteed to have one as well.
-    LayoutObject* layoutObject() const { return hasRareData() ? m_data.m_rareData->layoutObject() : m_data.m_layoutObject; };
+    LayoutObject* layoutObject() const { return hasRareData() ? m_data.m_rareData->layoutObject() : m_data.m_layoutObject; }
     void setLayoutObject(LayoutObject* layoutObject)
     {
         if (hasRareData())
@@ -545,10 +539,6 @@ public:
     // Detaches the node from the layout tree, making it invisible in the rendered view. This method will remove
     // the node's layout object from the layout tree and delete it.
     virtual void detach(const AttachContext& = AttachContext());
-
-#if ENABLE(ASSERT)
-    bool inDetach() const;
-#endif
 
     void reattach(const AttachContext& = AttachContext());
     void lazyReattachIfAttached();
@@ -624,14 +614,14 @@ public:
 
     unsigned short compareDocumentPosition(const Node*, ShadowTreesTreatment = TreatShadowTreesAsDisconnected) const;
 
-    virtual Node* toNode() override final;
+    Node* toNode() final;
 
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override final;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const final;
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    virtual void removeAllEventListeners() override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    void removeAllEventListeners() override;
     void removeAllEventListenersRecursively();
 
     // Handlers to do/undo actions on the target node before an event is dispatched to it and after the event
@@ -640,7 +630,7 @@ public:
     virtual void postDispatchEventHandler(Event*, void* /*dataFromPreDispatch*/) { }
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     void dispatchScopedEvent(PassRefPtrWillBeRawPtr<Event>);
     void dispatchScopedEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator>);
@@ -655,6 +645,7 @@ public:
     bool dispatchMouseEvent(const PlatformMouseEvent&, const AtomicString& eventType, int clickCount = 0, Node* relatedTarget = nullptr);
     bool dispatchGestureEvent(const PlatformGestureEvent&);
     bool dispatchTouchEvent(PassRefPtrWillBeRawPtr<TouchEvent>);
+    bool dispatchPointerEvent(PassRefPtrWillBeRawPtr<PointerEvent>);
 
     void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents);
 
@@ -664,8 +655,8 @@ public:
     virtual void defaultEventHandler(Event*);
     virtual void willCallDefaultEventHandler(const Event&);
 
-    virtual EventTargetData* eventTargetData() override;
-    virtual EventTargetData& ensureEventTargetData() override;
+    EventTargetData* eventTargetData() override;
+    EventTargetData& ensureEventTargetData() override;
 
     void getRegisteredMutationObserversOfType(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
     void registerMutationObserver(MutationObserver&, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
@@ -690,8 +681,8 @@ public:
 
     unsigned lengthOfContents() const;
 
-    virtual v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override;
-    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override;
+    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override;
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override WARN_UNUSED_RETURN;
 
 private:
     enum NodeFlags {
@@ -739,7 +730,7 @@ private:
         HasEventTargetDataFlag = 1 << 26,
         AlreadySpellCheckedFlag = 1 << 27,
 
-        DefaultNodeFlags = IsFinishedParsingChildrenFlag | ChildNeedsStyleRecalcFlag | NeedsReattachStyleChange
+        DefaultNodeFlags = IsFinishedParsingChildrenFlag | NeedsReattachStyleChange
     };
 
     // 3 bits remaining.
@@ -753,7 +744,7 @@ protected:
     enum ConstructionType {
         CreateOther = DefaultNodeFlags,
         CreateText = DefaultNodeFlags | IsTextFlag,
-        CreateContainer = DefaultNodeFlags | IsContainerFlag,
+        CreateContainer = DefaultNodeFlags | ChildNeedsStyleRecalcFlag | IsContainerFlag,
         CreateElement = CreateContainer | IsElementFlag,
         CreateShadowRoot = CreateContainer | IsDocumentFragmentFlag | IsInShadowTreeFlag,
         CreateDocumentFragment = CreateContainer | IsDocumentFragmentFlag,

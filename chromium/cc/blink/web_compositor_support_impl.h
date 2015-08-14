@@ -6,7 +6,6 @@
 #define CC_BLINK_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebCompositorAnimationCurve.h"
 #include "third_party/WebKit/public/platform/WebCompositorSupport.h"
@@ -45,9 +44,7 @@ class CC_BLINK_EXPORT WebCompositorSupportImpl
   virtual blink::WebCompositorAnimation* createAnimation(
       const blink::WebCompositorAnimationCurve& curve,
       blink::WebCompositorAnimation::TargetProperty target,
-#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
       int group_id,
-#endif
       int animation_id);
   virtual blink::WebFilterAnimationCurve* createFilterAnimationCurve();
   virtual blink::WebFloatAnimationCurve* createFloatAnimationCurve();
@@ -59,6 +56,10 @@ class CC_BLINK_EXPORT WebCompositorSupportImpl
   virtual blink::WebTransformAnimationCurve* createTransformAnimationCurve();
   virtual blink::WebTransformOperations* createTransformOperations();
   virtual blink::WebFilterOperations* createFilterOperations();
+  virtual blink::WebDisplayItemList* createDisplayItemList();
+
+  virtual blink::WebCompositorAnimationPlayer* createAnimationPlayer();
+  virtual blink::WebCompositorAnimationTimeline* createAnimationTimeline();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WebCompositorSupportImpl);

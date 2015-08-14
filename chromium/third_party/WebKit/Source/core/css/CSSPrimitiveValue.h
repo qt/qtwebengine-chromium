@@ -106,12 +106,11 @@ public:
         CSS_DPI = 31,
         CSS_DPCM = 32,
         CSS_FR = 33,
+        CSS_INTEGER = 34,
         CSS_PAIR = 100,
-        CSS_UNICODE_RANGE = 102,
         CSS_TURN = 107,
         CSS_REMS = 108,
         CSS_CHS = 109,
-        CSS_COUNTER_NAME = 110,
         CSS_SHAPE = 111,
         CSS_QUAD = 112,
         CSS_CALC = 113,
@@ -119,7 +118,8 @@ public:
         CSS_CALC_PERCENTAGE_WITH_LENGTH = 115,
         CSS_STRING = 116,
         CSS_PROPERTY_ID = 117,
-        CSS_VALUE_ID = 118
+        CSS_VALUE_ID = 118,
+        CSS_QEM = 119
     };
 
     enum LengthUnitType {
@@ -170,6 +170,7 @@ public:
     }
     bool isAttr() const { return m_primitiveUnitType == CSS_ATTR; }
     bool isCounter() const { return m_primitiveUnitType == CSS_COUNTER; }
+    bool isCustomIdent() const { return m_primitiveUnitType == CSS_CUSTOM_IDENT; }
     bool isFontRelativeLength() const
     {
         return m_primitiveUnitType == CSS_EMS
@@ -184,13 +185,13 @@ public:
         return (type >= CSS_EMS && type <= CSS_PC) || type == CSS_REMS || type == CSS_CHS || isViewportPercentageLength(type);
     }
     bool isLength() const { return isLength(primitiveType()); }
-    bool isNumber() const { return primitiveType() == CSS_NUMBER; }
+    bool isNumber() const { return primitiveType() == CSS_NUMBER || primitiveType() == CSS_INTEGER; }
     bool isPercentage() const { return primitiveType() == CSS_PERCENTAGE; }
     bool isPx() const { return primitiveType() == CSS_PX; }
     bool isRect() const { return m_primitiveUnitType == CSS_RECT; }
     bool isRGBColor() const { return m_primitiveUnitType == CSS_RGBCOLOR; }
     bool isShape() const { return m_primitiveUnitType == CSS_SHAPE; }
-    bool isString() const { return m_primitiveUnitType == CSS_CUSTOM_IDENT || m_primitiveUnitType == CSS_STRING; }
+    bool isString() const { return m_primitiveUnitType == CSS_STRING; }
     bool isTime() const { return m_primitiveUnitType == CSS_S || m_primitiveUnitType == CSS_MS; }
     bool isURI() const { return m_primitiveUnitType == CSS_URI; }
     bool isCalculated() const { return m_primitiveUnitType == CSS_CALC; }

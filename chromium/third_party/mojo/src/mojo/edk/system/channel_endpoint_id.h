@@ -12,8 +12,8 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "mojo/edk/system/system_impl_export.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace system {
@@ -81,8 +81,9 @@ static_assert(sizeof(ChannelEndpointId) == sizeof(uint32_t),
               "ChannelEndpointId has incorrect size");
 
 // So logging macros and |DCHECK_EQ()|, etc. work.
-inline std::ostream& operator<<(std::ostream& out,
-                                const ChannelEndpointId& channel_endpoint_id) {
+MOJO_SYSTEM_IMPL_EXPORT inline std::ostream& operator<<(
+    std::ostream& out,
+    const ChannelEndpointId& channel_endpoint_id) {
   return out << channel_endpoint_id.value();
 }
 
@@ -103,7 +104,7 @@ class MOJO_SYSTEM_IMPL_EXPORT LocalChannelEndpointIdGenerator {
 
   ChannelEndpointId next_;
 
-  DISALLOW_COPY_AND_ASSIGN(LocalChannelEndpointIdGenerator);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(LocalChannelEndpointIdGenerator);
 };
 
 // RemoteChannelEndpointIdGenerator --------------------------------------------
@@ -123,7 +124,7 @@ class MOJO_SYSTEM_IMPL_EXPORT RemoteChannelEndpointIdGenerator {
 
   ChannelEndpointId next_;
 
-  DISALLOW_COPY_AND_ASSIGN(RemoteChannelEndpointIdGenerator);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(RemoteChannelEndpointIdGenerator);
 };
 
 }  // namespace system

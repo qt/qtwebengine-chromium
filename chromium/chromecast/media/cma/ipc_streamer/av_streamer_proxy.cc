@@ -6,7 +6,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "chromecast/media/cma/base/coded_frame_provider.h"
 #include "chromecast/media/cma/base/decoder_buffer_base.h"
 #include "chromecast/media/cma/ipc/media_memory_chunk.h"
@@ -55,7 +56,8 @@ void AvStreamerProxy::Start() {
 }
 
 void AvStreamerProxy::StopAndFlush(const base::Closure& done_cb) {
-  is_running_ = false;
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(!done_cb.is_null());
 
   pending_av_data_ = false;
   pending_audio_config_ = ::media::AudioDecoderConfig();
@@ -63,7 +65,27 @@ void AvStreamerProxy::StopAndFlush(const base::Closure& done_cb) {
   pending_buffer_ = scoped_refptr<DecoderBufferBase>();
 
   pending_read_ = false;
-  frame_provider_->Flush(done_cb);
+  is_running_ = false;
+
+  // If there's another pending Flush, for example, the pipeline is stopped
+  // while another seek is pending, then we don't need to call Flush again. Save
+  // the callback and fire it later when Flush is done.
+  pending_stop_flush_cb_list_.push_back(done_cb);
+  if (pending_stop_flush_cb_list_.size() == 1) {
+    frame_provider_->Flush(
+        base::Bind(&AvStreamerProxy::OnStopAndFlushDone, weak_this_));
+  }
+}
+
+void AvStreamerProxy::OnStopAndFlushDone() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  // Flush is done. Fire all the "flush done" callbacks in order. This is
+  // necessary to guarantee proper state transition in pipeline.
+  for (const auto& cb : pending_stop_flush_cb_list_) {
+    cb.Run();
+  }
+  pending_stop_flush_cb_list_.clear();
 }
 
 void AvStreamerProxy::OnFifoReadEvent() {
@@ -128,7 +150,7 @@ void AvStreamerProxy::ProcessPendingData() {
   }
 
   pending_av_data_ = false;
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&AvStreamerProxy::RequestBufferIfNeeded, weak_this_));
 }

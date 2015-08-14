@@ -4,13 +4,18 @@
 
 #include "content/common/gpu/image_transport_surface_calayer_mac.h"
 
+#include <IOSurface/IOSurface.h>
 #include <OpenGL/CGLRenderers.h>
+#include <OpenGL/CGLIOSurface.h>
 
 #include "base/command_line.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "base/trace_event/trace_event.h"
+#include "gpu/config/gpu_info_collector.h"
 #include "ui/accelerated_widget_mac/surface_handle_types.h"
 #include "ui/base/cocoa/animation_utils.h"
+#include "ui/base/ui_base_switches.h"
+#include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_switches.h"
@@ -21,28 +26,137 @@ const size_t kFramesToKeepCAContextAfterDiscard = 2;
 const size_t kCanDrawFalsesBeforeSwitchFromAsync = 4;
 const base::TimeDelta kMinDeltaToSwitchToAsync =
     base::TimeDelta::FromSecondsD(1. / 15.);
+
+bool CanUseIOSurface() {
+  // Respect command line flags for the API's usage.
+  static bool forced_at_command_line =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kForceNSCGLSurfaceApi);
+  if (forced_at_command_line)
+    return true;
+  static bool disabled_at_command_line =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableNSCGLSurfaceApi);
+  if (disabled_at_command_line)
+    return false;
+
+  // This has hit a number of bugs. Let's not ship it.
+  // http://crbug.com/507090
+  // http://crbug.com/513024
+  // http://crbug.com/515252
+  return false;
 }
 
-@interface ImageTransportLayer : CAOpenGLLayer {
+}  // namespace
+
+// Private IOSurface API.
+@interface IOSurface : NSObject
+- (void)flushRect:(CGRect)rect;
+- (void)attachToCGLContext:(CGLContextObj)cglContext;
+- (id)initWithSize:(CGSize)size
+        colorSpace:(CGColorSpaceRef)colorSpace
+            atomic:(BOOL)atomic;
+@property(readonly) CGImageRef image;
+@property(readonly) id layerContents;
+@end
+
+// Private CALayer API.
+@interface CALayer (Private)
+- (void)setContentsChanged;
+- (void)_didCommitLayer:(CATransaction*)transaction;
+@end
+
+@interface ImageTransportCAOpenGLLayer : CAOpenGLLayer {
   content::CALayerStorageProvider* storageProvider_;
   base::Closure didDrawCallback_;
+
+  // Used to determine if we should use setNeedsDisplay or setAsynchronous to
+  // animate. If the last swap time happened very recently, then
+  // setAsynchronous is used (which allows smooth animation, but comes with the
+  // penalty of the canDrawInCGLContext function waking up the process every
+  // vsync).
+  base::TimeTicks lastSynchronousSwapTime_;
+
+  // A counter that is incremented whenever LayerCanDraw returns false. If this
+  // reaches a threshold, then |layer_| is switched to synchronous drawing to
+  // save CPU work.
+  uint32 canDrawReturnedFalseCount_;
+
+  gfx::Size pixelSize_;
 }
-- (id)initWithStorageProvider:(content::CALayerStorageProvider*)storageProvider;
+
+- (id)initWithStorageProvider:(content::CALayerStorageProvider*)storageProvider
+                    pixelSize:(gfx::Size)pixelSize
+                  scaleFactor:(float)scaleFactor;
+- (void)requestDrawNewFrame;
+- (void)drawPendingFrameImmediately;
 - (void)resetStorageProvider;
 @end
 
-@implementation ImageTransportLayer
+@interface ImageTransportIOSurface : CALayer {
+  content::CALayerStorageProvider* storageProvider_;
+  base::ScopedTypeRef<CGLContextObj> cglContext_;
+  base::ScopedCFTypeRef<IOSurfaceRef> ioSurface_;
+  GLuint glTexture_;
+  GLuint glFbo_;
+  gfx::Size pixelSize_;
+}
+
+- (id)initWithStorageProvider:(content::CALayerStorageProvider*)storageProvider
+                    pixelSize:(gfx::Size)pixelSize
+                  scaleFactor:(float)scaleFactor;
+- (BOOL)drawNewFrame:(gfx::Rect)dirtyRect;
+- (void)resetStorageProvider;
+@end
+
+@implementation ImageTransportCAOpenGLLayer
 
 - (id)initWithStorageProvider:
-    (content::CALayerStorageProvider*)storageProvider {
-  if (self = [super init])
+    (content::CALayerStorageProvider*)storageProvider
+                    pixelSize:(gfx::Size)pixelSize
+                  scaleFactor:(float)scaleFactor {
+  if (self = [super init]) {
+    gfx::Size dipSize = gfx::ConvertSizeToDIP(scaleFactor, pixelSize);
+    [self setContentsScale:scaleFactor];
+    [self setFrame:CGRectMake(0, 0, dipSize.width(), dipSize.height())];
     storageProvider_ = storageProvider;
+    pixelSize_ = pixelSize;
+  }
   return self;
 }
 
+- (void)requestDrawNewFrame {
+  // This tracing would be more natural to do with a pseudo-thread for each
+  // layer, rather than a counter.
+  // http://crbug.com/366300
+  // A trace value of 2 indicates that there is a pending swap ack. See
+  // canDrawInCGLContext for other value meanings.
+  TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", self, 2);
+
+  if (![self isAsynchronous]) {
+    // Switch to asynchronous drawing only if we get two frames in rapid
+    // succession.
+    base::TimeTicks this_swap_time = base::TimeTicks::Now();
+    base::TimeDelta delta = this_swap_time - lastSynchronousSwapTime_;
+    if (delta <= kMinDeltaToSwitchToAsync) {
+      lastSynchronousSwapTime_ = base::TimeTicks();
+      [self setAsynchronous:YES];
+    } else {
+      lastSynchronousSwapTime_ = this_swap_time;
+      [self setNeedsDisplay];
+    }
+  }
+}
+
+- (void)drawPendingFrameImmediately {
+  DCHECK(storageProvider_->LayerHasPendingDraw());
+  if ([self isAsynchronous])
+    [self setAsynchronous:NO];
+  [self setNeedsDisplay];
+  [self displayIfNeeded];
+}
+
 - (void)resetStorageProvider {
-  if (storageProvider_)
-    storageProvider_->LayerResetStorageProvider();
   storageProvider_ = NULL;
 }
 
@@ -56,17 +170,50 @@ const base::TimeDelta kMinDeltaToSwitchToAsync =
 - (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
   if (!storageProvider_)
     return NULL;
-  didDrawCallback_ = storageProvider_->LayerShareGroupContextDirtiedCallback();
-  return CGLRetainContext(storageProvider_->LayerShareGroupContext());
+  CGLContextObj context = NULL;
+  CGLError error = CGLCreateContext(
+      pixelFormat, storageProvider_->LayerShareGroupContext(), &context);
+  if (error != kCGLNoError)
+    LOG(ERROR) << "CGLCreateContext failed with CGL error: " << error;
+  return context;
 }
 
 - (BOOL)canDrawInCGLContext:(CGLContextObj)glContext
                 pixelFormat:(CGLPixelFormatObj)pixelFormat
                forLayerTime:(CFTimeInterval)timeInterval
                 displayTime:(const CVTimeStamp*)timeStamp {
+  TRACE_EVENT0("gpu", "CALayerStorageProvider::LayerCanDraw");
+
   if (!storageProvider_)
     return NO;
-  return storageProvider_->LayerCanDraw();
+
+  if (storageProvider_->LayerHasPendingDraw()) {
+    // If there is a draw pending then increase the signal from 2 to 3, to
+    // indicate that there is a swap pending, and CoreAnimation has asked to
+    // draw it.
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", self, 3);
+
+    canDrawReturnedFalseCount_ = 0;
+    return YES;
+  } else {
+    // If there is not a draw pending, then give an instantaneous blip up from
+    // 0 to 1, indicating that CoreAnimation was ready to draw a frame but we
+    // were not (or didn't have new content to draw).
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", self, 1);
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", self, 0);
+
+    if ([self isAsynchronous]) {
+      // If we are in asynchronous mode, we will be getting callbacks at every
+      // vsync, asking us if we have anything to draw. If we get many of these
+      // in a row, ask that we stop getting these callback for now, so that we
+      // don't waste CPU cycles.
+      if (canDrawReturnedFalseCount_ >= kCanDrawFalsesBeforeSwitchFromAsync)
+        [self setAsynchronous:NO];
+      else
+        canDrawReturnedFalseCount_ += 1;
+    }
+    return NO;
+  }
 }
 
 - (void)drawInCGLContext:(CGLContextObj)glContext
@@ -78,7 +225,10 @@ const base::TimeDelta kMinDeltaToSwitchToAsync =
   gfx::ScopedSetGLToRealGLApi scoped_set_gl_api;
 
   if (storageProvider_) {
-    storageProvider_->LayerDoDraw();
+    storageProvider_->LayerDoDraw(gfx::Rect(pixelSize_), false);
+    storageProvider_->LayerUnblockBrowserIfNeeded();
+    // A trace value of 0 indicates that there is no longer a pending swap ack.
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", self, 0);
   } else {
     glClearColor(1, 1, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -87,10 +237,162 @@ const base::TimeDelta kMinDeltaToSwitchToAsync =
               pixelFormat:pixelFormat
              forLayerTime:timeInterval
               displayTime:timeStamp];
+}
 
+@end
 
-  DCHECK(!didDrawCallback_.is_null());
-  didDrawCallback_.Run();
+@implementation ImageTransportIOSurface
+
+- (id)initWithStorageProvider:
+    (content::CALayerStorageProvider*)storageProvider
+                    pixelSize:(gfx::Size)pixelSize
+                  scaleFactor:(float)scaleFactor {
+  if (self = [super init]) {
+    ScopedCAActionDisabler disabler;
+    pixelSize_ = pixelSize;
+    gfx::Size dipSize = gfx::ConvertSizeToDIP(scaleFactor, pixelSize);
+    [self setContentsScale:scaleFactor];
+    [self setFrame:CGRectMake(0, 0, dipSize.width(), dipSize.height())];
+    storageProvider_ = storageProvider;
+
+    // Create a context in the share group of the storage provider. We will
+    // draw content using this context.
+    CGLError cglError = kCGLNoError;
+    cglError = CGLCreateContext(
+        CGLGetPixelFormat(storageProvider_->LayerShareGroupContext()),
+        storageProvider_->LayerShareGroupContext(),
+        cglContext_.InitializeInto());
+    LOG_IF(ERROR, cglError != kCGLNoError) <<
+        "Failed to create CGL context for IOSurface.";
+
+    // Create the IOSurface to set as the CALayer's contents.
+    uint32_t ioSurfacePixelFormat = 'BGRA';
+    NSDictionary* properties = @{
+        static_cast<NSString*>(kIOSurfaceWidth) : @(pixelSize.width()),
+        static_cast<NSString*>(kIOSurfaceHeight) : @(pixelSize.height()),
+        static_cast<NSString*>(kIOSurfacePixelFormat) : @(ioSurfacePixelFormat),
+        static_cast<NSString*>(kIOSurfaceBytesPerElement) : @(4),
+    };
+    ioSurface_.reset(IOSurfaceCreate(static_cast<CFDictionaryRef>(properties)));
+    if (!ioSurface_) {
+      LOG(ERROR) << "Failed to allocate IOSurface";
+      [self release];
+      return nil;
+    }
+    // Create a framebuffer view of the IOSurface.
+    {
+      gfx::ScopedCGLSetCurrentContext scopedSetCurrentContext(cglContext_);
+      gfx::ScopedSetGLToRealGLApi scopedSetRealGLApi;
+      bool gl_init_failed = false;
+
+      glGenTextures(1, &glTexture_);
+      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, glTexture_);
+      CGLError cglError = CGLTexImageIOSurface2D(
+          cglContext_,
+          GL_TEXTURE_RECTANGLE_ARB,
+          GL_RGBA,
+          pixelSize.width(),
+          pixelSize.height(),
+          GL_BGRA,
+          GL_UNSIGNED_INT_8_8_8_8_REV,
+          ioSurface_,
+          0);
+      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
+      if (cglError != kCGLNoError) {
+        DLOG(ERROR) << "CGLTexImageIOSurface2D failed with CGL error: "
+                    << cglError;
+        gl_init_failed = true;
+      }
+      glGenFramebuffersEXT(1, &glFbo_);
+      glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, glFbo_);
+      glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                                GL_COLOR_ATTACHMENT0_EXT,
+                                GL_TEXTURE_RECTANGLE_ARB,
+                                glTexture_,
+                                0);
+      GLenum fboStatus = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+      glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+      if (fboStatus != GL_FRAMEBUFFER_COMPLETE_EXT) {
+        DLOG(ERROR) << "Framebuffer was incomplete: " << fboStatus;
+        gl_init_failed = true;
+      }
+
+      // If initialization failed, ensure that the partially initialized GL
+      // objects do not leak into the sharegroup.
+      if (gl_init_failed) {
+        if (glTexture_)
+          glDeleteTextures(1, &glTexture_);
+        if (glFbo_)
+          glDeleteFramebuffersEXT(1, &glFbo_);
+        [self release];
+        return nil;
+      }
+    }
+  }
+  return self;
+}
+
+- (void)_didCommitLayer:(CATransaction*)transaction {
+  if (storageProvider_)
+    storageProvider_->LayerUnblockBrowserIfNeeded();
+  [super _didCommitLayer:transaction];
+}
+
+- (BOOL)drawNewFrame:(gfx::Rect)dirtyRect {
+  // Draw the first frame to the layer as covering the full layer. Subsequent
+  // frames may use partial damage.
+  if (![self contents])
+    dirtyRect = gfx::Rect(pixelSize_);
+
+  // Make the context current to the thread, make the surface be the current
+  // drawable for the context, and draw.
+  BOOL framebuffer_was_complete = YES;
+  {
+    gfx::ScopedCGLSetCurrentContext scopedSetCurrentContext(cglContext_);
+    gfx::ScopedSetGLToRealGLApi scopedSetRealGLApi;
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, glFbo_);
+
+    // Another silent failure mechanism for the IOSurface API is to provide
+    // a backbuffer that is not framebuffer complete.
+    GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+    if (status == GL_FRAMEBUFFER_COMPLETE_EXT) {
+      glViewport(0, 0, pixelSize_.width(), pixelSize_.height());
+      storageProvider_->LayerDoDraw(dirtyRect, true);
+      framebuffer_was_complete = YES;
+    } else {
+      framebuffer_was_complete = NO;
+    }
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+    glFlush();
+  }
+  if (!framebuffer_was_complete)
+    return NO;
+
+  if (![self contents]) {
+    // The first time we draw, set the layer contents and the CAContext's layer
+    {
+      ScopedCAActionDisabler disabler;
+      [self setContents:(id)ioSurface_.get()];
+    }
+    [storageProvider_->LayerCAContext() setLayer:self];
+  } else {
+    // For subsequent draws, just indicate that the layer contents has changed.
+    // This has lower power usage than calling -[CALayer setContents:].
+    [self setContentsChanged];
+  }
+
+  return YES;
+}
+
+- (void)resetStorageProvider {
+  {
+    gfx::ScopedCGLSetCurrentContext scopedSetCurrentContext(cglContext_);
+    gfx::ScopedSetGLToRealGLApi scopedSetRealGLApi;
+    glDeleteTextures(1, &glTexture_);
+    glDeleteFramebuffersEXT(1, &glFbo_);
+    glBegin(GL_TRIANGLES);
+    glEnd();
+  }
 }
 
 @end
@@ -103,8 +405,7 @@ CALayerStorageProvider::CALayerStorageProvider(
       gpu_vsync_disabled_(base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuVsync)),
       throttling_disabled_(false),
-      has_pending_draw_(false),
-      can_draw_returned_false_count_(0),
+      has_pending_ack_(false),
       fbo_texture_(0),
       fbo_scale_factor_(1),
       program_(0),
@@ -211,21 +512,33 @@ bool CALayerStorageProvider::AllocateColorBufferStorage(
         0, 0, 0, 1,
       };
       glGenBuffersARB(1, &vertex_buffer_);
+      // If the allocation path used GLContext::RestoreStateIfDirtiedExternally
+      // as the draw path does, this manual state restoration would not be
+      // necessary.
+      GLint bound_buffer = 0;
+      glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &bound_buffer);
       glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
       glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_data),
                    vertex_data, GL_STATIC_DRAW);
-      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      glBindBuffer(GL_ARRAY_BUFFER, bound_buffer);
     }
     if (!vertex_array_) {
+      // If the allocation path used GLContext::RestoreStateIfDirtiedExternally
+      // as the draw path does, this manual state restoration would not be
+      // necessary.
+      GLint bound_vao = 0;
+      glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES, &bound_vao);
       glGenVertexArraysOES(1, &vertex_array_);
       glBindVertexArrayOES(vertex_array_);
       {
         glEnableVertexAttribArray(position_location_);
+        GLint bound_buffer = 0;
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &bound_buffer);
         glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
         glVertexAttribPointer(position_location_, 4, GL_FLOAT, GL_FALSE, 0, 0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindBuffer(GL_ARRAY_BUFFER, bound_buffer);
       }
-      glBindVertexArrayOES(0);
+      glBindVertexArrayOES(bound_vao);
     }
   } else {
     glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,
@@ -281,14 +594,12 @@ void CALayerStorageProvider::FreeColorBufferStorage() {
 
   // Note that |context_| still holds a reference to |layer_|, and will until
   // a new frame is swapped in.
-  [layer_ resetStorageProvider];
-  layer_.reset();
+  ResetLayer();
 
   share_group_context_.reset();
   share_group_context_dirtied_callback_ = base::Closure();
   fbo_texture_ = 0;
   fbo_pixel_size_ = gfx::Size();
-  can_draw_returned_false_count_ = 0;
 }
 
 void CALayerStorageProvider::FrameSizeChanged(const gfx::Size& pixel_size,
@@ -297,26 +608,21 @@ void CALayerStorageProvider::FrameSizeChanged(const gfx::Size& pixel_size,
   DCHECK_EQ(fbo_scale_factor_, scale_factor);
 }
 
-void CALayerStorageProvider::SwapBuffers() {
+void CALayerStorageProvider::SwapBuffers(const gfx::Rect& dirty_rect) {
   TRACE_EVENT0("gpu", "CALayerStorageProvider::SwapBuffers");
-  DCHECK(!has_pending_draw_);
-
-  // A trace value of 2 indicates that there is a pending swap ack. See
-  // LayerCanDraw for other value meanings.
-  TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 2);
+  DCHECK(!has_pending_ack_);
 
   // Recreate the CALayer on the new GPU if a GPU switch has occurred. Note
   // that the CAContext will retain a reference to the old CALayer until the
   // call to -[CAContext setLayer:] replaces the old CALayer with the new one.
   if (recreate_layer_after_gpu_switch_) {
-    [layer_ resetStorageProvider];
-    layer_.reset();
+    ResetLayer();
     recreate_layer_after_gpu_switch_ = false;
   }
 
-  // Set the pending draw flag only after destroying the old layer (otherwise
-  // destroying it will un-set the flag).
-  has_pending_draw_ = true;
+  // Set the pending draw flag only after potentially destroying the old layer
+  // (otherwise destroying it will un-set the flag).
+  has_pending_ack_ = true;
 
   // Allocate a CAContext to use to transport the CALayer to the browser
   // process, if needed.
@@ -328,62 +634,75 @@ void CALayerStorageProvider::SwapBuffers() {
     [context_ retain];
   }
 
-  // Allocate a CALayer to use to draw the content and make it current to the
-  // CAContext, if needed.
-  if (!layer_) {
-    layer_.reset([[ImageTransportLayer alloc] initWithStorageProvider:this]);
-    gfx::Size dip_size(gfx::ToFlooredSize(gfx::ScaleSize(
-        fbo_pixel_size_, 1.0f / fbo_scale_factor_)));
-    [layer_ setContentsScale:fbo_scale_factor_];
-    [layer_ setFrame:CGRectMake(0, 0, dip_size.width(), dip_size.height())];
+  // Create the appropriate CALayer (if needed) and request that it draw.
+  bool should_draw_immediately = gpu_vsync_disabled_ || throttling_disabled_;
+  CreateLayerAndRequestDraw(should_draw_immediately, dirty_rect);
 
-    [context_ setLayer:layer_];
-  }
-
-  // Replacing the CAContext's CALayer will sometimes results in an immediate
-  // draw.
-  if (!has_pending_draw_)
-    return;
-
-  // Tell CoreAnimation to draw our frame.
-  if (gpu_vsync_disabled_ || throttling_disabled_) {
-    DrawImmediatelyAndUnblockBrowser();
-  } else {
-    if (![layer_ isAsynchronous]) {
-      // Switch to asynchronous drawing only if we get two frames in rapid
-      // succession.
-      base::TimeTicks this_swap_time = base::TimeTicks::Now();
-      base::TimeDelta delta = this_swap_time - last_synchronous_swap_time_;
-      if (delta <= kMinDeltaToSwitchToAsync) {
-        last_synchronous_swap_time_ = base::TimeTicks();
-        [layer_ setAsynchronous:YES];
-      } else {
-        last_synchronous_swap_time_ = this_swap_time;
-        [layer_ setNeedsDisplay];
-      }
-    }
-
-    // If CoreAnimation doesn't end up drawing our frame, un-block the browser
-    // after a timeout of 1/6th of a second has passed.
+  // CoreAnimation may not call the function to un-block the browser in a
+  // timely manner (or ever). Post a task to force the draw and un-block
+  // the browser (at the next cycle through the run-loop if drawing is to
+  // be immediate, and at a timeout of 1/6th of a second otherwise).
+  if (has_pending_ack_) {
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&CALayerStorageProvider::DrawImmediatelyAndUnblockBrowser,
                    pending_draw_weak_factory_.GetWeakPtr()),
-        base::TimeDelta::FromSeconds(1) / 6);
+        should_draw_immediately ? base::TimeDelta() :
+                                  base::TimeDelta::FromSeconds(1) / 6);
+  }
+}
+
+void CALayerStorageProvider::CreateLayerAndRequestDraw(
+    bool should_draw_immediately, const gfx::Rect& dirty_rect) {
+  // Use the IOSurface API unless it is explicitly disabled.
+  if (CanUseIOSurface()) {
+    if (!io_surface_layer_) {
+      io_surface_layer_.reset([[ImageTransportIOSurface alloc]
+          initWithStorageProvider:this
+                        pixelSize:fbo_pixel_size_
+                      scaleFactor:fbo_scale_factor_]);
+    }
+    if (io_surface_layer_ && [io_surface_layer_ drawNewFrame:dirty_rect])
+      return;
+
+    // If the draw fails, destroy everything and try again next frame. The
+    // likely cause for this is video memory stress.
+    LOG(ERROR) << "Failed to allocate or draw IOSurface layer, "
+               << "page will be blank";
+    ResetLayer();
+  } else {
+    if (!ca_opengl_layer_) {
+      ca_opengl_layer_.reset([[ImageTransportCAOpenGLLayer alloc]
+          initWithStorageProvider:this
+                        pixelSize:fbo_pixel_size_
+                      scaleFactor:fbo_scale_factor_]);
+    }
+
+    // -[CAOpenGLLayer drawInCGLContext] won't get called until we're in the
+    // visible layer hierarchy, so call setLayer: immediately, to make this
+    // happen.
+    [context_ setLayer:ca_opengl_layer_];
+
+    // Tell CoreAnimation to draw our frame. Note that sometimes, calling
+    // -[CAContext setLayer:] will result in the layer getting an immediate
+    // draw. If that happend, we're done.
+    if (!should_draw_immediately && has_pending_ack_) {
+      [ca_opengl_layer_ requestDrawNewFrame];
+    }
   }
 }
 
 void CALayerStorageProvider::DrawImmediatelyAndUnblockBrowser() {
-  CHECK(has_pending_draw_);
-  if ([layer_ isAsynchronous])
-    [layer_ setAsynchronous:NO];
-  [layer_ setNeedsDisplay];
-  [layer_ displayIfNeeded];
+  DCHECK(has_pending_ack_);
 
-  // Sometimes, the setNeedsDisplay+displayIfNeeded pairs have no effect. This
-  // can happen if the NSView that this layer is attached to isn't in the
-  // window hierarchy (e.g, tab capture of a backgrounded tab). In this case,
-  // the frame will never be seen, so drop it.
+  if (ca_opengl_layer_) {
+    // Beware that sometimes, the setNeedsDisplay+displayIfNeeded pairs have no
+    // effect. This can happen if the NSView that this layer is attached to
+    // isn't in the window hierarchy (e.g, tab capture of a backgrounded tab).
+    // In this case, the frame will never be seen, so drop it.
+    [ca_opengl_layer_ drawPendingFrameImmediately];
+  }
+
   UnblockBrowserIfNeeded();
 }
 
@@ -393,7 +712,7 @@ void CALayerStorageProvider::WillWriteToBackbuffer() {
   // like context lost, or changing context, this will not be true. If there
   // exists a pending draw, flush it immediately to maintain a consistent
   // state.
-  if (has_pending_draw_)
+  if (has_pending_ack_)
     DrawImmediatelyAndUnblockBrowser();
 }
 
@@ -402,8 +721,7 @@ void CALayerStorageProvider::DiscardBackbuffer() {
   // been made non-visible. Ensure that the previous contents are not briefly
   // flashed when this is made visible by creating a new CALayer and CAContext
   // at the next swap.
-  [layer_ resetStorageProvider];
-  layer_.reset();
+  ResetLayer();
 
   // If we remove all references to the CAContext in this process, it will be
   // blanked-out in the browser process (even if the browser process is inside
@@ -436,48 +754,12 @@ base::Closure CALayerStorageProvider::LayerShareGroupContextDirtiedCallback() {
   return share_group_context_dirtied_callback_;
 }
 
-bool CALayerStorageProvider::LayerCanDraw() {
-  TRACE_EVENT0("gpu", "CALayerStorageProvider::LayerCanDraw");
-
-  // This tracing would be more natural to do with a pseudo-thread for each
-  // layer, rather than a counter.
-  // http://crbug.com/366300
-  if (has_pending_draw_) {
-    // If there is a draw pending then increase the signal from 2 to 3, to
-    // indicate that there is a swap pending, and CoreAnimation has asked to
-    // draw it.
-    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 3);
-  } else {
-    // If there is not a draw pending, then give an instantaneous blip up from
-    // 0 to 1, indicating that CoreAnimation was ready to draw a frame but we
-    // were not (or didn't have new content to draw).
-    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 1);
-    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 0);
-  }
-
-  if (has_pending_draw_) {
-    can_draw_returned_false_count_ = 0;
-    return true;
-  } else {
-    if ([layer_ isAsynchronous]) {
-      DCHECK(!gpu_vsync_disabled_);
-      // If we are in asynchronous mode, we will be getting callbacks at every
-      // vsync, asking us if we have anything to draw. If we get many of these
-      // in a row, ask that we stop getting these callback for now, so that we
-      // don't waste CPU cycles.
-      if (can_draw_returned_false_count_ >= kCanDrawFalsesBeforeSwitchFromAsync)
-        [layer_ setAsynchronous:NO];
-      else
-        can_draw_returned_false_count_ += 1;
-    }
-    return false;
-  }
-}
-
-void CALayerStorageProvider::LayerDoDraw() {
+void CALayerStorageProvider::LayerDoDraw(
+    const gfx::Rect& dirty_rect, bool flipped) {
   TRACE_EVENT0("gpu", "CALayerStorageProvider::LayerDoDraw");
   if (gfx::GetGLImplementation() ==
       gfx::kGLImplementationDesktopGLCoreProfile) {
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(1, 0, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_BLEND);
@@ -506,7 +788,10 @@ void CALayerStorageProvider::LayerDoDraw() {
     // Set the coordinate system to be one-to-one with pixels.
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, viewport_size.width(), 0, viewport_size.height(), -1, 1);
+    if (flipped)
+      glOrtho(0, viewport_size.width(), viewport_size.height(), 0, -1, 1);
+    else
+      glOrtho(0, viewport_size.width(), 0, viewport_size.height(), -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -517,23 +802,24 @@ void CALayerStorageProvider::LayerDoDraw() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glColor4f(1, 1, 1, 1);
     glActiveTexture(GL_TEXTURE0);
     glEnable(GL_TEXTURE_RECTANGLE_ARB);
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, fbo_texture_);
     glBegin(GL_QUADS);
     {
-      glTexCoord2f(0, 0);
-      glVertex2f(0, 0);
+      glTexCoord2f(dirty_rect.x(), dirty_rect.y());
+      glVertex2f(dirty_rect.x(), dirty_rect.y());
 
-      glTexCoord2f(0, fbo_pixel_size_.height());
-      glVertex2f(0, fbo_pixel_size_.height());
+      glTexCoord2f(dirty_rect.x(), dirty_rect.bottom());
+      glVertex2f(dirty_rect.x(), dirty_rect.bottom());
 
-      glTexCoord2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
-      glVertex2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
+      glTexCoord2f(dirty_rect.right(), dirty_rect.bottom());
+      glVertex2f(dirty_rect.right(), dirty_rect.bottom());
 
-      glTexCoord2f(fbo_pixel_size_.width(), 0);
-      glVertex2f(fbo_pixel_size_.width(), 0);
+      glTexCoord2f(dirty_rect.right(), dirty_rect.y());
+      glVertex2f(dirty_rect.right(), dirty_rect.y());
     }
     glEnd();
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
@@ -552,15 +838,14 @@ void CALayerStorageProvider::LayerDoDraw() {
   while ((error = glGetError()) != GL_NO_ERROR) {
     LOG(ERROR) << "OpenGL error hit while drawing frame: " << error;
   }
+}
 
-  // Allow forward progress in the context now that the swap is complete.
+void CALayerStorageProvider::LayerUnblockBrowserIfNeeded() {
   UnblockBrowserIfNeeded();
 }
 
-void CALayerStorageProvider::LayerResetStorageProvider() {
-  // If we are providing back-pressure by waiting for a draw, that draw will
-  // now never come, so release the pressure now.
-  UnblockBrowserIfNeeded();
+bool CALayerStorageProvider::LayerHasPendingDraw() const {
+  return has_pending_ack_;
 }
 
 void CALayerStorageProvider::OnGpuSwitched() {
@@ -568,17 +853,30 @@ void CALayerStorageProvider::OnGpuSwitched() {
 }
 
 void CALayerStorageProvider::UnblockBrowserIfNeeded() {
-  if (!has_pending_draw_)
+  if (!has_pending_ack_)
     return;
   pending_draw_weak_factory_.InvalidateWeakPtrs();
-  has_pending_draw_ = false;
+  has_pending_ack_ = false;
   transport_surface_->SendSwapBuffers(
       ui::SurfaceHandleFromCAContextID([context_ contextId]),
       fbo_pixel_size_,
       fbo_scale_factor_);
+}
 
-  // A trace value of 0 indicates that there is no longer a pending swap ack.
-  TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 0);
+void CALayerStorageProvider::ResetLayer() {
+  if (ca_opengl_layer_) {
+    [ca_opengl_layer_ resetStorageProvider];
+    // If we are providing back-pressure by waiting for a draw, that draw will
+    // now never come, so release the pressure now.
+    UnblockBrowserIfNeeded();
+    ca_opengl_layer_.reset();
+  }
+  if (io_surface_layer_) {
+    [io_surface_layer_ resetStorageProvider];
+
+    io_surface_layer_.reset();
+    return;
+  }
 }
 
 }  //  namespace content

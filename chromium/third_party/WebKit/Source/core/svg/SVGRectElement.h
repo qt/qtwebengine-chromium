@@ -34,6 +34,8 @@ class SVGRectElement final : public SVGGeometryElement {
 public:
     DECLARE_NODE_FACTORY(SVGRectElement);
 
+    Path asPath() const override;
+
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
     SVGAnimatedLength* width() const { return m_width.get(); }
@@ -46,14 +48,14 @@ public:
 private:
     explicit SVGRectElement(Document&);
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
-    virtual void svgAttributeChanged(const QualifiedName&) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const override;
+    bool selfHasRelativeLengths() const override;
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_x;
     RefPtrWillBeMember<SVGAnimatedLength> m_y;

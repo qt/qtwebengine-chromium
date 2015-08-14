@@ -38,7 +38,9 @@ class CC_EXPORT OneCopyTileTaskWorkerPool : public TileTaskWorkerPool,
       TaskGraphRunner* task_graph_runner,
       ContextProvider* context_provider,
       ResourceProvider* resource_provider,
-      ResourcePool* resource_pool);
+      ResourcePool* resource_pool,
+      int max_copy_texture_chromium_size,
+      bool have_persistent_gpu_memory_buffers);
 
   // Overridden from TileTaskWorkerPool:
   TileTaskRunner* AsTileTaskRunner() override;
@@ -48,47 +50,62 @@ class CC_EXPORT OneCopyTileTaskWorkerPool : public TileTaskWorkerPool,
   void Shutdown() override;
   void ScheduleTasks(TileTaskQueue* queue) override;
   void CheckForCompletedTasks() override;
-  ResourceFormat GetResourceFormat() override;
+  ResourceFormat GetResourceFormat() const override;
+  bool GetResourceRequiresSwizzle() const override;
 
   // Overridden from TileTaskClient:
   scoped_ptr<RasterBuffer> AcquireBufferForRaster(
-      const Resource* resource) override;
+      const Resource* resource,
+      uint64_t resource_content_id,
+      uint64_t previous_content_id) override;
   void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) override;
 
-  // Playback raster source and schedule copy of |src| resource to |dst|
-  // resource. Returns a non-zero sequence number for this copy operation.
+  // Playback raster source and schedule copy of |raster_resource| resource to
+  // |output_resource|. Returns a non-zero sequence number for this copy
+  // operation.
   CopySequenceNumber PlaybackAndScheduleCopyOnWorkerThread(
-      scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer> write_lock,
-      scoped_ptr<ScopedResource> src,
-      const Resource* dst,
+      bool reusing_raster_resource,
+      scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer>
+          raster_resource_write_lock,
+      const Resource* raster_resource,
+      const Resource* output_resource,
       const RasterSource* raster_source,
-      const gfx::Rect& rect,
+      const gfx::Rect& raster_full_rect,
+      const gfx::Rect& raster_dirty_rect,
       float scale);
 
   // Issues copy operations until |sequence| has been processed. This will
   // return immediately if |sequence| has already been processed.
   void AdvanceLastIssuedCopyTo(CopySequenceNumber sequence);
 
+  bool have_persistent_gpu_memory_buffers() const {
+    return have_persistent_gpu_memory_buffers_;
+  }
+
  protected:
   OneCopyTileTaskWorkerPool(base::SequencedTaskRunner* task_runner,
                             TaskGraphRunner* task_graph_runner,
                             ContextProvider* context_provider,
                             ResourceProvider* resource_provider,
-                            ResourcePool* resource_pool);
+                            ResourcePool* resource_pool,
+                            int max_copy_texture_chromium_size,
+                            bool have_persistent_gpu_memory_buffers);
 
  private:
   struct CopyOperation {
     typedef ScopedPtrDeque<CopyOperation> Deque;
 
-    CopyOperation(
-        scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer> write_lock,
-        scoped_ptr<ScopedResource> src,
-        const Resource* dst);
+    CopyOperation(scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer>
+                      src_write_lock,
+                  const Resource* src,
+                  const Resource* dst,
+                  const gfx::Rect& rect);
     ~CopyOperation();
 
-    scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer> write_lock;
-    scoped_ptr<ScopedResource> src;
+    scoped_ptr<ResourceProvider::ScopedWriteLockGpuMemoryBuffer> src_write_lock;
+    const Resource* src;
     const Resource* dst;
+    const gfx::Rect rect;
   };
 
   void OnTaskSetFinished(TaskSet task_set);
@@ -109,6 +126,8 @@ class CC_EXPORT OneCopyTileTaskWorkerPool : public TileTaskWorkerPool,
   ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;
   ResourcePool* resource_pool_;
+  const int max_bytes_per_copy_operation_;
+  const bool have_persistent_gpu_memory_buffers_;
   TaskSetCollection tasks_pending_;
   scoped_refptr<TileTask> task_set_finished_tasks_[kNumberOfTaskSets];
   CopySequenceNumber last_issued_copy_operation_;
@@ -122,7 +141,7 @@ class CC_EXPORT OneCopyTileTaskWorkerPool : public TileTaskWorkerPool,
   base::Lock lock_;
   // |lock_| must be acquired when accessing the following members.
   base::ConditionVariable copy_operation_count_cv_;
-  size_t scheduled_copy_operation_count_;
+  int bytes_scheduled_since_last_flush_;
   size_t issued_copy_operation_count_;
   CopyOperation::Deque pending_copy_operations_;
   CopySequenceNumber next_copy_operation_sequence_;

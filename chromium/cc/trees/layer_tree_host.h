@@ -21,6 +21,7 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/frame_timing_tracker.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
@@ -37,6 +38,7 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "cc/trees/mutator_host_client.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/swap_promise_monitor.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -48,14 +50,13 @@ class GpuMemoryBufferManager;
 
 namespace cc {
 class AnimationRegistrar;
+class AnimationHost;
 class BeginFrameSource;
 class HeadsUpDisplayLayer;
 class Layer;
 class LayerTreeHostImpl;
 class LayerTreeHostImplClient;
 class LayerTreeHostSingleThreadClient;
-class PrioritizedResource;
-class PrioritizedResourceManager;
 class PropertyTrees;
 class Region;
 class RenderingStatsInstrumentation;
@@ -69,7 +70,7 @@ struct PendingPageScaleAnimation;
 struct RenderingStats;
 struct ScrollAndScaleSet;
 
-class CC_EXPORT LayerTreeHost {
+class CC_EXPORT LayerTreeHost : public MutatorHostClient {
  public:
   // TODO(sad): InitParams should be a movable type so that it can be
   // std::move()d to the Create* functions.
@@ -120,8 +121,7 @@ class CC_EXPORT LayerTreeHost {
   bool output_surface_lost() const { return output_surface_lost_; }
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
-  void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
-  bool UpdateLayers(ResourceUpdateQueue* queue);
+  bool UpdateLayers();
 
   // Called when the compositor completed page scale animation.
   void DidCompletePageScaleAnimation();
@@ -133,6 +133,7 @@ class CC_EXPORT LayerTreeHost {
 
   void NotifyInputThrottledUntilCommit();
 
+  void LayoutAndUpdateLayers();
   void Composite(base::TimeTicks frame_begin_time);
 
   void FinishAllRendering();
@@ -140,6 +141,14 @@ class CC_EXPORT LayerTreeHost {
   void SetDeferCommits(bool defer_commits);
 
   int source_frame_number() const { return source_frame_number_; }
+
+  int meta_information_sequence_number() {
+    return meta_information_sequence_number_;
+  }
+
+  void IncrementMetaInformationSequenceNumber() {
+    meta_information_sequence_number_++;
+  }
 
   void SetNeedsDisplayOnAllLayers();
 
@@ -218,10 +227,6 @@ class CC_EXPORT LayerTreeHost {
     has_transparent_background_ = transparent;
   }
 
-  PrioritizedResourceManager* contents_texture_manager() const {
-    return contents_texture_manager_.get();
-  }
-
   void SetVisible(bool visible);
   bool visible() const { return visible_; }
 
@@ -241,10 +246,6 @@ class CC_EXPORT LayerTreeHost {
 
   void RateLimit();
 
-  bool AlwaysUsePartialTextureUpdates();
-  size_t MaxPartialTextureUpdates() const;
-  bool RequestPartialTextureUpdate();
-
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
 
@@ -255,10 +256,10 @@ class CC_EXPORT LayerTreeHost {
   HeadsUpDisplayLayer* hud_layer() const { return hud_layer_.get(); }
 
   Proxy* proxy() const { return proxy_.get(); }
-
   AnimationRegistrar* animation_registrar() const {
     return animation_registrar_.get();
   }
+  AnimationHost* animation_host() const { return animation_host_.get(); }
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
@@ -315,11 +316,41 @@ class CC_EXPORT LayerTreeHost {
     return needs_meta_info_recomputation_;
   }
 
-  // If this is true, only property trees will be used for main thread CDP.
-  // CDP will not be run, and verify_property_trees will be ignored.
-  bool using_only_property_trees() const {
-    return settings().impl_side_painting;
-  }
+  void RecordFrameTimingEvents(
+      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events);
+
+  Layer* LayerById(int id) const;
+  void RegisterLayer(Layer* layer);
+  void UnregisterLayer(Layer* layer);
+  // LayerTreeMutatorsClient implementation.
+  bool IsLayerInTree(int layer_id, LayerTreeType tree_type) const override;
+  void SetMutatorsNeedCommit() override;
+  void SetLayerFilterMutated(int layer_id,
+                             LayerTreeType tree_type,
+                             const FilterOperations& filters) override;
+  void SetLayerOpacityMutated(int layer_id,
+                              LayerTreeType tree_type,
+                              float opacity) override;
+  void SetLayerTransformMutated(int layer_id,
+                                LayerTreeType tree_type,
+                                const gfx::Transform& transform) override;
+  void SetLayerScrollOffsetMutated(
+      int layer_id,
+      LayerTreeType tree_type,
+      const gfx::ScrollOffset& scroll_offset) override;
+  void ScrollOffsetAnimationFinished() override {}
+  gfx::ScrollOffset GetScrollOffsetForAnimation(int layer_id) const override;
+
+  bool ScrollOffsetAnimationWasInterrupted(const Layer* layer) const;
+  bool IsAnimatingFilterProperty(const Layer* layer) const;
+  bool IsAnimatingOpacityProperty(const Layer* layer) const;
+  bool IsAnimatingTransformProperty(const Layer* layer) const;
+  bool HasPotentiallyRunningOpacityAnimation(const Layer* layer) const;
+  bool HasPotentiallyRunningTransformAnimation(const Layer* layer) const;
+  bool AnimationsPreserveAxisAlignment(const Layer* layer) const;
+  bool HasAnyAnimation(const Layer* layer) const;
+  bool HasActiveAnimation(const Layer* layer) const;
 
  protected:
   explicit LayerTreeHost(InitParams* params);
@@ -349,30 +380,15 @@ class CC_EXPORT LayerTreeHost {
 
   MicroBenchmarkController micro_benchmark_controller_;
 
+  void OnCommitForSwapPromises();
+
  private:
   void InitializeProxy(scoped_ptr<Proxy> proxy);
 
-  void PaintLayerContents(
-      const RenderSurfaceLayerList& render_surface_layer_list,
-      ResourceUpdateQueue* queue,
-      bool* did_paint_content,
-      bool* need_more_updates);
-  void PaintMasksForRenderSurface(Layer* render_surface_layer,
-                                  ResourceUpdateQueue* queue,
-                                  bool* did_paint_content,
-                                  bool* need_more_updates);
-  bool UpdateLayers(Layer* root_layer, ResourceUpdateQueue* queue);
+  bool DoUpdateLayers(Layer* root_layer);
   void UpdateHudLayer();
-  void TriggerPrepaint();
 
   void ReduceMemoryUsage();
-
-  void PrioritizeTextures(
-      const RenderSurfaceLayerList& render_surface_layer_list);
-  void SetPrioritiesForSurfaces(size_t surface_memory_bytes);
-  void SetPrioritiesForLayers(const RenderSurfaceLayerList& update_list);
-  size_t CalculateMemoryForRenderSurfaces(
-      const RenderSurfaceLayerList& update_list);
 
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
 
@@ -398,21 +414,17 @@ class CC_EXPORT LayerTreeHost {
   bool needs_full_tree_sync_;
   bool needs_meta_info_recomputation_;
 
-  base::CancelableClosure prepaint_callback_;
-
   LayerTreeHostClient* client_;
   scoped_ptr<Proxy> proxy_;
 
   int source_frame_number_;
+  int meta_information_sequence_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
   bool output_surface_lost_;
 
   scoped_refptr<Layer> root_layer_;
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
-
-  scoped_ptr<PrioritizedResourceManager> contents_texture_manager_;
-  scoped_ptr<PrioritizedResource> surface_memory_placeholder_;
 
   base::WeakPtr<InputHandler> input_handler_weak_ptr_;
   base::WeakPtr<TopControlsManager> top_controls_manager_weak_ptr_;
@@ -441,10 +453,8 @@ class CC_EXPORT LayerTreeHost {
   SkColor background_color_;
   bool has_transparent_background_;
 
-  typedef ScopedPtrVector<PrioritizedResource> TextureList;
-  size_t partial_texture_update_requests_;
-
   scoped_ptr<AnimationRegistrar> animation_registrar_;
+  scoped_ptr<AnimationHost> animation_host_;
 
   scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
 
@@ -472,6 +482,9 @@ class CC_EXPORT LayerTreeHost {
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
 
   PropertyTrees property_trees_;
+
+  typedef base::hash_map<int, Layer*> LayerIdMap;
+  LayerIdMap layer_id_map_;
 
   uint32_t surface_id_namespace_;
   uint32_t next_surface_sequence_;

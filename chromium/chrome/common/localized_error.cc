@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -33,12 +34,6 @@
 #include "chrome/common/chrome_switches.h"
 #endif
 
-#if defined(ENABLE_EXTENSIONS)
-#include "extensions/common/constants.h"
-#include "extensions/common/extension_icon_set.h"
-#include "extensions/common/manifest_handlers/icons_handler.h"
-#endif
-
 using blink::WebURLError;
 
 // Some error pages have no details.
@@ -47,15 +42,15 @@ const unsigned int kErrorPagesNoDetails = 0;
 namespace {
 
 static const char kRedirectLoopLearnMoreUrl[] =
-    "https://www.google.com/support/chrome/bin/answer.py?answer=95626";
+    "https://support.google.com/chrome/answer/95626";
 static const char kWeakDHKeyLearnMoreUrl[] =
-    "http://sites.google.com/a/chromium.org/dev/"
+    "https://www.chromium.org/administrators/"
     "err_ssl_weak_server_ephemeral_dh_key";
-#if defined(OS_CHROMEOS)
-static const char kAppWarningLearnMoreUrl[] =
-    "chrome-extension://honijodknafkokifofgiaalefdiedpko/main.html"
-    "?answer=1721911";
-#endif  // defined(OS_CHROMEOS)
+static const char kCachedCopyButtonFieldTrial[] =
+    "EnableGoogleCachedCopyTextExperiment";
+static const char kCachedCopyButtonExpTypeControl[] = "control";
+static const char kCachedCopyButtonExpTypeCopy[] = "copy";
+static const int kGoogleCachedCopySuggestionType = 0;
 
 enum NAV_SUGGESTIONS {
   SUGGEST_NONE                  = 0,
@@ -254,13 +249,6 @@ const LocalizedErrorMap net_error_options[] = {
    IDS_ERRORPAGES_HEADING_SSL_PROTOCOL_ERROR,
    IDS_ERRORPAGES_SUMMARY_SSL_PROTOCOL_ERROR,
    IDS_ERRORPAGES_DETAILS_SSL_PROTOCOL_ERROR,
-   SUGGEST_NONE,
-  },
-  {net::ERR_SSL_UNSAFE_NEGOTIATION,
-   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
-   IDS_ERRORPAGES_HEADING_SSL_PROTOCOL_ERROR,
-   IDS_ERRORPAGES_SUMMARY_SSL_PROTOCOL_ERROR,
-   IDS_ERRORPAGES_DETAILS_SSL_UNSAFE_NEGOTIATION,
    SUGGEST_NONE,
   },
   {net::ERR_BAD_SSL_CLIENT_AUTH_CERT,
@@ -671,6 +659,7 @@ void LocalizedError::GetStrings(int error_code,
   } else {
     suggestions = params->override_suggestions.release();
     use_default_suggestions = false;
+    EnableGoogleCachedCopyButtonExperiment(suggestions, error_strings);
   }
 
   error_strings->Set("suggestions", suggestions);
@@ -886,44 +875,49 @@ bool LocalizedError::HasStrings(const std::string& error_domain,
   return LookupErrorMap(error_domain, error_code, /*is_post=*/false) != NULL;
 }
 
-#if defined(ENABLE_EXTENSIONS)
-void LocalizedError::GetAppErrorStrings(
-    const GURL& display_url,
-    const extensions::Extension* app,
-    const std::string& locale,
+void LocalizedError::EnableGoogleCachedCopyButtonExperiment(
+    base::ListValue* suggestions,
     base::DictionaryValue* error_strings) {
-  DCHECK(app);
+  std::string field_trial_exp_type_ =
+      base::FieldTrialList::FindFullName(kCachedCopyButtonFieldTrial);
 
-  webui::SetLoadTimeDataDefaults(locale, error_strings);
+  // If the first suggestion is for a Google cache copy. Promote the
+  // suggestion to a separate set of strings for displaying as a button.
+  if (!suggestions->empty() && !field_trial_exp_type_.empty() &&
+      field_trial_exp_type_ != kCachedCopyButtonExpTypeControl) {
+    base::DictionaryValue* suggestion;
+    suggestions->GetDictionary(0, &suggestion);
+    int type = -1;
+    suggestion->GetInteger("type", &type);
 
-  base::string16 failed_url(base::ASCIIToUTF16(display_url.spec()));
-  // URLs are always LTR.
-  if (base::i18n::IsRTL())
-    base::i18n::WrapStringWithLTRFormatting(&failed_url);
-  error_strings->SetString(
-     "url", l10n_util::GetStringFUTF16(IDS_ERRORPAGES_TITLE_NOT_AVAILABLE,
-                                       failed_url.c_str()));
+    if (type == kGoogleCachedCopySuggestionType) {
+      base::string16 cache_url;
+      suggestion->GetString("urlCorrection", &cache_url);
+      int cache_tracking_id = -1;
+      suggestion->GetInteger("trackingId", &cache_tracking_id);
 
-  error_strings->SetString("title", app->name());
-  error_strings->SetString(
-      "icon",
-      extensions::IconsInfo::GetIconURL(
-          app,
-          extension_misc::EXTENSION_ICON_GIGANTOR,
-          ExtensionIconSet::MATCH_SMALLER).spec());
-  error_strings->SetString("name", app->name());
-  error_strings->SetString(
-      "msg",
-      l10n_util::GetStringUTF16(IDS_ERRORPAGES_APP_WARNING));
+      scoped_ptr<base::DictionaryValue> cache_button(new base::DictionaryValue);
 
-#if defined(OS_CHROMEOS)
-  GURL learn_more_url(kAppWarningLearnMoreUrl);
-  base::DictionaryValue* suggest_learn_more = new base::DictionaryValue();
-  suggest_learn_more->SetString("msg",
-                                l10n_util::GetStringUTF16(
-                                    IDS_ERRORPAGES_SUGGESTION_LEARNMORE_BODY));
-  suggest_learn_more->SetString("learnMoreUrl", learn_more_url.spec());
-  error_strings->Set("suggestionsLearnMore", suggest_learn_more);
-#endif  // defined(OS_CHROMEOS)
+      // Google cache copy button label experiment.
+      if (field_trial_exp_type_ == kCachedCopyButtonExpTypeCopy) {
+        cache_button->SetString(
+            "msg",
+            l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_SHOW_CACHED_COPY));
+        cache_button->SetBoolean("defaultLabel", false);
+      } else {
+        // Default to "Show cached page" button label.
+        cache_button->SetString(
+            "msg",
+            l10n_util::GetStringUTF16(IDS_ERRORPAGES_BUTTON_SHOW_CACHED_PAGE));
+        cache_button->SetBoolean("defaultLabel", true);
+      }
+      cache_button->SetString("cacheUrl", cache_url);
+      cache_button->SetInteger("trackingId", cache_tracking_id);
+      error_strings->Set("cacheButton", cache_button.release());
+
+      // Remove the item from suggestions dictionary so that it does not get
+      // displayed by the template in the details section.
+      suggestions->Remove(0, nullptr);
+    }
+  }
 }
-#endif

@@ -5,6 +5,7 @@
 #ifndef DEVICE_USB_USB_SERVICE_H_
 #define DEVICE_USB_USB_SERVICE_H_
 
+#include <string>
 #include <vector>
 
 #include "base/bind_helpers.h"
@@ -46,7 +47,7 @@ class UsbService : public base::NonThreadSafe {
   static UsbService* GetInstance(
       scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 
-  virtual scoped_refptr<UsbDevice> GetDeviceById(uint32 unique_id) = 0;
+  virtual scoped_refptr<UsbDevice> GetDevice(const std::string& guid) = 0;
 
   // Enumerates available devices.
   virtual void GetDevices(const GetDevicesCallback& callback) = 0;
@@ -61,7 +62,7 @@ class UsbService : public base::NonThreadSafe {
   void NotifyDeviceAdded(scoped_refptr<UsbDevice> device);
   void NotifyDeviceRemoved(scoped_refptr<UsbDevice> device);
 
-  ObserverList<Observer, true> observer_list_;
+  base::ObserverList<Observer, true> observer_list_;
 
  private:
   friend void base::DeletePointer<UsbService>(UsbService* service);

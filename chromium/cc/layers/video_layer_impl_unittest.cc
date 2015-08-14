@@ -47,7 +47,6 @@ TEST(VideoLayerImplTest, Occlusion) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   impl.CalcDrawProps(viewport_size);
@@ -64,7 +63,7 @@ TEST(VideoLayerImplTest, Occlusion) {
 
   {
     SCOPED_TRACE("Full occlusion");
-    gfx::Rect occluded(video_layer_impl->visible_content_rect());
+    gfx::Rect occluded(video_layer_impl->visible_layer_rect());
     impl.AppendQuadsWithOcclusion(video_layer_impl, occluded);
 
     LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(), gfx::Rect());
@@ -98,7 +97,6 @@ TEST(VideoLayerImplTest, OccludesOtherLayers) {
   scoped_ptr<LayerImpl> layer_impl = LayerImpl::Create(active_tree, 3);
   layer_impl->SetHasRenderSurface(true);
   layer_impl->SetBounds(layer_size);
-  layer_impl->SetContentBounds(layer_size);
   layer_impl->SetDrawsContent(true);
   const auto& draw_properties = layer_impl->draw_properties();
 
@@ -106,12 +104,13 @@ TEST(VideoLayerImplTest, OccludesOtherLayers) {
   scoped_ptr<VideoLayerImpl> video_layer_impl = VideoLayerImpl::Create(
       active_tree, 4, &provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
   video_layer_impl->SetContentsOpaque(true);
 
   layer_impl->AddChild(video_layer_impl.Pass());
   active_tree->SetRootLayer(layer_impl.Pass());
+
+  active_tree->BuildPropertyTreesForTesting();
 
   active_tree->UpdateDrawProperties(false);
 
@@ -165,7 +164,6 @@ TEST(VideoLayerImplTest, Rotated0) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   impl.CalcDrawProps(viewport_size);
@@ -176,8 +174,12 @@ TEST(VideoLayerImplTest, Rotated0) {
 
   gfx::Point3F p1(0, impl.quad_list().front()->rect.height(), 0);
   gfx::Point3F p2(impl.quad_list().front()->rect.width(), 0, 0);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p1);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p2);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p1);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p2);
   EXPECT_EQ(gfx::Point3F(0, 50, 0), p1);
   EXPECT_EQ(gfx::Point3F(100, 0, 0), p2);
 }
@@ -201,7 +203,6 @@ TEST(VideoLayerImplTest, Rotated90) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_90);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   impl.CalcDrawProps(viewport_size);
@@ -212,8 +213,12 @@ TEST(VideoLayerImplTest, Rotated90) {
 
   gfx::Point3F p1(0, impl.quad_list().front()->rect.height(), 0);
   gfx::Point3F p2(impl.quad_list().front()->rect.width(), 0, 0);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p1);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p2);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p1);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p2);
   EXPECT_EQ(gfx::Point3F(0, 0, 0), p1);
   EXPECT_EQ(gfx::Point3F(100, 50, 0), p2);
 }
@@ -237,7 +242,6 @@ TEST(VideoLayerImplTest, Rotated180) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_180);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   impl.CalcDrawProps(viewport_size);
@@ -248,8 +252,12 @@ TEST(VideoLayerImplTest, Rotated180) {
 
   gfx::Point3F p1(0, impl.quad_list().front()->rect.height(), 0);
   gfx::Point3F p2(impl.quad_list().front()->rect.width(), 0, 0);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p1);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p2);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p1);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p2);
   EXPECT_EQ(gfx::Point3F(100, 0, 0), p1);
   EXPECT_EQ(gfx::Point3F(0, 50, 0), p2);
 }
@@ -273,7 +281,6 @@ TEST(VideoLayerImplTest, Rotated270) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_270);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   impl.CalcDrawProps(viewport_size);
@@ -284,8 +291,12 @@ TEST(VideoLayerImplTest, Rotated270) {
 
   gfx::Point3F p1(0, impl.quad_list().front()->rect.height(), 0);
   gfx::Point3F p2(impl.quad_list().front()->rect.width(), 0, 0);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p1);
-  impl.quad_list().front()->quadTransform().TransformPoint(&p2);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p1);
+  impl.quad_list()
+      .front()
+      ->shared_quad_state->quad_to_target_transform.TransformPoint(&p2);
   EXPECT_EQ(gfx::Point3F(100, 50, 0), p1);
   EXPECT_EQ(gfx::Point3F(0, 0, 0), p2);
 }
@@ -313,7 +324,6 @@ TEST(VideoLayerImplTest, SoftwareVideoFrameGeneratesYUVQuad) {
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   gfx::Rect occluded;
@@ -345,14 +355,15 @@ TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
       media::VideoFrame::WrapYUV420NativeTextures(
           mailbox_holder, mailbox_holder, mailbox_holder,
           base::Bind(EmptyCallback), gfx::Size(10, 10), gfx::Rect(10, 10),
-          gfx::Size(10, 10), base::TimeDelta(), true);
+          gfx::Size(10, 10), base::TimeDelta());
+  video_frame->metadata()->SetBoolean(media::VideoFrameMetadata::ALLOW_OVERLAY,
+                                      true);
   FakeVideoFrameProvider provider;
   provider.set_frame(video_frame);
 
   VideoLayerImpl* video_layer_impl =
       impl.AddChildToRoot<VideoLayerImpl>(&provider, media::VIDEO_ROTATION_0);
   video_layer_impl->SetBounds(layer_size);
-  video_layer_impl->SetContentBounds(layer_size);
   video_layer_impl->SetDrawsContent(true);
 
   gfx::Rect occluded;

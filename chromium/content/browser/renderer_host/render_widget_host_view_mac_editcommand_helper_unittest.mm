@@ -73,6 +73,12 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
   MockRenderWidgetHostDelegate() {}
   ~MockRenderWidgetHostDelegate() override {}
+
+  private:
+   void Cut() override {}
+   void Copy() override {}
+   void Paste() override {}
+   void SelectAll() override {}
 };
 
 // Create a RenderWidget for which we can filter messages.

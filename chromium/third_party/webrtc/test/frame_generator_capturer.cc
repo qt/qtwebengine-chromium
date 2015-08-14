@@ -21,12 +21,11 @@
 namespace webrtc {
 namespace test {
 
-FrameGeneratorCapturer* FrameGeneratorCapturer::Create(
-    VideoSendStreamInput* input,
-    size_t width,
-    size_t height,
-    int target_fps,
-    Clock* clock) {
+FrameGeneratorCapturer* FrameGeneratorCapturer::Create(VideoCaptureInput* input,
+                                                       size_t width,
+                                                       size_t height,
+                                                       int target_fps,
+                                                       Clock* clock) {
   FrameGeneratorCapturer* capturer = new FrameGeneratorCapturer(
       clock, input, FrameGenerator::CreateChromaGenerator(width, height),
       target_fps);
@@ -39,7 +38,7 @@ FrameGeneratorCapturer* FrameGeneratorCapturer::Create(
 }
 
 FrameGeneratorCapturer* FrameGeneratorCapturer::CreateFromYuvFile(
-    VideoSendStreamInput* input,
+    VideoCaptureInput* input,
     const std::string& file_name,
     size_t width,
     size_t height,
@@ -59,7 +58,7 @@ FrameGeneratorCapturer* FrameGeneratorCapturer::CreateFromYuvFile(
 }
 
 FrameGeneratorCapturer::FrameGeneratorCapturer(Clock* clock,
-                                               VideoSendStreamInput* input,
+                                               VideoCaptureInput* input,
                                                FrameGenerator* frame_generator,
                                                int target_fps)
     : VideoCapturer(input),
@@ -110,7 +109,7 @@ void FrameGeneratorCapturer::InsertFrame() {
   {
     rtc::CritScope cs(&lock_);
     if (sending_) {
-      I420VideoFrame* frame = frame_generator_->NextFrame();
+      VideoFrame* frame = frame_generator_->NextFrame();
       frame->set_ntp_time_ms(clock_->CurrentNtpInMilliseconds());
       if (first_frame_capture_time_ == -1) {
         first_frame_capture_time_ = frame->ntp_time_ms();

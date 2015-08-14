@@ -423,12 +423,9 @@ class Requester : public DiscreteTimeSimulation::Actor {
 
     if (throttler_entry_->ImplGetTimeNow() - time_of_last_attempt_ >
         effective_delay) {
-      if (!throttler_entry_->ShouldRejectRequest(
-              server_->mock_request(),
-              server_->context().network_delegate())) {
+      if (!throttler_entry_->ShouldRejectRequest(server_->mock_request())) {
         int status_code = server_->HandleRequest();
-        MockURLRequestThrottlerHeaderAdapter response_headers(status_code);
-        throttler_entry_->UpdateWithResponse(std::string(), &response_headers);
+        throttler_entry_->UpdateWithResponse(status_code);
 
         if (status_code == 200) {
           if (results_)

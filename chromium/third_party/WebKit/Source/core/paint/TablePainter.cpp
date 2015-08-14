@@ -10,7 +10,6 @@
 #include "core/style/CollapsedBorderValue.h"
 #include "core/paint/BoxClipper.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
@@ -89,11 +88,13 @@ void TablePainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& pain
     if (m_layoutTable.style()->visibility() != VISIBLE || paintInfo.phase != PaintPhaseMask)
         return;
 
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTable, paintInfo.phase))
+        return;
+
     LayoutRect rect(paintOffset, m_layoutTable.size());
     m_layoutTable.subtractCaptionRect(rect);
     LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTable, paintInfo.phase, pixelSnappedIntRect(rect));
-    if (!recorder.canUseCachedDrawing())
-        BoxPainter(m_layoutTable).paintMaskImages(paintInfo, rect);
+    BoxPainter(m_layoutTable).paintMaskImages(paintInfo, rect);
 }
 
 } // namespace blink

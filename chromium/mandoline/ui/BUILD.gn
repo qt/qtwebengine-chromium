@@ -2,14 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/mojo/src/mojo/public/mojo.gni")
+import("//build/config/ui.gni")
 
 group("ui") {
   deps = [
     "browser",
   ]
-
-  if (!is_android) {
+  if (use_aura) {
     deps += [ "omnibox" ]
   }
 }

@@ -7,6 +7,7 @@
 
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/ClipPathRecorder.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
@@ -15,21 +16,26 @@
 namespace blink {
 
 class DisplayItemListTest : public ::testing::Test {
+public:
+    DisplayItemListTest()
+        : m_originalSlimmingPaintEnabled(RuntimeEnabledFeatures::slimmingPaintEnabled()) { }
+
 protected:
     DisplayItemList& displayItemList() { return m_displayItemList; }
-    const Vector<OwnPtr<DisplayItem>>& newPaintListBeforeUpdate() { return displayItemList().m_newDisplayItems; }
+    const DisplayItems& newPaintListBeforeUpdate() { return displayItemList().m_newDisplayItems; }
 
 private:
-    virtual void SetUp() override
+    void SetUp() override
     {
         RuntimeEnabledFeatures::setSlimmingPaintEnabled(true);
     }
-    virtual void TearDown() override
+    void TearDown() override
     {
-        RuntimeEnabledFeatures::setSlimmingPaintEnabled(false);
+        RuntimeEnabledFeatures::setSlimmingPaintEnabled(m_originalSlimmingPaintEnabled);
     }
 
     DisplayItemList m_displayItemList;
+    bool m_originalSlimmingPaintEnabled;
 };
 
 const DisplayItem::Type foregroundDrawingType = static_cast<DisplayItem::Type>(DisplayItem::DrawingPaintPhaseFirst + 4);
@@ -51,10 +57,10 @@ private:
 
 class TestDisplayItem : public DisplayItem {
 public:
-    TestDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
+    TestDisplayItem(const TestDisplayItemClient& client, Type type) : DisplayItem(client, type) { }
 
-    virtual void replay(GraphicsContext&) override final { ASSERT_NOT_REACHED(); }
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override final { ASSERT_NOT_REACHED(); }
+    void replay(GraphicsContext&) final { ASSERT_NOT_REACHED(); }
+    void appendToWebDisplayItemList(WebDisplayItemList*) const final { ASSERT_NOT_REACHED(); }
 };
 
 #ifndef NDEBUG
@@ -72,17 +78,17 @@ public:
             break; \
         const TestDisplayItem expected[] = { __VA_ARGS__ }; \
         for (size_t index = 0; index < std::min<size_t>(actual.size(), expectedSize); index++) { \
-            TRACE_DISPLAY_ITEMS(index, expected[index], *actual[index]); \
-            EXPECT_EQ(expected[index].client(), actual[index]->client()); \
-            EXPECT_EQ(expected[index].type(), actual[index]->type()); \
+            TRACE_DISPLAY_ITEMS(index, expected[index], *actual.elementAt(index)); \
+            EXPECT_EQ(expected[index].client(), actual.elementAt(index)->client()); \
+            EXPECT_EQ(expected[index].type(), actual.elementAt(index)->type()); \
         } \
     } while (false);
 
-void drawRect(GraphicsContext& context, const TestDisplayItemClient& client, DisplayItem::Type type, const FloatRect& bound)
+void drawRect(GraphicsContext& context, const TestDisplayItemClient& client, DisplayItem::Type type, const FloatRect& bounds)
 {
-    DrawingRecorder drawingRecorder(context, client, type, bound);
-    if (drawingRecorder.canUseCachedDrawing())
+    if (DrawingRecorder::useCachedDrawingIfPossible(context, client, type))
         return;
+    DrawingRecorder drawingRecorder(context, client, type, bounds);
     IntRect rect(0, 0, 10, 10);
     context.drawRect(rect);
 }
@@ -365,8 +371,8 @@ TEST_F(DisplayItemListTest, CachedDisplayItems)
         TestDisplayItem(second, backgroundDrawingType));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(first.displayItemClient()));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(second.displayItemClient()));
-    DisplayItem* firstDisplayItem = displayItemList().displayItems()[0].get();
-    DisplayItem* secondDisplayItem = displayItemList().displayItems()[1].get();
+    const SkPicture* firstPicture = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(0))->picture();
+    const SkPicture* secondPicture = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture();
 
     displayItemList().invalidate(first.displayItemClient());
     EXPECT_FALSE(displayItemList().clientCacheIsValid(first.displayItemClient()));
@@ -380,9 +386,9 @@ TEST_F(DisplayItemListTest, CachedDisplayItems)
         TestDisplayItem(first, backgroundDrawingType),
         TestDisplayItem(second, backgroundDrawingType));
     // The first display item should be updated.
-    EXPECT_NE(firstDisplayItem, displayItemList().displayItems()[0].get());
+    EXPECT_NE(firstPicture, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(0))->picture());
     // The second display item should be cached.
-    EXPECT_EQ(secondDisplayItem, displayItemList().displayItems()[1].get());
+    EXPECT_EQ(secondPicture, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
     EXPECT_TRUE(displayItemList().clientCacheIsValid(first.displayItemClient()));
     EXPECT_TRUE(displayItemList().clientCacheIsValid(second.displayItemClient()));
 
@@ -547,6 +553,16 @@ TEST_F(DisplayItemListTest, CachedSubtreeSwapOrder)
 }
 #endif
 
+static bool isDrawing(const DisplayItem& item)
+{
+    return DisplayItem::isDrawingType(item.type());
+}
+
+static bool isCached(const DisplayItem& item)
+{
+    return DisplayItem::isCachedType(item.type());
+}
+
 TEST_F(DisplayItemListTest, Scope)
 {
     TestDisplayItemClient multicol("multicol");
@@ -572,12 +588,13 @@ TEST_F(DisplayItemListTest, Scope)
         TestDisplayItem(multicol, backgroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    RefPtr<const SkPicture> picture1 = static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[1].get())->picture();
-    RefPtr<const SkPicture> picture2 = static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[2].get())->picture();
+    RefPtr<const SkPicture> picture1 = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture();
+    RefPtr<const SkPicture> picture2 = static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture();
     EXPECT_NE(picture1, picture2);
 
     // Draw again with nothing invalidated.
-    drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 100, 100, 100));
+    EXPECT_TRUE(displayItemList().clientCacheIsValid(multicol.displayItemClient()));
+    drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 200, 100, 100));
     displayItemList().beginScope(multicol.displayItemClient());
     drawRect(context, content, foregroundDrawingType, rect1);
     displayItemList().endScope(multicol.displayItemClient());
@@ -586,21 +603,20 @@ TEST_F(DisplayItemListTest, Scope)
     drawRect(context, content, foregroundDrawingType, rect2);
     displayItemList().endScope(multicol.displayItemClient());
 
-    EXPECT_TRUE(newPaintListBeforeUpdate()[0]->isCached());
-    EXPECT_TRUE(newPaintListBeforeUpdate()[1]->isCached());
-    EXPECT_TRUE(newPaintListBeforeUpdate()[2]->isCached());
+    EXPECT_TRUE(isCached(*newPaintListBeforeUpdate().elementAt(0)));
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(1)));
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(2)));
     displayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 3,
         TestDisplayItem(multicol, backgroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    EXPECT_EQ(picture1, static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[1].get())->picture());
-    EXPECT_EQ(picture2, static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[2].get())->picture());
+    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
+    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture());
 
     // Now the multicol becomes 3 columns and repaints.
     displayItemList().invalidate(multicol.displayItemClient());
-    displayItemList().invalidate(content.displayItemClient());
     drawRect(context, multicol, backgroundDrawingType, FloatRect(100, 100, 100, 100));
 
     displayItemList().beginScope(multicol.displayItemClient());
@@ -616,10 +632,10 @@ TEST_F(DisplayItemListTest, Scope)
     displayItemList().endScope(multicol.displayItemClient());
 
     // We should repaint everything on invalidation of the scope container.
-    EXPECT_TRUE(newPaintListBeforeUpdate()[0]->isDrawing());
-    EXPECT_TRUE(newPaintListBeforeUpdate()[1]->isDrawing());
-    EXPECT_TRUE(newPaintListBeforeUpdate()[2]->isDrawing());
-    EXPECT_TRUE(newPaintListBeforeUpdate()[3]->isDrawing());
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(0)));
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(1)));
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(2)));
+    EXPECT_TRUE(isDrawing(*newPaintListBeforeUpdate().elementAt(3)));
     displayItemList().commitNewDisplayItems();
 
     EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 4,
@@ -627,8 +643,62 @@ TEST_F(DisplayItemListTest, Scope)
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType),
         TestDisplayItem(content, foregroundDrawingType));
-    EXPECT_NE(picture1, static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[1].get())->picture());
-    EXPECT_NE(picture2, static_cast<DrawingDisplayItem*>(displayItemList().displayItems()[2].get())->picture());
+    EXPECT_NE(picture1, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(1))->picture());
+    EXPECT_NE(picture2, static_cast<const DrawingDisplayItem*>(displayItemList().displayItems().elementAt(2))->picture());
+}
+
+TEST_F(DisplayItemListTest, OptimizeNoopPairs)
+{
+    TestDisplayItemClient first("first");
+    TestDisplayItemClient second("second");
+    TestDisplayItemClient third("third");
+
+    GraphicsContext context(&displayItemList());
+    drawRect(context, first, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    {
+        ClipPathRecorder clipRecorder(context, second, Path());
+        drawRect(context, second, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    }
+    drawRect(context, third, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+
+    displayItemList().commitNewDisplayItems();
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 5,
+        TestDisplayItem(first, backgroundDrawingType),
+        TestDisplayItem(second, DisplayItem::BeginClipPath),
+        TestDisplayItem(second, backgroundDrawingType),
+        TestDisplayItem(second, DisplayItem::EndClipPath),
+        TestDisplayItem(third, backgroundDrawingType));
+
+    displayItemList().invalidate(second.displayItemClient());
+    drawRect(context, first, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    {
+        ClipRecorder clipRecorder(context, second, clipType, LayoutRect(1, 1, 2, 2));
+        // Do not draw anything for second.
+    }
+    drawRect(context, third, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    displayItemList().commitNewDisplayItems();
+
+    // Empty clips should have been optimized out.
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 2,
+        TestDisplayItem(first, backgroundDrawingType),
+        TestDisplayItem(third, backgroundDrawingType));
+
+    displayItemList().invalidate(second.displayItemClient());
+    drawRect(context, first, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    {
+        ClipRecorder clipRecorder(context, second, clipType, LayoutRect(1, 1, 2, 2));
+        {
+            ClipPathRecorder clipPathRecorder(context, second, Path());
+            // Do not draw anything for second.
+        }
+    }
+    drawRect(context, third, backgroundDrawingType, FloatRect(0, 0, 100, 100));
+    displayItemList().commitNewDisplayItems();
+
+    // Empty clips should have been optimized out.
+    EXPECT_DISPLAY_LIST(displayItemList().displayItems(), 2,
+        TestDisplayItem(first, backgroundDrawingType),
+        TestDisplayItem(third, backgroundDrawingType));
 }
 
 } // namespace blink

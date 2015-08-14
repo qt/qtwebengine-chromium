@@ -5,6 +5,7 @@
 #ifndef InspectorTraceEvents_h
 #define InspectorTraceEvents_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSSelector.h"
 #include "platform/EventTracer.h"
 #include "platform/TraceEvent.h"
@@ -22,6 +23,9 @@ class Event;
 class ExecutionContext;
 class FrameView;
 class GraphicsLayer;
+class HitTestLocation;
+class HitTestRequest;
+class HitTestResult;
 class ImageResource;
 class KURL;
 class DeprecatedPaintLayer;
@@ -154,14 +158,14 @@ extern const char ScrollbarChanged[];
 // not depend on this value.
 typedef const char LayoutInvalidationReasonForTracing[];
 
-class InspectorLayoutInvalidationTrackingEvent {
+class CORE_EXPORT InspectorLayoutInvalidationTrackingEvent {
 public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject*, LayoutInvalidationReasonForTracing);
 };
 
 class InspectorPaintInvalidationTrackingEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject*, const LayoutObject* paintContainer);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject*, const LayoutObject& paintContainer);
 };
 
 class InspectorScrollInvalidationTrackingEvent {
@@ -207,16 +211,6 @@ public:
 class InspectorAnimationFrameEvent {
 public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(ExecutionContext*, int callbackId);
-};
-
-class InspectorWebSocketCreateEvent {
-public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(Document*, unsigned long identifier, const KURL&, const String& protocol);
-};
-
-class InspectorWebSocketEvent {
-public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(Document*, unsigned long identifier);
 };
 
 class InspectorParseHtmlEvent {
@@ -349,6 +343,14 @@ class InspectorAnimationStateEvent {
 public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const Animation&);
 };
+
+class InspectorHitTestEvent {
+public:
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> endData(const HitTestRequest&, const HitTestLocation&, const HitTestResult&);
+};
+
+CORE_EXPORT String toHexString(const void* p);
+CORE_EXPORT void setCallStack(TracedValue*);
 
 } // namespace blink
 

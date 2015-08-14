@@ -8,18 +8,29 @@
 #ifndef NET_HTTP_HTTP_CACHE_TRANSACTION_H_
 #define NET_HTTP_HTTP_CACHE_TRANSACTION_H_
 
+#include <stddef.h>
+
 #include <string>
 
+#include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
+#include "net/base/io_buffer.h"
+#include "net/base/load_states.h"
 #include "net/base/request_priority.h"
+#include "net/base/upload_progress.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_transaction.h"
+#include "net/http/partial_data.h"
 #include "net/log/net_log.h"
 #include "net/socket/connection_attempts.h"
+#include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
 
@@ -340,13 +351,6 @@ class HttpCache::Transaction : public HttpTransaction {
   // Fixes the response headers to match expectations for a HEAD request.
   void FixHeadersForHead();
 
-  // Launches an asynchronous revalidation based on this transaction.
-  void TriggerAsyncValidation();
-
-  // Changes the response code of a range request to be 416 (Requested range not
-  // satisfiable).
-  void FailRangeRequest();
-
   // Setups the transaction for reading from the cache entry.
   int SetupEntryForRead();
 
@@ -365,11 +369,6 @@ class HttpCache::Transaction : public HttpTransaction {
   // Called to write response_ to the cache entry. |truncated| indicates if the
   // entry should be marked as incomplete.
   int WriteResponseInfoToEntry(bool truncated);
-
-  // Called to append response data to the cache entry.  Returns a network error
-  // code.
-  int AppendResponseDataToEntry(IOBuffer* data, int data_len,
-                                const CompletionCallback& callback);
 
   // Called when we are done writing to the cache entry.
   void DoneWritingToEntry(bool success);

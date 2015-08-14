@@ -40,7 +40,6 @@
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/corewm/tooltip_aura.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/views_switches.h"
@@ -127,6 +126,25 @@ const char* kAtomsToCache[] = {
 
 const char kX11WindowRolePopup[] = "popup";
 const char kX11WindowRoleBubble[] = "bubble";
+
+// Returns the whole path from |window| to the root.
+std::vector<::Window> GetParentsList(XDisplay* xdisplay, ::Window window) {
+  ::Window parent_win, root_win;
+  Window* child_windows;
+  unsigned int num_child_windows;
+  std::vector<::Window> result;
+
+  while (window) {
+    result.push_back(window);
+    if (!XQueryTree(xdisplay, window,
+                    &root_win, &parent_win, &child_windows, &num_child_windows))
+      break;
+    if (child_windows)
+      XFree(child_windows);
+    window = parent_win;
+  }
+  return result;
+}
 
 }  // namespace
 
@@ -375,6 +393,8 @@ aura::WindowTreeHost* DesktopWindowTreeHostX11::AsWindowTreeHost() {
 
 void DesktopWindowTreeHostX11::ShowWindowWithState(
     ui::WindowShowState show_state) {
+  if (compositor())
+    compositor()->SetVisible(true);
   if (!window_mapped_)
     MapWindow(show_state);
 
@@ -420,6 +440,37 @@ void DesktopWindowTreeHostX11::SetSize(const gfx::Size& requested_size) {
   if (size_changed) {
     OnHostResized(size_in_pixels);
     ResetWindowRegion();
+  }
+}
+
+void DesktopWindowTreeHostX11::StackAbove(aura::Window* window) {
+  if (window && window->GetRootWindow()) {
+    ::Window window_below = window->GetHost()->GetAcceleratedWidget();
+    // Find all parent windows up to the root.
+    std::vector<::Window> window_below_parents =
+        GetParentsList(xdisplay_, window_below);
+    std::vector<::Window> window_above_parents =
+        GetParentsList(xdisplay_, xwindow_);
+
+    // Find their common ancestor.
+    auto it_below_window = window_below_parents.rbegin();
+    auto it_above_window = window_above_parents.rbegin();
+    for (; it_below_window != window_below_parents.rend() &&
+           it_above_window != window_above_parents.rend() &&
+           *it_below_window == *it_above_window;
+         ++it_below_window, ++it_above_window) {
+    }
+
+    if (it_below_window != window_below_parents.rend() &&
+        it_above_window != window_above_parents.rend()) {
+      // First stack |xwindow_| below so Z-order of |window| stays the same.
+      ::Window windows[] = {*it_below_window, *it_above_window};
+      if (XRestackWindows(xdisplay_, windows, 2) == 0) {
+        // Now stack them properly.
+        std::swap(windows[0], windows[1]);
+        XRestackWindows(xdisplay_, windows, 2);
+      }
+    }
   }
 }
 
@@ -504,7 +555,7 @@ gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInScreen() const {
   return ToDIPRect(GetWorkAreaBoundsInPixels());
 }
 
-void DesktopWindowTreeHostX11::SetShape(gfx::NativeRegion native_region) {
+void DesktopWindowTreeHostX11::SetShape(SkRegion* native_region) {
   custom_window_shape_ = false;
   window_shape_.reset();
 
@@ -856,12 +907,9 @@ void DesktopWindowTreeHostX11::OnRootViewLayout() {
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
-  native_widget_delegate_->AsWidget()->GetInputMethod()->OnFocus();
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetBlur() {
-  if (xwindow_)
-    native_widget_delegate_->AsWidget()->GetInputMethod()->OnBlur();
 }
 
 bool DesktopWindowTreeHostX11::IsAnimatingClosed() const {
@@ -900,12 +948,12 @@ gfx::AcceleratedWidget DesktopWindowTreeHostX11::GetAcceleratedWidget() {
   return xwindow_;
 }
 
-void DesktopWindowTreeHostX11::Show() {
+void DesktopWindowTreeHostX11::ShowImpl() {
   ShowWindowWithState(ui::SHOW_STATE_NORMAL);
   native_widget_delegate_->OnNativeWidgetVisibilityChanged(true);
 }
 
-void DesktopWindowTreeHostX11::Hide() {
+void DesktopWindowTreeHostX11::HideImpl() {
   if (window_mapped_) {
     XWithdrawWindow(xdisplay_, xwindow_, 0);
     window_mapped_ = false;
@@ -1020,13 +1068,6 @@ void DesktopWindowTreeHostX11::MoveCursorToNative(const gfx::Point& location) {
 void DesktopWindowTreeHostX11::OnCursorVisibilityChangedNative(bool show) {
   // TODO(erg): Conditional on us enabling touch on desktop linux builds, do
   // the same tap-to-click disabling here that chromeos does.
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// DesktopWindowTreeHostX11, ui::EventSource implementation:
-
-ui::EventProcessor* DesktopWindowTreeHostX11::GetEventProcessor() {
-  return dispatcher();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1226,8 +1267,10 @@ void DesktopWindowTreeHostX11::InitX11Window(
 
   // If we have a delegate which is providing a default window icon, use that
   // icon.
-  gfx::ImageSkia* window_icon = ViewsDelegate::views_delegate ?
-      ViewsDelegate::views_delegate->GetDefaultWindowIcon() : NULL;
+  gfx::ImageSkia* window_icon =
+      ViewsDelegate::GetInstance()
+          ? ViewsDelegate::GetInstance()->GetDefaultWindowIcon()
+          : NULL;
   if (window_icon) {
     SetWindowIcons(gfx::ImageSkia(), *window_icon);
   }

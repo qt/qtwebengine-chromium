@@ -61,13 +61,15 @@ void InlineFlowBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& 
             }
         }
     } else if (paintInfo.phase == PaintPhaseMask) {
-        DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, DisplayItem::paintPhaseToDrawingType(paintInfo.phase), pixelSnappedIntRect(overflowRect));
-        if (!recorder.canUseCachedDrawing())
-            paintMask(paintInfo, paintOffset);
+        DisplayItem::Type displayItemType = DisplayItem::paintPhaseToDrawingType(paintInfo.phase);
+        if (DrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_inlineFlowBox, displayItemType))
+            return;
+        DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, displayItemType, pixelSnappedIntRect(overflowRect));
+        paintMask(paintInfo, paintOffset);
         return;
     } else if (paintInfo.phase == PaintPhaseForeground) {
         // Paint our background, border and box-shadow.
-        paintBoxDecorationBackground(paintInfo, paintOffset);
+        paintBoxDecorationBackground(paintInfo, paintOffset, overflowRect);
     }
 
     // Paint our children.
@@ -109,7 +111,7 @@ void InlineFlowBoxPainter::paintFillLayer(const PaintInfo& paintInfo, const Colo
     } else {
         // We have a fill image that spans multiple lines.
         // FIXME: frameSize ought to be the same as rect.size().
-        LayoutSize frameSize(m_inlineFlowBox.width().toLayoutUnit(), m_inlineFlowBox.height().toLayoutUnit());
+        LayoutSize frameSize(m_inlineFlowBox.width(), m_inlineFlowBox.height());
         LayoutRect imageStripPaintRect = paintRectForImageStrip(rect.location(), frameSize, m_inlineFlowBox.layoutObject().style()->direction());
         GraphicsContextStateSaver stateSaver(*paintInfo.context);
         paintInfo.context->clip(LayoutRect(rect.x(), rect.y(), m_inlineFlowBox.width(), m_inlineFlowBox.height()));
@@ -190,7 +192,7 @@ LayoutRect InlineFlowBoxPainter::paintRectForImageStrip(const LayoutPoint& paint
 InlineFlowBoxPainter::BorderPaintingType InlineFlowBoxPainter::getBorderPaintType(const LayoutRect& adjustedFrameRect, LayoutRect& adjustedClipRect) const
 {
     adjustedClipRect = adjustedFrameRect;
-    if (m_inlineFlowBox.parent() && m_inlineFlowBox.layoutObject().style()->hasBorder()) {
+    if (m_inlineFlowBox.parent() && m_inlineFlowBox.layoutObject().style()->hasBorderDecoration()) {
         const NinePieceImage& borderImage = m_inlineFlowBox.layoutObject().style()->borderImage();
         StyleImage* borderImageSource = borderImage.image();
         const ComputedStyle* styleToUse = m_inlineFlowBox.layoutObject().style(m_inlineFlowBox.isFirstLineStyle());
@@ -210,7 +212,7 @@ InlineFlowBoxPainter::BorderPaintingType InlineFlowBoxPainter::getBorderPaintTyp
     return DontPaintBorders;
 }
 
-void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, const LayoutRect& cullRect)
 {
     ASSERT(paintInfo.phase == PaintPhaseForeground);
     if (!paintInfo.shouldPaintWithinRoot(&m_inlineFlowBox.layoutObject()) || m_inlineFlowBox.layoutObject().style()->visibility() != VISIBLE)
@@ -228,6 +230,11 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
     if (!shouldPaintBoxDecorationBackground)
         return;
 
+    if (DrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground))
+        return;
+
+    DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(cullRect));
+
     LayoutRect frameRect = roundedFrameRectClampedToLineTopAndBottomIfNeeded();
 
     // Move x/y to our coordinates.
@@ -239,10 +246,6 @@ void InlineFlowBoxPainter::paintBoxDecorationBackground(const PaintInfo& paintIn
 
     LayoutRect adjustedClipRect;
     BorderPaintingType borderPaintingType = getBorderPaintType(adjustedFrameRect, adjustedClipRect);
-
-    DrawingRecorder recorder(*paintInfo.context, m_inlineFlowBox, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(adjustedClipRect));
-    if (recorder.canUseCachedDrawing())
-        return;
 
     // Shadow comes first and is behind the background and border.
     if (!m_inlineFlowBox.boxModelObject()->boxShadowShouldBeAppliedToBackground(BackgroundBleedNone, &m_inlineFlowBox))

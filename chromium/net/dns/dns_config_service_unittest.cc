@@ -7,10 +7,13 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/cancelable_callback.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_split.h"
 #include "base/test/test_timeouts.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/net_util.h"
 #include "net/dns/dns_protocol.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,18 +37,15 @@ class NameServerClassifierTest : public testing::Test {
  protected:
   NameServerClassifier::NameServersType Classify(
       const std::string& servers_string) {
-    std::vector<std::string> server_strings;
-    base::SplitString(servers_string, ' ', &server_strings);
-
     std::vector<IPEndPoint> servers;
-    for (std::vector<std::string>::const_iterator it = server_strings.begin();
-         it != server_strings.end();
-         ++it) {
-      if (it->empty())
+    for (const base::StringPiece& server_str :
+         base::SplitStringPiece(servers_string, " ", base::TRIM_WHITESPACE,
+                                base::SPLIT_WANT_ALL)) {
+      if (server_str.empty())
         continue;
 
       IPAddressNumber address;
-      bool parsed = ParseIPLiteralToNumber(*it, &address);
+      bool parsed = ParseIPLiteralToNumber(server_str, &address);
       EXPECT_TRUE(parsed);
       servers.push_back(IPEndPoint(address, dns_protocol::kDefaultPort));
     }
@@ -148,7 +148,7 @@ class DnsConfigServiceTest : public testing::Test {
 
   void WaitForConfig(base::TimeDelta timeout) {
     base::CancelableClosure closure(base::MessageLoop::QuitClosure());
-    base::MessageLoop::current()->PostDelayedTask(
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, closure.callback(), timeout);
     quit_on_config_ = true;
     base::MessageLoop::current()->Run();
@@ -331,26 +331,6 @@ TEST_F(DnsConfigServiceTest, WatchFailure) {
   service_->OnConfigRead(config2);
   EXPECT_TRUE(last_config_.Equals(bad_config));
 }
-
-#if (defined(OS_POSIX) && !defined(OS_ANDROID)) || defined(OS_WIN)
-// TODO(szym): This is really an integration test and can time out if HOSTS is
-// huge. http://crbug.com/107810
-// On Android the hosts file is not user modifyable, so it's always tiny,
-// however devices used for testing are likely to have no network connectivity
-// and hence no DNS configuration so this test will just fail to find a valid
-// config.
-TEST_F(DnsConfigServiceTest, DISABLED_GetSystemConfig) {
-  service_.reset();
-  scoped_ptr<DnsConfigService> service(DnsConfigService::CreateSystemService());
-
-  service->ReadConfig(base::Bind(&DnsConfigServiceTest::OnConfigChanged,
-                                 base::Unretained(this)));
-  base::TimeDelta kTimeout = TestTimeouts::action_max_timeout();
-  WaitForConfig(kTimeout);
-  ASSERT_TRUE(last_config_.IsValid()) << "Did not receive DnsConfig in " <<
-      kTimeout.InSecondsF() << "s";
-}
-#endif  // OS_POSIX || OS_WIN
 
 }  // namespace net
 

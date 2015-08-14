@@ -11,15 +11,17 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
+#include "mojo/application/public/interfaces/content_handler.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/error_handler.h"
+#include "mojo/shell/content_handler_connection.h"
 #include "mojo/shell/fetcher.h"
 #include "mojo/shell/local_fetcher.h"
 #include "mojo/shell/network_fetcher.h"
 #include "mojo/shell/query_util.h"
 #include "mojo/shell/shell_impl.h"
 #include "mojo/shell/switches.h"
-#include "third_party/mojo_services/src/content_handler/public/interfaces/content_handler.mojom.h"
+#include "mojo/shell/update_fetcher.h"
 
 namespace mojo {
 namespace shell {
@@ -30,43 +32,6 @@ namespace {
 bool has_created_instance = false;
 
 }  // namespace
-
-class ApplicationManager::ContentHandlerConnection : public ErrorHandler {
- public:
-  ContentHandlerConnection(ApplicationManager* manager,
-                           const GURL& content_handler_url,
-                           const GURL& requestor_url,
-                           const std::string& qualifier)
-      : manager_(manager),
-        content_handler_url_(content_handler_url),
-        content_handler_qualifier_(qualifier) {
-    ServiceProviderPtr services;
-    manager->ConnectToApplicationWithParameters(
-        content_handler_url, qualifier, requestor_url, GetProxy(&services),
-        nullptr, base::Closure(), std::vector<std::string>());
-    MessagePipe pipe;
-    content_handler_.Bind(
-        InterfacePtrInfo<ContentHandler>(pipe.handle0.Pass(), 0u));
-    services->ConnectToService(ContentHandler::Name_, pipe.handle1.Pass());
-    content_handler_.set_error_handler(this);
-  }
-
-  ContentHandler* content_handler() { return content_handler_.get(); }
-
-  GURL content_handler_url() { return content_handler_url_; }
-  std::string content_handler_qualifier() { return content_handler_qualifier_; }
-
- private:
-  // ErrorHandler implementation:
-  void OnConnectionError() override { manager_->OnContentHandlerError(this); }
-
-  ApplicationManager* manager_;
-  GURL content_handler_url_;
-  std::string content_handler_qualifier_;
-  ContentHandlerPtr content_handler_;
-
-  DISALLOW_COPY_AND_ASSIGN(ContentHandlerConnection);
-};
 
 // static
 ApplicationManager::TestAPI::TestAPI(ApplicationManager* manager)
@@ -90,7 +55,9 @@ ApplicationManager::ApplicationManager(Delegate* delegate)
 }
 
 ApplicationManager::~ApplicationManager() {
-  STLDeleteValues(&url_to_content_handler_);
+  URLToContentHandlerMap url_to_content_handler(url_to_content_handler_);
+  for (auto& pair : url_to_content_handler)
+    pair.second->CloseConnection();
   TerminateShellConnections();
   STLDeleteValues(&url_to_loader_);
   STLDeleteValues(&scheme_to_loader_);
@@ -101,33 +68,22 @@ void ApplicationManager::TerminateShellConnections() {
 }
 
 void ApplicationManager::ConnectToApplication(
-    const GURL& requested_url,
-    const GURL& requestor_url,
-    InterfaceRequest<ServiceProvider> services,
-    ServiceProviderPtr exposed_services,
-    const base::Closure& on_application_end) {
-  ConnectToApplicationWithParameters(
-      requested_url, std::string(), requestor_url, services.Pass(),
-      exposed_services.Pass(), on_application_end, std::vector<std::string>());
-}
-
-void ApplicationManager::ConnectToApplicationWithParameters(
-    const GURL& requested_url,
+    mojo::URLRequestPtr requested_url,
     const std::string& qualifier,
     const GURL& requestor_url,
     InterfaceRequest<ServiceProvider> services,
     ServiceProviderPtr exposed_services,
-    const base::Closure& on_application_end,
-    const std::vector<std::string>& pre_redirect_parameters) {
+    const base::Closure& on_application_end) {
+  GURL requested_gurl(requested_url->url.To<std::string>());
   TRACE_EVENT_INSTANT1(
-      "mojo_shell", "ApplicationManager::ConnectToApplicationWithParameters",
-      TRACE_EVENT_SCOPE_THREAD, "requested_url", requested_url.spec());
-  DCHECK(requested_url.is_valid());
+      "mojo_shell", "ApplicationManager::ConnectToApplication",
+      TRACE_EVENT_SCOPE_THREAD, "requested_url", requested_gurl.spec());
+  DCHECK(requested_gurl.is_valid());
 
   // We check both the mapped and resolved urls for existing shell_impls because
   // external applications can be registered for the unresolved mojo:foo urls.
 
-  GURL mapped_url = delegate_->ResolveMappings(requested_url);
+  GURL mapped_url = delegate_->ResolveMappings(requested_gurl);
   if (ConnectToRunningApplication(mapped_url, qualifier, requestor_url,
                                   &services, &exposed_services)) {
     return;
@@ -141,31 +97,28 @@ void ApplicationManager::ConnectToApplicationWithParameters(
 
   // The application is not running, let's compute the parameters.
   if (ConnectToApplicationWithLoader(
-          requested_url, qualifier, mapped_url, requestor_url, &services,
-          &exposed_services, on_application_end, pre_redirect_parameters,
-          GetLoaderForURL(mapped_url))) {
+          requested_gurl, qualifier, mapped_url, requestor_url, &services,
+          &exposed_services, on_application_end, GetLoaderForURL(mapped_url))) {
     return;
   }
 
   if (ConnectToApplicationWithLoader(
-          requested_url, qualifier, resolved_url, requestor_url, &services,
-          &exposed_services, on_application_end, pre_redirect_parameters,
+          requested_gurl, qualifier, resolved_url, requestor_url, &services,
+          &exposed_services, on_application_end,
           GetLoaderForURL(resolved_url))) {
     return;
   }
 
   if (ConnectToApplicationWithLoader(
-          requested_url, qualifier, resolved_url, requestor_url, &services,
-          &exposed_services, on_application_end, pre_redirect_parameters,
-          default_loader_.get())) {
+          requested_gurl, qualifier, resolved_url, requestor_url, &services,
+          &exposed_services, on_application_end, default_loader_.get())) {
     return;
   }
 
   auto callback = base::Bind(
       &ApplicationManager::HandleFetchCallback, weak_ptr_factory_.GetWeakPtr(),
-      requested_url, qualifier, requestor_url, base::Passed(services.Pass()),
-      base::Passed(exposed_services.Pass()), on_application_end,
-      pre_redirect_parameters);
+      requested_gurl, qualifier, requestor_url, base::Passed(services.Pass()),
+      base::Passed(exposed_services.Pass()), on_application_end);
 
   if (delegate_->CreateFetcher(
           resolved_url,
@@ -180,8 +133,18 @@ void ApplicationManager::ConnectToApplicationWithParameters(
     return;
   }
 
-  if (!network_service_)
-    ConnectToService(GURL("mojo:network_service"), &network_service_);
+  if (mapped_url.SchemeIs("mojo") &&
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseUpdater)) {
+    ConnectToService(GURL("mojo:updater"), &updater_);
+    new UpdateFetcher(
+        mapped_url, updater_.get(),
+        base::Bind(callback, NativeApplicationCleanup::DONT_DELETE));
+    return;
+  }
+
+  if (!url_loader_factory_)
+    ConnectToService(GURL("mojo:network_service"), &url_loader_factory_);
 
   const NativeApplicationCleanup cleanup =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -189,8 +152,18 @@ void ApplicationManager::ConnectToApplicationWithParameters(
           ? NativeApplicationCleanup::DONT_DELETE
           : NativeApplicationCleanup::DELETE;
 
-  new NetworkFetcher(disable_cache_, resolved_url, network_service_.get(),
-                     base::Bind(callback, cleanup));
+  if (requested_gurl.SchemeIs("mojo")) {
+    // Use the resolved mojo URL in the request to support origin mapping, etc.
+    mojo::URLRequestPtr resolved_url_request(mojo::URLRequest::New());
+    resolved_url_request->url = resolved_url.spec();
+    new NetworkFetcher(disable_cache_, resolved_url_request.Pass(),
+                       url_loader_factory_.get(),
+                       base::Bind(callback, cleanup));
+    return;
+  }
+
+  new NetworkFetcher(disable_cache_, requested_url.Pass(),
+                     url_loader_factory_.get(), base::Bind(callback, cleanup));
 }
 
 bool ApplicationManager::ConnectToRunningApplication(
@@ -217,18 +190,17 @@ bool ApplicationManager::ConnectToApplicationWithLoader(
     InterfaceRequest<ServiceProvider>* services,
     ServiceProviderPtr* exposed_services,
     const base::Closure& on_application_end,
-    const std::vector<std::string>& parameters,
     ApplicationLoader* loader) {
   if (!loader)
     return false;
 
   const GURL app_url =
-      requested_url.scheme() == "mojo" ? requested_url : resolved_url;
+      requested_url.SchemeIs("mojo") ? requested_url : resolved_url;
 
   loader->Load(
       resolved_url,
       RegisterShell(app_url, qualifier, requestor_url, services->Pass(),
-                    exposed_services->Pass(), on_application_end, parameters));
+                    exposed_services->Pass(), on_application_end));
   return true;
 }
 
@@ -238,8 +210,7 @@ InterfaceRequest<Application> ApplicationManager::RegisterShell(
     const GURL& requestor_url,
     InterfaceRequest<ServiceProvider> services,
     ServiceProviderPtr exposed_services,
-    const base::Closure& on_application_end,
-    const std::vector<std::string>& parameters) {
+    const base::Closure& on_application_end) {
   Identity app_identity(app_url, qualifier);
 
   ApplicationPtr application;
@@ -247,7 +218,7 @@ InterfaceRequest<Application> ApplicationManager::RegisterShell(
   ShellImpl* shell =
       new ShellImpl(application.Pass(), this, app_identity, on_application_end);
   identity_to_shell_impl_[app_identity] = shell;
-  shell->InitializeApplication(Array<String>::From(parameters));
+  shell->InitializeApplication();
   ConnectToClient(shell, app_url, requestor_url, services.Pass(),
                   exposed_services.Pass());
   return application_request.Pass();
@@ -278,7 +249,6 @@ void ApplicationManager::HandleFetchCallback(
     InterfaceRequest<ServiceProvider> services,
     ServiceProviderPtr exposed_services,
     const base::Closure& on_application_end,
-    const std::vector<std::string>& parameters,
     NativeApplicationCleanup cleanup,
     scoped_ptr<Fetcher> fetcher) {
   if (!fetcher) {
@@ -290,9 +260,15 @@ void ApplicationManager::HandleFetchCallback(
   if (!redirect_url.is_empty()) {
     // And around we go again... Whee!
     // TODO(sky): this loses |requested_url|.
-    ConnectToApplicationWithParameters(redirect_url, qualifier, requestor_url,
-                                       services.Pass(), exposed_services.Pass(),
-                                       on_application_end, parameters);
+    mojo::URLRequestPtr request(mojo::URLRequest::New());
+    request->url = mojo::String::From(redirect_url.spec());
+    HttpHeaderPtr header = HttpHeader::New();
+    header->name = "Referer";
+    header->value = fetcher->GetRedirectReferer().spec();
+    request->headers.push_back(header.Pass());
+    ConnectToApplication(request.Pass(), qualifier, requestor_url,
+                         services.Pass(), exposed_services.Pass(),
+                         on_application_end);
     return;
   }
 
@@ -312,24 +288,34 @@ void ApplicationManager::HandleFetchCallback(
 
   InterfaceRequest<Application> request(
       RegisterShell(app_url, qualifier, requestor_url, services.Pass(),
-                    exposed_services.Pass(), on_application_end, parameters));
+                    exposed_services.Pass(), on_application_end));
+
+  // For resources that are loaded with content handlers, we group app instances
+  // by site.
 
   // If the response begins with a #!mojo <content-handler-url>, use it.
   GURL content_handler_url;
   std::string shebang;
+  bool enable_multi_process = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableMultiprocess);
+
   if (fetcher->PeekContentHandler(&shebang, &content_handler_url)) {
-    LoadWithContentHandler(
-        content_handler_url, requestor_url, qualifier, request.Pass(),
-        fetcher->AsURLResponse(blocking_pool_,
-                               static_cast<int>(shebang.size())));
+    URLResponsePtr response(fetcher->AsURLResponse(
+        blocking_pool_, static_cast<int>(shebang.size())));
+    std::string site =
+        enable_multi_process ? response->site.To<std::string>() : std::string();
+    LoadWithContentHandler(content_handler_url, requestor_url, site,
+                           request.Pass(), response.Pass());
     return;
   }
 
   MimeTypeToURLMap::iterator iter = mime_type_to_url_.find(fetcher->MimeType());
   if (iter != mime_type_to_url_.end()) {
-    LoadWithContentHandler(iter->second, requestor_url, qualifier,
-                           request.Pass(),
-                           fetcher->AsURLResponse(blocking_pool_, 0));
+    URLResponsePtr response(fetcher->AsURLResponse(blocking_pool_, 0));
+    std::string site =
+        enable_multi_process ? response->site.To<std::string>() : std::string();
+    LoadWithContentHandler(iter->second, requestor_url, site, request.Pass(),
+                           response.Pass());
     return;
   }
 
@@ -343,7 +329,7 @@ void ApplicationManager::HandleFetchCallback(
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableMultiprocess)) {
       // Why can't we use this in single process mode? Because of
-      // base::AtExitManager. If you link in ApplicationRunnerChromium into
+      // base::AtExitManager. If you link in ApplicationRunner into
       // your code, and then we make initialize multiple copies of the
       // application, we end up with multiple AtExitManagers and will check on
       // the second one being created.
@@ -500,14 +486,13 @@ void ApplicationManager::OnShellImplError(ShellImpl* shell_impl) {
     on_application_end.Run();
 }
 
-void ApplicationManager::OnContentHandlerError(
+void ApplicationManager::OnContentHandlerConnectionClosed(
     ContentHandlerConnection* content_handler) {
   // Remove the mapping to the content handler.
   auto it = url_to_content_handler_.find(
       std::make_pair(content_handler->content_handler_url(),
                      content_handler->content_handler_qualifier()));
   DCHECK(it != url_to_content_handler_.end());
-  delete it->second;
   url_to_content_handler_.erase(it);
 }
 
@@ -515,8 +500,10 @@ ScopedMessagePipeHandle ApplicationManager::ConnectToServiceByName(
     const GURL& application_url,
     const std::string& interface_name) {
   ServiceProviderPtr services;
-  ConnectToApplication(application_url, GURL(), GetProxy(&services), nullptr,
-                       base::Closure());
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From(application_url.spec());
+  ConnectToApplication(request.Pass(), std::string(), GURL(),
+                       GetProxy(&services), nullptr, base::Closure());
   MessagePipe pipe;
   services->ConnectToService(interface_name, pipe.handle1.Pass());
   return pipe.handle0.Pass();

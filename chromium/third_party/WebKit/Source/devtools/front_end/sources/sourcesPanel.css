@@ -31,26 +31,16 @@
     position: absolute;
     top: 0;
     width: 100%;
-    background-color: #eee;
-    border-bottom: 1px solid rgb(163, 163, 163);
-    height: 23px;
-}
-
-.material .scripts-debug-toolbar {
-    height: 27px;
-}
-
-.scripts-debug-toolbar::shadow .toolbar-item {
-    position: relative;
-    top: -1px;
+    background-color: #f3f3f3;
+    border-bottom: 1px solid #ccc;
+    overflow: hidden;
 }
 
 .scripts-debug-toolbar-drawer {
-    flex: 0 0 46px;
+    flex: 0 0 52px;
     -webkit-transition: margin-top 0.1s ease-in-out;
-    margin-top: -23px;
-    padding-top: 22px;
-    border-bottom: 1px solid rgb(202, 202, 202);
+    margin-top: -26px;
+    padding-top: 25px;
     background-color: white;
     overflow: hidden;
 }
@@ -67,57 +57,16 @@
 
 .scripts-debug-toolbar-drawer > label {
     display: flex;
-    padding-top: 3px;
     padding-left: 3px;
-    border-top: 1px solid rgb(196,196,196);
-    height: 24px;
-}
-
-.panel.sources #sources-editor-container-tabbed-pane::shadow .tabbed-pane-header-contents {
-    margin-left: 22px;
-    margin-right: 36px;
-}
-
-.panel.sources .split-widget /deep/ button.scripts-debugger-show-hide-button.right-sidebar-show-hide-button.toggled-hide {
-    margin-right: 15px;
-}
-
-#scripts-debug-sidebar-resizer-widget {
-    position: absolute;
-    top: 0;
-    right: 0;
-    height: 24px;
-    width: 16px;
-    background-image: url(Images/toolbarResizerHorizontal.png);
-    background-repeat: no-repeat;
-    background-position: center;
-    z-index: 13;
-}
-
-.material #scripts-debug-sidebar-resizer-widget {
     height: 28px;
 }
 
-.sources-split-view-vertical #scripts-debug-sidebar-resizer-widget {
-    transform: rotate(90deg);
-    right: 17px;
-    bottom: 4px;
-    top: auto;
-    height: 10px;
-    width: 18px;
+.sources-editor-tabstrip-left {
+    width: 22px;
 }
 
-.material .sources-split-view-vertical #scripts-debug-sidebar-resizer-widget {
-    right: 23px;
-    bottom: 6px;
-}
-
-.panel.sources .split-widget.hbox #scripts-debug-sidebar-resizer-widget {
-    bottom: 0;
-}
-
-.panel.sources /deep/ .scripts-debugger-show-hide-button {
-    display: block;
+.sources-editor-tabstrip-right {
+    width: 36px;
 }
 
 .function-location-link {
@@ -209,7 +158,6 @@
 }
 
 .watch-expressions {
-    margin-top: 14px;
     overflow-x: hidden;
     padding: 3px 6px 6px 0px;
 }

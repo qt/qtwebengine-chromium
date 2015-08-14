@@ -397,9 +397,12 @@ public:
 
     // GL_CHROMIUM_copy_texture
     virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Duint sourceId,
-        WGC3Duint destId, WGC3Denum internalFormat, WGC3Denum destType) { }
+        WGC3Duint destId, WGC3Denum internalFormat, WGC3Denum destType,
+        WGC3Dboolean unpackFlipY, WGC3Dboolean unpackPremultiplyAlpha, WGC3Dboolean unpackUnmultiplyAlpha) { }
     virtual void copySubTextureCHROMIUM(WGC3Denum target, WGC3Duint sourceId,
-        WGC3Duint destId, WGC3Dint xoffset, WGC3Dint yoffset) { }
+        WGC3Duint destId, WGC3Dint xoffset, WGC3Dint yoffset, WGC3Dint x,
+        WGC3Dint y, WGC3Dsizei width, WGC3Dsizei height,
+        WGC3Dboolean unpackFlipY, WGC3Dboolean unpackPremultiplyAlpha, WGC3Dboolean unpackUnmultiplyAlpha) { }
 
     // GL_CHROMIUM_shallow_flush
     virtual void shallowFlushCHROMIUM() { }
@@ -444,7 +447,7 @@ public:
     virtual void releaseTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId) { }
 
     // GL_CHROMIUM_pixel_transfer_buffer_object
-    virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access) { return 0; }
+    virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access) { return nullptr; }
     virtual WGC3Dboolean unmapBufferCHROMIUM(WGC3Denum target) { return false; }
 
     // GL_CHROMIUM_async_pixel_transfers
@@ -455,7 +458,7 @@ public:
     // GL_EXT_draw_buffers
     virtual void drawBuffersEXT(WGC3Dsizei n, const WGC3Denum* bufs) { }
 
-    virtual GrGLInterface* createGrGLInterface() { return 0; }
+    virtual GrGLInterface* createGrGLInterface() { return nullptr; }
 
     // GL_CHROMIUM_image
     virtual void destroyImageCHROMIUM(WGC3Duint imageId) { }
@@ -494,7 +497,7 @@ public:
     virtual void deleteTransformFeedback(WebGLId transformfeedback) { }
     virtual void drawRangeElements(WGC3Denum mode, WGC3Duint start, WGC3Duint end, WGC3Dsizei count, WGC3Denum type, WGC3Dintptr offset) { }
     virtual void endTransformFeedback(void) { }
-    virtual WGC3Dsync fenceSync(WGC3Denum condition, WGC3Dbitfield flags) { return 0; }
+    virtual WGC3Dsync fenceSync(WGC3Denum condition, WGC3Dbitfield flags) { return nullptr; }
     virtual void framebufferTextureLayer(WGC3Denum target, WGC3Denum attachment, WGC3Duint texture, WGC3Dint level, WGC3Dint layer) { }
     virtual void getActiveUniformBlockName(WebGLId program, WGC3Duint uniformBlockIndex, WGC3Dsizei bufSize, WGC3Dsizei *length, WGC3Dchar *uniformBlockName) { }
     virtual void getActiveUniformBlockiv(WebGLId program, WGC3Duint uniformBlockIndex, WGC3Denum pname, WGC3Dint *params) { }
@@ -519,6 +522,7 @@ public:
     virtual WGC3Dboolean isSampler(WebGLId sampler) { return false; }
     virtual WGC3Dboolean isSync(WGC3Dsync sync) { return false; }
     virtual WGC3Dboolean isTransformFeedback(WebGLId transformfeedback) { return false; }
+    virtual void* mapBufferRange(WGC3Denum target, WGC3Dintptr offset, WGC3Dsizeiptr length, WGC3Dbitfield access) { return 0; }
     virtual void pauseTransformFeedback(void) { }
     virtual void programParameteri(WebGLId program, WGC3Denum pname, WGC3Dint value) { }
     virtual void readBuffer(WGC3Denum src) { }
@@ -546,6 +550,8 @@ public:
     virtual void uniformMatrix3x4fv(WGC3Dint location, WGC3Dsizei count, WGC3Dboolean transpose, const WGC3Dfloat* value) { }
     virtual void uniformMatrix4x2fv(WGC3Dint location, WGC3Dsizei count, WGC3Dboolean transpose, const WGC3Dfloat* value) { }
     virtual void uniformMatrix4x3fv(WGC3Dint location, WGC3Dsizei count, WGC3Dboolean transpose, const WGC3Dfloat* value) { }
+    virtual WGC3Dboolean unmapBuffer(WGC3Denum target) { return false; }
+
     virtual void vertexAttribI4i(WGC3Duint index, WGC3Dint x, WGC3Dint y, WGC3Dint z, WGC3Dint w) { }
     virtual void vertexAttribI4iv(WGC3Duint index, const WGC3Dint *v) { }
     virtual void vertexAttribI4ui(WGC3Duint index, WGC3Duint x, WGC3Duint y, WGC3Duint z, WGC3Duint w) { }

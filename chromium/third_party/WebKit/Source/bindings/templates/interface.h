@@ -82,10 +82,11 @@ public:
     static void {{method.name}}MethodCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     {% endfilter %}
     {% endif %}
+    {% if method.is_custom_call_prologue %}
+    static void {{method.name}}MethodPrologueCustom(const v8::FunctionCallbackInfo<v8::Value>&, {{cpp_class}}*);
+    {% endif %}
     {% if method.is_custom_call_epilogue %}
-    {% filter conditional(method.conditional_string) %}
     static void {{method.name}}MethodEpilogueCustom(const v8::FunctionCallbackInfo<v8::Value>&, {{cpp_class}}*);
-    {% endfilter %}
     {% endif %}
     {% endfor %}
     {% if constructors or has_custom_constructor or has_event_constructor %}
@@ -97,12 +98,20 @@ public:
     {% for attribute in attributes %}
     {% if attribute.has_custom_getter %}{# FIXME: and not attribute.implemented_by #}
     {% filter conditional(attribute.conditional_string) %}
+    {% if attribute.is_expose_js_accessors %}
+    static void {{attribute.name}}AttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>&);
+    {% else %}
     static void {{attribute.name}}AttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>&);
+    {% endif %}
     {% endfilter %}
     {% endif %}
     {% if attribute.has_custom_setter %}{# FIXME: and not attribute.implemented_by #}
     {% filter conditional(attribute.conditional_string) %}
+    {% if attribute.is_expose_js_accessors %}
+    static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::FunctionCallbackInfo<v8::Value>&);
+    {% else %}
     static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::PropertyCallbackInfo<void>&);
+    {% endif %}
     {% endfilter %}
     {% endif %}
     {% endfor %}
@@ -158,7 +167,7 @@ public:
     static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*){% if has_conditional_attributes %};
     {% else %} { }
     {% endif %}
-    static void preparePrototypeObject(v8::Isolate*, v8::Local<v8::Object>){% if unscopeables or conditionally_enabled_methods %};
+    static void preparePrototypeObject(v8::Isolate*, v8::Local<v8::Object> prototypeObject, v8::Local<v8::FunctionTemplate> interfaceTemplate){% if unscopeables or has_conditional_attributes_on_prototype or conditionally_enabled_methods %};
     {% else %} { }
     {% endif %}
     {% if has_partial_interface %}

@@ -5,7 +5,7 @@
 #include "content/browser/devtools/browser_devtools_agent_host.h"
 
 #include "base/bind.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/devtools_protocol_handler.h"
 #include "content/browser/devtools/protocol/system_info_handler.h"
 #include "content/browser/devtools/protocol/tethering_handler.h"
 #include "content/browser/devtools/protocol/tracing_handler.h"
@@ -13,20 +13,24 @@
 namespace content {
 
 scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::CreateForBrowser(
-    scoped_refptr<base::MessageLoopProxy> tethering_message_loop,
+    scoped_refptr<base::SingleThreadTaskRunner> tethering_task_runner,
     const CreateServerSocketCallback& socket_callback) {
-  return new BrowserDevToolsAgentHost(tethering_message_loop, socket_callback);
+  return new BrowserDevToolsAgentHost(tethering_task_runner, socket_callback);
 }
 
 BrowserDevToolsAgentHost::BrowserDevToolsAgentHost(
-    scoped_refptr<base::MessageLoopProxy> tethering_message_loop,
+    scoped_refptr<base::SingleThreadTaskRunner> tethering_task_runner,
     const CreateServerSocketCallback& socket_callback)
     : system_info_handler_(new devtools::system_info::SystemInfoHandler()),
-      tethering_handler_(new devtools::tethering::TetheringHandler(
-          socket_callback, tethering_message_loop)),
+      tethering_handler_(
+          new devtools::tethering::TetheringHandler(socket_callback,
+                                                    tethering_task_runner)),
       tracing_handler_(new devtools::tracing::TracingHandler(
-          devtools::tracing::TracingHandler::Browser)) {
-  set_handle_all_protocol_commands();
+          devtools::tracing::TracingHandler::Browser)),
+      protocol_handler_(new DevToolsProtocolHandler(
+          this,
+          base::Bind(&BrowserDevToolsAgentHost::SendMessageToClient,
+                     base::Unretained(this)))) {
   DevToolsProtocolDispatcher* dispatcher = protocol_handler_->dispatcher();
   dispatcher->SetSystemInfoHandler(system_info_handler_.get());
   dispatcher->SetTetheringHandler(tethering_handler_.get());
@@ -60,6 +64,12 @@ bool BrowserDevToolsAgentHost::Activate() {
 
 bool BrowserDevToolsAgentHost::Close() {
   return false;
+}
+
+bool BrowserDevToolsAgentHost::DispatchProtocolMessage(
+    const std::string& message) {
+  protocol_handler_->HandleMessage(message);
+  return true;
 }
 
 }  // content

@@ -77,6 +77,7 @@ class OutputNode(base.Node):
       'lang' : '', # empty lang indicates all languages
       'language_section' : 'neutral', # defines a language neutral section
       'context' : '',
+      'fallback_to_default_layout' : 'true',
     }
 
   def GetType(self):
@@ -99,6 +100,9 @@ class OutputNode(base.Node):
     else:
       path = self.attrs['filename']
     return os.path.expandvars(path)
+
+  def GetFallbackToDefaultLayout(self):
+    return self.attrs['fallback_to_default_layout'].lower() == 'true'
 
   def _IsValidChild(self, child):
     return isinstance(child, EmitNode)

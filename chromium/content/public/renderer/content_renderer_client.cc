@@ -4,6 +4,7 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
+#include "content/public/renderer/media_stream_renderer_factory.h"
 #include "media/base/renderer_factory.h"
 #include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
 #include "third_party/WebKit/public/web/WebPluginPlaceholder.h"
@@ -114,17 +115,12 @@ bool ContentRendererClient::HandleNavigation(
 }
 #endif
 
-bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
+bool ContentRendererClient::ShouldFork(blink::WebLocalFrame* frame,
                                        const GURL& url,
                                        const std::string& http_method,
                                        bool is_initial_navigation,
                                        bool is_server_redirect,
                                        bool* send_referrer) {
-  return false;
-}
-
-bool ContentRendererClient::ShouldForwardToGuestContainer(
-    const IPC::Message& msg) {
   return false;
 }
 
@@ -178,7 +174,13 @@ void ContentRendererClient::AddKeySystems(
 scoped_ptr<media::RendererFactory>
 ContentRendererClient::CreateMediaRendererFactory(
     RenderFrame* render_frame,
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
     const scoped_refptr<media::MediaLog>& media_log) {
+  return nullptr;
+}
+
+scoped_ptr<MediaStreamRendererFactory>
+ContentRendererClient::CreateMediaStreamRendererFactory() {
   return nullptr;
 }
 
@@ -187,7 +189,7 @@ bool ContentRendererClient::ShouldReportDetailedMessageForSource(
   return false;
 }
 
-bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
+bool ContentRendererClient::ShouldGatherSiteIsolationStats() const {
   return true;
 }
 

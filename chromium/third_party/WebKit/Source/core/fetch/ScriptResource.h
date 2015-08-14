@@ -32,13 +32,14 @@
 
 namespace blink {
 
+class FetchRequest;
 class ScriptResource;
 
 class CORE_EXPORT ScriptResourceClient : public ResourceClient {
 public:
-    virtual ~ScriptResourceClient() { }
+    ~ScriptResourceClient() override {}
     static ResourceClientType expectedType() { return ScriptType; }
-    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
+    ResourceClientType resourceClientType() const final { return expectedType(); }
 
     virtual void notifyAppendData(ScriptResource* resource) { }
 };
@@ -46,15 +47,15 @@ public:
 class CORE_EXPORT ScriptResource final : public TextResource {
 public:
     typedef ScriptResourceClient ClientType;
-    static PassOwnPtrWillBeRawPtr<ScriptResource> create(const ResourceRequest& request, const String& charset)
-    {
-        return adoptPtrWillBeNoop(new ScriptResource(request, charset));
-    }
+    static ResourcePtr<ScriptResource> fetch(FetchRequest&, ResourceFetcher*);
 
-    virtual ~ScriptResource();
+    // Public for testing
+    ScriptResource(const ResourceRequest&, const String& charset);
 
-    virtual void didAddClient(ResourceClient*) override;
-    virtual void appendData(const char*, unsigned) override;
+    ~ScriptResource() override;
+
+    void didAddClient(ResourceClient*) override;
+    void appendData(const char*, unsigned) override;
 
     const String& script();
 
@@ -63,7 +64,16 @@ public:
     bool mimeTypeAllowedByNosniff() const;
 
 private:
-    ScriptResource(const ResourceRequest&, const String& charset);
+    class ScriptResourceFactory : public ResourceFactory {
+    public:
+        ScriptResourceFactory()
+            : ResourceFactory(Resource::Script) { }
+
+        Resource* create(const ResourceRequest& request, const String& charset) const override
+        {
+            return new ScriptResource(request, charset);
+        }
+    };
 
     AtomicString m_script;
 };

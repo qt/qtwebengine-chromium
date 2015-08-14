@@ -99,11 +99,6 @@ IPC_MESSAGE_ROUTED3(DevToolsAgentMsg_InspectElement,
                     int /* x */,
                     int /* y */)
 
-// Add message to the devtools console.
-IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
-                    content::ConsoleMessageLevel /* level */,
-                    std::string /* message */)
-
 //-----------------------------------------------------------------------------
 // These are messages sent from the browser to the renderer.
 
@@ -111,7 +106,8 @@ IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
 // new renderer to notify it that it will host developer tools UI and should
 // set up all neccessary bindings and create DevToolsClient instance that
 // will handle communication with inspected page DevToolsAgent.
-IPC_MESSAGE_ROUTED0(DevToolsMsg_SetupDevToolsClient)
+IPC_MESSAGE_ROUTED1(DevToolsMsg_SetupDevToolsClient,
+                    std::string /* compatibility script */)
 
 
 //-----------------------------------------------------------------------------

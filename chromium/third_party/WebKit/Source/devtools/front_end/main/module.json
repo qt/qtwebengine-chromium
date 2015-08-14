@@ -143,22 +143,6 @@
             ]
         },
         {
-            "type": "@WebInspector.ActionDelegate",
-            "actionId": "main.toggle-device-mode",
-            "className": "WebInspector.AdvancedApp.ToggleDeviceModeActionDelegate",
-            "condition": "can_dock",
-            "bindings": [
-                {
-                    "platform": "windows,linux",
-                    "shortcut": "Shift+Ctrl+M"
-                },
-                {
-                    "platform": "mac",
-                    "shortcut": "Shift+Meta+M"
-                }
-            ]
-        },
-        {
             "type": "drawer-view",
             "name": "rendering",
             "title": "Rendering",
@@ -174,10 +158,9 @@
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.AdvancedApp.EmulationButtonProvider",
-            "condition": "can_dock",
-            "order": 1,
-            "location": "main-toolbar-left"
+            "separator": true,
+            "location": "main-toolbar-left",
+            "order": 100
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
@@ -193,8 +176,26 @@
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
+            "separator": true,
+            "order": 3,
+            "location": "main-toolbar-right"
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
             "className": "WebInspector.DockController.ButtonProvider",
-            "order": 4,
+            "order": 5,
+            "location": "main-toolbar-right"
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "separator": true,
+            "order": 90,
+            "location": "main-toolbar-right"
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "className": "WebInspector.DockController.CloseButtonProvider",
+            "order": 100,
             "location": "main-toolbar-right"
         },
         {
@@ -204,6 +205,12 @@
             "settingName": "cacheDisabled",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "settingName": "networkConditions",
+            "settingType": "object",
+            "defaultValue": { "throughput": -1, "latency": 0 }
         },
         {
             "type": "setting",

@@ -40,11 +40,9 @@
 #include "bindings/core/v8/V8Document.h"
 #include "bindings/core/v8/V8FormData.h"
 #include "bindings/core/v8/V8HTMLDocument.h"
-#include "bindings/core/v8/V8ReadableStream.h"
 #include "bindings/core/v8/V8Stream.h"
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/streams/ReadableStream.h"
 #include "core/streams/Stream.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
@@ -52,7 +50,7 @@
 
 namespace blink {
 
-void V8XMLHttpRequest::responseTextAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseTextAttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toImpl(info.Holder());
     ExceptionState exceptionState(ExceptionState::GetterContext, "responseText", "XMLHttpRequest", info.Holder(), info.GetIsolate());
@@ -66,7 +64,7 @@ void V8XMLHttpRequest::responseTextAttributeGetterCustom(const v8::PropertyCallb
     v8SetReturnValue(info, text.v8Value());
 }
 
-void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toImpl(info.Holder());
 
@@ -117,13 +115,6 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::PropertyCallbackI
     case XMLHttpRequest::ResponseTypeLegacyStream:
         {
             Stream* stream = xmlHttpRequest->responseLegacyStream();
-            v8SetReturnValueFast(info, stream, xmlHttpRequest);
-            return;
-        }
-
-    case XMLHttpRequest::ResponseTypeStream:
-        {
-            ReadableStream* stream = xmlHttpRequest->responseStream();
             v8SetReturnValueFast(info, stream, xmlHttpRequest);
             return;
         }

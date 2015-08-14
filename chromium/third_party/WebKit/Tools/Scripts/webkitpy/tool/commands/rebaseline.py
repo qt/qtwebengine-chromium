@@ -323,7 +323,11 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
         if not self._builder_data:
             for builder_name in self._release_builders():
                 builder = self._tool.buildbot.builder_with_name(builder_name)
-                self._builder_data[builder_name] = builder.latest_layout_test_results()
+                builder_results = builder.latest_layout_test_results()
+                if builder_results:
+                    self._builder_data[builder_name] = builder_results
+                else:
+                    _log.warning("No result for builder '%s'" % builder_name)
         return self._builder_data
 
     # The release builders cycle much faster than the debug ones and cover all the platforms.
@@ -343,8 +347,8 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             stderr = self._tool.executive.run_command([self._tool.path()] + verbose_args + args, cwd=self._tool.scm().checkout_root, return_stderr=True)
             for line in stderr.splitlines():
                 _log.warning(line)
-        except ScriptError, e:
-            _log.error(e)
+        except ScriptError:
+            traceback.print_exc(file=sys.stderr)
 
     def _builders_to_fetch_from(self, builders_to_check):
         # This routine returns the subset of builders that will cover all of the baseline search paths
@@ -529,6 +533,8 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             self._run_in_parallel_and_update_scm(self._optimize_baselines(test_prefix_list, options.verbose))
 
     def _suffixes_for_actual_failures(self, test, builder_name, existing_suffixes):
+        if builder_name not in self.builder_data():
+            return set()
         actual_results = self.builder_data()[builder_name].actual_results(test)
         if not actual_results:
             return set()
@@ -829,7 +835,18 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
 
         did_finish = False
         try:
-            old_branch_name = tool.scm().current_branch()
+            # Setup git-svn for dcommit if necessary.
+            if tool.executive.run_command(
+                    ['git', 'config', '--local', '--get-regexp', r'^svn-remote\.'],
+                    return_exit_code=True):
+                tool.executive.run_command(['git', 'auto-svn'])
+
+            # Save the current branch name and checkout a clean branch for the patch.
+            old_branch_name = tool.executive.run_command(
+                ["git", "rev-parse", "--symbolic-full-name", "HEAD"])
+            if old_branch_name == "HEAD":
+                # If HEAD is detached use commit SHA instead.
+                old_branch_name = tool.executive.run_command(["git", "rev-parse", "HEAD"])
             tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
             tool.scm().create_clean_branch(self.AUTO_REBASELINE_BRANCH_NAME)
 
@@ -853,8 +870,8 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
                 tool.executive.run_command(['git', 'pull'])
 
                 self._run_git_cl_command(options, ['dcommit', '-f'])
-        except Exception as e:
-            _log.error(e)
+        except:
+            traceback.print_exc(file=sys.stderr)
         finally:
             if did_finish:
                 self._run_git_cl_command(options, ['set_close'])

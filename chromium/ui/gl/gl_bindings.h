@@ -70,11 +70,6 @@
 // GL_ANGLE_translated_shader_source
 #define GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE         0x93A0
 
-// GL_CHROMIUM_flipy
-#define GL_UNPACK_FLIP_Y_CHROMIUM                        0x9240
-
-#define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM             0x9241
-#define GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM           0x9242
 #define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM         0x9243
 #define GL_BIND_GENERATES_RESOURCE_CHROMIUM              0x9244
 
@@ -350,6 +345,7 @@ struct GL_EXPORT DriverGL {
 
 struct GL_EXPORT DriverOSMESA {
   void InitializeStaticBindings();
+  void InitializeExtensionBindings();
   void InitializeDebugBindings();
   void ClearBindings();
 
@@ -364,6 +360,7 @@ struct GL_EXPORT DriverOSMESA {
 #if defined(OS_WIN)
 struct GL_EXPORT DriverWGL {
   void InitializeStaticBindings();
+  void InitializeExtensionBindings();
   void InitializeDebugBindings();
   void ClearBindings();
 
@@ -379,6 +376,7 @@ struct GL_EXPORT DriverWGL {
 #if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || defined(USE_OZONE)
 struct GL_EXPORT DriverEGL {
   void InitializeStaticBindings();
+  void InitializeExtensionBindings();
   void InitializeDebugBindings();
   void ClearBindings();
 
@@ -386,7 +384,6 @@ struct GL_EXPORT DriverEGL {
   ProcsEGL debug_fn;
   ExtensionsEGL ext;
 
- private:
   static std::string GetPlatformExtensions();
   static std::string GetClientExtensions();
 };
@@ -395,6 +392,7 @@ struct GL_EXPORT DriverEGL {
 #if defined(USE_X11)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
+  void InitializeExtensionBindings();
   void InitializeDebugBindings();
   void ClearBindings();
 

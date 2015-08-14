@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <CommCtrl.h>
 #include <commdlg.h>
+#include <stdarg.h>
 #include <time.h>
 #include <windowsx.h>
 #include <atlbase.h>
@@ -26,11 +27,11 @@ const wchar_t MainUIWindow::kDefaultEntryPoint_[] = L"Run";
 const wchar_t MainUIWindow::kDefaultLogFile_[]    = L"";
 
 MainUIWindow::MainUIWindow()
-    : instance_handle_(NULL),
+    : broker_(NULL),
       spawn_target_(L""),
+      instance_handle_(NULL),
       dll_path_(L""),
-      entry_point_(L""),
-      broker_(NULL) {
+      entry_point_(L"") {
 }
 
 MainUIWindow::~MainUIWindow() {
@@ -624,7 +625,7 @@ void MainUIWindow::AddDebugMessage(const wchar_t* format, ...) {
   const int kMaxDebugBuffSize = 1024;
 
   va_list arg_list;
-  _crt_va_start(arg_list, format);
+  va_start(arg_list, format);
 
   wchar_t text[kMaxDebugBuffSize + 1];
   vswprintf_s(text, kMaxDebugBuffSize, format, arg_list);

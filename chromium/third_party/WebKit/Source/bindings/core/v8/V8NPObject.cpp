@@ -189,6 +189,7 @@ public:
     }
 
     // Dispose traits:
+    static void OnWeakCallback(const v8::WeakCallbackInfo<WeakCallbackDataType>& data) { }
     static void Dispose(v8::Isolate* isolate, v8::Global<v8::FunctionTemplate> value, PrivateIdentifier* key) { }
     static void DisposeWeak(const v8::WeakCallbackInfo<WeakCallbackDataType>& data) { }
 };
@@ -493,7 +494,8 @@ v8::Local<v8::Object> createV8ObjectForNPObject(v8::Isolate* isolate, NPObject* 
     _NPN_RetainObject(object);
     _NPN_RegisterObject(object, root);
 
-    staticNPObjectMap().set(object, value, npObjectTypeInfo());
+    bool wrapperDidNotExist = staticNPObjectMap().set(object, npObjectTypeInfo(), value);
+    ASSERT_UNUSED(wrapperDidNotExist, wrapperDidNotExist);
     ASSERT(V8DOMWrapper::hasInternalFieldsSet(value));
     return value;
 }

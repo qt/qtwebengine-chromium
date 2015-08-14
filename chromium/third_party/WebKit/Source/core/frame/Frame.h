@@ -30,6 +30,7 @@
 
 #include "core/CoreExport.h"
 #include "core/frame/FrameTypes.h"
+#include "core/loader/FrameLoaderTypes.h"
 #include "core/page/FrameTree.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -52,6 +53,12 @@ class SecurityContext;
 class Settings;
 class WindowProxy;
 class WindowProxyManager;
+struct FrameLoadRequest;
+
+enum class FrameDetachType { Remove, Swap };
+
+// Status of user gesture.
+enum class UserGestureStatus { Active, None };
 
 class CORE_EXPORT Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
 public:
@@ -65,12 +72,16 @@ public:
     virtual DOMWindow* domWindow() const = 0;
     virtual WindowProxy* windowProxy(DOMWrapperWorld&) = 0;
 
-    virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) = 0;
-    virtual void reload(ReloadPolicy, ClientRedirectPolicy) = 0;
+    virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList, UserGestureStatus) = 0;
+    // This version of Frame::navigate assumes the resulting navigation is not
+    // to be started on a timer. Use the method above in such cases.
+    virtual void navigate(const FrameLoadRequest&) = 0;
+    virtual void reload(FrameLoadType, ClientRedirectPolicy) = 0;
 
-    virtual void detach();
+    virtual void detach(FrameDetachType);
     void detachChildren();
     virtual void disconnectOwnerElement();
+    virtual bool shouldClose() = 0;
 
     FrameClient* client() const;
 
@@ -95,6 +106,11 @@ public:
     Frame* findFrameForNavigation(const AtomicString& name, Frame& activeFrame);
     Frame* findUnsafeParentScrollPropagationBoundary();
 
+    // This prepares the Frame for the next commit. It will detach children,
+    // dispatch unload events, abort XHR requests and detach the document.
+    // Returns true if the frame is ready to receive the next commit, or false
+    // otherwise.
+    virtual bool prepareForCommit() = 0;
     void finishSwapFrom(Frame*);
 
     bool canNavigate(const Frame&);
@@ -112,7 +128,6 @@ public:
     // want Document::loadEventFinished() instead.
     void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
     bool isLoading() const { return m_isLoading; }
-    virtual bool isLoadingAsChild() const { return isLoading(); }
 
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);

@@ -65,29 +65,32 @@ float IsacSpeedTest::EncodeABlock(int16_t* in_data, uint8_t* bit_stream,
   // ISAC takes 10 ms everycall
   const int subblocks = block_duration_ms_ / 10;
   const int subblock_length = 10 * input_sampling_khz_;
-  int value;
+  int value = 0;
 
   clock_t clocks = clock();
   size_t pointer = 0;
   for (int idx = 0; idx < subblocks; idx++, pointer += subblock_length) {
     value = WebRtcIsacfix_Encode(ISACFIX_main_inst_, &in_data[pointer],
                                  bit_stream);
+    if (idx == subblocks - 1)
+      EXPECT_GT(value, 0);
+    else
+      EXPECT_EQ(0, value);
   }
   clocks = clock() - clocks;
-  EXPECT_GT(value, 0);
-  assert(value <= max_bytes);
   *encoded_bytes = value;
+  assert(*encoded_bytes <= max_bytes);
   return 1000.0 * clocks / CLOCKS_PER_SEC;
 }
 
-float IsacSpeedTest::DecodeABlock(const uint8_t* bit_stream, int encoded_bytes,
+float IsacSpeedTest::DecodeABlock(const uint8_t* bit_stream,
+                                  int encoded_bytes,
                                   int16_t* out_data) {
   int value;
   int16_t audio_type;
   clock_t clocks = clock();
-  value = WebRtcIsacfix_Decode(ISACFIX_main_inst_,
-                               bit_stream,
-                               encoded_bytes, out_data, &audio_type);
+  value = WebRtcIsacfix_Decode(ISACFIX_main_inst_, bit_stream, encoded_bytes,
+                               out_data, &audio_type);
   clocks = clock() - clocks;
   EXPECT_EQ(output_length_sample_, value);
   return 1000.0 * clocks / CLOCKS_PER_SEC;

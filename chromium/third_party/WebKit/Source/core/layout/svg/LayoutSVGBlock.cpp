@@ -23,10 +23,10 @@
 #include "core/layout/svg/LayoutSVGBlock.h"
 
 #include "core/layout/LayoutView.h"
-#include "core/style/ShadowList.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/style/ShadowList.h"
 #include "core/svg/SVGElement.h"
 
 namespace blink {
@@ -34,16 +34,6 @@ namespace blink {
 LayoutSVGBlock::LayoutSVGBlock(SVGElement* element)
     : LayoutBlockFlow(element)
 {
-}
-
-LayoutRect LayoutSVGBlock::visualOverflowRect() const
-{
-    LayoutRect borderRect = borderBoxRect();
-
-    if (const ShadowList* textShadow = style()->textShadow())
-        textShadow->adjustRectForShadow(borderRect);
-
-    return borderRect;
 }
 
 void LayoutSVGBlock::updateFromStyle()
@@ -104,14 +94,13 @@ const LayoutObject* LayoutSVGBlock::pushMappingToContainer(const LayoutBoxModelO
 
 LayoutRect LayoutSVGBlock::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
-    return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(this, paintInvalidationContainer, paintInvalidationState);
+    return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(*this, paintInvalidationContainer, paintInvalidationState);
 }
 
 void LayoutSVGBlock::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
     FloatRect paintInvalidationRect = rect;
-    paintInvalidationRect.inflate(style()->outlineWidth());
-    const LayoutSVGRoot& svgRoot = SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(this, paintInvalidationRect, rect);
+    const LayoutSVGRoot& svgRoot = SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(*this, paintInvalidationRect, rect);
     svgRoot.mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
 }
 
@@ -126,29 +115,8 @@ void LayoutSVGBlock::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalid
     if (!shouldCheckForPaintInvalidation(paintInvalidationState))
         return;
 
-    if (paintInvalidationState.cachedOffsetsEnabled()) {
-        m_cachedPaintInvalidationTransform = paintInvalidationState.svgTransform();
-    } else {
-        m_cachedPaintInvalidationTransform.makeIdentity();
-        LayoutObject* next = parent();
-        while (!next->isSVGRoot()) {
-            m_cachedPaintInvalidationTransform = next->localToParentTransform() * m_cachedPaintInvalidationTransform;
-            next = next->parent();
-            ASSERT(next);
-        }
-        m_cachedPaintInvalidationTransform = toLayoutSVGRoot(next)->localToBorderBoxTransform() * m_cachedPaintInvalidationTransform;
-    }
-
     ForceHorriblySlowRectMapping slowRectMapping(&paintInvalidationState);
     LayoutBlockFlow::invalidateTreeIfNeeded(paintInvalidationState);
-}
-
-void LayoutSVGBlock::updatePaintInfoRect(IntRect& rect)
-{
-    if (rect != LayoutRect::infiniteIntRect()) {
-        AffineTransform transformToRoot = m_cachedPaintInvalidationTransform * localTransform();
-        rect = enclosingIntRect(transformToRoot.inverse().mapRect(FloatRect(rect)));
-    }
 }
 
 }

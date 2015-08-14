@@ -55,10 +55,10 @@
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
-#include "platform/heap/AddressSanitizer.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebScheduler.h"
 #include "public/platform/WebThread.h"
+#include "wtf/AddressSanitizer.h"
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -147,7 +147,11 @@ static void messageHandlerInMainThread(v8::Local<v8::Message> message, v8::Local
     int scriptId = 0;
     RefPtrWillBeRawPtr<ScriptCallStack> callStack = extractCallStack(isolate, message, &scriptId);
     String resourceName = extractResourceName(message, enteredWindow->document());
-    AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
+    AccessControlStatus accessControlStatus = NotSharableCrossOrigin;
+    if (message->IsOpaque())
+        accessControlStatus = OpaqueResource;
+    else if (message->IsSharedCrossOrigin())
+        accessControlStatus = SharableCrossOrigin;
 
     ScriptState* scriptState = ScriptState::current(isolate);
     String errorMessage = toCoreStringWithNullCheck(message->Get());
@@ -178,9 +182,9 @@ static void messageHandlerInMainThread(v8::Local<v8::Message> message, v8::Local
         // other isolated worlds (which means that the error events won't fire any event listeners
         // in user's scripts).
         EventDispatchForbiddenScope::AllowUserAgentEvents allowUserAgentEvents;
-        enteredWindow->document()->reportException(event.release(), scriptId, callStack, corsStatus);
+        enteredWindow->document()->reportException(event.release(), scriptId, callStack, accessControlStatus);
     } else {
-        enteredWindow->document()->reportException(event.release(), scriptId, callStack, corsStatus);
+        enteredWindow->document()->reportException(event.release(), scriptId, callStack, accessControlStatus);
     }
 }
 
@@ -363,21 +367,21 @@ static void initializeV8Common(v8::Isolate* isolate)
 namespace {
 
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
-    virtual void* Allocate(size_t size) override
+    void* Allocate(size_t size) override
     {
         void* data;
         WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::ZeroInitialize, data);
         return data;
     }
 
-    virtual void* AllocateUninitialized(size_t size) override
+    void* AllocateUninitialized(size_t size) override
     {
         void* data;
         WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::DontInitialize, data);
         return data;
     }
 
-    virtual void Free(void* data, size_t size) override
+    void Free(void* data, size_t size) override
     {
         WTF::ArrayBufferContents::freeMemory(data, size);
     }

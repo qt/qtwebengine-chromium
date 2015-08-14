@@ -134,7 +134,7 @@ public:
     // ServiceWorker specific method. Called after SyncEvent (dispatched via
     // WebServiceWorkerContextProxy) is handled by the ServiceWorker's script
     // context.
-    virtual void didHandleSyncEvent(int syncEventID) { }
+    virtual void didHandleSyncEvent(int syncEventID, WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific method. Called after CrossOriginConnectEvent
     // (dispatched via WebServiceWorkerContextProxy) is handled by the
@@ -186,6 +186,9 @@ public:
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callback after calling either onSuccess or onError.
     virtual void focus(const WebString& uuid, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // Ownership of the passed WebMessagePortChannel is NOT passed to the callee.
+    virtual void stashMessagePort(WebMessagePortChannel*, const WebString& name) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

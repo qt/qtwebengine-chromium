@@ -191,6 +191,9 @@ class FontCollectionLoader
   // Loads static cache file.
   bool LoadCacheFile();
 
+  // Unloads cache file and related data.
+  void UnloadCacheFile();
+
   // Puts class in static cache creating mode. In this mode we record all
   // direct write requests and store chunks of font data.
   void EnterStaticCacheMode(const WCHAR* file_name);
@@ -257,10 +260,7 @@ base::win::ScopedHandle g_shared_font_cache;
 // tracking various cache region requests by direct write.
 class FontCacheWriter {
  public:
-  FontCacheWriter()
-      : cookie_counter_(0),
-        count_font_entries_ignored_(0) {
-  }
+  FontCacheWriter() : count_font_entries_ignored_(0), cookie_counter_(0) {}
 
   ~FontCacheWriter() {
     if (static_cache_.get()) {
@@ -559,8 +559,7 @@ class FontFileStream
     return S_OK;
   }
 
-  FontFileStream::FontFileStream() : font_key_(0), cached_data_(false) {
-  }
+  FontFileStream() : font_key_(0), cached_data_(false) {}
 
   HRESULT RuntimeClassInitialize(UINT32 font_key) {
     if (g_font_loader->InCollectionBuildingMode() &&
@@ -787,35 +786,43 @@ bool FontCollectionLoader::LoadFontListFromRegistry() {
     if (regkey.GetValueNameAt(idx, &name) == ERROR_SUCCESS &&
         regkey.ReadValue(name.c_str(), &value) == ERROR_SUCCESS) {
       base::FilePath path(value.c_str());
-      // We need to check if file name is the only component that exists,
-      // we will ignore all other registry entries.
-      std::vector<base::FilePath::StringType> components;
-      path.GetComponents(&components);
-      if (components.size() == 1 ||
-          base::FilePath::CompareEqualIgnoreCase(system_font_path.value(),
-                                                 path.DirName().value())) {
-        bool should_ignore = false;
-        for (const auto& ignore : kFontsToIgnore) {
-          if (base::FilePath::CompareEqualIgnoreCase(path.value(), ignore)) {
+      // We need to check if path in registry is absolute, if it is then
+      // we check if it is same as DIR_WINDOWS_FONTS otherwise we ignore.
+      bool absolute = path.IsAbsolute();
+      if (absolute &&
+          !base::FilePath::CompareEqualIgnoreCase(system_font_path.value(),
+                                                  path.DirName().value())) {
+        continue;
+      }
+
+      // Ignore if path ends with a separator.
+      if (path.EndsWithSeparator())
+        continue;
+
+      if (absolute)
+        value = path.BaseName().value();
+
+      bool should_ignore = false;
+      for (const auto& ignore : kFontsToIgnore) {
+        if (base::FilePath::CompareEqualIgnoreCase(value, ignore)) {
+          should_ignore = true;
+          break;
+        }
+      }
+      // DirectWrite doesn't support bitmap/vector fonts and Adobe type 1
+      // fonts, we will ignore those font extensions.
+      // MSDN article: http://goo.gl/TfCOA
+      if (!should_ignore) {
+        for (const auto& ignore : kFontExtensionsToIgnore) {
+          if (path.MatchesExtension(ignore)) {
             should_ignore = true;
             break;
           }
         }
-        // DirectWrite doesn't support bitmap/vector fonts and Adobe type 1
-        // fonts, we will ignore those font extensions.
-        // MSDN article: http://goo.gl/TfCOA
-        if (!should_ignore) {
-          for (const auto& ignore : kFontExtensionsToIgnore) {
-            if (path.MatchesExtension(ignore)) {
-              should_ignore = true;
-              break;
-            }
-          }
-        }
-
-        if (!should_ignore)
-          reg_fonts_.push_back(value.c_str());
       }
+
+      if (!should_ignore)
+        reg_fonts_.push_back(value.c_str());
     }
   }
   UMA_HISTOGRAM_COUNTS("DirectWrite.Fonts.Loaded", reg_fonts_.size());
@@ -945,6 +952,12 @@ bool FontCollectionLoader::LoadCacheFile() {
   }
 
   return true;
+}
+
+void FontCollectionLoader::UnloadCacheFile() {
+  cache_.reset();
+  STLDeleteContainerPairSecondPointers(cache_map_.begin(), cache_map_.end());
+  cache_map_.clear();
 }
 
 void FontCollectionLoader::EnterStaticCacheMode(const WCHAR* file_name) {
@@ -1078,6 +1091,7 @@ IDWriteFontCollection* GetCustomFontCollection(IDWriteFactory* factory) {
     g_font_loader->EnableCollectionBuildingMode(true);
     hr = factory->CreateCustomFontCollection(
         g_font_loader.Get(), NULL, 0, g_font_collection.GetAddressOf());
+    g_font_loader->UnloadCacheFile();
     g_font_loader->EnableCollectionBuildingMode(false);
   }
   bool loading_restricted = false;

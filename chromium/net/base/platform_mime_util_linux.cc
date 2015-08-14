@@ -11,6 +11,8 @@
 
 #if defined(OS_ANDROID)
 #include "net/android/network_library.h"
+#elif defined(OS_CHROMEOS)
+#include "net/base/mime_extension_chromeos.h"
 #else
 #include "base/nix/mime_util_xdg.h"
 #endif
@@ -22,16 +24,15 @@ bool PlatformMimeUtil::GetPlatformMimeTypeFromExtension(
     const base::FilePath::StringType& ext, std::string* result) const {
   return android::GetMimeTypeFromExtension(ext, result);
 }
+#elif defined(OS_CHROMEOS)
+bool PlatformMimeUtil::GetPlatformMimeTypeFromExtension(
+    const base::FilePath::StringType& ext,
+    std::string* result) const {
+  return chromeos::GetPlatformMimeTypeFromExtension(ext, result);
+}
 #else
 bool PlatformMimeUtil::GetPlatformMimeTypeFromExtension(
     const base::FilePath::StringType& ext, std::string* result) const {
-  // TODO(thestig): This is a temporary hack until we can fix this
-  // properly in test shell / webkit.
-  // We have to play dumb and not return application/x-perl here
-  // to make the reload-subframe-object layout test happy.
-  if (ext == "pl")
-    return false;
-
   base::FilePath dummy_path("foo." + ext);
   std::string out = base::nix::GetFileMimeType(dummy_path);
 

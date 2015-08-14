@@ -4,25 +4,25 @@
 
 #include "ui/base/ime/mock_input_method.h"
 
-#include "ui/base/ime/text_input_focus_manager.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ime/input_method_delegate.h"
+#include "ui/events/event.h"
 
 namespace ui {
 
 MockInputMethod::MockInputMethod(internal::InputMethodDelegate* delegate)
-    : text_input_client_(NULL) {
+    : text_input_client_(NULL), delegate_(delegate) {
 }
 
 MockInputMethod::~MockInputMethod() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_,
+                    OnInputMethodDestroyed(this));
 }
 
 void MockInputMethod::SetDelegate(internal::InputMethodDelegate* delegate) {
+  delegate_ = delegate;
 }
 
 void MockInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
-  if (switches::IsTextInputFocusManagerEnabled())
-    return;
-
   if (text_input_client_ == client)
     return;
   text_input_client_ = client;
@@ -37,14 +37,11 @@ void MockInputMethod::DetachTextInputClient(TextInputClient* client) {
 }
 
 TextInputClient* MockInputMethod::GetTextInputClient() const {
-  if (switches::IsTextInputFocusManagerEnabled())
-    return TextInputFocusManager::GetInstance()->GetFocusedTextInputClient();
-
   return text_input_client_;
 }
 
 bool MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& event) {
-  return false;
+  return delegate_->DispatchKeyEventPostIME(event);
 }
 
 void MockInputMethod::OnFocus() {

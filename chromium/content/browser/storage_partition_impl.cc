@@ -7,7 +7,9 @@
 #include <set>
 #include <vector>
 
+#include "base/location.h"
 #include "base/sequenced_task_runner.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
@@ -381,7 +383,8 @@ StoragePartitionImpl::StoragePartitionImpl(
     HostZoomLevelContext* host_zoom_level_context,
     NavigatorConnectContextImpl* navigator_connect_context,
     PlatformNotificationContextImpl* platform_notification_context,
-    BackgroundSyncContextImpl* background_sync_context)
+    BackgroundSyncContextImpl* background_sync_context,
+    StashedPortManager* stashed_port_manager)
     : partition_path_(partition_path),
       quota_manager_(quota_manager),
       appcache_service_(appcache_service),
@@ -398,6 +401,7 @@ StoragePartitionImpl::StoragePartitionImpl(
       navigator_connect_context_(navigator_connect_context),
       platform_notification_context_(platform_notification_context),
       background_sync_context_(background_sync_context),
+      stashed_port_manager_(stashed_port_manager),
       browser_context_(browser_context) {
 }
 
@@ -433,6 +437,9 @@ StoragePartitionImpl::~StoragePartitionImpl() {
 
   if (GetBackgroundSyncContext())
     GetBackgroundSyncContext()->Shutdown();
+
+  if (GetStashedPortManager())
+    GetStashedPortManager()->Shutdown();
 }
 
 StoragePartitionImpl* StoragePartitionImpl::Create(
@@ -479,8 +486,10 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
   base::SequencedTaskRunner* idb_task_runner =
       BrowserThread::CurrentlyOn(BrowserThread::UI) &&
               BrowserMainLoop::GetInstance()
-          ? BrowserMainLoop::GetInstance()->indexed_db_thread()
-                ->message_loop_proxy().get()
+          ? BrowserMainLoop::GetInstance()
+                ->indexed_db_thread()
+                ->task_runner()
+                .get()
           : NULL;
   scoped_refptr<IndexedDBContextImpl> indexed_db_context =
       new IndexedDBContextImpl(path,
@@ -529,6 +538,10 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       new BackgroundSyncContextImpl();
   background_sync_context->Init(service_worker_context);
 
+  scoped_refptr<StashedPortManager> stashed_port_manager =
+      new StashedPortManager(service_worker_context);
+  stashed_port_manager->Init();
+
   StoragePartitionImpl* storage_partition = new StoragePartitionImpl(
       context, partition_path, quota_manager.get(), appcache_service.get(),
       filesystem_context.get(), database_tracker.get(),
@@ -537,7 +550,7 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       webrtc_identity_store.get(), special_storage_policy.get(),
       geofencing_manager.get(), host_zoom_level_context.get(),
       navigator_connect_context.get(), platform_notification_context.get(),
-      background_sync_context.get());
+      background_sync_context.get(), stashed_port_manager.get());
 
   service_worker_context->set_storage_partition(storage_partition);
 
@@ -619,6 +632,10 @@ StoragePartitionImpl::GetPlatformNotificationContext() {
 
 BackgroundSyncContextImpl* StoragePartitionImpl::GetBackgroundSyncContext() {
   return background_sync_context_.get();
+}
+
+StashedPortManager* StoragePartitionImpl::GetStashedPortManager() {
+  return stashed_port_manager_.get();
 }
 
 void StoragePartitionImpl::ClearDataImpl(

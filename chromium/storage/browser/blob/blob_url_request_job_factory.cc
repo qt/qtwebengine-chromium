@@ -5,11 +5,9 @@
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request_context.h"
-#include "net/url_request/url_request_job_factory.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job.h"
@@ -80,7 +78,7 @@ scoped_ptr<BlobDataSnapshot> BlobProtocolHandler::LookupBlobData(
   // TODO(michaeln): Replace this use case and others like it with a BlobReader
   // impl that does not depend on urlfetching to perform this function.
   const std::string kPrefix("blob:uuid/");
-  if (!StartsWithASCII(request->url().spec(), kPrefix, true))
+  if (!base::StartsWithASCII(request->url().spec(), kPrefix, true))
     return NULL;
   std::string uuid = request->url().spec().substr(kPrefix.length());
   scoped_ptr<BlobDataHandle> handle = context_->GetBlobDataFromUUID(uuid);

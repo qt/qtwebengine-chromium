@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_current_loop.h"
@@ -795,10 +794,9 @@ void SourceState::OnSourceInitDone(const StreamParser::InitParameters& params) {
 }
 
 ChunkDemuxerStream::ChunkDemuxerStream(Type type,
-                                       Liveness liveness,
                                        bool splice_frames_enabled)
     : type_(type),
-      liveness_(liveness),
+      liveness_(DemuxerStream::LIVENESS_UNKNOWN),
       state_(UNINITIALIZED),
       splice_frames_enabled_(splice_frames_enabled),
       partial_append_window_trimming_enabled_(false) {
@@ -1122,6 +1120,10 @@ ChunkDemuxer::ChunkDemuxer(
       splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(!open_cb_.is_null());
   DCHECK(!encrypted_media_init_data_cb_.is_null());
+}
+
+std::string ChunkDemuxer::GetDisplayName() const {
+  return "ChunkDemuxer";
 }
 
 void ChunkDemuxer::Initialize(
@@ -1669,21 +1671,10 @@ void ChunkDemuxer::OnSourceInitDone(
   }
 
   if (params.liveness != DemuxerStream::LIVENESS_UNKNOWN) {
-    if (liveness_ != DemuxerStream::LIVENESS_UNKNOWN &&
-        params.liveness != liveness_) {
-      MEDIA_LOG(ERROR, log_cb_)
-          << "Liveness is not the same across all SourceBuffers.";
-      ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
-      return;
-    }
-
-    if (liveness_ != params.liveness) {
-      liveness_ = params.liveness;
-      if (audio_)
-        audio_->SetLiveness(liveness_);
-      if (video_)
-        video_->SetLiveness(liveness_);
-    }
+    if (audio_)
+      audio_->SetLiveness(params.liveness);
+    if (video_)
+      video_->SetLiveness(params.liveness);
   }
 
   // Wait until all streams have initialized.
@@ -1709,19 +1700,19 @@ ChunkDemuxer::CreateDemuxerStream(DemuxerStream::Type type) {
     case DemuxerStream::AUDIO:
       if (audio_)
         return NULL;
-      audio_.reset(new ChunkDemuxerStream(DemuxerStream::AUDIO, liveness_,
-                                          splice_frames_enabled_));
+      audio_.reset(
+          new ChunkDemuxerStream(DemuxerStream::AUDIO, splice_frames_enabled_));
       return audio_.get();
       break;
     case DemuxerStream::VIDEO:
       if (video_)
         return NULL;
-      video_.reset(new ChunkDemuxerStream(DemuxerStream::VIDEO, liveness_,
-                                          splice_frames_enabled_));
+      video_.reset(
+          new ChunkDemuxerStream(DemuxerStream::VIDEO, splice_frames_enabled_));
       return video_.get();
       break;
     case DemuxerStream::TEXT: {
-      return new ChunkDemuxerStream(DemuxerStream::TEXT, liveness_,
+      return new ChunkDemuxerStream(DemuxerStream::TEXT,
                                     splice_frames_enabled_);
       break;
     }

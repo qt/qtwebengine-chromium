@@ -90,8 +90,8 @@ class Renderer9 : public RendererD3D
     virtual gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture);
 
     gl::Error setUniformBuffers(const gl::Data &data,
-                                const GLint vertexUniformBuffers[],
-                                const GLint fragmentUniformBuffers[]) override;
+                                const std::vector<GLint> &vertexUniformBuffers,
+                                const std::vector<GLint> &fragmentUniformBuffers) override;
 
     virtual gl::Error setRasterizerState(const gl::RasterizerState &rasterState);
     gl::Error setBlendState(const gl::Framebuffer *framebuffer, const gl::BlendState &blendState, const gl::ColorF &blendColor,
@@ -106,18 +106,21 @@ class Renderer9 : public RendererD3D
     gl::Error applyRenderTarget(const gl::Framebuffer *frameBuffer) override;
     gl::Error applyRenderTarget(const gl::FramebufferAttachment *colorAttachment,
                                 const gl::FramebufferAttachment *depthStencilAttachment);
-    virtual gl::Error applyShaders(gl::Program *program, const gl::VertexFormat inputLayout[], const gl::Framebuffer *framebuffer,
-                                   bool rasterizerDiscard, bool transformFeedbackActive);
+    gl::Error applyShaders(gl::Program *program,
+                           const gl::Framebuffer *framebuffer,
+                           bool rasterizerDiscard,
+                           bool transformFeedbackActive) override;
     virtual gl::Error applyUniforms(const ProgramImpl &program, const std::vector<gl::LinkedUniform*> &uniformArray);
     virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount, bool usesPointSize);
-    virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances);
-    virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo);
+    virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances, SourceIndexData *sourceInfo);
+    virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo, SourceIndexData *sourceIndexInfo);
 
     void applyTransformFeedbackBuffers(const gl::State &state) override;
 
     gl::Error drawArrays(const gl::Data &data, GLenum mode, GLsizei count, GLsizei instances, bool usesPointSize) override;
     virtual gl::Error drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
-                                   gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances);
+                                   gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances,
+                                   bool usesPointSize);
 
     gl::Error clear(const ClearParameters &clearParams,
                     const gl::FramebufferAttachment *colorBuffer,
@@ -131,7 +134,7 @@ class Renderer9 : public RendererD3D
 
     VendorID getVendorId() const override;
     std::string getRendererDescription() const override;
-    GUID getAdapterIdentifier() const override;
+    DeviceIdentifier getAdapterIdentifier() const override;
 
     IDirect3DDevice9 *getDevice() { return mDevice; }
     void *getD3DDevice() override;
@@ -203,7 +206,7 @@ class Renderer9 : public RendererD3D
     virtual IndexBuffer *createIndexBuffer();
 
     // Vertex Array creation
-    virtual VertexArrayImpl *createVertexArray();
+    VertexArrayImpl *createVertexArray(const gl::VertexArray::Data &data) override;
 
     // Query and Fence creation
     virtual QueryImpl *createQuery(GLenum type);
@@ -224,14 +227,18 @@ class Renderer9 : public RendererD3D
     D3DPOOL getTexturePool(DWORD usage) const;
 
     bool getLUID(LUID *adapterLuid) const override;
-    virtual VertexConversionType getVertexConversionType(const gl::VertexFormat &vertexFormat) const;
-    virtual GLenum getVertexComponentType(const gl::VertexFormat &vertexFormat) const;
+    VertexConversionType getVertexConversionType(gl::VertexFormatType vertexFormatType) const override;
+    GLenum getVertexComponentType(gl::VertexFormatType vertexFormatType) const override;
 
     gl::Error copyToRenderTarget(IDirect3DSurface9 *dest, IDirect3DSurface9 *source, bool fromManaged);
 
     RendererClass getRendererClass() const override { return RENDERER_D3D9; }
 
     D3DDEVTYPE getD3D9DeviceType() const { return mDeviceType; }
+
+  protected:
+    void createAnnotator() override;
+    gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
 
   private:
     void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps, gl::Extensions *outExtensions) const override;
@@ -370,8 +377,6 @@ class Renderer9 : public RendererD3D
         gl::FramebufferAttachment *buffer;
     } mNullColorbufferCache[NUM_NULL_COLORBUFFER_CACHE_ENTRIES];
     UINT mMaxNullColorbufferLRU;
-
-    DebugAnnotator9 mAnnotator;
 };
 
 }

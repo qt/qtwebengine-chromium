@@ -33,15 +33,13 @@
 #ifndef SkiaUtils_h
 #define SkiaUtils_h
 
-#include "SkMatrix.h"
-#include "SkPaint.h"
-#include "SkPath.h"
-#include "SkXfermode.h"
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/transforms/AffineTransform.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/effects/SkCornerPathEffect.h"
 #include "wtf/MathExtras.h"
 
 namespace blink {
@@ -120,14 +118,11 @@ bool nearlyIntegral(float value);
 InterpolationQuality limitInterpolationQuality(const GraphicsContext*, InterpolationQuality resampling);
 
 InterpolationQuality computeInterpolationQuality(
-    const SkMatrix&,
     float srcWidth,
     float srcHeight,
     float destWidth,
     float destHeight,
     bool isDataComplete = true);
-
-bool shouldDrawAntiAliased(const GraphicsContext*, const SkRect& destRect);
 
 // This replicates the old skia behavior when it used to take radius for blur. Now it takes sigma.
 inline SkScalar skBlurRadiusToSigma(SkScalar radius)
@@ -135,6 +130,9 @@ inline SkScalar skBlurRadiusToSigma(SkScalar radius)
     SkASSERT(radius >= 0);
     return 0.288675f * radius + 0.5f;
 }
+
+template<typename PrimitiveType>
+void drawPlatformFocusRing(const PrimitiveType&, SkCanvas*, SkColor, int width);
 
 } // namespace blink
 

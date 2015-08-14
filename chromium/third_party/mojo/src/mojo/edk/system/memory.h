@@ -9,10 +9,10 @@
 #include <stdint.h>
 #include <string.h>  // For |memcpy()|.
 
-#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/macros.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace system {
@@ -23,25 +23,25 @@ namespace internal {
 // TODO(vtl): Remove these once we have the C++11 |remove_const|.
 template <typename T>
 struct remove_const {
-  typedef T type;
+  using type = T;
 };
 template <typename T>
 struct remove_const<const T> {
-  typedef T type;
+  using type = T;
 };
 
 // Yields |(const) char| if |T| is |(const) void|, else |T|:
 template <typename T>
 struct VoidToChar {
-  typedef T type;
+  using type = T;
 };
 template <>
 struct VoidToChar<void> {
-  typedef char type;
+  using type = char;
 };
 template <>
 struct VoidToChar<const void> {
-  typedef const char type;
+  using type = const char;
 };
 
 // Checks (insofar as appropriate/possible) that |pointer| is a valid pointer to
@@ -84,7 +84,7 @@ struct NullUserPointer {};
 template <typename Type>
 class UserPointer {
  private:
-  typedef typename internal::VoidToChar<Type>::type NonVoidType;
+  using NonVoidType = typename internal::VoidToChar<Type>::type;
 
  public:
   // Instead of explicitly using these constructors, you can often use
@@ -243,9 +243,9 @@ class UserPointer {
   //
   // TODO(vtl): Possibly, since we're not really being safe, we should just not
   // copy for Release builds.
-  typedef UserPointerReader<Type> Reader;
-  typedef UserPointerWriter<Type> Writer;
-  typedef UserPointerReaderWriter<Type> ReaderWriter;
+  using Reader = UserPointerReader<Type>;
+  using Writer = UserPointerWriter<Type>;
+  using ReaderWriter = UserPointerReaderWriter<Type>;
 
  private:
   friend class UserPointerReader<Type>;
@@ -269,7 +269,7 @@ inline UserPointer<Type> MakeUserPointer(Type* pointer) {
 template <typename Type>
 class UserPointerReader {
  private:
-  typedef typename internal::remove_const<Type>::type TypeNoConst;
+  using TypeNoConst = typename internal::remove_const<Type>::type;
 
  public:
   // Note: If |count| is zero, |GetPointer()| will always return null.
@@ -307,7 +307,7 @@ class UserPointerReader {
 
   scoped_ptr<TypeNoConst[]> buffer_;
 
-  DISALLOW_COPY_AND_ASSIGN(UserPointerReader);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(UserPointerReader);
 };
 
 // Implementation of |UserPointer<Type>::Writer|.
@@ -336,7 +336,7 @@ class UserPointerWriter {
   size_t count_;
   scoped_ptr<Type[]> buffer_;
 
-  DISALLOW_COPY_AND_ASSIGN(UserPointerWriter);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(UserPointerWriter);
 };
 
 // Implementation of |UserPointer<Type>::ReaderWriter|.
@@ -368,7 +368,7 @@ class UserPointerReaderWriter {
   size_t count_;
   scoped_ptr<Type[]> buffer_;
 
-  DISALLOW_COPY_AND_ASSIGN(UserPointerReaderWriter);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(UserPointerReaderWriter);
 };
 
 }  // namespace system

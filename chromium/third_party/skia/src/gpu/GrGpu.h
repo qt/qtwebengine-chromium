@@ -8,20 +8,30 @@
 #ifndef GrGpu_DEFINED
 #define GrGpu_DEFINED
 
-#include "GrDrawTarget.h"
-#include "GrPathRendering.h"
+#include "GrPipelineBuilder.h"
 #include "GrProgramDesc.h"
+#include "GrStencil.h"
+#include "GrTraceMarker.h"
+#include "GrXferProcessor.h"
 #include "SkPath.h"
 
+class GrBatchTracker;
 class GrContext;
+class GrGLContext;
+class GrIndexBuffer;
 class GrNonInstancedVertices;
 class GrPath;
 class GrPathRange;
 class GrPathRenderer;
 class GrPathRendererChain;
+class GrPathRendering;
 class GrPipeline;
 class GrPrimitiveProcessor;
+class GrRenderTarget;
 class GrStencilAttachment;
+class GrSurface;
+class GrTexture;
+class GrVertexBuffer;
 class GrVertices;
 
 class GrGpu : public SkRefCnt {
@@ -31,7 +41,7 @@ public:
      * not supported (at compile-time or run-time) this returns NULL. The context will not be
      * fully constructed and should not be used by GrGpu until after this function returns.
      */
-    static GrGpu* Create(GrBackend, GrBackendContext, GrContext* context);
+    static GrGpu* Create(GrBackend, GrBackendContext, const GrContextOptions&, GrContext* context);
 
     ////////////////////////////////////////////////////////////////////////////
 
@@ -44,9 +54,9 @@ public:
     /**
      * Gets the capabilities of the draw target.
      */
-    const GrDrawTargetCaps* caps() const { return fCaps.get(); }
+    const GrCaps* caps() const { return fCaps.get(); }
 
-    GrPathRendering* pathRendering() { return fPathRendering.get(); }
+    GrPathRendering* pathRendering() { return fPathRendering.get();  }
 
     // Called by GrContext when the underlying backend context has been destroyed.
     // GrGpu should use this to ensure that no backend API calls will be made from
@@ -66,7 +76,7 @@ public:
      * Creates a texture object. If kRenderTarget_GrSurfaceFlag the texture can
      * be used as a render target by calling GrTexture::asRenderTarget(). Not all
      * pixel configs can be used as render targets. Support for configs as textures
-     * or render targets can be checked using GrDrawTargetCaps.
+     * or render targets can be checked using GrCaps.
      *
      * @param desc        describes the texture to be created.
      * @param budgeted    does this texture count against the resource cache budget?
@@ -87,12 +97,12 @@ public:
     /**
      * Implements GrContext::wrapBackendTexture
      */
-    GrTexture* wrapBackendTexture(const GrBackendTextureDesc&);
+    GrTexture* wrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership);
 
     /**
      * Implements GrContext::wrapBackendTexture
      */
-    GrRenderTarget* wrapBackendRenderTarget(const GrBackendRenderTargetDesc&);
+    GrRenderTarget* wrapBackendRenderTarget(const GrBackendRenderTargetDesc&, GrWrapOwnership);
 
     /**
      * Creates a vertex buffer.
@@ -257,16 +267,6 @@ public:
                                   const GrPipeline&,
                                   const GrBatchTracker&) const = 0;
 
-    // Called to determine whether a copySurface call would succeed or not. Derived
-    // classes must keep this consistent with their implementation of onCopySurface(). Fallbacks
-    // to issuing a draw from the src to dst take place at the GrDrawTarget level and this function
-    // should only return true if a faster copy path exists. The rect and point are pre-clipped. The
-    // src rect and implied dst rect are guaranteed to be within the src/dst bounds and non-empty.
-    virtual bool canCopySurface(const GrSurface* dst,
-                                const GrSurface* src,
-                                const SkIRect& srcRect,
-                                const SkIPoint& dstPoint) = 0;
-
     // Called to perform a surface to surface copy. Fallbacks to issuing a draw from the src to dst
     // take place at the GrDrawTarget level and this function implement faster copy paths. The rect
     // and point are pre-clipped. The src rect and implied dst rect are guaranteed to be within the
@@ -297,27 +297,6 @@ public:
     };
 
     void draw(const DrawArgs&, const GrVertices&);
-
-    /** None of these params are optional, pointers used just to avoid making copies. */
-    struct StencilPathState {
-        bool fUseHWAA;
-        GrRenderTarget* fRenderTarget;
-        const SkMatrix* fViewMatrix;
-        const GrStencilSettings* fStencil;
-        const GrScissorState* fScissor;
-    };
-
-    void stencilPath(const GrPath*, const StencilPathState&);
-
-    void drawPath(const DrawArgs&, const GrPath*, const GrStencilSettings&);
-    void drawPaths(const DrawArgs&,
-                   const GrPathRange*,
-                   const void* indices,
-                   GrDrawTarget::PathIndexType,
-                   const float transformValues[],
-                   GrDrawTarget::PathTransformType,
-                   int count,
-                   const GrStencilSettings&);
 
     ///////////////////////////////////////////////////////////////////////////
     // Debugging and Stats
@@ -386,6 +365,9 @@ public:
     // Given a rt, find or create a stencil buffer and attach it
     bool attachStencilAttachmentToRenderTarget(GrRenderTarget* target);
 
+    // This is only to be used in tests.
+    virtual const GrGLContext* glContextForTesting() const { return NULL; }
+
 protected:
     // Functions used to map clip-respecting stencil tests into normal
     // stencil funcs supported by GPUs.
@@ -403,7 +385,7 @@ protected:
     Stats                                   fStats;
     SkAutoTDelete<GrPathRendering>          fPathRendering;
     // Subclass must initialize this in its constructor.
-    SkAutoTUnref<const GrDrawTargetCaps>    fCaps;
+    SkAutoTUnref<const GrCaps>    fCaps;
 
 private:
     // called when the 3D context state is unknown. Subclass should emit any
@@ -419,8 +401,9 @@ private:
     virtual GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc,
                                                  GrGpuResource::LifeCycle lifeCycle,
                                                  const void* srcData) = 0;
-    virtual GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&) = 0;
-    virtual GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&) = 0;
+    virtual GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership) = 0;
+    virtual GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
+                                                      GrWrapOwnership) = 0;
     virtual GrVertexBuffer* onCreateVertexBuffer(size_t size, bool dynamic) = 0;
     virtual GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic) = 0;
 
@@ -435,19 +418,7 @@ private:
 
     // overridden by backend-specific derived class to perform the draw call.
     virtual void onDraw(const DrawArgs&, const GrNonInstancedVertices&) = 0;
-    virtual void onStencilPath(const GrPath*, const StencilPathState&) = 0;
 
-    virtual void onDrawPath(const DrawArgs&, const GrPath*, const GrStencilSettings&) = 0;
-    virtual void onDrawPaths(const DrawArgs&,
-                             const GrPathRange*,
-                             const void* indices,
-                             GrDrawTarget::PathIndexType,
-                             const float transformValues[],
-                             GrDrawTarget::PathTransformType,
-                             int count,
-                             const GrStencilSettings&) = 0;
-
-    // overridden by backend-specific derived class to perform the read pixels.
     virtual bool onReadPixels(GrRenderTarget* target,
                               int left, int top, int width, int height,
                               GrPixelConfig,
@@ -498,6 +469,7 @@ private:
     // The context owns us, not vice-versa, so this ptr is not ref'ed by Gpu.
     GrContext*                                                          fContext;
 
+    friend class GrPathRendering;
     typedef SkRefCnt INHERITED;
 };
 

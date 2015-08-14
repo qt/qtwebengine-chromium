@@ -104,7 +104,6 @@ public:
     BLINK_EXPORT WebString contentAsTextForTesting() const;
     BLINK_EXPORT WebElementCollection all();
     BLINK_EXPORT void forms(WebVector<WebFormElement>&) const;
-    BLINK_EXPORT void images(WebVector<WebElement>&);
     BLINK_EXPORT WebURL completeURL(const WebString&) const;
     BLINK_EXPORT WebElement getElementById(const WebString&) const;
     BLINK_EXPORT WebElement focusedElement() const;
@@ -114,17 +113,6 @@ public:
     BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
     BLINK_EXPORT WebElement createElement(const WebString& tagName);
-    // Shorthand of frame()->scrollOffset().
-    BLINK_EXPORT WebSize scrollOffset() const;
-    // Shorthand of frame()->minimumScrollOffset().
-    BLINK_EXPORT WebSize minimumScrollOffset() const;
-    // Shorthand of frame()->maximumScrollOffset().
-    BLINK_EXPORT WebSize maximumScrollOffset() const;
-    BLINK_EXPORT void setIsTransitionDocument(bool);
-    BLINK_EXPORT void beginExitTransition(const WebString& cssSelector, bool exitToNativeApp);
-    BLINK_EXPORT void revertExitTransition();
-    BLINK_EXPORT void hideTransitionElements(const WebString& cssSelector);
-    BLINK_EXPORT void showTransitionElements(const WebString& cssSelector);
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -148,6 +136,7 @@ public:
     BLINK_EXPORT v8::Local<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Local<v8::Value> options, WebExceptionCode&);
 
     BLINK_EXPORT WebURL manifestURL() const;
+    BLINK_EXPORT bool manifestUseCredentials() const;
 
     BLINK_EXPORT WebURL defaultPresentationURL() const;
 

@@ -212,8 +212,9 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
             setSelected(willBeSelected);
     } else if (name == labelAttr) {
         updateLabel();
-    } else
+    } else {
         HTMLElement::parseAttribute(name, value);
+    }
 }
 
 String HTMLOptionElement::value() const
@@ -329,18 +330,6 @@ PassRefPtr<ComputedStyle> HTMLOptionElement::customStyleForLayoutObject()
 {
     updateNonComputedStyle();
     return m_style;
-}
-
-void HTMLOptionElement::didRecalcStyle(StyleRecalcChange change)
-{
-    if (change == NoChange)
-        return;
-
-    // FIXME: We ask our owner select to repaint regardless of which property changed.
-    if (HTMLSelectElement* select = ownerSelectElement()) {
-        if (LayoutObject* layoutObject = select->layoutObject())
-            layoutObject->setShouldDoFullPaintInvalidation();
-    }
 }
 
 String HTMLOptionElement::textIndentedToRespectGroupLabel() const

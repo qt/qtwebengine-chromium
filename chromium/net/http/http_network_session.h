@@ -79,7 +79,6 @@ class NET_EXPORT HttpNetworkSession
     NetLog* net_log;
     HostMappingRules* host_mapping_rules;
     bool ignore_certificate_errors;
-    bool use_stale_while_revalidate;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
     bool enable_tcp_fast_open_for_ssl;
@@ -115,6 +114,7 @@ class NET_EXPORT HttpNetworkSession
     bool quic_enable_connection_racing;
     bool quic_enable_non_blocking_io;
     bool quic_disable_disk_cache;
+    bool quic_prefer_aes;
     int quic_max_number_of_lossy_connections;
     float quic_packet_loss_threshold;
     int quic_socket_receive_buffer_size;
@@ -126,6 +126,9 @@ class NET_EXPORT HttpNetworkSession
     bool enable_user_alternate_protocol_ports;
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
     QuicVersionVector quic_supported_versions;
+    int quic_max_recent_disabled_reasons;
+    int quic_threshold_public_resets_post_handshake;
+    int quic_threshold_timeouts_streams_open;
     QuicTagVector quic_connection_options;
     ProxyDelegate* proxy_delegate;
   };
@@ -183,17 +186,15 @@ class NET_EXPORT HttpNetworkSession
     return net_log_;
   }
 
-  // Creates a Value summary of the state of the socket pools. The caller is
-  // responsible for deleting the returned value.
-  base::Value* SocketPoolInfoToValue() const;
+  // Creates a Value summary of the state of the socket pools.
+  scoped_ptr<base::Value> SocketPoolInfoToValue() const;
 
-  // Creates a Value summary of the state of the SPDY sessions. The caller is
-  // responsible for deleting the returned value.
-  base::Value* SpdySessionPoolInfoToValue() const;
+  // Creates a Value summary of the state of the SPDY sessions.
+  scoped_ptr<base::Value> SpdySessionPoolInfoToValue() const;
 
   // Creates a Value summary of the state of the QUIC sessions and
-  // configuration. The caller is responsible for deleting the returned value.
-  base::Value* QuicInfoToValue() const;
+  // configuration.
+  scoped_ptr<base::Value> QuicInfoToValue() const;
 
   void CloseAllConnections();
   void CloseIdleConnections();

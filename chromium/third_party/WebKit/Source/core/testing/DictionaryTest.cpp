@@ -47,6 +47,7 @@ void DictionaryTest::set(const InternalDictionary& testingDictionary)
     m_usvStringMember = testingDictionary.usvStringMember();
     if (testingDictionary.hasStringSequenceMember())
         m_stringSequenceMember = testingDictionary.stringSequenceMember();
+    m_stringSequenceMemberWithDefault = testingDictionary.stringSequenceMemberWithDefault();
     if (testingDictionary.hasStringSequenceOrNullMember())
         m_stringSequenceOrNullMember = testingDictionary.stringSequenceOrNullMember();
     m_enumMember = testingDictionary.enumMember();
@@ -62,6 +63,8 @@ void DictionaryTest::set(const InternalDictionary& testingDictionary)
     m_objectOrNullMemberWithDefault = testingDictionary.objectOrNullMemberWithDefault();
     if (testingDictionary.hasDoubleOrStringMember())
         m_doubleOrStringMember = testingDictionary.doubleOrStringMember();
+    if (testingDictionary.hasDoubleOrStringSequenceMember())
+        m_doubleOrStringSequenceMember = testingDictionary.doubleOrStringSequenceMember();
     m_eventTargetOrNullMember = testingDictionary.eventTargetOrNullMember();
 }
 
@@ -90,6 +93,7 @@ void DictionaryTest::get(InternalDictionary& result)
     result.setUsvStringMember(m_usvStringMember);
     if (m_stringSequenceMember)
         result.setStringSequenceMember(m_stringSequenceMember.get());
+    result.setStringSequenceMemberWithDefault(m_stringSequenceMemberWithDefault);
     if (m_stringSequenceOrNullMember)
         result.setStringSequenceOrNullMember(m_stringSequenceOrNullMember.get());
     result.setEnumMember(m_enumMember);
@@ -105,6 +109,8 @@ void DictionaryTest::get(InternalDictionary& result)
     result.setObjectOrNullMemberWithDefault(m_objectOrNullMemberWithDefault);
     if (!m_doubleOrStringMember.isNull())
         result.setDoubleOrStringMember(m_doubleOrStringMember);
+    if (!m_doubleOrStringSequenceMember.isNull())
+        result.setDoubleOrStringSequenceMember(m_doubleOrStringSequenceMember.get());
     result.setEventTargetOrNullMember(m_eventTargetOrNullMember);
 }
 
@@ -140,6 +146,7 @@ void DictionaryTest::reset()
     m_stringMember = String();
     m_stringMemberWithDefault = String("Should not be returned");
     m_stringSequenceMember = nullptr;
+    m_stringSequenceMemberWithDefault.fill("Should not be returned", 1);
     m_stringSequenceOrNullMember = nullptr;
     m_enumMember = String();
     m_enumMemberWithDefault = String();
@@ -160,6 +167,7 @@ DEFINE_TRACE(DictionaryTest)
 {
     visitor->trace(m_elementMember);
     visitor->trace(m_elementOrNullMember);
+    visitor->trace(m_doubleOrStringSequenceMember);
     visitor->trace(m_eventTargetOrNullMember);
 }
 

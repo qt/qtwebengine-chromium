@@ -92,7 +92,7 @@ group("both_gn_and_gyp") {
     "//media/cast:cast_unittests",
     "//media/midi:midi_unittests",
     "//mojo",
-    "//mojo/application",
+    "//mojo/application/public/cpp",
     "//mojo/common:mojo_common_unittests",
     "//net:hpack_example_generator",
     "//net:hpack_fuzz_mutator",
@@ -205,6 +205,8 @@ group("both_gn_and_gyp") {
       "//base/android/linker:chromium_android_linker",
       "//build/android/gyp/test:hello_world",
       "//build/android/rezip",
+      "//chrome/android:chrome_public_apk",
+      "//chrome/android:chrome_public_test_apk",
       "//chrome/android:chrome_shell_apk",
       "//chrome/test/chromedriver/test/webview_shell:chromedriver_webview_shell_apk",
       "//tools/imagediff($host_toolchain)",
@@ -434,7 +436,6 @@ group("both_gn_and_gyp") {
       "//chrome/test:chrome_app_unittests",
       "//cloud_print:cloud_print_unittests",
       "//components/network_hints/browser",
-      "//components/webui_generator",
       "//content/public/app:browser",
       "//content/public/app:child",
 
@@ -444,7 +445,7 @@ group("both_gn_and_gyp") {
       "//gpu/khronos_glcts_support:khronos_glcts_test",  # TODO(GYP) crbug.com/471903 to make this complete.
       "//media/cast:cast_benchmarks",
       "//media/cast:tap_proxy",
-      "//mojo/application",
+      "//mojo/application/public/cpp",
       "//skia:filter_fuzz_stub",
       "//skia:image_operations_bench",
       "//sync/tools:sync_client",
@@ -514,7 +515,7 @@ group("both_gn_and_gyp") {
       "//storage/browser",
       "//third_party/brotli",
       "//third_party/flac",
-      "//third_party/hunspell_new",
+      "//third_party/hunspell",
       "//third_party/iccjpeg",
       "//third_party/libphonenumber",
       "//third_party/ots",
@@ -554,6 +555,7 @@ group("both_gn_and_gyp") {
   if (is_win) {
     deps += [
       "//base:pe_image_test",
+      "//chrome/installer/setup:setup_unittests",
       "//chrome_elf:chrome_elf_unittests",
       "//chrome_elf:dll_hash_main",
       "//components/crash/tools:crash_service",
@@ -576,6 +578,10 @@ group("both_gn_and_gyp") {
     ]
   } else if (!is_android) {
     deps += [ "//breakpad:symupload" ]
+  }
+
+  if (!is_ios) {
+    deps += [ "//gpu/skia_runner:skia_runner" ]
   }
 }
 
@@ -696,7 +702,6 @@ group("gn_mojo_targets") {
       "//media/mojo/interfaces:interfaces_python",
       "//media/mojo/services:cdm_service",
       "//media/mojo:tests",
-      "//mojo/application/public/cpp:test_support_standalone",
       "//mojo:tests",
       "//net/interfaces:interfaces_python",
       "//third_party/mojo/src/mojo/edk/js/test:js_integration_tests",
@@ -747,19 +752,19 @@ if (!is_ios) {
 
     if (is_win) {
       deps += [
+        "//components/test_runner:layout_test_helper",
         "//content/shell:crash_service",
-        "//content/shell:layout_test_helper",
       ]
     }
 
     if (!is_win && !is_android) {
-      deps += [ "//breakpad:minidump_stackwalk" ]
+      deps += [ "//breakpad:minidump_stackwalk($host_toolchain)" ]
     }
 
     if (is_mac) {
       deps += [
         "//breakpad:dump_syms($host_toolchain)",
-        "//content/shell:layout_test_helper",
+        "//components/test_runner:layout_test_helper",
       ]
     }
 
@@ -847,8 +852,8 @@ if (is_linux) {
       "//base:base_unittests",  # PASSES 4/20/2015
       "//cc:cc_unittests",  # PASSES 4/17/2015
       "//chrome_elf:chrome_elf_unittests",  # FAILS 4/20/2015
-      "//chrome/app_installer:app_installer_unittests",  # PASSES 4/24/2015
       "//chrome/installer/util:installer_util_unittests",
+      "//chrome/installer/setup:setup_unittests",
       "//chrome/test:browser_tests",
       "//chrome/test:interactive_ui_tests",
       "//chrome/test:sync_integration_tests",  # Note: need to turn off incremental linking for debug.

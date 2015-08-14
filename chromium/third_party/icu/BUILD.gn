@@ -71,7 +71,22 @@ config("icu_code") {
       "-Wno-logical-op-parentheses",
       "-Wno-tautological-compare",
       "-Wno-switch",
+      "-Wno-parentheses",
+      # ICU generally has no unused variables, but there are a few places where
+      # this warning triggers.
+      # See https://codereview.chromium.org/1222643002/ and
+      # http://www.icu-project.org/trac/ticket/11759.
+      "-Wno-unused-const-variable",
     ]
+    if (is_win) {
+      cflags += [
+        # See http://bugs.icu-project.org/trac/ticket/11122
+        "-Wno-inline-new-delete",
+        "-Wno-implicit-exception-spec-mismatch",
+        # See http://bugs.icu-project.org/trac/ticket/11757.
+        "-Wno-reorder",
+      ]
+    }
   }
 }
 
@@ -290,19 +305,6 @@ component("icui18n") {
       "-Wno-deprecated-declarations",
     ]
   }
-  if (is_clang) {
-    # uspoof.h has a U_NAMESPACE_USE macro. That's a bug,
-    # the header should use U_NAMESPACE_BEGIN instead.
-    # http://bugs.icu-project.org/trac/ticket/9054
-    configs -= [ "//build/config/clang:extra_warnings" ]
-
-    cflags += [
-      "-Wno-header-hygiene",
-
-      # Looks like a real issue, see http://crbug.com/114660
-      "-Wno-return-type-c-linkage",
-    ]
-  }
 }
 
 component("icuuc") {
@@ -487,7 +489,6 @@ component("icuuc") {
   deps = [
     ":icudata",
   ]
-  configs += [ ":icu_code" ]
 
   configs -= [
     "//build/config/compiler:no_rtti",  # ICU uses RTTI.
@@ -497,6 +498,7 @@ component("icuuc") {
     "//build/config/compiler:rtti",
     "//build/config/compiler:no_chromium_code",
   ]
+  configs += [ ":icu_code" ]
 
   public_configs = [ ":icu_config" ]
 
@@ -509,12 +511,11 @@ component("icuuc") {
 # TODO(GYP) support use_system_icu.
 if (icu_use_data_file) {
   if (is_ios) {
-    # TODO(GYP): Support mac resource bundle shown below.
-    # 'link_settings': {
-    #   'mac_bundle_resources': [
-    #     'source/data/in/icudtl.dat',
-    #   ],
-    # }
+    group("icudata") {
+      # TODO(GYP): Provide an empty group so that this target does not
+      # unconditionally fail. The dat file needs to be bundled separately. In
+      # the longer term, need to figure out how to use system ICU
+    }
   } else {
     copy("icudata") {
       if (is_android) {
@@ -530,6 +531,10 @@ if (icu_use_data_file) {
       outputs = [
         "$root_out_dir/icudtl.dat",
       ]
+
+      data = [
+        "$root_out_dir/icudtl.dat",
+      ]
     }
   }
 } else {
@@ -541,6 +546,10 @@ if (icu_use_data_file) {
       ]
       outputs = [
         "$root_out_dir/icudt.dll",
+      ]
+
+      data = [
+        "$root_out_dir/icudtl.dll",
       ]
     }
   } else {

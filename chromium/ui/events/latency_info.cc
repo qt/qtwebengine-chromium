@@ -108,7 +108,7 @@ LatencyInfoTracedValue::~LatencyInfoTracedValue() {
 
 void LatencyInfoTracedValue::AppendAsTraceFormat(std::string* out) const {
   std::string tmp;
-  base::JSONWriter::Write(value_.get(), &tmp);
+  base::JSONWriter::Write(*value_, &tmp);
   *out += tmp;
 }
 
@@ -128,6 +128,7 @@ scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsTraceableData(
     component_info->SetDouble(
         "time", static_cast<double>(it->second.event_time.ToInternalValue()));
     component_info->SetDouble("count", it->second.event_count);
+    component_info->SetDouble("sequence_number", it->second.sequence_number);
     record_data->Set(GetComponentName(it->first.first), component_info);
   }
   record_data->SetDouble("trace_id", static_cast<double>(latency.trace_id));
@@ -281,11 +282,11 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
         // CrOS). So we need to adjust the diff between in CLOCK_MONOTONIC and
         // CLOCK_SYSTEM_TRACE. Note that the diff is drifting overtime so we
         // can't use a static value.
-        int64 diff = base::TimeTicks::Now().ToInternalValue() -
-            base::TimeTicks::NowFromSystemTraceTime().ToInternalValue();
-        ts = begin_component.event_time.ToInternalValue() - diff;
+        base::TimeDelta diff = (base::TimeTicks::Now() - base::TimeTicks()) -
+            (base::TraceTicks::Now() - base::TraceTicks());
+        ts = (begin_component.event_time - diff).ToInternalValue();
       } else {
-        ts = base::TimeTicks::NowFromSystemTraceTime().ToInternalValue();
+        ts = base::TraceTicks::Now().ToInternalValue();
       }
 
       if (trace_name_str) {
@@ -338,7 +339,7 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
                                   "data", AsTraceableData(*this));
     }
 
-    TRACE_EVENT_FLOW_END0(
+    TRACE_EVENT_FLOW_END_BIND_TO_ENCLOSING0(
         "input,benchmark", "LatencyInfo.Flow", TRACE_ID_DONT_MANGLE(trace_id));
   }
 }

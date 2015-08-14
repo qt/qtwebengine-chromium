@@ -131,7 +131,7 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
 
 }
 
-ASN1_SEQUENCE_ref(X509, x509_cb, CRYPTO_LOCK_X509) = {
+ASN1_SEQUENCE_ref(X509, x509_cb) = {
 	ASN1_SIMPLE(X509, cert_info, X509_CINF),
 	ASN1_SIMPLE(X509, sig_alg, X509_ALGOR),
 	ASN1_SIMPLE(X509, signature, ASN1_BIT_STRING)
@@ -142,7 +142,7 @@ IMPLEMENT_ASN1_DUP_FUNCTION(X509)
 
 X509 *X509_up_ref(X509 *x)
 	{
-	CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
+	CRYPTO_refcount_inc(&x->references);
 	return x;
 	}
 

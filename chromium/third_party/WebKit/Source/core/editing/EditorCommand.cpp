@@ -56,10 +56,10 @@
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLHRElement.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutBox.h"
-#include "core/page/Chrome.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/EditorClient.h"
-#include "core/page/EventHandler.h"
 #include "platform/KillRing.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/scroll/Scrollbar.h"
@@ -280,12 +280,11 @@ static unsigned verticalScrollDistance(LocalFrame& frame)
     return static_cast<unsigned>(max(max<int>(height * ScrollableArea::minFractionToStepWhenPaging(), height - ScrollableArea::maxOverlapBetweenPages()), 1));
 }
 
-static PassRefPtrWillBeRawPtr<Range> unionDOMRanges(Range* a, Range* b)
+static EphemeralRange unionEphemeralRanges(const EphemeralRange& range1, const EphemeralRange& range2)
 {
-    Range* start = a->compareBoundaryPoints(Range::START_TO_START, b, ASSERT_NO_EXCEPTION) <= 0 ? a : b;
-    Range* end = a->compareBoundaryPoints(Range::END_TO_END, b, ASSERT_NO_EXCEPTION) <= 0 ? b : a;
-
-    return Range::create(a->ownerDocument(), start->startContainer(), start->startOffset(), end->endContainer(), end->endOffset());
+    const Position startPosition = range1.startPosition().compareTo(range2.startPosition()) <= 0 ? range1.startPosition() : range2.startPosition();
+    const Position endPosition = range1.endPosition().compareTo(range2.endPosition()) <= 0 ? range1.endPosition() : range2.endPosition();
+    return EphemeralRange(startPosition, endPosition);
 }
 
 // Execute command functions
@@ -394,9 +393,11 @@ static bool executeDeleteToEndOfParagraph(LocalFrame& frame, Event*, EditorComma
 
 static bool executeDeleteToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
+    // TODO(yosin) We should use |EphemeralRange| version of
+    // |VisibleSelection::toNormalizedRange()|.
     RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
     if (mark) {
-        bool selected = frame.selection().setSelectedRange(unionDOMRanges(mark.get(), frame.editor().selectedRange().get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+        bool selected = frame.selection().setSelectedRange(unionEphemeralRanges(EphemeralRange(mark.get()), frame.editor().selectedRange()), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
         ASSERT(selected);
         if (!selected)
             return false;
@@ -971,7 +972,7 @@ static bool executePrint(LocalFrame& frame, Event*, EditorCommandSource, const S
     FrameHost* host = frame.host();
     if (!host)
         return false;
-    host->chrome().print(&frame);
+    host->chromeClient().print(&frame);
     return true;
 }
 
@@ -999,12 +1000,12 @@ static bool executeScrollPageForward(LocalFrame& frame, Event*, EditorCommandSou
 
 static bool executeScrollLineUp(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().bubblingScroll(ScrollUp, ScrollByLine);
+    return frame.eventHandler().bubblingScroll(ScrollUpIgnoringWritingMode, ScrollByLine);
 }
 
 static bool executeScrollLineDown(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().bubblingScroll(ScrollDown, ScrollByLine);
+    return frame.eventHandler().bubblingScroll(ScrollDownIgnoringWritingMode, ScrollByLine);
 }
 
 static bool executeScrollToBeginningOfDocument(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -1040,11 +1041,13 @@ static bool executeSelectSentence(LocalFrame& frame, Event*, EditorCommandSource
 
 static bool executeSelectToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
+    // TODO(yosin) We should use |EphemeralRange| version of
+    // |VisibleSelection::toNormalizedRange()|.
     RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
-    RefPtrWillBeRawPtr<Range> selection = frame.editor().selectedRange();
-    if (!mark || !selection)
+    EphemeralRange selection = frame.editor().selectedRange();
+    if (!mark || selection.isNull())
         return false;
-    frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+    frame.selection().setSelectedRange(unionEphemeralRanges(EphemeralRange(mark.get()), selection), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
@@ -1699,10 +1702,10 @@ bool Editor::executeCommand(const String& commandName, const String& value)
 {
     // moveToBeginningOfDocument and moveToEndfDocument are only handled by WebKit for editable nodes.
     if (!canEdit() && commandName == "moveToBeginningOfDocument")
-        return frame().eventHandler().bubblingScroll(ScrollUp, ScrollByDocument);
+        return frame().eventHandler().bubblingScroll(ScrollUpIgnoringWritingMode, ScrollByDocument);
 
     if (!canEdit() && commandName == "moveToEndOfDocument")
-        return frame().eventHandler().bubblingScroll(ScrollDown, ScrollByDocument);
+        return frame().eventHandler().bubblingScroll(ScrollDownIgnoringWritingMode, ScrollByDocument);
 
     if (commandName == "showGuessPanel") {
         spellChecker().showSpellingGuessPanel();

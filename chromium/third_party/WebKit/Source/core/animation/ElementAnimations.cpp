@@ -53,14 +53,17 @@ void ElementAnimations::updateAnimationFlags(ComputedStyle& style)
 {
     for (const auto& entry : m_animations) {
         const Animation& animation = *entry.key;
-        ASSERT(animation.source());
+        ASSERT(animation.effect());
         // FIXME: Needs to consider AnimationGroup once added.
-        ASSERT(animation.source()->isAnimation());
-        const KeyframeEffect& effect = *toKeyframeEffect(animation.source());
+        ASSERT(animation.effect()->isAnimation());
+        const KeyframeEffect& effect = *toKeyframeEffect(animation.effect());
         if (effect.isCurrent()) {
             if (effect.affects(PropertyHandle(CSSPropertyOpacity)))
                 style.setHasCurrentOpacityAnimation(true);
-            if (effect.affects(PropertyHandle(CSSPropertyTransform)))
+            if (effect.affects(PropertyHandle(CSSPropertyTransform))
+                || effect.affects(PropertyHandle(CSSPropertyRotate))
+                || effect.affects(PropertyHandle(CSSPropertyScale))
+                || effect.affects(PropertyHandle(CSSPropertyTranslate)))
                 style.setHasCurrentTransformAnimation(true);
             if (effect.affects(PropertyHandle(CSSPropertyWebkitFilter)))
                 style.setHasCurrentFilterAnimation(true);

@@ -15,6 +15,7 @@
 #include "content/common/gpu/null_transport_surface.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "ui/gfx/vsync_provider.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 
@@ -96,6 +97,7 @@ bool ImageTransportHelper::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
+#if defined(OS_MACOSX)
 void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
     GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params) {
   // TRACE_EVENT for gpu tests:
@@ -107,6 +109,7 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
   params.route_id = route_id_;
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
 }
+#endif
 
 void ImageTransportHelper::SetPreemptByFlag(
     scoped_refptr<gpu::PreemptionFlag> preemption_flag) {
@@ -187,7 +190,7 @@ void PassThroughImageTransportSurface::SetLatencyInfo(
     latency_info_.push_back(latency_info[i]);
 }
 
-bool PassThroughImageTransportSurface::SwapBuffers() {
+gfx::SwapResult PassThroughImageTransportSurface::SwapBuffers() {
   // GetVsyncValues before SwapBuffers to work around Mali driver bug:
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
@@ -206,12 +209,16 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
       new std::vector<ui::LatencyInfo>();
   latency_info_ptr->swap(latency_info_);
   return gfx::GLSurfaceAdapter::SwapBuffersAsync(base::Bind(
-      &PassThroughImageTransportSurface::SwapBuffersCallBack,
-      weak_ptr_factory_.GetWeakPtr(), base::Owned(latency_info_ptr)));
+             &PassThroughImageTransportSurface::SwapBuffersCallBack,
+             weak_ptr_factory_.GetWeakPtr(), base::Owned(latency_info_ptr)))
+             ? gfx::SwapResult::SWAP_ACK
+             : gfx::SwapResult::SWAP_FAILED;
 }
 
-bool PassThroughImageTransportSurface::PostSubBuffer(
-    int x, int y, int width, int height) {
+gfx::SwapResult PassThroughImageTransportSurface::PostSubBuffer(int x,
+                                                                int y,
+                                                                int width,
+                                                                int height) {
   SendVSyncUpdateIfAvailable();
 
   base::TimeTicks swap_time = base::TimeTicks::Now();
@@ -228,14 +235,17 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
       new std::vector<ui::LatencyInfo>();
   latency_info_ptr->swap(latency_info_);
   return gfx::GLSurfaceAdapter::PostSubBufferAsync(
-      x, y, width, height,
-      base::Bind(&PassThroughImageTransportSurface::SwapBuffersCallBack,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 base::Owned(latency_info_ptr)));
+             x, y, width, height,
+             base::Bind(&PassThroughImageTransportSurface::SwapBuffersCallBack,
+                        weak_ptr_factory_.GetWeakPtr(),
+                        base::Owned(latency_info_ptr)))
+             ? gfx::SwapResult::SWAP_ACK
+             : gfx::SwapResult::SWAP_FAILED;
 }
 
 void PassThroughImageTransportSurface::SwapBuffersCallBack(
-    std::vector<ui::LatencyInfo>* latency_info_ptr) {
+    std::vector<ui::LatencyInfo>* latency_info_ptr,
+    gfx::SwapResult result) {
   base::TimeTicks swap_ack_time = base::TimeTicks::Now();
   for (auto& latency : *latency_info_ptr) {
     latency.AddLatencyNumberWithTimestamp(
@@ -243,7 +253,7 @@ void PassThroughImageTransportSurface::SwapBuffersCallBack(
         swap_ack_time, 1);
   }
 
-  helper_->stub()->SendSwapBuffersCompleted(*latency_info_ptr);
+  helper_->stub()->SendSwapBuffersCompleted(*latency_info_ptr, result);
 }
 
 bool PassThroughImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {

@@ -62,25 +62,16 @@ AcceleratedImageBufferSurface::AcceleratedImageBufferSurface(const IntSize& size
     clear();
 }
 
-Platform3DObject AcceleratedImageBufferSurface::getBackingTexture() const
-{
-    // Before returning the texture, all drawing operations must be completed.
-    m_surface->getCanvas()->flush();
-    GrRenderTarget* renderTarget = m_surface->getCanvas()->getTopDevice()->accessRenderTarget();
-    if (renderTarget) {
-        return renderTarget->asTexture()->getTextureHandle();
-    }
-    return 0;
-}
-
-void AcceleratedImageBufferSurface::didModifyBackingTexture()
-{
-    m_surface->getCanvas()->getTopDevice()->accessBitmap(false).notifyPixelsChanged();
-}
-
 PassRefPtr<SkImage> AcceleratedImageBufferSurface::newImageSnapshot() const
 {
     return adoptRef(m_surface->newImageSnapshot());
+}
+
+Platform3DObject AcceleratedImageBufferSurface::getBackingTextureHandleForOverwrite()
+{
+    if (!m_surface)
+        return 0;
+    return m_surface->getTextureHandle(SkSurface::kDiscardWrite_TextureHandleAccess);
 }
 
 } // namespace blink

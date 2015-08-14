@@ -137,6 +137,75 @@ TEST(ServiceWorkerDatabaseTest, DatabaseVersion) {
   EXPECT_LT(0, db_version);
 }
 
+TEST(ServiceWorkerDatabaseTest, DiskCacheMigrationState) {
+  GURL origin("http://example.com");
+  base::ScopedTempDir database_dir;
+  ASSERT_TRUE(database_dir.CreateUniqueTempDir());
+  scoped_ptr<ServiceWorkerDatabase> database(
+      CreateDatabase(database_dir.path()));
+
+  // An empty database should return false.
+  bool migration_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsDiskCacheMigrationNeeded(&migration_needed));
+  EXPECT_FALSE(migration_needed);
+  bool deletion_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsOldDiskCacheDeletionNeeded(&deletion_needed));
+  EXPECT_FALSE(deletion_needed);
+
+  // Simulate an existing database created before diskcache migration.
+  database->set_skip_writing_diskcache_migration_state_on_init_for_testing();
+  std::vector<ServiceWorkerDatabase::ResourceRecord> resources;
+  ServiceWorkerDatabase::RegistrationData deleted_version;
+  std::vector<int64> newly_purgeable_resources;
+  ServiceWorkerDatabase::RegistrationData data;
+  data.registration_id = 100;
+  data.scope = URL(origin, "/foo");
+  data.script = URL(origin, "/script.js");
+  data.version_id = 200;
+  data.resources_total_size_bytes = 300;
+  resources.push_back(CreateResource(1, data.script, 300));
+  ASSERT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->WriteRegistration(data, resources, &deleted_version,
+                                        &newly_purgeable_resources));
+  migration_needed = false;
+  ASSERT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsDiskCacheMigrationNeeded(&migration_needed));
+  ASSERT_TRUE(migration_needed);
+  deletion_needed = false;
+  ASSERT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsOldDiskCacheDeletionNeeded(&deletion_needed));
+  ASSERT_TRUE(deletion_needed);
+
+  // Opening the existing database should not update the migration states.
+  database.reset(CreateDatabase(database_dir.path()));
+  migration_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsDiskCacheMigrationNeeded(&migration_needed));
+  EXPECT_TRUE(migration_needed);
+  deletion_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsOldDiskCacheDeletionNeeded(&deletion_needed));
+  EXPECT_TRUE(deletion_needed);
+
+  // Test SetDiskCacheMigrationNotNeeded().
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->SetDiskCacheMigrationNotNeeded());
+  migration_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsDiskCacheMigrationNeeded(&migration_needed));
+  EXPECT_FALSE(migration_needed);
+
+  // Test SetOldDiskCacheDeletionNotNeeded().
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->SetOldDiskCacheDeletionNotNeeded());
+  deletion_needed = false;
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->IsOldDiskCacheDeletionNeeded(&deletion_needed));
+  EXPECT_FALSE(deletion_needed);
+}
+
 TEST(ServiceWorkerDatabaseTest, UpgradeSchemaToVersion2) {
   base::ScopedTempDir database_dir;
   ASSERT_TRUE(database_dir.CreateUniqueTempDir());
@@ -406,9 +475,12 @@ TEST(ServiceWorkerDatabaseTest, GetRegistrationsForOrigin) {
   GURL origin3("https://example.org");
 
   std::vector<RegistrationData> registrations;
+  std::vector<std::vector<Resource>> resources_list;
   EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
-            database->GetRegistrationsForOrigin(origin1, &registrations));
+            database->GetRegistrationsForOrigin(origin1, &registrations,
+                                                &resources_list));
   EXPECT_TRUE(registrations.empty());
+  EXPECT_TRUE(resources_list.empty());
 
   ServiceWorkerDatabase::RegistrationData deleted_version;
   std::vector<int64> newly_purgeable_resources;
@@ -425,6 +497,16 @@ TEST(ServiceWorkerDatabaseTest, GetRegistrationsForOrigin) {
             database->WriteRegistration(data1, resources1, &deleted_version,
                                         &newly_purgeable_resources));
 
+  registrations.clear();
+  resources_list.clear();
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->GetRegistrationsForOrigin(origin1, &registrations,
+                                                &resources_list));
+  EXPECT_EQ(1U, registrations.size());
+  VerifyRegistrationData(data1, registrations[0]);
+  EXPECT_EQ(1U, resources_list.size());
+  VerifyResourceRecords(resources1, resources_list[0]);
+
   RegistrationData data2;
   data2.registration_id = 200;
   data2.scope = URL(origin2, "/bar");
@@ -436,6 +518,16 @@ TEST(ServiceWorkerDatabaseTest, GetRegistrationsForOrigin) {
   ASSERT_EQ(ServiceWorkerDatabase::STATUS_OK,
             database->WriteRegistration(data2, resources2, &deleted_version,
                                         &newly_purgeable_resources));
+
+  registrations.clear();
+  resources_list.clear();
+  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
+            database->GetRegistrationsForOrigin(origin2, &registrations,
+                                                &resources_list));
+  EXPECT_EQ(1U, registrations.size());
+  VerifyRegistrationData(data2, registrations[0]);
+  EXPECT_EQ(1U, resources_list.size());
+  VerifyResourceRecords(resources2, resources_list[0]);
 
   RegistrationData data3;
   data3.registration_id = 300;
@@ -463,11 +555,25 @@ TEST(ServiceWorkerDatabaseTest, GetRegistrationsForOrigin) {
                                         &newly_purgeable_resources));
 
   registrations.clear();
+  resources_list.clear();
   EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
-            database->GetRegistrationsForOrigin(origin3, &registrations));
+            database->GetRegistrationsForOrigin(origin3, &registrations,
+                                                &resources_list));
   EXPECT_EQ(2U, registrations.size());
   VerifyRegistrationData(data3, registrations[0]);
   VerifyRegistrationData(data4, registrations[1]);
+  EXPECT_EQ(2U, resources_list.size());
+  VerifyResourceRecords(resources3, resources_list[0]);
+  VerifyResourceRecords(resources4, resources_list[1]);
+
+  // The third parameter |opt_resources_list| to GetRegistrationsForOrigin()
+  // is optional. So, nullptr should be acceptable.
+  registrations.clear();
+  EXPECT_EQ(
+      ServiceWorkerDatabase::STATUS_OK,
+      database->GetRegistrationsForOrigin(origin1, &registrations, nullptr));
+  EXPECT_EQ(1U, registrations.size());
+  VerifyRegistrationData(data1, registrations[0]);
 }
 
 TEST(ServiceWorkerDatabaseTest, GetAllRegistrations) {
@@ -1471,8 +1577,9 @@ TEST(ServiceWorkerDatabaseTest, DeleteAllDataForOrigin) {
 
   // The registrations for |origin1| should be removed.
   std::vector<RegistrationData> registrations;
-  EXPECT_EQ(ServiceWorkerDatabase::STATUS_OK,
-            database->GetRegistrationsForOrigin(origin1, &registrations));
+  EXPECT_EQ(
+      ServiceWorkerDatabase::STATUS_OK,
+      database->GetRegistrationsForOrigin(origin1, &registrations, nullptr));
   EXPECT_TRUE(registrations.empty());
   GURL origin_out;
   EXPECT_EQ(

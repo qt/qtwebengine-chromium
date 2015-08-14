@@ -23,7 +23,6 @@
 
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/line/FloatToLayoutUnit.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/text/TextDirection.h"
 
@@ -41,9 +40,9 @@ class InlineBox {
     WTF_MAKE_NONCOPYABLE(InlineBox);
 public:
     InlineBox(LayoutObject& obj)
-        : m_next(0)
-        , m_prev(0)
-        , m_parent(0)
+        : m_next(nullptr)
+        , m_prev(nullptr)
+        , m_parent(nullptr)
         , m_layoutObject(obj)
         , m_logicalWidth()
 #if ENABLE(ASSERT)
@@ -52,7 +51,7 @@ public:
     {
     }
 
-    InlineBox(LayoutObject& obj, FloatPointWillBeLayoutPoint topLeft, FloatWillBeLayoutUnit logicalWidth, bool firstLine, bool constructed,
+    InlineBox(LayoutObject& obj, LayoutPoint topLeft, LayoutUnit logicalWidth, bool firstLine, bool constructed,
         bool dirty, bool extracted, bool isHorizontal, InlineBox* next, InlineBox* prev, InlineFlowBox* parent)
         : m_next(next)
         , m_prev(prev)
@@ -77,28 +76,13 @@ public:
 
     virtual bool isLineBreak() const { return false; }
 
-    virtual void adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy);
-    void adjustLogicalPosition(FloatWillBeLayoutUnit deltaLogicalLeft, FloatWillBeLayoutUnit deltaLogicalTop)
-    {
-        if (isHorizontal())
-            adjustPosition(deltaLogicalLeft, deltaLogicalTop);
-        else
-            adjustPosition(deltaLogicalTop, deltaLogicalLeft);
-    }
-    void adjustLineDirectionPosition(FloatWillBeLayoutUnit delta)
-    {
-        if (isHorizontal())
-            adjustPosition(delta, 0);
-        else
-            adjustPosition(0, delta);
-    }
-    void adjustBlockDirectionPosition(FloatWillBeLayoutUnit delta)
-    {
-        if (isHorizontal())
-            adjustPosition(0, delta);
-        else
-            adjustPosition(delta, 0);
-    }
+    // These methods are called when the caller wants to move the position of InlineBox without full layout of it.
+    // The implementation should update the position of the whole subtree (e.g. position of descendants and overflow etc.
+    // should also be moved accordingly).
+    virtual void move(const LayoutSize& delta);
+    void moveInLogicalDirection(const LayoutSize& deltaInLogicalDirection) { move(isHorizontal() ? deltaInLogicalDirection : deltaInLogicalDirection.transposedSize()); }
+    void moveInInlineDirection(LayoutUnit delta) { moveInLogicalDirection(LayoutSize(delta, LayoutUnit())); }
+    void moveInBlockDirection(LayoutUnit delta) { moveInLogicalDirection(LayoutSize(LayoutUnit(), delta)); }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
     virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
@@ -112,7 +96,7 @@ public:
     void showLineTreeForThis() const;
 
     virtual void showBox(int = 0) const;
-    virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const LayoutObject* = 0, int = 0) const;
+    virtual void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr, int = 0) const;
 #endif
 
     virtual const char* boxName() const;
@@ -131,19 +115,19 @@ public:
 
     bool hasVirtualLogicalHeight() const { return m_bitfields.hasVirtualLogicalHeight(); }
     void setHasVirtualLogicalHeight() { m_bitfields.setHasVirtualLogicalHeight(true); }
-    virtual FloatWillBeLayoutUnit virtualLogicalHeight() const
+    virtual LayoutUnit virtualLogicalHeight() const
     {
         ASSERT_NOT_REACHED();
-        return FloatWillBeLayoutUnit();
+        return LayoutUnit();
     }
 
     bool isHorizontal() const { return m_bitfields.isHorizontal(); }
     void setIsHorizontal(bool isHorizontal) { m_bitfields.setIsHorizontal(isHorizontal); }
 
-    virtual FloatRectWillBeLayoutRect calculateBoundaries() const
+    virtual LayoutRect calculateBoundaries() const
     {
         ASSERT_NOT_REACHED();
-        return FloatRectWillBeLayoutRect();
+        return LayoutRect();
     }
 
     bool isConstructed() { return m_bitfields.constructed(); }
@@ -194,27 +178,27 @@ public:
     RootInlineBox& root();
 
     // x() is the left side of the box in the containing block's coordinate system.
-    void setX(FloatWillBeLayoutUnit x) { m_topLeft.setX(x); }
-    FloatWillBeLayoutUnit x() const { return m_topLeft.x(); }
-    FloatWillBeLayoutUnit left() const { return m_topLeft.x(); }
+    void setX(LayoutUnit x) { m_topLeft.setX(x); }
+    LayoutUnit x() const { return m_topLeft.x(); }
+    LayoutUnit left() const { return m_topLeft.x(); }
 
     // y() is the top side of the box in the containing block's coordinate system.
-    void setY(FloatWillBeLayoutUnit y) { m_topLeft.setY(y); }
-    FloatWillBeLayoutUnit y() const { return m_topLeft.y(); }
-    FloatWillBeLayoutUnit top() const { return m_topLeft.y(); }
+    void setY(LayoutUnit y) { m_topLeft.setY(y); }
+    LayoutUnit y() const { return m_topLeft.y(); }
+    LayoutUnit top() const { return m_topLeft.y(); }
 
-    const FloatPointWillBeLayoutPoint& topLeft() const { return m_topLeft; }
+    const LayoutPoint& topLeft() const { return m_topLeft; }
 
-    FloatWillBeLayoutUnit width() const { return isHorizontal() ? logicalWidth() : hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight(); }
-    FloatWillBeLayoutUnit height() const { return isHorizontal() ? hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight() : logicalWidth(); }
-    FloatSizeWillBeLayoutSize size() const { return FloatSizeWillBeLayoutSize(width(), height()); }
-    FloatWillBeLayoutUnit right() const { return left() + width(); }
-    FloatWillBeLayoutUnit bottom() const { return top() + height(); }
+    LayoutUnit width() const { return isHorizontal() ? logicalWidth() : hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight(); }
+    LayoutUnit height() const { return isHorizontal() ? hasVirtualLogicalHeight() ? virtualLogicalHeight() : logicalHeight() : logicalWidth(); }
+    LayoutSize size() const { return LayoutSize(width(), height()); }
+    LayoutUnit right() const { return left() + width(); }
+    LayoutUnit bottom() const { return top() + height(); }
 
     // The logicalLeft position is the left edge of the line box in a horizontal line and the top edge in a vertical line.
-    FloatWillBeLayoutUnit logicalLeft() const { return isHorizontal() ? m_topLeft.x() : m_topLeft.y(); }
-    FloatWillBeLayoutUnit logicalRight() const { return logicalLeft() + logicalWidth(); }
-    void setLogicalLeft(FloatWillBeLayoutUnit left)
+    LayoutUnit logicalLeft() const { return isHorizontal() ? m_topLeft.x() : m_topLeft.y(); }
+    LayoutUnit logicalRight() const { return logicalLeft() + logicalWidth(); }
+    void setLogicalLeft(LayoutUnit left)
     {
         if (isHorizontal())
             setX(left);
@@ -222,14 +206,14 @@ public:
             setY(left);
     }
     int pixelSnappedLogicalLeft() const { return logicalLeft(); }
-    int pixelSnappedLogicalRight() const { return ceilf(logicalRight()); }
+    int pixelSnappedLogicalRight() const { return logicalRight().ceil(); }
     int pixelSnappedLogicalTop() const { return logicalTop(); }
-    int pixelSnappedLogicalBottom() const { return ceilf(logicalBottom()); }
+    int pixelSnappedLogicalBottom() const { return logicalBottom().ceil(); }
 
     // The logicalTop[ position is the top edge of the line box in a horizontal line and the left edge in a vertical line.
-    FloatWillBeLayoutUnit logicalTop() const { return isHorizontal() ? m_topLeft.y() : m_topLeft.x(); }
-    FloatWillBeLayoutUnit logicalBottom() const { return logicalTop() + logicalHeight(); }
-    void setLogicalTop(FloatWillBeLayoutUnit top)
+    LayoutUnit logicalTop() const { return isHorizontal() ? m_topLeft.y() : m_topLeft.x(); }
+    LayoutUnit logicalBottom() const { return logicalTop() + logicalHeight(); }
+    void setLogicalTop(LayoutUnit top)
     {
         if (isHorizontal())
             setY(top);
@@ -238,13 +222,13 @@ public:
     }
 
     // The logical width is our extent in the line's overall inline direction, i.e., width for horizontal text and height for vertical text.
-    void setLogicalWidth(FloatWillBeLayoutUnit w) { m_logicalWidth = w; }
-    FloatWillBeLayoutUnit logicalWidth() const { return m_logicalWidth; }
+    void setLogicalWidth(LayoutUnit w) { m_logicalWidth = w; }
+    LayoutUnit logicalWidth() const { return m_logicalWidth; }
 
     // The logical height is our extent in the block flow direction, i.e., height for horizontal text and width for vertical text.
-    FloatWillBeLayoutUnit logicalHeight() const;
+    LayoutUnit logicalHeight() const;
 
-    FloatRectWillBeLayoutRect logicalFrameRect() const { return isHorizontal() ? FloatRectWillBeLayoutRect(m_topLeft.x(), m_topLeft.y(), m_logicalWidth, logicalHeight()) : FloatRectWillBeLayoutRect(m_topLeft.y(), m_topLeft.x(), m_logicalWidth, logicalHeight()); }
+    LayoutRect logicalFrameRect() const { return isHorizontal() ? LayoutRect(m_topLeft.x(), m_topLeft.y(), m_logicalWidth, logicalHeight()) : LayoutRect(m_topLeft.y(), m_topLeft.x(), m_logicalWidth, logicalHeight()); }
 
     virtual int baselinePosition(FontBaseline baselineType) const;
     virtual LayoutUnit lineHeight() const;
@@ -270,7 +254,7 @@ public:
 
     virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const;
     // visibleLeftEdge, visibleRightEdge are in the parent's coordinate system.
-    virtual FloatWillBeLayoutUnit placeEllipsisBox(bool ltr, FloatWillBeLayoutUnit visibleLeftEdge, FloatWillBeLayoutUnit visibleRightEdge, FloatWillBeLayoutUnit ellipsisWidth, FloatWillBeLayoutUnit &truncatedWidth, bool&);
+    virtual LayoutUnit placeEllipsisBox(bool ltr, LayoutUnit visibleLeftEdge, LayoutUnit visibleRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool&);
 
 #if ENABLE(ASSERT)
     void setHasBadParent();
@@ -280,7 +264,7 @@ public:
 
     bool visibleToHitTestRequest(const HitTestRequest& request) const { return layoutObject().visibleToHitTestRequest(request); }
 
-    EVerticalAlign verticalAlign() const { return layoutObject().style(m_bitfields.firstLine())->verticalAlign(); }
+    EVerticalAlign verticalAlign() const { return layoutObject().isText() ? ComputedStyle::initialVerticalAlign() : layoutObject().style(m_bitfields.firstLine())->verticalAlign(); }
 
     // Use with caution! The type is not checked!
     LayoutBoxModelObject* boxModelObject() const
@@ -290,12 +274,12 @@ public:
         return 0;
     }
 
-    FloatPointWillBeLayoutPoint locationIncludingFlipping();
+    LayoutPoint locationIncludingFlipping();
 
     // Converts from a rect in the logical space of the InlineBox to one in the physical space
     // of the containing block. The logical space of an InlineBox may be transposed for vertical text and
     // flipped for right-to-left text.
-    LayoutRect logicalRectToPhysicalRect(const LayoutRect&);
+    void logicalRectToPhysicalRect(LayoutRect&);
 
     void flipForWritingMode(FloatRect&);
     FloatPoint flipForWritingMode(const FloatPoint&);
@@ -391,7 +375,7 @@ public:
 private:
     // Converts the given (top-left) position from the logical space of the InlineBox to the physical space of the
     // containing block. The size indicates the size of the box whose point is being flipped.
-    FloatPointWillBeLayoutPoint logicalPositionToPhysicalPoint(const FloatPoint&, const FloatSize&);
+    LayoutPoint logicalPositionToPhysicalPoint(const LayoutPoint&, const LayoutSize&);
 
     InlineBox* m_next; // The next element on the same line as us.
     InlineBox* m_prev; // The previous element on the same line as us.
@@ -419,8 +403,8 @@ protected:
     // For InlineFlowBox and InlineTextBox
     bool extracted() const { return m_bitfields.extracted(); }
 
-    FloatPointWillBeLayoutPoint m_topLeft;
-    FloatWillBeLayoutUnit m_logicalWidth;
+    LayoutPoint m_topLeft;
+    LayoutUnit m_logicalWidth;
 
 private:
     InlineBoxBitfields m_bitfields;

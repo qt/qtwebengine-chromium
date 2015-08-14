@@ -105,8 +105,9 @@ void* PPB_ImageData_Impl::Map() { return backend_->Map(); }
 
 void PPB_ImageData_Impl::Unmap() { backend_->Unmap(); }
 
-int32_t PPB_ImageData_Impl::GetSharedMemory(int* handle, uint32_t* byte_count) {
-  return backend_->GetSharedMemory(handle, byte_count);
+int32_t PPB_ImageData_Impl::GetSharedMemory(base::SharedMemory** shm,
+                                            uint32_t* byte_count) {
+  return backend_->GetSharedMemory(shm, byte_count);
 }
 
 skia::PlatformCanvas* PPB_ImageData_Impl::GetPlatformCanvas() {
@@ -187,11 +188,10 @@ void ImageDataPlatformBackend::Unmap() {
   // in the future to save some memory.
 }
 
-int32_t ImageDataPlatformBackend::GetSharedMemory(int* handle,
+int32_t ImageDataPlatformBackend::GetSharedMemory(base::SharedMemory** shm,
                                                   uint32_t* byte_count) {
   *byte_count = dib_->size();
-  *handle = reinterpret_cast<int>(PlatformFileFromSharedMemoryHandle(
-      dib_->handle()));
+  *shm = dib_->shared_memory();
   return PP_OK;
 }
 
@@ -249,11 +249,10 @@ void ImageDataSimpleBackend::Unmap() {
     shared_memory_->Unmap();
 }
 
-int32_t ImageDataSimpleBackend::GetSharedMemory(int* handle,
+int32_t ImageDataSimpleBackend::GetSharedMemory(base::SharedMemory** shm,
                                                 uint32_t* byte_count) {
   *byte_count = skia_bitmap_.getSize();
-  *handle = reinterpret_cast<int>(PlatformFileFromSharedMemoryHandle(
-      shared_memory_->handle()));
+  *shm = shared_memory_.get();
   return PP_OK;
 }
 

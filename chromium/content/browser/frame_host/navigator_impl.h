@@ -37,8 +37,7 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   NavigatorDelegate* GetDelegate() override;
   NavigationController* GetController() override;
   void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
-                               const GURL& url,
-                               bool is_transition_navigation) override;
+                               const GURL& url) override;
   void DidFailProvisionalLoadWithError(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params)
@@ -46,13 +45,15 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   void DidFailLoadWithError(RenderFrameHostImpl* render_frame_host,
                             const GURL& url,
                             int error_code,
-                            const base::string16& error_description) override;
+                            const base::string16& error_description,
+                            bool was_ignored_by_handler) override;
   void DidNavigate(RenderFrameHostImpl* render_frame_host,
                    const FrameHostMsg_DidCommitProvisionalLoad_Params&
                        input_params) override;
-  bool NavigateToPendingEntry(
-      FrameTreeNode* frame_tree_node,
-      NavigationController::ReloadType reload_type) override;
+  bool NavigateToPendingEntry(FrameTreeNode* frame_tree_node,
+                              const FrameNavigationEntry& frame_entry,
+                              NavigationController::ReloadType reload_type,
+                              bool is_same_document_history_load) override;
   void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                       const GURL& url,
                       SiteInstance* source_site_instance,
@@ -87,7 +88,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const base::TimeTicks& renderer_before_unload_start_time,
       const base::TimeTicks& renderer_before_unload_end_time) override;
   void CancelNavigation(FrameTreeNode* frame_tree_node) override;
-  bool IsWaitingForBeforeUnloadACK(FrameTreeNode* frame_tree_node) override;
 
  private:
   // Holds data used to track browser side navigation metrics.
@@ -98,10 +98,11 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
 
   // Navigates to the given entry, which must be the pending entry.  Private
   // because all callers should use NavigateToPendingEntry.
-  bool NavigateToEntry(
-      FrameTreeNode* frame_tree_node,
-      const NavigationEntryImpl& entry,
-      NavigationController::ReloadType reload_type);
+  bool NavigateToEntry(FrameTreeNode* frame_tree_node,
+                       const FrameNavigationEntry& frame_entry,
+                       const NavigationEntryImpl& entry,
+                       NavigationController::ReloadType reload_type,
+                       bool is_same_document_history_load);
 
   bool ShouldAssignSiteForURL(const GURL& url);
 
@@ -113,18 +114,24 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   // to execute the beforeUnload event. Otherwise, the navigation request will
   // be started.
   void RequestNavigation(FrameTreeNode* frame_tree_node,
+                         const GURL& dest_url,
+                         const Referrer& dest_referrer,
+                         const FrameNavigationEntry& frame_entry,
                          const NavigationEntryImpl& entry,
                          NavigationController::ReloadType reload_type,
+                         bool is_same_document_history_load,
                          base::TimeTicks navigation_start);
-
-  // PlzNavigate: sends the NavigationRequest for |frame_tree_node| to the
-  // network stack so that it can start.
-  void BeginNavigation(FrameTreeNode* frame_tree_node);
 
   void RecordNavigationMetrics(
       const LoadCommittedDetails& details,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       SiteInstance* site_instance);
+
+  // Called when a navigation has started in a main frame, to update the pending
+  // NavigationEntry if the controller does not currently have a
+  // browser-initiated one.
+  void DidStartMainFrameNavigation(const GURL& url,
+                                   SiteInstanceImpl* site_instance);
 
   // The NavigationController that will keep track of session history for all
   // RenderFrameHost objects using this NavigatorImpl.

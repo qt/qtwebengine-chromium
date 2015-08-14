@@ -21,12 +21,16 @@ namespace blink {
 class WebInputEvent;
 }
 
+namespace cc {
+struct SurfaceId;
+struct SurfaceSequence;
+}
+
 namespace content {
 
 class ChildFrameCompositingHelper;
 class RenderFrameImpl;
 class RenderViewImpl;
-enum class SandboxFlags;
 struct FrameReplicationState;
 
 // When a page's frames are rendered by multiple processes, each renderer has a
@@ -61,7 +65,8 @@ class CONTENT_EXPORT RenderFrameProxy
   // proxy will eventually swap places with.
   static RenderFrameProxy* CreateProxyToReplaceFrame(
       RenderFrameImpl* frame_to_replace,
-      int routing_id);
+      int routing_id,
+      blink::WebTreeScopeType scope);
 
   // This method should be used to create a RenderFrameProxy, when there isn't
   // an existing RenderFrame. It should be called to construct a local
@@ -88,6 +93,18 @@ class CONTENT_EXPORT RenderFrameProxy
   // Returns the RenderFrameProxy given a WebFrame.
   static RenderFrameProxy* FromWebFrame(blink::WebFrame* web_frame);
 
+  // Returns true if we are currently in a mode where the swapped out state
+  // should not be used. Currently (as an implementation strategy) swapped out
+  // is forbidden under --site-per-process, but our goal is to eliminate the
+  // mode entirely. In code that deals with the swapped out state, prefer calls
+  // to this function over consulting the switches directly. It will be easier
+  // to grep, and easier to rip out.
+  //
+  // TODO(nasko): When swappedout:// is eliminated entirely, this function (and
+  // its equivalent in RenderFrameHostManager) should be removed and its callers
+  // cleaned up.
+  static bool IsSwappedOutStateForbidden();
+
   ~RenderFrameProxy() override;
 
   // IPC::Sender
@@ -112,7 +129,7 @@ class CONTENT_EXPORT RenderFrameProxy
   blink::WebRemoteFrame* web_frame() { return web_frame_; }
 
   // blink::WebRemoteFrameClient implementation:
-  virtual void frameDetached();
+  virtual void frameDetached(DetachType type);
   virtual void postMessageEvent(
       blink::WebLocalFrame* sourceFrame,
       blink::WebRemoteFrame* targetFrame,
@@ -140,9 +157,13 @@ class CONTENT_EXPORT RenderFrameProxy
   void OnDeleteProxy();
   void OnChildFrameProcessGone();
   void OnCompositorFrameSwapped(const IPC::Message& message);
+  void OnSetChildFrameSurface(const cc::SurfaceId& surface_id,
+                              const gfx::Size& frame_size,
+                              float scale_factor,
+                              const cc::SurfaceSequence& sequence);
   void OnDisownOpener();
   void OnDidStopLoading();
-  void OnDidUpdateSandboxFlags(SandboxFlags flags);
+  void OnDidUpdateSandboxFlags(blink::WebSandboxFlags flags);
   void OnDispatchLoad();
   void OnDidUpdateName(const std::string& name);
   void OnDidUpdateOrigin(const url::Origin& origin);

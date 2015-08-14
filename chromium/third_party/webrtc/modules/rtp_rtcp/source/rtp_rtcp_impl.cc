@@ -429,13 +429,6 @@ size_t ModuleRtpRtcpImpl::TimeToSendPadding(size_t bytes) {
   return rtp_sender_.TimeToSendPadding(bytes);
 }
 
-bool ModuleRtpRtcpImpl::GetSendSideDelay(int* avg_send_delay_ms,
-                                         int* max_send_delay_ms) const {
-  DCHECK(avg_send_delay_ms);
-  DCHECK(max_send_delay_ms);
-  return rtp_sender_.GetSendSideDelay(avg_send_delay_ms, max_send_delay_ms);
-}
-
 uint16_t ModuleRtpRtcpImpl::MaxPayloadLength() const {
   return rtp_sender_.MaxPayloadLength();
 }
@@ -500,12 +493,11 @@ void ModuleRtpRtcpImpl::SetRTCPStatus(const RTCPMethod method) {
   rtcp_receiver_.SetRTCPStatus(method);
 }
 
-int32_t ModuleRtpRtcpImpl::SetCNAME(const char c_name[RTCP_CNAME_SIZE]) {
+int32_t ModuleRtpRtcpImpl::SetCNAME(const char* c_name) {
   return rtcp_sender_.SetCNAME(c_name);
 }
 
-int32_t ModuleRtpRtcpImpl::AddMixedCNAME(uint32_t ssrc,
-                                         const char c_name[RTCP_CNAME_SIZE]) {
+int32_t ModuleRtpRtcpImpl::AddMixedCNAME(uint32_t ssrc, const char* c_name) {
   return rtcp_sender_.AddMixedCNAME(ssrc, c_name);
 }
 
@@ -546,12 +538,6 @@ int32_t ModuleRtpRtcpImpl::RTT(const uint32_t remote_ssrc,
     *rtt = rtt_ms();
   }
   return ret;
-}
-
-// Reset RTP data counters for the sending side.
-int32_t ModuleRtpRtcpImpl::ResetSendDataCountersRTP() {
-  rtp_sender_.ResetDataCounters();
-  return 0;  // TODO(pwestin): change to void.
 }
 
 // Force a send of an RTCP packet.
@@ -626,17 +612,6 @@ int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(RTCPSenderInfo* sender_info) {
 int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(
     std::vector<RTCPReportBlock>* receive_blocks) const {
   return rtcp_receiver_.StatisticsReceived(receive_blocks);
-}
-
-int32_t ModuleRtpRtcpImpl::AddRTCPReportBlock(
-    const uint32_t ssrc,
-    const RTCPReportBlock* report_block) {
-  return rtcp_sender_.AddExternalReportBlock(ssrc, report_block);
-}
-
-int32_t ModuleRtpRtcpImpl::RemoveRTCPReportBlock(
-  const uint32_t ssrc) {
-  return rtcp_sender_.RemoveExternalReportBlock(ssrc);
 }
 
 // (REMB) Receiver Estimated Max Bitrate.

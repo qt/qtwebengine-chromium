@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/common/media/media_stream_messages.h"
@@ -24,6 +25,7 @@
 #include "content/renderer/media/rtc_video_decoder_factory.h"
 #include "content/renderer/media/rtc_video_encoder_factory.h"
 #include "content/renderer/media/webaudio_capturer_source.h"
+#include "content/renderer/media/webrtc/stun_field_trial.h"
 #include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc/webrtc_video_capturer_adapter.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
@@ -65,7 +67,7 @@ struct {
 } const kConstraintEffectMap[] = {
   { content::kMediaStreamAudioDucking,
     media::AudioParameters::DUCKING },
-  { webrtc::MediaConstraintsInterface::kEchoCancellation,
+  { webrtc::MediaConstraintsInterface::kGoogEchoCancellation,
     media::AudioParameters::ECHO_CANCELLER },
 };
 
@@ -183,6 +185,7 @@ PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
       worker_thread_(NULL),
       chrome_signaling_thread_("Chrome_libJingle_Signaling"),
       chrome_worker_thread_("Chrome_libJingle_WorkerThread") {
+  TryScheduleStunProbeTrial();
 }
 
 PeerConnectionDependencyFactory::~PeerConnectionDependencyFactory() {
@@ -303,17 +306,17 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
   CHECK(chrome_worker_thread_.Start());
 
   base::WaitableEvent start_worker_event(true, false);
-  chrome_worker_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
-      &PeerConnectionDependencyFactory::InitializeWorkerThread,
-      base::Unretained(this),
-      &worker_thread_,
-      &start_worker_event));
+  chrome_worker_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&PeerConnectionDependencyFactory::InitializeWorkerThread,
+                 base::Unretained(this), &worker_thread_, &start_worker_event));
 
   base::WaitableEvent create_network_manager_event(true, false);
-  chrome_worker_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
-      &PeerConnectionDependencyFactory::CreateIpcNetworkManagerOnWorkerThread,
-      base::Unretained(this),
-      &create_network_manager_event));
+  chrome_worker_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&PeerConnectionDependencyFactory::
+                     CreateIpcNetworkManagerOnWorkerThread,
+                 base::Unretained(this), &create_network_manager_event));
 
   start_worker_event.Wait();
   create_network_manager_event.Wait();
@@ -333,11 +336,12 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 #endif
 
   base::WaitableEvent start_signaling_event(true, false);
-  chrome_signaling_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
-      &PeerConnectionDependencyFactory::InitializeSignalingThread,
-      base::Unretained(this),
-      RenderThreadImpl::current()->GetGpuFactories(),
-      &start_signaling_event));
+  chrome_signaling_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&PeerConnectionDependencyFactory::InitializeSignalingThread,
+                 base::Unretained(this),
+                 RenderThreadImpl::current()->GetGpuFactories(),
+                 &start_signaling_event));
 
   start_signaling_event.Wait();
   CHECK(signaling_thread_);
@@ -363,7 +367,7 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
   scoped_ptr<cricket::WebRtcVideoEncoderFactory> encoder_factory;
 
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
-  if (gpu_factories.get()) {
+  if (gpu_factories && gpu_factories->IsGpuVideoAcceleratorEnabled()) {
     if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding))
       decoder_factory.reset(new RTCVideoDecoderFactory(gpu_factories));
 
@@ -385,6 +389,8 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
   factory_options.disable_sctp_data_channels = false;
   factory_options.disable_encryption =
       cmd_line->HasSwitch(switches::kDisableWebRtcEncryption);
+  if (cmd_line->HasSwitch(switches::kEnableWebRtcDtls12))
+    factory_options.ssl_max_version = rtc::SSL_PROTOCOL_DTLS_12;
   pc_factory_->SetOptions(factory_options);
 
   event->Signal();
@@ -407,6 +413,11 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
 
   // Copy the flag from Preference associated with this WebFrame.
   bool enable_multiple_routes = true;
+  PeerConnectionIdentityService* identity_service =
+      new PeerConnectionIdentityService(
+          GURL(web_frame->document().url()),
+          GURL(web_frame->document().firstPartyForCookies()));
+
   if (web_frame && web_frame->view()) {
     RenderViewImpl* renderer_view_impl =
         RenderViewImpl::FromWebView(web_frame->view());
@@ -421,10 +432,6 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
           p2p_socket_dispatcher_.get(), network_manager_, socket_factory_.get(),
           GURL(web_frame->document().url().spec()).GetOrigin(),
           enable_multiple_routes);
-
-  PeerConnectionIdentityService* identity_service =
-      new PeerConnectionIdentityService(
-          GURL(web_frame->document().url().spec()).GetOrigin());
 
   return GetPcFactory()->CreatePeerConnection(config,
                                               constraints,
@@ -563,7 +570,7 @@ PeerConnectionDependencyFactory::CreateIceCandidate(
     const std::string& sdp_mid,
     int sdp_mline_index,
     const std::string& sdp) {
-  return webrtc::CreateIceCandidate(sdp_mid, sdp_mline_index, sdp);
+  return webrtc::CreateIceCandidate(sdp_mid, sdp_mline_index, sdp, nullptr);
 }
 
 WebRtcAudioDeviceImpl*
@@ -580,15 +587,53 @@ void PeerConnectionDependencyFactory::InitializeWorkerThread(
   event->Signal();
 }
 
+void PeerConnectionDependencyFactory::TryScheduleStunProbeTrial() {
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+
+  if (!cmd_line->HasSwitch(switches::kWebRtcStunProbeTrialParameter))
+    return;
+
+  GetPcFactory();
+
+  // The underneath IPC channel has to be connected before sending any IPC
+  // message.
+  if (!p2p_socket_dispatcher_->connected()) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PeerConnectionDependencyFactory::TryScheduleStunProbeTrial,
+                   base::Unretained(this)),
+        base::TimeDelta::FromSeconds(1));
+    return;
+  }
+
+  const std::string params =
+      cmd_line->GetSwitchValueASCII(switches::kWebRtcStunProbeTrialParameter);
+
+  chrome_worker_thread_.task_runner()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(
+          &PeerConnectionDependencyFactory::StartStunProbeTrialOnWorkerThread,
+          base::Unretained(this), params),
+      base::TimeDelta::FromMilliseconds(kExperimentStartDelayMs));
+}
+
+void PeerConnectionDependencyFactory::StartStunProbeTrialOnWorkerThread(
+    const std::string& params) {
+  DCHECK(chrome_worker_thread_.task_runner()->BelongsToCurrentThread());
+  rtc::NetworkManager::NetworkList networks;
+  network_manager_->GetNetworks(&networks);
+  stun_prober_ = StartStunProbeTrial(networks, params, socket_factory_.get());
+}
+
 void PeerConnectionDependencyFactory::CreateIpcNetworkManagerOnWorkerThread(
     base::WaitableEvent* event) {
-  DCHECK_EQ(base::MessageLoop::current(), chrome_worker_thread_.message_loop());
+  DCHECK(chrome_worker_thread_.task_runner()->BelongsToCurrentThread());
   network_manager_ = new IpcNetworkManager(p2p_socket_dispatcher_.get());
   event->Signal();
 }
 
 void PeerConnectionDependencyFactory::DeleteIpcNetworkManager() {
-  DCHECK_EQ(base::MessageLoop::current(), chrome_worker_thread_.message_loop());
+  DCHECK(chrome_worker_thread_.task_runner()->BelongsToCurrentThread());
   delete network_manager_;
   network_manager_ = NULL;
 }
@@ -600,9 +645,10 @@ void PeerConnectionDependencyFactory::CleanupPeerConnectionFactory() {
     // The network manager needs to free its resources on the thread they were
     // created, which is the worked thread.
     if (chrome_worker_thread_.IsRunning()) {
-      chrome_worker_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
-          &PeerConnectionDependencyFactory::DeleteIpcNetworkManager,
-          base::Unretained(this)));
+      chrome_worker_thread_.task_runner()->PostTask(
+          FROM_HERE,
+          base::Bind(&PeerConnectionDependencyFactory::DeleteIpcNetworkManager,
+                     base::Unretained(this)));
       // Stopping the thread will wait until all tasks have been
       // processed before returning. We wait for the above task to finish before
       // letting the the function continue to avoid any potential race issues.
@@ -630,16 +676,19 @@ PeerConnectionDependencyFactory::CreateAudioCapturer(
       audio_source);
 }
 
-scoped_refptr<base::MessageLoopProxy>
+scoped_refptr<base::SingleThreadTaskRunner>
 PeerConnectionDependencyFactory::GetWebRtcWorkerThread() const {
   DCHECK(CalledOnValidThread());
-  return chrome_worker_thread_.message_loop_proxy();
+  return chrome_worker_thread_.IsRunning() ? chrome_worker_thread_.task_runner()
+                                           : nullptr;
 }
 
-scoped_refptr<base::MessageLoopProxy>
+scoped_refptr<base::SingleThreadTaskRunner>
 PeerConnectionDependencyFactory::GetWebRtcSignalingThread() const {
   DCHECK(CalledOnValidThread());
-  return chrome_signaling_thread_.message_loop_proxy();
+  return chrome_signaling_thread_.IsRunning()
+             ? chrome_signaling_thread_.task_runner()
+             : nullptr;
 }
 
 void PeerConnectionDependencyFactory::EnsureWebRtcAudioDeviceImpl() {

@@ -47,6 +47,7 @@ class CachedMetadata;
 class ResourceClient;
 class ResourcePtrBase;
 class ResourceFetcher;
+class ResourceTimingInfo;
 class InspectorResource;
 class ResourceLoader;
 class SecurityOrigin;
@@ -71,6 +72,7 @@ public:
         XSLStyleSheet,
         LinkPrefetch,
         LinkSubresource,
+        LinkPreload,
         TextTrack,
         ImportResource,
         Media // Audio or video file requested by a HTML5 media element
@@ -84,6 +86,7 @@ public:
         DecodeError
     };
 
+    // Exposed for testing.
     Resource(const ResourceRequest&, Type);
 #if ENABLE(OILPAN)
     virtual ~Resource();
@@ -95,7 +98,6 @@ public:
 #endif
     virtual void dispose();
     DECLARE_VIRTUAL_TRACE();
-    static unsigned instanceCount() { return s_instanceCount; }
 
     virtual void load(ResourceFetcher*, const ResourceLoaderOptions&);
 
@@ -103,6 +105,7 @@ public:
     virtual String encoding() const { return String(); }
     virtual void appendData(const char*, unsigned);
     virtual void error(Resource::Status);
+    virtual void setCORSFailed() { }
 
     void setNeedsSynchronousCacheHit(bool needsSynchronousCacheHit) { m_needsSynchronousCacheHit = needsSynchronousCacheHit; }
 
@@ -193,6 +196,8 @@ public:
     void setResponse(const ResourceResponse& response) { m_response = response; }
     const ResourceResponse& response() const { return m_response; }
 
+    virtual void reportResourceTimingToClients(const ResourceTimingInfo&) { }
+
     // Sets the serialized metadata retrieved from the platform's cache.
     virtual void setSerializedCachedMetadata(const char*, size_t);
 
@@ -239,7 +244,7 @@ public:
     bool lock();
 
     void setCacheIdentifier(const String& cacheIdentifier) { m_cacheIdentifier = cacheIdentifier; }
-    String cacheIdentifier() const { return m_cacheIdentifier; };
+    String cacheIdentifier() const { return m_cacheIdentifier; }
 
     virtual void didSendData(unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
     virtual void didDownloadData(int) { }
@@ -334,7 +339,7 @@ protected:
 
     ResourceRequest m_resourceRequest;
     AtomicString m_accept;
-    RefPtrWillBeMember<ResourceLoader> m_loader;
+    PersistentWillBeMember<ResourceLoader> m_loader;
     ResourceLoaderOptions m_options;
 
     ResourceResponse m_response;
@@ -411,8 +416,17 @@ private:
 
     // Ordered list of all redirects followed while fetching this resource.
     Vector<RedirectPair> m_redirectChain;
+};
 
-    static unsigned s_instanceCount;
+class ResourceFactory {
+public:
+    virtual Resource* create(const ResourceRequest&, const String&) const = 0;
+    Resource::Type type() const { return m_type; }
+
+protected:
+    ResourceFactory(Resource::Type type) : m_type(type) { }
+
+    Resource::Type m_type;
 };
 
 #if !LOG_DISABLED

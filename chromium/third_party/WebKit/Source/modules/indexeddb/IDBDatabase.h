@@ -55,12 +55,12 @@ class ExecutionContext;
 class MODULES_EXPORT IDBDatabase final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<IDBDatabase>
     , public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBDatabase>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(IDBDatabase);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBDatabase);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static IDBDatabase* create(ExecutionContext*, PassOwnPtr<WebIDBDatabase>, IDBDatabaseCallbacks*);
-    virtual ~IDBDatabase();
+    ~IDBDatabase() override;
     DECLARE_VIRTUAL_TRACE();
 
     void setMetadata(const IDBDatabaseMetadata& metadata) { m_metadata = metadata; }
@@ -90,12 +90,12 @@ public:
     void onComplete(int64_t);
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     bool isClosePending() const { return m_closePending; }
     void forceClose();
@@ -103,7 +103,7 @@ public:
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     int64_t findObjectStoreId(const String& name) const;
     bool containsObjectStore(const String& name) const
@@ -131,6 +131,7 @@ public:
     static const char transactionInactiveErrorMessage[];
     static const char transactionReadOnlyErrorMessage[];
     static const char databaseClosedErrorMessage[];
+    static const char notValidMaxCountErrorMessage[];
 
 private:
     IDBDatabase(ExecutionContext*, PassOwnPtr<WebIDBDatabase>, IDBDatabaseCallbacks*);

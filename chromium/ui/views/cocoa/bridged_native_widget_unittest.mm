@@ -14,11 +14,12 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #import "testing/gtest_mac.h"
+#include "ui/base/ime/input_method.h"
 #import "ui/gfx/test/ui_cocoa_test_helper.h"
 #import "ui/views/cocoa/bridged_content_view.h"
 #import "ui/views/cocoa/native_widget_mac_nswindow.h"
+#import "ui/views/cocoa/views_nswindow_delegate.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/native_widget_mac.h"
 #include "ui/views/widget/root_view.h"
@@ -267,13 +268,8 @@ TEST_F(BridgedNativeWidgetTest, ViewSizeTracksWindow) {
   EXPECT_EQ(kTestNewHeight, view_->height());
 }
 
-TEST_F(BridgedNativeWidgetTest, CreateInputMethodShouldNotReturnNull) {
-  scoped_ptr<views::InputMethod> input_method(bridge()->CreateInputMethod());
-  EXPECT_TRUE(input_method);
-}
-
-TEST_F(BridgedNativeWidgetTest, GetHostInputMethodShouldNotReturnNull) {
-  EXPECT_TRUE(bridge()->GetHostInputMethod());
+TEST_F(BridgedNativeWidgetTest, GetInputMethodShouldNotReturnNull) {
+  EXPECT_TRUE(bridge()->GetInputMethod());
 }
 
 // A simpler test harness for testing initialization flows.
@@ -459,7 +455,7 @@ TEST_F(BridgedNativeWidgetSimulateFullscreenTest, FailToEnterAndExit) {
           initWithContentRect:NSMakeRect(50, 50, 400, 300)
                     styleMask:NSBorderlessWindowMask
                       backing:NSBackingStoreBuffered
-                        defer:YES]);
+                        defer:NO]);
   [owned_window setReleasedWhenClosed:NO];  // Owned by scoped_nsobject.
   bridge()->Init(owned_window, init_params_);  // Transfers ownership.
 
@@ -489,7 +485,8 @@ TEST_F(BridgedNativeWidgetSimulateFullscreenTest, FailToEnterAndExit) {
   // Cocoa follows up with a failure message sent to the NSWindowDelegate (there
   // is no equivalent notification for failure). Called via id so that this
   // compiles on 10.6.
-  id window_delegate = [window delegate];
+  ViewsNSWindowDelegate* window_delegate =
+      base::mac::ObjCCast<ViewsNSWindowDelegate>([window delegate]);
   [window_delegate windowDidFailToEnterFullScreen:window];
   EXPECT_FALSE(bridge()->target_fullscreen_state());
 

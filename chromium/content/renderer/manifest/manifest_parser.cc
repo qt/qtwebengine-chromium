@@ -26,7 +26,7 @@ bool IsValidIconWidthOrHeight(const std::string& str) {
   if (str.empty() || str[0] == '0')
     return false;
   for (size_t i = 0; i < str.size(); ++i)
-    if (!IsAsciiDigit(str[i]))
+    if (!base::IsAsciiDigit(str[i]))
       return false;
   return true;
 }
@@ -100,9 +100,8 @@ ManifestParser::~ManifestParser() {
 
 void ManifestParser::Parse() {
   std::string parse_error;
-  scoped_ptr<base::Value> value(
-      base::JSONReader::ReadAndReturnError(data_, base::JSON_PARSE_RFC,
-                                           nullptr, &parse_error));
+  scoped_ptr<base::Value> value(base::JSONReader::DeprecatedReadAndReturnError(
+      data_, base::JSON_PARSE_RFC, nullptr, &parse_error));
 
   if (!value) {
     errors_.push_back(GetErrorPrefix() + parse_error);
@@ -131,7 +130,6 @@ void ManifestParser::Parse() {
   manifest_.prefer_related_applications =
       ParsePreferRelatedApplications(*dictionary);
   manifest_.gcm_sender_id = ParseGCMSenderID(*dictionary);
-  manifest_.gcm_user_visible_only = ParseGCMUserVisibleOnly(*dictionary);
 
   ManifestUmaUtil::ParseSucceeded(manifest_);
 }
@@ -223,13 +221,13 @@ Manifest::DisplayMode ManifestParser::ParseDisplay(
   if (display.is_null())
     return Manifest::DISPLAY_MODE_UNSPECIFIED;
 
-  if (LowerCaseEqualsASCII(display.string(), "fullscreen"))
+  if (base::LowerCaseEqualsASCII(display.string(), "fullscreen"))
     return Manifest::DISPLAY_MODE_FULLSCREEN;
-  else if (LowerCaseEqualsASCII(display.string(), "standalone"))
+  else if (base::LowerCaseEqualsASCII(display.string(), "standalone"))
     return Manifest::DISPLAY_MODE_STANDALONE;
-  else if (LowerCaseEqualsASCII(display.string(), "minimal-ui"))
+  else if (base::LowerCaseEqualsASCII(display.string(), "minimal-ui"))
     return Manifest::DISPLAY_MODE_MINIMAL_UI;
-  else if (LowerCaseEqualsASCII(display.string(), "browser"))
+  else if (base::LowerCaseEqualsASCII(display.string(), "browser"))
     return Manifest::DISPLAY_MODE_BROWSER;
   else {
     errors_.push_back(GetErrorPrefix() + "unknown 'display' value ignored.");
@@ -245,21 +243,25 @@ blink::WebScreenOrientationLockType ManifestParser::ParseOrientation(
   if (orientation.is_null())
     return blink::WebScreenOrientationLockDefault;
 
-  if (LowerCaseEqualsASCII(orientation.string(), "any"))
+  if (base::LowerCaseEqualsASCII(orientation.string(), "any"))
     return blink::WebScreenOrientationLockAny;
-  else if (LowerCaseEqualsASCII(orientation.string(), "natural"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(), "natural"))
     return blink::WebScreenOrientationLockNatural;
-  else if (LowerCaseEqualsASCII(orientation.string(), "landscape"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(), "landscape"))
     return blink::WebScreenOrientationLockLandscape;
-  else if (LowerCaseEqualsASCII(orientation.string(), "landscape-primary"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(),
+                                      "landscape-primary"))
     return blink::WebScreenOrientationLockLandscapePrimary;
-  else if (LowerCaseEqualsASCII(orientation.string(), "landscape-secondary"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(),
+                                      "landscape-secondary"))
     return blink::WebScreenOrientationLockLandscapeSecondary;
-  else if (LowerCaseEqualsASCII(orientation.string(), "portrait"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(), "portrait"))
     return blink::WebScreenOrientationLockPortrait;
-  else if (LowerCaseEqualsASCII(orientation.string(), "portrait-primary"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(),
+                                      "portrait-primary"))
     return blink::WebScreenOrientationLockPortraitPrimary;
-  else if (LowerCaseEqualsASCII(orientation.string(), "portrait-secondary"))
+  else if (base::LowerCaseEqualsASCII(orientation.string(),
+                                      "portrait-secondary"))
     return blink::WebScreenOrientationLockPortraitSecondary;
   else {
     errors_.push_back(GetErrorPrefix() +
@@ -408,11 +410,6 @@ bool ManifestParser::ParsePreferRelatedApplications(
 base::NullableString16 ManifestParser::ParseGCMSenderID(
     const base::DictionaryValue& dictionary)  {
   return ParseString(dictionary, "gcm_sender_id", Trim);
-}
-
-bool ManifestParser::ParseGCMUserVisibleOnly(
-    const base::DictionaryValue& dictionary) {
-  return ParseBoolean(dictionary, "gcm_user_visible_only", false);
 }
 
 } // namespace content

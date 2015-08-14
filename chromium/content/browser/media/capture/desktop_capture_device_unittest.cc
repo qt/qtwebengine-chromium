@@ -78,8 +78,12 @@ class MockDeviceClient : public media::VideoCaptureDevice::Client {
   MOCK_METHOD1(OnError, void(const std::string& reason));
 
   // Trampoline methods to workaround GMOCK problems with scoped_ptr<>.
-  scoped_ptr<Buffer> ReserveOutputBuffer(media::VideoPixelFormat format,
-                                         const gfx::Size& dimensions) override {
+  scoped_ptr<Buffer> ReserveOutputBuffer(
+      const gfx::Size& dimensions,
+      media::VideoPixelFormat format,
+      media::VideoPixelStorage storage) override {
+    EXPECT_TRUE(format == media::PIXEL_FORMAT_I420 &&
+                storage == media::PIXEL_STORAGE_CPU);
     DoReserveOutputBuffer();
     return scoped_ptr<Buffer>();
   }
@@ -94,6 +98,8 @@ class MockDeviceClient : public media::VideoCaptureDevice::Client {
       const base::TimeTicks& timestamp) override {
     DoOnIncomingCapturedVideoFrame();
   }
+
+  double GetBufferPoolUtilization() const override { return 0.0; }
 };
 
 // Creates a DesktopFrame that has the first pixel bytes set to

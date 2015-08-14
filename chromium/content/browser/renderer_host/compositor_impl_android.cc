@@ -36,6 +36,7 @@
 #include "cc/surfaces/surface_id_allocator.h"
 #include "cc/surfaces/surface_manager.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_settings.h"
 #include "content/browser/android/child_process_launcher_android.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
@@ -49,7 +50,9 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/host_shared_bitmap_manager.h"
+#include "content/public/browser/android/compositor.h"
 #include "content/public/browser/android/compositor_client.h"
+#include "content/public/common/content_switches.h"
 #include "gpu/blink/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -58,7 +61,7 @@
 #include "third_party/skia/include/core/SkMallocPixelRef.h"
 #include "ui/android/window_android.h"
 #include "ui/gfx/android/device_display_info.h"
-#include "ui/gfx/frame_time.h"
+#include "ui/gfx/swap_result.h"
 
 namespace content {
 
@@ -71,15 +74,15 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
  public:
   OutputSurfaceWithoutParent(
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
-      base::WeakPtr<CompositorImpl> compositor_impl)
+      const base::Callback<void(gpu::Capabilities)>&
+          populate_gpu_capabilities_callback)
       : cc::OutputSurface(context_provider),
+        populate_gpu_capabilities_callback_(populate_gpu_capabilities_callback),
         swap_buffers_completion_callback_(
             base::Bind(&OutputSurfaceWithoutParent::OnSwapBuffersCompleted,
                        base::Unretained(this))) {
     capabilities_.adjust_deadline_for_parent = false;
     capabilities_.max_frames_pending = 2;
-    compositor_impl_ = compositor_impl;
-    main_thread_ = base::MessageLoopProxy::current();
   }
 
   void SwapBuffers(cc::CompositorFrame* frame) override {
@@ -97,11 +100,8 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
     GetCommandBufferProxy()->SetSwapBuffersCompletionCallback(
         swap_buffers_completion_callback_.callback());
 
-    main_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&CompositorImpl::PopulateGpuCapabilities,
-                   compositor_impl_,
-                   context_provider_->ContextCapabilities().gpu));
+    populate_gpu_capabilities_callback_.Run(
+        context_provider_->ContextCapabilities().gpu);
 
     return true;
   }
@@ -117,17 +117,16 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
     return command_buffer_proxy;
   }
 
-  void OnSwapBuffersCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info) {
+  void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info,
+                              gfx::SwapResult result) {
     RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
     OutputSurface::OnSwapBuffersComplete();
   }
 
-  base::CancelableCallback<void(const std::vector<ui::LatencyInfo>&)>
+  base::Callback<void(gpu::Capabilities)> populate_gpu_capabilities_callback_;
+  base::CancelableCallback<void(const std::vector<ui::LatencyInfo>&,
+                                gfx::SwapResult)>
       swap_buffers_completion_callback_;
-
-  scoped_refptr<base::MessageLoopProxy> main_thread_;
-  base::WeakPtr<CompositorImpl> compositor_impl_;
 };
 
 static bool g_initialized = false;
@@ -144,9 +143,11 @@ class SingleThreadTaskGraphRunner
       public base::DelegateSimpleThread::Delegate {
  public:
   SingleThreadTaskGraphRunner()
-      : worker_thread_(this, "CompositorTileWorker1") {
+      : worker_thread_(
+            this,
+            "CompositorTileWorker1",
+            base::SimpleThread::Options(base::ThreadPriority::BACKGROUND)) {
     worker_thread_.Start();
-    worker_thread_.SetThreadPriority(base::ThreadPriority::BACKGROUND);
   }
 
   ~SingleThreadTaskGraphRunner() override {
@@ -162,6 +163,9 @@ class SingleThreadTaskGraphRunner
 };
 
 base::LazyInstance<SingleThreadTaskGraphRunner> g_task_graph_runner =
+    LAZY_INSTANCE_INITIALIZER;
+
+base::LazyInstance<cc::LayerSettings> g_layer_settings =
     LAZY_INSTANCE_INITIALIZER;
 
 } // anonymous namespace
@@ -180,6 +184,16 @@ void Compositor::Initialize() {
 }
 
 // static
+const cc::LayerSettings& Compositor::LayerSettings() {
+  return g_layer_settings.Get();
+}
+
+// static
+void Compositor::SetLayerSettings(const cc::LayerSettings& settings) {
+  g_layer_settings.Get() = settings;
+}
+
+// static
 bool CompositorImpl::IsInitialized() {
   return g_initialized;
 }
@@ -193,14 +207,20 @@ cc::SurfaceManager* CompositorImpl::GetSurfaceManager() {
 
 // static
 scoped_ptr<cc::SurfaceIdAllocator> CompositorImpl::CreateSurfaceIdAllocator() {
-  return make_scoped_ptr(new cc::SurfaceIdAllocator(++g_surface_id_namespace));
+  scoped_ptr<cc::SurfaceIdAllocator> allocator(
+      new cc::SurfaceIdAllocator(++g_surface_id_namespace));
+  cc::SurfaceManager* manager = GetSurfaceManager();
+  DCHECK(manager);
+  allocator->RegisterSurfaceIdNamespace(manager);
+  return allocator.Pass();
 }
 
 CompositorImpl::CompositorImpl(CompositorClient* client,
                                gfx::NativeWindow root_window)
-    : root_layer_(cc::Layer::Create()),
+    : root_layer_(cc::Layer::Create(Compositor::LayerSettings())),
       resource_manager_(&ui_resource_provider_),
-      surface_id_allocator_(CreateSurfaceIdAllocator()),
+      surface_id_allocator_(GetSurfaceManager() ? CreateSurfaceIdAllocator()
+                                                : nullptr),
       has_transparent_background_(false),
       device_scale_factor_(1),
       window_(NULL),
@@ -284,7 +304,7 @@ void CompositorImpl::PostComposite(CompositingTrigger trigger) {
   // Unretained because we cancel the task on shutdown.
   current_composite_task_.reset(new base::CancelableClosure(
       base::Bind(&CompositorImpl::Composite, base::Unretained(this), trigger)));
-  base::MessageLoop::current()->PostDelayedTask(
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, current_composite_task_->callback(), delay);
 }
 
@@ -320,7 +340,7 @@ void CompositorImpl::Composite(CompositingTrigger trigger) {
   // we are about to draw.
   ignore_schedule_composite_ = true;
 
-  const base::TimeTicks frame_time = gfx::FrameTime::Now();
+  const base::TimeTicks frame_time = base::TimeTicks::Now();
   if (needs_animate_) {
     needs_animate_ = false;
     root_window_->Animate(frame_time);
@@ -411,7 +431,8 @@ void CompositorImpl::CreateLayerTreeHost() {
   settings.renderer_settings.refresh_rate = 60.0;
   settings.renderer_settings.allow_antialiasing = false;
   settings.renderer_settings.highp_threshold_min = 2048;
-  settings.impl_side_painting = true;
+  settings.use_zero_copy = true;
+  settings.use_one_copy = false;
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   settings.initial_debug_state.SetRecordRenderingStats(
@@ -420,6 +441,10 @@ void CompositorImpl::CreateLayerTreeHost() {
       command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
   // TODO(enne): Update this this compositor to use the scheduler.
   settings.single_thread_proxy_scheduler = false;
+
+  if (command_line->HasSwitch(
+          switches::kEnableAndroidCompositorAnimationTimelines))
+    settings.use_compositor_animation_timelines = true;
 
   cc::LayerTreeHost::InitParams params;
   params.client = this;
@@ -474,11 +499,6 @@ void CompositorImpl::SetVisible(bool visible) {
     CreateLayerTreeHost();
     ui_resource_provider_.SetLayerTreeHost(host_.get());
   }
-  // TODO(jdduke): Consider using View.onWindowVisibilityChange() to drive
-  // WindowAndroid visibility updates. CompositorImpl::SetVisible changes can
-  // occur while the visibile surface is temporarily changing, e.g., when
-  // transitioning to fullscreen video. See crbug.com/471262.
-  root_window_->OnVisibilityChanged(visible);
 }
 
 void CompositorImpl::setDeviceScaleFactor(float factor) {
@@ -624,8 +644,9 @@ void CompositorImpl::CreateOutputSurface() {
   DCHECK(context_provider.get());
 
   scoped_ptr<cc::OutputSurface> real_output_surface(
-      new OutputSurfaceWithoutParent(context_provider,
-                                     weak_factory_.GetWeakPtr()));
+      new OutputSurfaceWithoutParent(
+          context_provider, base::Bind(&CompositorImpl::PopulateGpuCapabilities,
+                                       base::Unretained(this))));
 
   cc::SurfaceManager* manager = GetSurfaceManager();
   if (manager) {
@@ -633,7 +654,7 @@ void CompositorImpl::CreateOutputSurface() {
         real_output_surface.Pass(), manager, HostSharedBitmapManager::current(),
         BrowserGpuMemoryBufferManager::current(),
         host_->settings().renderer_settings,
-        base::MessageLoopProxy::current()));
+        base::ThreadTaskRunnerHandle::Get()));
     scoped_ptr<cc::SurfaceDisplayOutputSurface> surface_output_surface(
         new cc::SurfaceDisplayOutputSurface(
             manager, surface_id_allocator_.get(), context_provider));

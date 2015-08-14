@@ -5,7 +5,6 @@
 #include "net/cert/ct_log_response_parser.h"
 
 #include "base/base64.h"
-#include "base/json/json_reader.h"
 #include "base/json/json_value_converter.h"
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
@@ -95,7 +94,7 @@ bool IsJsonSTHStructurallyValid(const JsonSignedTreeHead& sth) {
   }
 
   if (sth.signature.signature_data.empty()) {
-    DVLOG(1) << "Missing SHA256 root hash from Signed Tree Head JSON.";
+    DVLOG(1) << "Missing signature from Signed Tree Head JSON.";
     return false;
   }
 
@@ -104,18 +103,11 @@ bool IsJsonSTHStructurallyValid(const JsonSignedTreeHead& sth) {
 
 }  // namespace
 
-bool FillSignedTreeHead(const base::StringPiece& json_signed_tree_head,
+bool FillSignedTreeHead(const base::Value& json_signed_tree_head,
                         SignedTreeHead* signed_tree_head) {
-  base::JSONReader json_reader;
-  scoped_ptr<base::Value> json(json_reader.Read(json_signed_tree_head));
-  if (json.get() == NULL) {
-    DVLOG(1) << "Empty Signed Tree Head JSON.";
-    return false;
-  }
-
   JsonSignedTreeHead parsed_sth;
   base::JSONValueConverter<JsonSignedTreeHead> converter;
-  if (!converter.Convert(*json.get(), &parsed_sth)) {
+  if (!converter.Convert(json_signed_tree_head, &parsed_sth)) {
     DVLOG(1) << "Invalid Signed Tree Head JSON.";
     return false;
   }
@@ -126,9 +118,8 @@ bool FillSignedTreeHead(const base::StringPiece& json_signed_tree_head,
   signed_tree_head->version = SignedTreeHead::V1;
   signed_tree_head->tree_size = parsed_sth.tree_size;
   signed_tree_head->timestamp =
-      base::Time::UnixEpoch() +
-      base::TimeDelta::FromMilliseconds(
-          static_cast<int64>(parsed_sth.timestamp));
+      base::Time::UnixEpoch() + base::TimeDelta::FromMilliseconds(
+                                    static_cast<int64_t>(parsed_sth.timestamp));
   signed_tree_head->signature = parsed_sth.signature;
   memcpy(signed_tree_head->sha256_root_hash,
          parsed_sth.sha256_root_hash.c_str(),

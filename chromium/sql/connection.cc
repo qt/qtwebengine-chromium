@@ -141,6 +141,24 @@ int GetSqlite3File(sqlite3* db, sqlite3_file** file) {
   return rc;
 }
 
+// This should match UMA_HISTOGRAM_MEDIUM_TIMES().
+base::HistogramBase* GetMediumTimeHistogram(const std::string& name) {
+  return base::Histogram::FactoryTimeGet(
+      name,
+      base::TimeDelta::FromMilliseconds(10),
+      base::TimeDelta::FromMinutes(3),
+      50,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+}
+
+std::string AsUTF8ForSQL(const base::FilePath& path) {
+#if defined(OS_WIN)
+  return base::WideToUTF8(path.value());
+#elif defined(OS_POSIX)
+  return path.value();
+#endif
+}
+
 }  // namespace
 
 namespace sql {
@@ -219,11 +237,72 @@ Connection::Connection()
       transaction_nesting_(0),
       needs_rollback_(false),
       in_memory_(false),
-      poisoned_(false) {
+      poisoned_(false),
+      stats_histogram_(NULL),
+      commit_time_histogram_(NULL),
+      autocommit_time_histogram_(NULL),
+      update_time_histogram_(NULL),
+      query_time_histogram_(NULL),
+      clock_(new TimeSource()) {
 }
 
 Connection::~Connection() {
   Close();
+}
+
+void Connection::RecordEvent(Events event, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    UMA_HISTOGRAM_ENUMERATION("Sqlite.Stats", event, EVENT_MAX_VALUE);
+  }
+
+  if (stats_histogram_) {
+    for (size_t i = 0; i < count; ++i) {
+      stats_histogram_->Add(event);
+    }
+  }
+}
+
+void Connection::RecordCommitTime(const base::TimeDelta& delta) {
+  RecordUpdateTime(delta);
+  UMA_HISTOGRAM_MEDIUM_TIMES("Sqlite.CommitTime", delta);
+  if (commit_time_histogram_)
+    commit_time_histogram_->AddTime(delta);
+}
+
+void Connection::RecordAutoCommitTime(const base::TimeDelta& delta) {
+  RecordUpdateTime(delta);
+  UMA_HISTOGRAM_MEDIUM_TIMES("Sqlite.AutoCommitTime", delta);
+  if (autocommit_time_histogram_)
+    autocommit_time_histogram_->AddTime(delta);
+}
+
+void Connection::RecordUpdateTime(const base::TimeDelta& delta) {
+  RecordQueryTime(delta);
+  UMA_HISTOGRAM_MEDIUM_TIMES("Sqlite.UpdateTime", delta);
+  if (update_time_histogram_)
+    update_time_histogram_->AddTime(delta);
+}
+
+void Connection::RecordQueryTime(const base::TimeDelta& delta) {
+  UMA_HISTOGRAM_MEDIUM_TIMES("Sqlite.QueryTime", delta);
+  if (query_time_histogram_)
+    query_time_histogram_->AddTime(delta);
+}
+
+void Connection::RecordTimeAndChanges(
+    const base::TimeDelta& delta, bool read_only) {
+  if (read_only) {
+    RecordQueryTime(delta);
+  } else {
+    const int changes = sqlite3_changes(db_);
+    if (sqlite3_get_autocommit(db_)) {
+      RecordAutoCommitTime(delta);
+      RecordEvent(EVENT_CHANGES_AUTOCOMMIT, changes);
+    } else {
+      RecordUpdateTime(delta);
+      RecordEvent(EVENT_CHANGES, changes);
+    }
+  }
 }
 
 bool Connection::Open(const base::FilePath& path) {
@@ -241,11 +320,7 @@ bool Connection::Open(const base::FilePath& path) {
     }
   }
 
-#if defined(OS_WIN)
-  return OpenInternal(base::WideToUTF8(path.value()), RETRY_ON_POISON);
-#elif defined(OS_POSIX)
-  return OpenInternal(path.value(), RETRY_ON_POISON);
-#endif
+  return OpenInternal(AsUTF8ForSQL(path), RETRY_ON_POISON);
 }
 
 bool Connection::OpenInMemory() {
@@ -553,13 +628,38 @@ bool Connection::Delete(const base::FilePath& path) {
   base::FilePath journal_path(path.value() + FILE_PATH_LITERAL("-journal"));
   base::FilePath wal_path(path.value() + FILE_PATH_LITERAL("-wal"));
 
-  base::DeleteFile(journal_path, false);
-  base::DeleteFile(wal_path, false);
-  base::DeleteFile(path, false);
+  std::string journal_str = AsUTF8ForSQL(journal_path);
+  std::string wal_str = AsUTF8ForSQL(wal_path);
+  std::string path_str = AsUTF8ForSQL(path);
 
-  return !base::PathExists(journal_path) &&
-      !base::PathExists(wal_path) &&
-      !base::PathExists(path);
+  sqlite3_vfs* vfs = sqlite3_vfs_find(NULL);
+  CHECK(vfs);
+  CHECK(vfs->xDelete);
+  CHECK(vfs->xAccess);
+
+  // We only work with unix, win32 and mojo filesystems. If you're trying to
+  // use this code with any other VFS, you're not in a good place.
+  CHECK(strncmp(vfs->zName, "unix", 4) == 0 ||
+        strncmp(vfs->zName, "win32", 5) == 0 ||
+        strcmp(vfs->zName, "mojo") == 0);
+
+  vfs->xDelete(vfs, journal_str.c_str(), 0);
+  vfs->xDelete(vfs, wal_str.c_str(), 0);
+  vfs->xDelete(vfs, path_str.c_str(), 0);
+
+  int journal_exists = 0;
+  vfs->xAccess(vfs, journal_str.c_str(), SQLITE_ACCESS_EXISTS,
+               &journal_exists);
+
+  int wal_exists = 0;
+  vfs->xAccess(vfs, wal_str.c_str(), SQLITE_ACCESS_EXISTS,
+               &wal_exists);
+
+  int path_exists = 0;
+  vfs->xAccess(vfs, path_str.c_str(), SQLITE_ACCESS_EXISTS,
+               &path_exists);
+
+  return !journal_exists && !wal_exists && !path_exists;
 }
 
 bool Connection::BeginTransaction() {
@@ -576,6 +676,7 @@ bool Connection::BeginTransaction() {
     needs_rollback_ = false;
 
     Statement begin(GetCachedStatement(SQL_FROM_HERE, "BEGIN TRANSACTION"));
+    RecordOneEvent(EVENT_BEGIN);
     if (!begin.Run())
       return false;
   }
@@ -618,7 +719,17 @@ bool Connection::CommitTransaction() {
   }
 
   Statement commit(GetCachedStatement(SQL_FROM_HERE, "COMMIT"));
-  return commit.Run();
+
+  // Collect the commit time manually, sql::Statement would register it as query
+  // time only.
+  const base::TimeTicks before = Now();
+  bool ret = commit.RunWithoutTimers();
+  const base::TimeDelta delta = Now() - before;
+
+  RecordCommitTime(delta);
+  RecordOneEvent(EVENT_COMMIT);
+
+  return ret;
 }
 
 void Connection::RollbackAllTransactions() {
@@ -650,13 +761,65 @@ bool Connection::DetachDatabase(const char* attachment_point) {
   return s.Run();
 }
 
+// TODO(shess): Consider changing this to execute exactly one statement.  If a
+// caller wishes to execute multiple statements, that should be explicit, and
+// perhaps tucked into an explicit transaction with rollback in case of error.
 int Connection::ExecuteAndReturnErrorCode(const char* sql) {
   AssertIOAllowed();
   if (!db_) {
     DLOG_IF(FATAL, !poisoned_) << "Illegal use of connection without a db";
     return SQLITE_ERROR;
   }
-  return sqlite3_exec(db_, sql, NULL, NULL, NULL);
+  DCHECK(sql);
+
+  RecordOneEvent(EVENT_EXECUTE);
+  int rc = SQLITE_OK;
+  while ((rc == SQLITE_OK) && *sql) {
+    sqlite3_stmt *stmt = NULL;
+    const char *leftover_sql;
+
+    const base::TimeTicks before = Now();
+    rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, &leftover_sql);
+    sql = leftover_sql;
+
+    // Stop if an error is encountered.
+    if (rc != SQLITE_OK)
+      break;
+
+    // This happens if |sql| originally only contained comments or whitespace.
+    // TODO(shess): Audit to see if this can become a DCHECK().  Having
+    // extraneous comments and whitespace in the SQL statements increases
+    // runtime cost and can easily be shifted out to the C++ layer.
+    if (!stmt)
+      continue;
+
+    // Save for use after statement is finalized.
+    const bool read_only = !!sqlite3_stmt_readonly(stmt);
+
+    RecordOneEvent(Connection::EVENT_STATEMENT_RUN);
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+      // TODO(shess): Audit to see if this can become a DCHECK.  I think PRAGMA
+      // is the only legitimate case for this.
+      RecordOneEvent(Connection::EVENT_STATEMENT_ROWS);
+    }
+
+    // sqlite3_finalize() returns SQLITE_OK if the most recent sqlite3_step()
+    // returned SQLITE_DONE or SQLITE_ROW, otherwise the error code.
+    rc = sqlite3_finalize(stmt);
+    if (rc == SQLITE_OK)
+      RecordOneEvent(Connection::EVENT_STATEMENT_SUCCESS);
+
+    // sqlite3_exec() does this, presumably to avoid spinning the parser for
+    // trailing whitespace.
+    // TODO(shess): Audit to see if this can become a DCHECK.
+    while (base::IsAsciiWhitespace(*sql)) {
+      sql++;
+    }
+
+    const base::TimeDelta delta = Now() - before;
+    RecordTimeAndChanges(delta, read_only);
+  }
+  return rc;
 }
 
 bool Connection::Execute(const char* sql) {
@@ -886,6 +1049,32 @@ bool Connection::OpenInternal(const std::string& file_name,
   // Make sure sqlite3_initialize() is called before anything else.
   InitializeSqlite();
 
+  // Setup the stats histograms immediately rather than allocating lazily.
+  // Connections which won't exercise all of these probably shouldn't exist.
+  if (!histogram_tag_.empty()) {
+    stats_histogram_ =
+        base::LinearHistogram::FactoryGet(
+            "Sqlite.Stats." + histogram_tag_,
+            1, EVENT_MAX_VALUE, EVENT_MAX_VALUE + 1,
+            base::HistogramBase::kUmaTargetedHistogramFlag);
+
+    // The timer setup matches UMA_HISTOGRAM_MEDIUM_TIMES().  3 minutes is an
+    // unreasonable time for any single operation, so there is not much value to
+    // knowing if it was 3 minutes or 5 minutes.  In reality at that point
+    // things are entirely busted.
+    commit_time_histogram_ =
+        GetMediumTimeHistogram("Sqlite.CommitTime." + histogram_tag_);
+
+    autocommit_time_histogram_ =
+        GetMediumTimeHistogram("Sqlite.AutoCommitTime." + histogram_tag_);
+
+    update_time_histogram_ =
+        GetMediumTimeHistogram("Sqlite.UpdateTime." + histogram_tag_);
+
+    query_time_histogram_ =
+        GetMediumTimeHistogram("Sqlite.QueryTime." + histogram_tag_);
+  }
+
   // If |poisoned_| is set, it means an error handler called
   // RazeAndClose().  Until regular Close() is called, the caller
   // should be treating the database as open, but is_open() currently
@@ -988,12 +1177,10 @@ bool Connection::OpenInternal(const std::string& file_name,
   // DELETE (default) - delete -journal file to commit.
   // TRUNCATE - truncate -journal file to commit.
   // PERSIST - zero out header of -journal file to commit.
-  // journal_size_limit provides size to trim to in PERSIST.
-  // TODO(shess): Figure out if PERSIST and journal_size_limit really
-  // matter.  In theory, it keeps pages pre-allocated, so if
-  // transactions usually fit, it should be faster.
-  ignore_result(Execute("PRAGMA journal_mode = PERSIST"));
-  ignore_result(Execute("PRAGMA journal_size_limit = 16384"));
+  // TRUNCATE should be faster than DELETE because it won't need directory
+  // changes for each transaction.  PERSIST may break the spirit of using
+  // secure_delete.
+  ignore_result(Execute("PRAGMA journal_mode = TRUNCATE"));
 
   const base::TimeDelta kBusyTimeout =
     base::TimeDelta::FromSeconds(kBusyTimeoutSeconds);
@@ -1028,7 +1215,16 @@ bool Connection::OpenInternal(const std::string& file_name,
 
 void Connection::DoRollback() {
   Statement rollback(GetCachedStatement(SQL_FROM_HERE, "ROLLBACK"));
-  rollback.Run();
+
+  // Collect the rollback time manually, sql::Statement would register it as
+  // query time only.
+  const base::TimeTicks before = Now();
+  rollback.RunWithoutTimers();
+  const base::TimeDelta delta = Now() - before;
+
+  RecordUpdateTime(delta);
+  RecordOneEvent(EVENT_ROLLBACK);
+
   needs_rollback_ = false;
 }
 
@@ -1043,6 +1239,11 @@ void Connection::StatementRefDeleted(StatementRef* ref) {
     DLOG(FATAL) << "Could not find statement";
   else
     open_statements_.erase(i);
+}
+
+void Connection::set_histogram_tag(const std::string& tag) {
+  DCHECK(!is_open());
+  histogram_tag_ = tag;
 }
 
 void Connection::AddTaggedHistogram(const std::string& name,
@@ -1135,6 +1336,10 @@ bool Connection::IntegrityCheckHelper(
   ignore_result(Execute(kNoWritableSchema));
 
   return ret;
+}
+
+base::TimeTicks TimeSource::Now() {
+  return base::TimeTicks::Now();
 }
 
 }  // namespace sql

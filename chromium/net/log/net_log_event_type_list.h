@@ -453,6 +453,9 @@ EVENT_TYPE(SSL_SERVER_HANDSHAKE)
 // The SSL server requested a client certificate.
 EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
 
+// The SSL stack blocked on a private key operation.
+EVENT_TYPE(SSL_PRIVATE_KEY_OPERATION)
+
 // The start/end of getting a domain-bound certificate and private key.
 //
 // The END event will contain the following parameters on failure:
@@ -728,7 +731,7 @@ EVENT_TYPE(BACKUP_CONNECT_JOB_CREATED)
 //
 // The event parameters are:
 //   {
-//      "source_dependency": <Source identifer for the connect job we are
+//      "source_dependency": <Source identifier for the connect job we are
 //                            bound to>,
 //   }
 EVENT_TYPE(SOCKET_POOL_BOUND_TO_CONNECT_JOB)
@@ -868,34 +871,11 @@ EVENT_TYPE(HTTP_CACHE_WRITE_DATA)
 //   }
 EVENT_TYPE(HTTP_CACHE_CALLER_REQUEST_HEADERS)
 
-// Signal a significant change on the flow of the satate machine: start again
+// Signal a significant change on the flow of the state machine: start again
 // from scratch or create a new network request for byte-range operations.
 // There are no parameters.
 EVENT_TYPE(HTTP_CACHE_RESTART_PARTIAL_REQUEST)
 EVENT_TYPE(HTTP_CACHE_RE_SEND_PARTIAL_REQUEST)
-
-// Identifies the NetLog::Source() for the asynchronous HttpCache::Transaction
-// that will revalidate this entry.
-// The event parameters are:
-//   {
-//      "source_dependency": <Source identifier for the async Transaction>
-//   }
-EVENT_TYPE(HTTP_CACHE_VALIDATE_RESOURCE_ASYNC)
-
-// The start/end of performing an async revalidation.
-// For the BEGIN phase, the event parameters are:
-//   {
-//      "source_dependency": <Source identifier for the Request>
-//      "url": <String of URL being loaded>,
-//      "method": <Method of request>
-//   }
-//
-// For the END phase, if there was an error, the following parameters are
-// attached:
-//   {
-//      "net_error": <Net error code of the failure>,
-//   }
-EVENT_TYPE(ASYNC_REVALIDATION)
 
 // ------------------------------------------------------------------------
 // Disk Cache / Memory Cache
@@ -990,7 +970,24 @@ EVENT_TYPE(ENTRY_DOOM)
 EVENT_TYPE(HTTP_STREAM_REQUEST)
 
 // Measures the time taken to execute the HttpStreamFactoryImpl::Job
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifier for the Request with started
+//                            this Job>,
+//      "original_url": <The URL to create a stream for>,
+//      "url": <The URL actually being used, possibly different from
+//              original_url if using an alternate service>,
+//      "alternate_service": <The alternate service being used>,
+//      "priority": <The priority of the Job>,
+//   }
 EVENT_TYPE(HTTP_STREAM_JOB)
+
+// Identifies the NetLog::Source() for a Job started by the Request.
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifier for Job we started>,
+//   }
+EVENT_TYPE(HTTP_STREAM_REQUEST_STARTED_JOB)
 
 // Identifies the NetLog::Source() for the Job that fulfilled the Request.
 // The event parameters are:
@@ -1014,6 +1011,10 @@ EVENT_TYPE(HTTP_STREAM_JOB_BOUND_TO_REQUEST)
 //      "server_protos": <The list of server advertised protocols>,
 //   }
 EVENT_TYPE(HTTP_STREAM_REQUEST_PROTO)
+
+// Emitted when a Job is orphaned because the Request was bound to a different
+// Job. The orphaned Job will continue to run to completion.
+EVENT_TYPE(HTTP_STREAM_JOB_ORPHANED)
 
 // ------------------------------------------------------------------------
 // HttpNetworkTransaction
@@ -1578,6 +1579,9 @@ EVENT_TYPE(QUIC_SESSION_PING_FRAME_RECEIVED)
 // Session sent a PING frame.
 EVENT_TYPE(QUIC_SESSION_PING_FRAME_SENT)
 
+// Session sent an MTU discovery frame (PING on wire).
+EVENT_TYPE(QUIC_SESSION_MTU_DISCOVERY_FRAME_SENT)
+
 // Session received a STOP_WAITING frame.
 //   {
 //     "sent_info": <Details of packet sent by the peer>
@@ -1681,7 +1685,7 @@ EVENT_TYPE(QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED)
 //   }
 EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATION_PACKET_RECEIVED)
 
-// Session sucessfully negotiated QUIC version number.
+// Session successfully negotiated QUIC version number.
 //   {
 //     "version": <String of QUIC version negotiated with the server>,
 //   }
@@ -1780,8 +1784,8 @@ EVENT_TYPE(AUTH_SERVER)
 // HTML5 Application Cache
 // ------------------------------------------------------------------------
 
-// This event is emitted whenever a request is satistifed directly from
-// the appache.
+// This event is emitted whenever a request is satisfied directly from
+// the appcache.
 EVENT_TYPE(APPCACHE_DELIVERING_CACHED_RESPONSE)
 
 // This event is emitted whenever the appcache uses a fallback response.
@@ -2007,7 +2011,7 @@ EVENT_TYPE(CHROME_EXTENSION_ABORTED_REQUEST)
 //  }
 EVENT_TYPE(CHROME_EXTENSION_REDIRECTED_REQUEST)
 
-// This event is created when a Chrome extension modifieds the headers of a
+// This event is created when a Chrome extension modifies the headers of a
 // request.
 //
 //  {
@@ -2103,7 +2107,7 @@ EVENT_TYPE(CERT_VERIFIER_JOB)
 //
 // The event parameters are:
 //   {
-//      "source_dependency": <Source identifer for the job we are bound to>,
+//      "source_dependency": <Source identifier for the job we are bound to>,
 //   }
 EVENT_TYPE(CERT_VERIFIER_REQUEST_BOUND_TO_JOB)
 
@@ -2130,7 +2134,7 @@ EVENT_TYPE(DOWNLOAD_URL_REQUEST)
 // ------------------------------------------------------------------------
 
 // This event lives for as long as a download item is active.
-// The BEGIN event occurs right after constrction, and has the following
+// The BEGIN event occurs right after construction, and has the following
 // parameters:
 //   {
 //     "type": <New/history/save page>,
@@ -2257,7 +2261,7 @@ EVENT_TYPE(DOWNLOAD_FILE_DELETED)
 //   {
 //     "operation": <open, write, close, etc>,
 //     "net_error": <net::Error code>,
-//     "os_error": <OS depedent error code>
+//     "os_error": <OS dependent error code>
 //     "interrupt_reason": <Download interrupt reason>
 //   }
 EVENT_TYPE(DOWNLOAD_FILE_ERROR)

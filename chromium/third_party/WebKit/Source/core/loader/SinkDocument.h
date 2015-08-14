@@ -40,10 +40,10 @@ public:
 private:
     SinkDocument(const DocumentInit&);
 
-    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
+    PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
 };
 
 
-}; // namespace blink
+} // namespace blink
 
 #endif // SinkDocument_h

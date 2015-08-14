@@ -6,6 +6,7 @@
 #define UI_ANDROID_WINDOW_ANDROID_H_
 
 #include <jni.h>
+#include <string>
 #include <vector>
 
 #include "base/android/jni_weak_ref.h"
@@ -43,7 +44,6 @@ class UI_ANDROID_EXPORT WindowAndroid {
 
   // Compositor callback relay.
   void OnCompositingDidCommit();
-  void OnVisibilityChanged(bool visible);
 
   void AttachCompositor(WindowAndroidCompositor* compositor);
   void DetachCompositor();
@@ -55,13 +55,19 @@ class UI_ANDROID_EXPORT WindowAndroid {
 
   void RequestVSyncUpdate();
   void SetNeedsAnimate();
+  void Animate(base::TimeTicks begin_frame_time);
   void OnVSync(JNIEnv* env,
                jobject obj,
                jlong time_micros,
                jlong period_micros);
-  void Animate(base::TimeTicks begin_frame_time);
-  void OnActivityPaused(JNIEnv* env, jobject obj);
-  void OnActivityResumed(JNIEnv* env, jobject obj);
+  void OnVisibilityChanged(JNIEnv* env, jobject obj, bool visible);
+  void OnActivityStopped(JNIEnv* env, jobject obj);
+  void OnActivityStarted(JNIEnv* env, jobject obj);
+
+  // Return whether the specified Android permission is granted.
+  bool HasPermission(const std::string& permission);
+  // Return whether the specified Android permission can be requested by Chrome.
+  bool CanRequestPermission(const std::string& permission);
 
  private:
   ~WindowAndroid();
@@ -70,7 +76,7 @@ class UI_ANDROID_EXPORT WindowAndroid {
   gfx::Vector2dF content_offset_;
   WindowAndroidCompositor* compositor_;
 
-  ObserverList<WindowAndroidObserver> observer_list_;
+  base::ObserverList<WindowAndroidObserver> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowAndroid);
 };

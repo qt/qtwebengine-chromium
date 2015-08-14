@@ -36,8 +36,8 @@
 #include "platform/text/TextPath.h"
 #include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
+#include "wtf/text/CharacterNames.h"
 #include "wtf/text/WTFString.h"
-#include "wtf/unicode/CharacterNames.h"
 
 namespace blink {
 
@@ -51,13 +51,21 @@ public:
         return character >= lowerBound && character <= upperBound;
     }
 
+    static inline bool isUnicodeVariationSelector(UChar32 character)
+    {
+        // http://www.unicode.org/Public/UCD/latest/ucd/StandardizedVariants.html
+        return isInRange(character, 0x180B, 0x180D) // MONGOLIAN FREE VARIATION SELECTOR ONE to THREE
+            || isInRange(character, 0xFE00, 0xFE0F) // VARIATION SELECTOR-1 to 16
+            || isInRange(character, 0xE0100, 0xE01EF); // VARIATION SELECTOR-17 to 256
+    }
+
     static bool isCJKIdeograph(UChar32);
     static bool isCJKIdeographOrSymbol(UChar32);
 
     static unsigned expansionOpportunityCount(const LChar*, size_t length, TextDirection, bool& isAfterExpansion, const TextJustify);
     static unsigned expansionOpportunityCount(const UChar*, size_t length, TextDirection, bool& isAfterExpansion, const TextJustify);
 
-    static bool shouldIgnoreRotation(UChar32 character);
+    static bool isUprightInMixedVertical(UChar32 character);
 
     static bool treatAsSpace(UChar c)
     {

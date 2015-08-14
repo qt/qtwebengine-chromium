@@ -80,29 +80,17 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     Widget::setFrameRect(IntRect(0, 0, thickness, thickness));
 
     m_currentPos = scrollableAreaCurrentPos();
-
-#if ENABLE(OILPAN)
-    if (m_scrollableArea)
-        m_animator = m_scrollableArea->scrollAnimator();
-#endif
 }
 
 Scrollbar::~Scrollbar()
 {
-    stopTimerIfNeeded();
-
     m_theme->unregisterScrollbar(this);
+}
 
-#if ENABLE(OILPAN)
-    if (!m_animator)
-        return;
-
-    ASSERT(m_scrollableArea);
-    if (m_orientation == VerticalScrollbar)
-        m_animator->willRemoveVerticalScrollbar(this);
-    else
-        m_animator->willRemoveHorizontalScrollbar(this);
-#endif
+DEFINE_TRACE(Scrollbar)
+{
+    visitor->trace(m_scrollableArea);
+    Widget::trace(visitor);
 }
 
 void Scrollbar::setFrameRect(const IntRect& frameRect)
@@ -156,9 +144,6 @@ void Scrollbar::offsetDidChange()
 void Scrollbar::disconnectFromScrollableArea()
 {
     m_scrollableArea = nullptr;
-#if ENABLE(OILPAN)
-    m_animator = nullptr;
-#endif
 }
 
 void Scrollbar::setProportion(int visibleSize, int totalSize)
@@ -226,7 +211,7 @@ void Scrollbar::autoscrollPressedPart(double delay)
     }
 
     // Handle the arrows and track.
-    if (m_scrollableArea && m_scrollableArea->scroll(pressedPartScrollDirection(), pressedPartScrollGranularity()))
+    if (m_scrollableArea && m_scrollableArea->userScroll(pressedPartScrollDirectionPhysical(), pressedPartScrollGranularity()).didScroll)
         startTimerIfNeeded(delay);
 }
 
@@ -245,7 +230,7 @@ void Scrollbar::startTimerIfNeeded(double delay)
     }
 
     // We can't scroll if we've hit the beginning or end.
-    ScrollDirection dir = pressedPartScrollDirection();
+    ScrollDirectionPhysical dir = pressedPartScrollDirectionPhysical();
     if (dir == ScrollUp || dir == ScrollLeft) {
         if (m_currentPos == 0)
             return;
@@ -263,7 +248,7 @@ void Scrollbar::stopTimerIfNeeded()
         m_scrollTimer.stop();
 }
 
-ScrollDirection Scrollbar::pressedPartScrollDirection()
+ScrollDirectionPhysical Scrollbar::pressedPartScrollDirectionPhysical()
 {
     if (m_orientation == HorizontalScrollbar) {
         if (m_pressedPart == BackButtonStartPart || m_pressedPart == BackButtonEndPart || m_pressedPart == BackTrackPart)
@@ -297,7 +282,7 @@ void Scrollbar::moveThumb(int pos, bool draggingDocument)
         FloatPoint currentPosition = m_scrollableArea->scrollAnimator()->currentPosition();
         float destinationPosition = (m_orientation == HorizontalScrollbar ? currentPosition.x() : currentPosition.y()) + delta;
         destinationPosition = m_scrollableArea->clampScrollPosition(m_orientation, destinationPosition);
-        m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, destinationPosition);
+        m_scrollableArea->setScrollPositionSingleAxis(m_orientation, destinationPosition, UserScroll);
         m_documentDragPos = pos;
         return;
     }
@@ -324,7 +309,7 @@ void Scrollbar::moveThumb(int pos, bool draggingDocument)
     float maxPos = m_scrollableArea->maximumScrollPosition(m_orientation);
     if (delta) {
         float newPosition = static_cast<float>(thumbPos + delta) * (maxPos - minPos) / (trackLen - thumbLen) + minPos;
-        m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, newPosition);
+        m_scrollableArea->setScrollPositionSingleAxis(m_orientation, newPosition, UserScroll);
     }
 }
 
@@ -381,7 +366,7 @@ bool Scrollbar::gestureEvent(const PlatformGestureEvent& evt)
         return false;
     case PlatformEvent::GestureTap: {
         if (m_pressedPart != ThumbPart && m_pressedPart != NoPart && m_scrollableArea
-            && m_scrollableArea->scroll(pressedPartScrollDirection(), pressedPartScrollGranularity())) {
+            && m_scrollableArea->userScroll(pressedPartScrollDirectionPhysical(), pressedPartScrollGranularity()).didScroll) {
             return true;
         }
         m_scrollPos = 0;
@@ -399,8 +384,9 @@ void Scrollbar::mouseMoved(const PlatformMouseEvent& evt)
 {
     if (m_pressedPart == ThumbPart) {
         if (theme()->shouldSnapBackToDragOrigin(this, evt)) {
-            if (m_scrollableArea)
-                m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, m_dragOrigin + m_scrollableArea->minimumScrollPosition(m_orientation));
+            if (m_scrollableArea) {
+                m_scrollableArea->setScrollPositionSingleAxis(m_orientation, m_dragOrigin + m_scrollableArea->minimumScrollPosition(m_orientation), UserScroll);
+            }
         } else {
             moveThumb(m_orientation == HorizontalScrollbar ?
                       convertFromContainingWindow(evt.position()).x() :

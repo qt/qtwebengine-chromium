@@ -14,8 +14,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -134,11 +134,16 @@ class TestDelegate : public URLRequest::Delegate {
   void set_cancel_in_received_data_pending(bool val) {
     cancel_in_rd_pending_ = val;
   }
+
   void set_quit_on_complete(bool val) { quit_on_complete_ = val; }
   void set_quit_on_redirect(bool val) { quit_on_redirect_ = val; }
+  // Enables quitting the message loop in response to auth requests, as opposed
+  // to returning credentials or cancelling the request.
+  void set_quit_on_auth_required(bool val) { quit_on_auth_required_ = val; }
   void set_quit_on_network_start(bool val) {
     quit_on_before_network_start_ = val;
   }
+
   void set_allow_certificate_errors(bool val) {
     allow_certificate_errors_ = val;
   }
@@ -197,6 +202,7 @@ class TestDelegate : public URLRequest::Delegate {
   bool cancel_in_rd_pending_;
   bool quit_on_complete_;
   bool quit_on_redirect_;
+  bool quit_on_auth_required_;
   bool quit_on_before_network_start_;
   bool allow_certificate_errors_;
   AuthCredentials credentials_;
@@ -270,9 +276,6 @@ class TestNetworkDelegate : public NetworkDelegateImpl {
     first_party_only_cookies_enabled_ = val;
   }
 
-  void set_can_throttle_requests(bool val) { can_throttle_requests_ = val; }
-  bool can_throttle_requests() const { return can_throttle_requests_; }
-
   void set_cancel_request_with_policy_violating_referrer(bool val) {
     cancel_request_with_policy_violating_referrer_ = val;
   }
@@ -329,7 +332,6 @@ class TestNetworkDelegate : public NetworkDelegateImpl {
                       CookieOptions* options) override;
   bool OnCanAccessFile(const URLRequest& request,
                        const base::FilePath& path) const override;
-  bool OnCanThrottleRequest(const URLRequest& request) const override;
   bool OnFirstPartyOnlyCookieExperimentEnabled() const override;
   bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
@@ -375,7 +377,6 @@ class TestNetworkDelegate : public NetworkDelegateImpl {
   bool has_load_timing_info_before_auth_;
 
   bool can_access_files_;  // true by default
-  bool can_throttle_requests_;  // true by default
   bool first_party_only_cookies_enabled_;               // false by default
   bool cancel_request_with_policy_violating_referrer_;  // false by default
   bool will_be_intercepted_on_next_error_;

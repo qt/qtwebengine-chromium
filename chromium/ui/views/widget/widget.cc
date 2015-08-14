@@ -11,6 +11,7 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/default_theme_provider.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/base/l10n/l10n_font_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/compositor.h"
@@ -24,7 +25,6 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/focus/widget_focus_manager.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/root_view.h"
@@ -62,6 +62,14 @@ NativeWidget* CreateNativeWidget(NativeWidget* native_widget,
         internal::NativeWidgetPrivate::CreateNativeWidget(delegate);
   }
   return native_widget;
+}
+
+void NotifyCaretBoundsChanged(ui::InputMethod* input_method) {
+  if (!input_method)
+    return;
+  ui::TextInputClient* client = input_method->GetTextInputClient();
+  if (client)
+    input_method->OnCaretBoundsChanged(client);
 }
 
 }  // namespace
@@ -314,8 +322,8 @@ void Widget::Init(const InitParams& in_params) {
       params.type != views::Widget::InitParams::TYPE_PANEL)
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 
-  if (ViewsDelegate::views_delegate)
-    ViewsDelegate::views_delegate->OnBeforeWidgetInit(&params, this);
+  if (ViewsDelegate::GetInstance())
+    ViewsDelegate::GetInstance()->OnBeforeWidgetInit(&params, this);
 
   if (params.opacity == views::Widget::InitParams::INFER_OPACITY)
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
@@ -562,7 +570,7 @@ void Widget::StackBelow(gfx::NativeView native_view) {
   native_widget_->StackBelow(native_view);
 }
 
-void Widget::SetShape(gfx::NativeRegion shape) {
+void Widget::SetShape(SkRegion* shape) {
   native_widget_->SetShape(shape);
 }
 
@@ -763,35 +771,20 @@ const FocusManager* Widget::GetFocusManager() const {
   return toplevel_widget ? toplevel_widget->focus_manager_.get() : NULL;
 }
 
-ui::TextInputClient* Widget::GetFocusedTextInputClient() {
-  FocusManager* focus_manager = GetFocusManager();
-  View* view = focus_manager ? focus_manager->GetFocusedView() : nullptr;
-  return view ? view->GetTextInputClient() : nullptr;
-}
-
-InputMethod* Widget::GetInputMethod() {
-  return const_cast<InputMethod*>(
-      const_cast<const Widget*>(this)->GetInputMethod());
-}
-
-const InputMethod* Widget::GetInputMethod() const {
+ui::InputMethod* Widget::GetInputMethod() {
   if (is_top_level()) {
-    if (!input_method_.get())
-      input_method_ = const_cast<Widget*>(this)->CreateInputMethod().Pass();
-    return input_method_.get();
+    // Only creates the shared the input method instance on top level widget.
+    return native_widget_private()->GetInputMethod();
   } else {
-    const Widget* toplevel = GetTopLevelWidget();
+    Widget* toplevel = GetTopLevelWidget();
     // If GetTopLevelWidget() returns itself which is not toplevel,
     // the widget is detached from toplevel widget.
     // TODO(oshima): Fix GetTopLevelWidget() to return NULL
     // if there is no toplevel. We probably need to add GetTopMostWidget()
     // to replace some use cases.
-    return (toplevel && toplevel != this) ? toplevel->GetInputMethod() : NULL;
+    return (toplevel && toplevel != this) ? toplevel->GetInputMethod()
+                                          : nullptr;
   }
-}
-
-ui::InputMethod* Widget::GetHostInputMethod() {
-  return native_widget_private()->GetHostInputMethod();
 }
 
 void Widget::RunShellDrag(View* view,
@@ -895,9 +888,9 @@ NonClientFrameView* Widget::CreateNonClientFrameView() {
       widget_delegate_->CreateNonClientFrameView(this);
   if (!frame_view)
     frame_view = native_widget_->CreateNonClientFrameView();
-  if (!frame_view && ViewsDelegate::views_delegate) {
+  if (!frame_view && ViewsDelegate::GetInstance()) {
     frame_view =
-        ViewsDelegate::views_delegate->CreateDefaultNonClientFrameView(this);
+        ViewsDelegate::GetInstance()->CreateDefaultNonClientFrameView(this);
   }
   if (frame_view)
     return frame_view;
@@ -1051,19 +1044,6 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
   FOR_EACH_OBSERVER(WidgetObserver, observers_,
                     OnWidgetActivationChanged(this, active));
 
-  // During window creation, the widget gets focused without activation, and in
-  // that case, the focus manager cannot set the appropriate text input client
-  // because the widget is not active.  Thus we have to notify the focus manager
-  // not only when the focus changes but also when the widget gets activated.
-  // See crbug.com/377479 for details.
-  views::FocusManager* focus_manager = GetFocusManager();
-  if (focus_manager) {
-    if (active)
-      focus_manager->FocusTextInputClient(focus_manager->GetFocusedView());
-    else
-      focus_manager->BlurTextInputClient(focus_manager->GetFocusedView());
-  }
-
   if (IsVisible() && non_client_view())
     non_client_view()->frame_view()->SchedulePaint();
 }
@@ -1128,12 +1108,8 @@ gfx::Size Widget::GetMaximumSize() const {
 
 void Widget::OnNativeWidgetMove() {
   widget_delegate_->OnWidgetMove();
-  View* root = GetRootView();
-  if (root && root->GetFocusManager()) {
-    View* focused_view = root->GetFocusManager()->GetFocusedView();
-    if (focused_view && focused_view->GetInputMethod())
-      focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
-  }
+  NotifyCaretBoundsChanged(GetInputMethod());
+
   FOR_EACH_OBSERVER(WidgetObserver, observers_, OnWidgetBoundsChanged(
     this,
     GetWindowBoundsInScreen()));
@@ -1141,14 +1117,10 @@ void Widget::OnNativeWidgetMove() {
 
 void Widget::OnNativeWidgetSizeChanged(const gfx::Size& new_size) {
   View* root = GetRootView();
-  if (root) {
+  if (root)
     root->SetSize(new_size);
-    if (root->GetFocusManager()) {
-      View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
-      if (focused_view && focused_view->GetInputMethod())
-        focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
-    }
-  }
+
+  NotifyCaretBoundsChanged(GetInputMethod());
   SaveWindowPlacementIfInitialized();
 
   FOR_EACH_OBSERVER(WidgetObserver, observers_, OnWidgetBoundsChanged(
@@ -1307,10 +1279,6 @@ bool Widget::ExecuteCommand(int command_id) {
   return widget_delegate_->ExecuteWindowsCommand(command_id);
 }
 
-InputMethod* Widget::GetInputMethodDirect() {
-  return input_method_.get();
-}
-
 const std::vector<ui::Layer*>& Widget::GetRootLayers() {
   if (root_layers_dirty_) {
     root_layers_dirty_ = false;
@@ -1404,8 +1372,6 @@ internal::RootView* Widget::CreateRootView() {
 void Widget::DestroyRootView() {
   non_client_view_ = NULL;
   root_view_.reset();
-  // Input method has to be destroyed before focus manager.
-  input_method_.reset();
 }
 
 void Widget::OnDragWillStart() {
@@ -1511,19 +1477,6 @@ bool Widget::GetSavedWindowPlacement(gfx::Rect* bounds,
     return true;
   }
   return false;
-}
-
-scoped_ptr<InputMethod> Widget::CreateInputMethod() {
-  scoped_ptr<InputMethod> input_method(native_widget_->CreateInputMethod());
-  if (input_method.get())
-    input_method->Init(this);
-  return input_method.Pass();
-}
-
-void Widget::ReplaceInputMethod(InputMethod* input_method) {
-  input_method_.reset(input_method);
-  input_method->SetDelegate(native_widget_->GetInputMethodDelegate());
-  input_method->Init(this);
 }
 
 namespace internal {

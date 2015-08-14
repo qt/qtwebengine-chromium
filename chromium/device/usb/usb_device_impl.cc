@@ -22,6 +22,7 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/permission_broker_client.h"
+#include "dbus/file_descriptor.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace device {
@@ -95,22 +96,13 @@ UsbDeviceImpl::UsbDeviceImpl(
     PlatformUsbDevice platform_device,
     uint16 vendor_id,
     uint16 product_id,
-    uint32 unique_id,
-    const base::string16& manufacturer_string,
-    const base::string16& product_string,
-    const base::string16& serial_number,
-    const std::string& device_node,
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner)
     : UsbDevice(vendor_id,
                 product_id,
-                unique_id,
-                manufacturer_string,
-                product_string,
-                serial_number),
+                base::string16(),
+                base::string16(),
+                base::string16()),
       platform_device_(platform_device),
-#if defined(OS_CHROMEOS)
-      devnode_(device_node),
-#endif  // defined(OS_CHROMEOS)
       context_(context),
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       blocking_task_runner_(blocking_task_runner) {
@@ -131,25 +123,26 @@ void UsbDeviceImpl::CheckUsbAccess(const ResultCallback& callback) {
   chromeos::PermissionBrokerClient* client =
       chromeos::DBusThreadManager::Get()->GetPermissionBrokerClient();
   DCHECK(client) << "Could not get permission broker client.";
-  client->CheckPathAccess(devnode_, callback);
+  client->CheckPathAccess(device_path_, callback);
 }
 
-void UsbDeviceImpl::RequestUsbAccess(int interface_id,
-                                     const ResultCallback& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  chromeos::PermissionBrokerClient* client =
-      chromeos::DBusThreadManager::Get()->GetPermissionBrokerClient();
-  DCHECK(client) << "Could not get permission broker client.";
-  client->RequestPathAccess(devnode_, interface_id, callback);
-}
-
-#endif
+#endif  // defined(OS_CHROMEOS)
 
 void UsbDeviceImpl::Open(const OpenCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
+
+#if defined(OS_CHROMEOS)
+  chromeos::PermissionBrokerClient* client =
+      chromeos::DBusThreadManager::Get()->GetPermissionBrokerClient();
+  DCHECK(client) << "Could not get permission broker client.";
+  client->OpenPath(
+      device_path_,
+      base::Bind(&UsbDeviceImpl::OnOpenRequestComplete, this, callback));
+#else
   blocking_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&UsbDeviceImpl::OpenOnBlockingThread, this, callback));
+#endif  // defined(OS_CHROMEOS)
 }
 
 bool UsbDeviceImpl::Close(scoped_refptr<UsbDeviceHandle> handle) {
@@ -248,6 +241,38 @@ void UsbDeviceImpl::RefreshConfiguration() {
 
   libusb_free_config_descriptor(platform_config);
 }
+
+#if defined(OS_CHROMEOS)
+
+void UsbDeviceImpl::OnOpenRequestComplete(const OpenCallback& callback,
+                                          dbus::FileDescriptor fd) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&UsbDeviceImpl::OpenOnBlockingThreadWithFd, this,
+                            base::Passed(&fd), callback));
+}
+
+void UsbDeviceImpl::OpenOnBlockingThreadWithFd(dbus::FileDescriptor fd,
+                                               const OpenCallback& callback) {
+  fd.CheckValidity();
+  if (!fd.is_valid()) {
+    USB_LOG(EVENT) << "Did not get valid device handle from permission broker.";
+    task_runner_->PostTask(FROM_HERE, base::Bind(callback, nullptr));
+    return;
+  }
+
+  PlatformUsbDeviceHandle handle;
+  const int rv = libusb_open_fd(platform_device_, fd.TakeValue(), &handle);
+  if (LIBUSB_SUCCESS == rv) {
+    task_runner_->PostTask(
+        FROM_HERE, base::Bind(&UsbDeviceImpl::Opened, this, handle, callback));
+  } else {
+    USB_LOG(EVENT) << "Failed to open device: "
+                   << ConvertPlatformUsbErrorToString(rv);
+    task_runner_->PostTask(FROM_HERE, base::Bind(callback, nullptr));
+  }
+}
+
+#endif  // defined(OS_CHROMEOS)
 
 void UsbDeviceImpl::OpenOnBlockingThread(const OpenCallback& callback) {
   PlatformUsbDeviceHandle handle;

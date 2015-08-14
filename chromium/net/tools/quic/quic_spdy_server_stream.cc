@@ -7,7 +7,8 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "net/quic/quic_session.h"
+#include "net/quic/quic_data_stream.h"
+#include "net/quic/quic_spdy_session.h"
 #include "net/quic/spdy_utils.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
@@ -20,28 +21,26 @@ namespace net {
 namespace tools {
 
 QuicSpdyServerStream::QuicSpdyServerStream(QuicStreamId id,
-                                           QuicSession* session)
-    : QuicDataStream(id, session),
-      content_length_(-1) {
+                                           QuicSpdySession* session)
+    : QuicDataStream(id, session), content_length_(-1) {
 }
 
 QuicSpdyServerStream::~QuicSpdyServerStream() {
 }
 
+void QuicSpdyServerStream::OnStreamHeadersComplete(bool fin, size_t frame_len) {
+  QuicDataStream::OnStreamHeadersComplete(fin, frame_len);
+  if (!ParseRequestHeaders(decompressed_headers().data(),
+                           decompressed_headers().length())) {
+    // Headers were invalid.
+    SendErrorResponse();
+  }
+  MarkHeadersConsumed(decompressed_headers().length());
+}
+
 uint32 QuicSpdyServerStream::ProcessData(const char* data, uint32 data_len) {
-  if (!headers_decompressed()) {
-    // Let the headers data accumulate in the underlying QuicDataStream.
-    return 0;
-  }
-  if (request_headers_.empty()) {
-    if (!ParseRequestHeaders(data, data_len)) {
-      // Headers were invalid.
-      SendErrorResponse();
-      return 0;
-    }
-  } else {
-    body_.append(data, data_len);
-  }
+  body_.append(data, data_len);
+
   DCHECK(!request_headers_.empty());
   if (content_length_ >= 0 &&
       static_cast<int>(body_.size()) > content_length_) {

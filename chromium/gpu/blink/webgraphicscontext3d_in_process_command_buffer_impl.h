@@ -59,12 +59,6 @@ class GPU_BLINK_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   bool InitializeOnCurrentThread();
   void SetLock(base::Lock* lock);
 
-  //----------------------------------------------------------------------
-  // WebGraphicsContext3D methods
-  virtual bool isContextLost();
-
-  virtual blink::WGC3Denum getGraphicsResetStatusARB();
-
   ::gpu::ContextSupport* GetContextSupport();
 
   ::gpu::gles2::GLES2Implementation* GetImplementation() {
@@ -89,7 +83,6 @@ class GPU_BLINK_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   ::gpu::gles2::ContextCreationAttribHelper attribs_;
   bool share_resources_;
-  bool webgl_context_;
 
   bool is_offscreen_;
   // Only used when not offscreen.

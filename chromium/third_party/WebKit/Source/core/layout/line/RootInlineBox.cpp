@@ -27,12 +27,14 @@
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/VerticalPositionCache.h"
+#include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/line/EllipsisBox.h"
+#include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/RootInlineBoxPainter.h"
 #include "platform/text/BidiResolver.h"
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
 
 namespace blink {
 
@@ -45,12 +47,12 @@ struct SameSizeAsRootInlineBox : public InlineFlowBox {
 static_assert(sizeof(RootInlineBox) == sizeof(SameSizeAsRootInlineBox), "RootInlineBox should stay small");
 
 typedef WTF::HashMap<const RootInlineBox*, EllipsisBox*> EllipsisBoxMap;
-static EllipsisBoxMap* gEllipsisBoxMap = 0;
+static EllipsisBoxMap* gEllipsisBoxMap = nullptr;
 
 RootInlineBox::RootInlineBox(LayoutBlockFlow& block)
     : InlineFlowBox(block)
     , m_lineBreakPos(0)
-    , m_lineBreakObj(0)
+    , m_lineBreakObj(nullptr)
     , m_lineTop(0)
     , m_lineBottom(0)
     , m_lineTopWithLeading(0)
@@ -72,7 +74,7 @@ void RootInlineBox::detachEllipsisBox()
 {
     if (hasEllipsisBox()) {
         EllipsisBox* box = gEllipsisBoxMap->take(this);
-        box->setParent(0);
+        box->setParent(nullptr);
         box->destroy();
         setHasEllipsisBox(false);
     }
@@ -113,7 +115,7 @@ bool RootInlineBox::lineCanAccommodateEllipsis(bool ltr, int blockEdge, int line
     return InlineFlowBox::canAccommodateEllipsis(ltr, blockEdge, ellipsisWidth);
 }
 
-FloatWillBeLayoutUnit RootInlineBox::placeEllipsis(const AtomicString& ellipsisStr,  bool ltr, FloatWillBeLayoutUnit blockLeftEdge, FloatWillBeLayoutUnit blockRightEdge, FloatWillBeLayoutUnit ellipsisWidth)
+LayoutUnit RootInlineBox::placeEllipsis(const AtomicString& ellipsisStr,  bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth)
 {
     // Create an ellipsis box.
     EllipsisBox* ellipsisBox = new EllipsisBox(layoutObject(), ellipsisStr, this,
@@ -134,15 +136,15 @@ FloatWillBeLayoutUnit RootInlineBox::placeEllipsis(const AtomicString& ellipsisS
     // of that glyph.  Mark all of the objects that intersect the ellipsis box as not painting (as being
     // truncated).
     bool foundBox = false;
-    FloatWillBeLayoutUnit truncatedWidth = 0;
-    FloatWillBeLayoutUnit position = placeEllipsisBox(ltr, blockLeftEdge, blockRightEdge, ellipsisWidth, truncatedWidth, foundBox);
+    LayoutUnit truncatedWidth = 0;
+    LayoutUnit position = placeEllipsisBox(ltr, blockLeftEdge, blockRightEdge, ellipsisWidth, truncatedWidth, foundBox);
     ellipsisBox->setLogicalLeft(position);
     return truncatedWidth;
 }
 
-FloatWillBeLayoutUnit RootInlineBox::placeEllipsisBox(bool ltr, FloatWillBeLayoutUnit blockLeftEdge, FloatWillBeLayoutUnit blockRightEdge, FloatWillBeLayoutUnit ellipsisWidth, FloatWillBeLayoutUnit &truncatedWidth, bool& foundBox)
+LayoutUnit RootInlineBox::placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool& foundBox)
 {
-    FloatWillBeLayoutUnit result = InlineFlowBox::placeEllipsisBox(ltr, blockLeftEdge, blockRightEdge, ellipsisWidth, truncatedWidth, foundBox);
+    LayoutUnit result = InlineFlowBox::placeEllipsisBox(ltr, blockLeftEdge, blockRightEdge, ellipsisWidth, truncatedWidth, foundBox);
     if (result == -1) {
         result = ltr ? blockRightEdge - ellipsisWidth : blockLeftEdge;
         truncatedWidth = blockRightEdge - blockLeftEdge;
@@ -166,17 +168,17 @@ bool RootInlineBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& lo
     return InlineFlowBox::nodeAtPoint(result, locationInContainer, accumulatedOffset, lineTop, lineBottom);
 }
 
-void RootInlineBox::adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy)
+void RootInlineBox::move(const LayoutSize& delta)
 {
-    InlineFlowBox::adjustPosition(dx, dy);
-    LayoutUnit blockDirectionDelta = isHorizontal() ? dy : dx; // The block direction delta is a LayoutUnit.
+    InlineFlowBox::move(delta);
+    LayoutUnit blockDirectionDelta = isHorizontal() ? delta.height() : delta.width();
     m_lineTop += blockDirectionDelta;
     m_lineBottom += blockDirectionDelta;
     m_lineTopWithLeading += blockDirectionDelta;
     m_lineBottomWithLeading += blockDirectionDelta;
     m_selectionBottom += blockDirectionDelta;
     if (hasEllipsisBox())
-        ellipsisBox()->adjustPosition(dx, dy);
+        ellipsisBox()->move(delta);
 }
 
 void RootInlineBox::childRemoved(InlineBox* box)
@@ -234,16 +236,16 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
     if (annotationsAdjustment) {
         // FIXME: Need to handle pagination here. We might have to move to the next page/column as a result of the
         // ruby expansion.
-        adjustBlockDirectionPosition(annotationsAdjustment.toFloat());
+        moveInBlockDirection(annotationsAdjustment);
         heightOfBlock += annotationsAdjustment;
     }
 
     return heightOfBlock + maxHeight;
 }
 
-FloatWillBeLayoutUnit RootInlineBox::maxLogicalTop() const
+LayoutUnit RootInlineBox::maxLogicalTop() const
 {
-    FloatWillBeLayoutUnit maxLogicalTop;
+    LayoutUnit maxLogicalTop;
     computeMaxLogicalTop(maxLogicalTop);
     return maxLogicalTop;
 }
@@ -361,7 +363,7 @@ InlineBox* RootInlineBox::firstSelectedBox() const
             return box;
     }
 
-    return 0;
+    return nullptr;
 }
 
 InlineBox* RootInlineBox::lastSelectedBox() const
@@ -371,7 +373,7 @@ InlineBox* RootInlineBox::lastSelectedBox() const
             return box;
     }
 
-    return 0;
+    return nullptr;
 }
 
 LayoutUnit RootInlineBox::selectionTop() const
@@ -499,7 +501,7 @@ InlineBox* RootInlineBox::closestLeafChildForLogicalLeftPosition(LayoutUnit left
         return lastLeaf;
     }
 
-    InlineBox* closestLeaf = 0;
+    InlineBox* closestLeaf = nullptr;
     for (InlineBox* leaf = firstLeaf; leaf; leaf = leaf->nextLeafChildIgnoringLineBreak()) {
         if (!leaf->layoutObject().isListMarker() && (!onlyEditableLeaves || isEditableLeaf(leaf))) {
             closestLeaf = leaf;
@@ -539,7 +541,7 @@ void RootInlineBox::setLineBreakInfo(LayoutObject* obj, unsigned breakPos, const
 EllipsisBox* RootInlineBox::ellipsisBox() const
 {
     if (!hasEllipsisBox())
-        return 0;
+        return nullptr;
     return gEllipsisBoxMap->get(this);
 }
 
@@ -609,8 +611,8 @@ void RootInlineBox::ascentAndDescentForBox(InlineBox* box, GlyphOverflowAndFallb
         return;
     }
 
-    Vector<const SimpleFontData*>* usedFonts = 0;
-    GlyphOverflow* glyphOverflow = 0;
+    Vector<const SimpleFontData*>* usedFonts = nullptr;
+    GlyphOverflow* glyphOverflow = nullptr;
     if (box->isText()) {
         GlyphOverflowAndFallbackFontsMap::iterator it = textBoxDataMap.find(toInlineTextBox(box));
         usedFonts = it == textBoxDataMap.end() ? 0 : &it->value.first;
@@ -830,8 +832,8 @@ Node* RootInlineBox::getLogicalStartBoxWithNode(InlineBox*& startBox) const
             return startBox->layoutObject().nonPseudoNode();
         }
     }
-    startBox = 0;
-    return 0;
+    startBox = nullptr;
+    return nullptr;
 }
 
 Node* RootInlineBox::getLogicalEndBoxWithNode(InlineBox*& endBox) const
@@ -844,8 +846,8 @@ Node* RootInlineBox::getLogicalEndBoxWithNode(InlineBox*& endBox) const
             return endBox->layoutObject().nonPseudoNode();
         }
     }
-    endBox = 0;
-    return 0;
+    endBox = nullptr;
+    return nullptr;
 }
 
 const char* RootInlineBox::boxName() const

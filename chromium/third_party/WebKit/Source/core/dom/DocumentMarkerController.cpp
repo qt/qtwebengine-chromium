@@ -95,14 +95,6 @@ void DocumentMarkerController::clear()
     m_possiblyExistingMarkerTypes = 0;
 }
 
-void DocumentMarkerController::addMarker(Range* range, DocumentMarker::MarkerType type, const String& description, uint32_t hash)
-{
-    // Use a TextIterator to visit the potentially multiple nodes the range covers.
-    for (TextIterator markedText(range->startPosition(), range->endPosition()); !markedText.atEnd(); markedText.advance()) {
-        addMarker(markedText.currentContainer(), DocumentMarker(type, markedText.startOffsetInCurrentContainer(), markedText.endOffsetInCurrentContainer(), description, hash));
-    }
-}
-
 void DocumentMarkerController::addMarker(const Position& start, const Position& end, DocumentMarker::MarkerType type, const String& description, uint32_t hash)
 {
     // Use a TextIterator to visit the potentially multiple nodes the range covers.
@@ -135,12 +127,6 @@ void DocumentMarkerController::removeMarkers(TextIterator& markedText, DocumentM
         int endOffset = markedText.endOffsetInCurrentContainer();
         removeMarkers(markedText.currentContainer(), startOffset, endOffset - startOffset, markerTypes, shouldRemovePartiallyOverlappingMarker);
     }
-}
-
-void DocumentMarkerController::removeMarkers(Range* range, DocumentMarker::MarkerTypes markerTypes, RemovePartiallyOverlappingMarkerOrNot shouldRemovePartiallyOverlappingMarker)
-{
-    TextIterator markedText(range->startPosition(), range->endPosition());
-    DocumentMarkerController::removeMarkers(markedText, markerTypes, shouldRemovePartiallyOverlappingMarker);
 }
 
 void DocumentMarkerController::removeMarkers(const Position& start, const Position& end, DocumentMarker::MarkerTypes markerTypes, RemovePartiallyOverlappingMarkerOrNot shouldRemovePartiallyOverlappingMarker)

@@ -14,26 +14,28 @@ void InitCoreServicesForContext(mojo::runner::Context* context) {
   mojo::shell::ApplicationManager* manager = context->application_manager();
   manager->RegisterApplicationPackageAlias(GURL("mojo:clipboard"),
                                            GURL("mojo:core_services"), "Core");
+  manager->RegisterApplicationPackageAlias(GURL("mojo:filesystem"),
+                                           GURL("mojo:core_services"), "Files");
 #if !defined(OS_ANDROID)
-  manager->RegisterApplicationPackageAlias(GURL("mojo:native_viewport_service"),
+  // On Android, these are Java apps which are loaded in the shell process.
+  manager->RegisterApplicationPackageAlias(GURL("mojo:view_manager"),
                                            GURL("mojo:core_services"),
                                            "Surfaces");
-#endif
   manager->RegisterApplicationPackageAlias(
       GURL("mojo:network_service"), GURL("mojo:core_services"), "Network");
-#if !defined(OS_ANDROID)
+  manager->RegisterApplicationPackageAlias(
+      GURL("mojo:resource_provider"), GURL("mojo:core_services"), "Core");
+#endif
+
+#if defined(USE_AURA)
   manager->RegisterApplicationPackageAlias(
       GURL("mojo:omnibox"), GURL("mojo:core_services"), "Core");
 #endif
   manager->RegisterApplicationPackageAlias(
-      GURL("mojo:resource_provider"), GURL("mojo:core_services"), "Core");
-  manager->RegisterApplicationPackageAlias(
       GURL("mojo:surfaces_service"), GURL("mojo:core_services"), "Surfaces");
   manager->RegisterApplicationPackageAlias(GURL("mojo:tracing"),
                                            GURL("mojo:core_services"), "Core");
-  manager->RegisterApplicationPackageAlias(GURL("mojo:view_manager"),
-                                           GURL("mojo:core_services"), "Core");
-  manager->RegisterApplicationPackageAlias(GURL("mojo:window_manager"),
+  manager->RegisterApplicationPackageAlias(GURL("mojo:browser"),
                                            GURL("mojo:core_services"), "Core");
 }
 

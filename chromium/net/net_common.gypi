@@ -174,14 +174,14 @@
           'socket/ssl_client_socket_openssl.h',
           'socket/ssl_server_socket_openssl.cc',
           'socket/ssl_server_socket_openssl.h',
-          'ssl/openssl_platform_key.h',
-          'ssl/openssl_platform_key_mac.cc',
-          'ssl/openssl_platform_key_nss.cc',
-          'ssl/openssl_platform_key_win.cc',
           'ssl/openssl_ssl_util.cc',
           'ssl/openssl_ssl_util.h',
           'ssl/ssl_client_session_cache_openssl.cc',
           'ssl/ssl_client_session_cache_openssl.h',
+          'ssl/ssl_platform_key.h',
+          'ssl/ssl_platform_key_nss.cc',
+          'ssl/threaded_ssl_private_key.cc',
+          'ssl/threaded_ssl_private_key.h',
         ],
       },
     ],
@@ -220,6 +220,13 @@
           'cert/x509_certificate_openssl.cc',
           'ssl/openssl_client_key_store.cc',
           'ssl/openssl_client_key_store.h',
+        ],
+    }, {
+        'sources!': [
+          # TODO(davidben): Remove these exclusions when use_openssl_certs
+          # builds also use the SSLPrivateKey machinery.
+          'ssl/threaded_ssl_private_key.cc',
+          'ssl/threaded_ssl_private_key.h',
         ],
     }],
     [ 'use_glib == 1', {
@@ -273,7 +280,7 @@
           'ssl/client_cert_store_chromeos.h',
           'ssl/client_cert_store_nss.cc',
           'ssl/client_cert_store_nss.h',
-          'ssl/openssl_platform_key_nss.cc',
+          'ssl/ssl_platform_key_nss.cc',
           'third_party/mozilla_security_manager/nsKeygenHandler.cpp',
           'third_party/mozilla_security_manager/nsKeygenHandler.h',
           'third_party/mozilla_security_manager/nsNSSCertificateDB.cpp',
@@ -354,8 +361,12 @@
             '$(SDKROOT)/System/Library/Frameworks/MobileCoreServices.framework',
             '$(SDKROOT)/System/Library/Frameworks/Security.framework',
             '$(SDKROOT)/System/Library/Frameworks/SystemConfiguration.framework',
-            '$(SDKROOT)/usr/lib/libresolv.dylib',
           ],
+          'xcode_settings': {
+            'OTHER_LDFLAGS': [
+              '-lresolv',
+            ],
+          },
         },
       },
     ],
@@ -379,6 +390,8 @@
           'cert/cert_database_openssl.cc',
           'cert/cert_verify_proc_openssl.cc',
           'cert/test_root_certs_openssl.cc',
+          'http/http_auth_gssapi_posix.cc',
+          'http/http_auth_gssapi_posix.h',
         ],
       },
     ],
@@ -393,18 +406,18 @@
         ['include', '^base/platform_mime_util_linux\\.cc$'],
         ['include', '^base/address_tracker_linux\\.cc$'],
         ['include', '^base/address_tracker_linux\\.h$'],
-        ['include', '^base/net_util_linux\\.cc$'],
-        ['include', '^base/net_util_linux\\.h$'],
+        ['include', '^base/network_interfaces_linux\\.cc$'],
+        ['include', '^base/network_interfaces_linux\\.h$'],
       ],
     }],
     ['OS == "ios"', {
       'sources/': [
         ['include', '^base/mac/url_conversions\\.h$'],
         ['include', '^base/mac/url_conversions\\.mm$'],
-        ['include', '^base/net_util_mac\\.cc$'],
-        ['include', '^base/net_util_mac\\.h$'],
         ['include', '^base/network_change_notifier_mac\\.cc$'],
         ['include', '^base/network_config_watcher_mac\\.cc$'],
+        ['include', '^base/network_interfaces_mac\\.cc$'],
+        ['include', '^base/network_interfaces_mac\\.h$'],
         ['include', '^base/platform_mime_util_mac\\.mm$'],
         # The iOS implementation only partially uses NSS and thus does not
         # defines |use_nss_certs|. In particular the |USE_NSS_CERTS|

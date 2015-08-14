@@ -37,12 +37,11 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/page/Chrome.h"
 #include "core/page/DOMWindowPagePopup.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupClient.h"
@@ -66,7 +65,7 @@
 
 namespace blink {
 
-class PagePopupChromeClient : public EmptyChromeClient {
+class PagePopupChromeClient final : public EmptyChromeClient {
     WTF_MAKE_NONCOPYABLE(PagePopupChromeClient);
     WTF_MAKE_FAST_ALLOCATED(PagePopupChromeClient);
 
@@ -77,45 +76,44 @@ public:
         ASSERT(m_popup->widgetClient());
     }
 
-    virtual void setWindowRect(const IntRect& rect) override
+    void setWindowRect(const IntRect& rect) override
     {
         m_popup->m_windowRectInScreen = rect;
         m_popup->widgetClient()->setWindowRect(m_popup->m_windowRectInScreen);
     }
 
 private:
-    virtual void closeWindowSoon() override
+    void closeWindowSoon() override
     {
         m_popup->closePopup();
     }
 
-    virtual IntRect windowRect() override
+    IntRect windowRect() override
     {
         return IntRect(m_popup->m_windowRectInScreen.x, m_popup->m_windowRectInScreen.y, m_popup->m_windowRectInScreen.width, m_popup->m_windowRectInScreen.height);
     }
 
-    virtual IntRect viewportToScreen(const IntRect& rect) const override
+    IntRect viewportToScreen(const IntRect& rect) const override
     {
         IntRect rectInScreen(rect);
         rectInScreen.move(m_popup->m_windowRectInScreen.x, m_popup->m_windowRectInScreen.y);
         return rectInScreen;
     }
 
-    virtual void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) override
+    void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) override
     {
 #ifndef NDEBUG
         fprintf(stderr, "CONSOLE MESSSAGE:%u: %s\n", lineNumber, message.utf8().data());
 #endif
     }
 
-    virtual void invalidateRect(const IntRect& paintRect) override
+    void invalidateRect(const IntRect& paintRect) override
     {
-        if (paintRect.isEmpty())
-            return;
-        m_popup->widgetClient()->didInvalidateRect(paintRect);
+        if (!paintRect.isEmpty())
+            m_popup->widgetClient()->didInvalidateRect(paintRect);
     }
 
-    virtual void scheduleAnimation() override
+    void scheduleAnimation() override
     {
         // Calling scheduleAnimation on m_webView so WebTestProxy will call beginFrame.
         if (LayoutTestSupport::isRunningLayoutTest())
@@ -129,54 +127,50 @@ private:
         m_popup->m_widgetClient->scheduleAnimation();
     }
 
-    virtual WebScreenInfo screenInfo() const override
+    WebScreenInfo screenInfo() const override
     {
         return m_popup->m_webView->client() ? m_popup->m_webView->client()->screenInfo() : WebScreenInfo();
     }
 
-    virtual void* webView() const override
+    void* webView() const override
     {
         return m_popup->m_webView;
     }
 
-    virtual IntSize minimumWindowSize() const override
+    IntSize minimumWindowSize() const override
     {
         return IntSize(0, 0);
     }
 
-    virtual void setCursor(const Cursor& cursor) override
+    void setCursor(const Cursor& cursor) override
     {
         if (m_popup->m_webView->client())
             m_popup->m_webView->client()->didChangeCursor(WebCursorInfo(cursor));
     }
 
-    virtual void needTouchEvents(bool needsTouchEvents) override
+    void needTouchEvents(bool needsTouchEvents) override
     {
         m_popup->widgetClient()->hasTouchEventHandlers(needsTouchEvents);
     }
 
-    virtual GraphicsLayerFactory* graphicsLayerFactory() const override
+    GraphicsLayerFactory* graphicsLayerFactory() const override
     {
         return m_popup->m_webView->graphicsLayerFactory();
     }
 
-    virtual void attachRootGraphicsLayer(GraphicsLayer* graphicsLayer, LocalFrame* localRoot) override
+    void attachRootGraphicsLayer(GraphicsLayer* graphicsLayer, LocalFrame* localRoot) override
     {
         m_popup->setRootGraphicsLayer(graphicsLayer);
     }
 
-    virtual void postAccessibilityNotification(AXObject* obj, AXObjectCache::AXNotification notification) override
+    void postAccessibilityNotification(AXObject* obj, AXObjectCache::AXNotification notification) override
     {
         WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(m_popup->m_popupClient->ownerElement().document().frame());
         if (obj && frame && frame->client())
             frame->client()->postAccessibilityEvent(WebAXObject(obj), static_cast<WebAXEvent>(notification));
-
-        // FIXME: Delete these lines once Chromium only uses the frame client interface, above.
-        if (obj && m_popup->m_webView->client())
-            m_popup->m_webView->client()->postAccessibilityEvent(WebAXObject(obj), static_cast<WebAXEvent>(notification));
     }
 
-    virtual void setToolTip(const String& tooltipText, TextDirection dir) override
+    void setToolTip(const String& tooltipText, TextDirection dir) override
     {
         if (m_popup->widgetClient())
             m_popup->widgetClient()->setToolTipText(tooltipText, toWebTextDirection(dir));
@@ -186,7 +180,7 @@ private:
 };
 
 class PagePopupFeaturesClient : public ContextFeaturesClient {
-    virtual bool isEnabled(Document*, ContextFeatures::FeatureType, bool) override;
+    bool isEnabled(Document*, ContextFeatures::FeatureType, bool) override;
 };
 
 bool PagePopupFeaturesClient::isEnabled(Document*, ContextFeatures::FeatureType type, bool defaultValue)

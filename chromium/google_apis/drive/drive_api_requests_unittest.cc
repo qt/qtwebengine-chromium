@@ -120,11 +120,11 @@ class DriveApiRequestsTest : public testing::Test {
 
   void SetUp() override {
     request_context_getter_ = new net::TestURLRequestContextGetter(
-        message_loop_.message_loop_proxy());
+        message_loop_.task_runner());
 
     request_sender_.reset(new RequestSender(new DummyAuthService,
                                             request_context_getter_.get(),
-                                            message_loop_.message_loop_proxy(),
+                                            message_loop_.task_runner(),
                                             kTestUserAgent));
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -515,7 +515,7 @@ TEST_F(DriveApiRequestsTest, DriveApiDataRequest_Fields) {
             test_util::CreateCopyResultCallback(&error, &about_resource)));
     request->set_fields("kind,quotaBytesTotal,quotaBytesUsedAggregate,"
                         "largestChangeId,rootFolderId");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -565,7 +565,7 @@ TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
     request->add_parent("root");
     request->set_title("new directory");
     request->set_properties(testing_properties_);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -630,7 +630,7 @@ TEST_F(DriveApiRequestsTest, FilesPatchRequest) {
     request->add_parent("parent_resource_id");
 
     request->set_properties(testing_properties_);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -670,7 +670,7 @@ TEST_F(DriveApiRequestsTest, AboutGetRequest_ValidJson) {
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &about_resource)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -705,7 +705,7 @@ TEST_F(DriveApiRequestsTest, AboutGetRequest_InvalidJson) {
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &about_resource)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -733,7 +733,7 @@ TEST_F(DriveApiRequestsTest, AppsListRequest) {
         test_util::CreateQuitCallback(
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &app_list)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -761,7 +761,7 @@ TEST_F(DriveApiRequestsTest, ChangesListRequest) {
     request->set_include_deleted(true);
     request->set_start_change_id(100);
     request->set_max_results(500);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -789,7 +789,7 @@ TEST_F(DriveApiRequestsTest, ChangesListNextPageRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &result)));
     request->set_next_link(test_server_.GetURL("/continue/get/change/list"));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -823,7 +823,7 @@ TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
     request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
     request->add_parent("parent_resource_id");
     request->set_title("new title");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -860,7 +860,7 @@ TEST_F(DriveApiRequestsTest, FilesCopyRequest_EmptyParentResourceId) {
             test_util::CreateCopyResultCallback(&error, &file_resource)));
     request->set_file_id("resource_id");
     request->set_title("new title");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -891,7 +891,7 @@ TEST_F(DriveApiRequestsTest, FilesListRequest) {
             test_util::CreateCopyResultCallback(&error, &result)));
     request->set_max_results(50);
     request->set_q("\"abcde\" in parents");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -919,7 +919,7 @@ TEST_F(DriveApiRequestsTest, FilesListNextPageRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &result)));
     request->set_next_link(test_server_.GetURL("/continue/get/file/list"));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -942,7 +942,7 @@ TEST_F(DriveApiRequestsTest, FilesDeleteRequest) {
             &run_loop, test_util::CreateCopyResultCallback(&error)));
     request->set_file_id("resource_id");
     request->set_etag(kTestETag);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -972,7 +972,7 @@ TEST_F(DriveApiRequestsTest, FilesTrashRequest) {
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &file_resource)));
     request->set_file_id("resource_id");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1002,7 +1002,7 @@ TEST_F(DriveApiRequestsTest, ChildrenInsertRequest) {
             test_util::CreateCopyResultCallback(&error)));
     request->set_folder_id("parent_resource_id");
     request->set_id("resource_id");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1031,7 +1031,7 @@ TEST_F(DriveApiRequestsTest, ChildrenDeleteRequest) {
             test_util::CreateCopyResultCallback(&error)));
     request->set_child_id("resource_id");
     request->set_folder_id("parent_resource_id");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1071,7 +1071,7 @@ TEST_F(DriveApiRequestsTest, UploadNewFileRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
     request->set_properties(testing_properties_);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1116,7 +1116,7 @@ TEST_F(DriveApiRequestsTest, UploadNewFileRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&response, &new_entry)),
             ProgressCallback());
-    request_sender_->StartRequestWithRetry(resume_request);
+    request_sender_->StartRequestWithAuthRetry(resume_request);
     run_loop.Run();
   }
 
@@ -1167,7 +1167,7 @@ TEST_F(DriveApiRequestsTest, UploadNewEmptyFileRequest) {
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1207,7 +1207,7 @@ TEST_F(DriveApiRequestsTest, UploadNewEmptyFileRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&response, &new_entry)),
             ProgressCallback());
-    request_sender_->StartRequestWithRetry(resume_request);
+    request_sender_->StartRequestWithAuthRetry(resume_request);
     run_loop.Run();
   }
 
@@ -1256,7 +1256,7 @@ TEST_F(DriveApiRequestsTest, UploadNewLargeFileRequest) {
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1295,7 +1295,7 @@ TEST_F(DriveApiRequestsTest, UploadNewLargeFileRequest) {
               test_util::CreateQuitCallback(
                   &run_loop,
                   test_util::CreateCopyResultCallback(&response, &new_entry)));
-      request_sender_->StartRequestWithRetry(get_upload_status_request);
+      request_sender_->StartRequestWithAuthRetry(get_upload_status_request);
       run_loop.Run();
     }
 
@@ -1341,7 +1341,7 @@ TEST_F(DriveApiRequestsTest, UploadNewLargeFileRequest) {
                   &run_loop,
                   test_util::CreateCopyResultCallback(&response, &new_entry)),
               ProgressCallback());
-      request_sender_->StartRequestWithRetry(resume_request);
+      request_sender_->StartRequestWithAuthRetry(resume_request);
       run_loop.Run();
     }
 
@@ -1385,7 +1385,7 @@ TEST_F(DriveApiRequestsTest, UploadNewLargeFileRequest) {
               test_util::CreateQuitCallback(
                   &run_loop,
                   test_util::CreateCopyResultCallback(&response, &new_entry)));
-      request_sender_->StartRequestWithRetry(get_upload_status_request);
+      request_sender_->StartRequestWithAuthRetry(get_upload_status_request);
       run_loop.Run();
     }
 
@@ -1438,7 +1438,7 @@ TEST_F(DriveApiRequestsTest, UploadNewFileWithMetadataRequest) {
     request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
     request->set_last_viewed_by_me_date(
         base::Time::FromUTCExploded(kLastViewedByMeDate));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1489,7 +1489,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
     request->set_properties(testing_properties_);
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1529,7 +1529,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileRequest) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&response, &new_entry)),
             ProgressCallback());
-    request_sender_->StartRequestWithRetry(resume_request);
+    request_sender_->StartRequestWithAuthRetry(resume_request);
     run_loop.Run();
   }
 
@@ -1580,7 +1580,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileRequestWithETag) {
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1616,7 +1616,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileRequestWithETag) {
                 &run_loop,
                 test_util::CreateCopyResultCallback(&response, &new_entry)),
             ProgressCallback());
-    request_sender_->StartRequestWithRetry(resume_request);
+    request_sender_->StartRequestWithAuthRetry(resume_request);
     run_loop.Run();
   }
 
@@ -1669,7 +1669,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileRequestWithETagConflicting) {
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1714,7 +1714,7 @@ TEST_F(DriveApiRequestsTest,
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &upload_url)));
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1755,7 +1755,7 @@ TEST_F(DriveApiRequestsTest,
                 &run_loop,
                 test_util::CreateCopyResultCallback(&response, &new_entry)),
             ProgressCallback());
-    request_sender_->StartRequestWithRetry(resume_request);
+    request_sender_->StartRequestWithAuthRetry(resume_request);
     run_loop.Run();
   }
 
@@ -1816,7 +1816,7 @@ TEST_F(DriveApiRequestsTest, UploadExistingFileWithMetadataRequest) {
     request->set_last_viewed_by_me_date(
         base::Time::FromUTCExploded(kLastViewedByMeDate));
 
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1860,7 +1860,7 @@ TEST_F(DriveApiRequestsTest, DownloadFileRequest) {
             test_util::CreateCopyResultCallback(&result_code, &temp_file)),
         GetContentCallback(),
         ProgressCallback());
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1897,7 +1897,7 @@ TEST_F(DriveApiRequestsTest, DownloadFileRequest_GetContentCallback) {
             test_util::CreateCopyResultCallback(&result_code, &temp_file)),
         base::Bind(&AppendContent, &contents),
         ProgressCallback());
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1932,7 +1932,7 @@ TEST_F(DriveApiRequestsTest, PermissionsInsertRequest) {
     request->set_role(drive::PERMISSION_ROLE_COMMENTER);
     request->set_type(drive::PERMISSION_TYPE_USER);
     request->set_value("user@example.com");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1942,12 +1942,13 @@ TEST_F(DriveApiRequestsTest, PermissionsInsertRequest) {
             http_request_.relative_url);
   EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
 
-  scoped_ptr<base::Value> expected(base::JSONReader::Read(
+  scoped_ptr<base::Value> expected(base::JSONReader::DeprecatedRead(
       "{\"additionalRoles\":[\"commenter\"], \"role\":\"reader\", "
       "\"type\":\"user\",\"value\":\"user@example.com\"}"));
   ASSERT_TRUE(expected);
 
-  scoped_ptr<base::Value> result(base::JSONReader::Read(http_request_.content));
+  scoped_ptr<base::Value> result =
+      base::JSONReader::Read(http_request_.content);
   EXPECT_TRUE(http_request_.has_content);
   EXPECT_TRUE(base::Value::Equals(expected.get(), result.get()));
 
@@ -1966,7 +1967,7 @@ TEST_F(DriveApiRequestsTest, PermissionsInsertRequest) {
     request->set_role(drive::PERMISSION_ROLE_WRITER);
     request->set_type(drive::PERMISSION_TYPE_DOMAIN);
     request->set_value("example.com");
-    request_sender_->StartRequestWithRetry(request);
+    request_sender_->StartRequestWithAuthRetry(request);
     run_loop.Run();
   }
 
@@ -1976,11 +1977,11 @@ TEST_F(DriveApiRequestsTest, PermissionsInsertRequest) {
             http_request_.relative_url);
   EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
 
-  expected.reset(base::JSONReader::Read(
+  expected.reset(base::JSONReader::DeprecatedRead(
       "{\"role\":\"writer\", \"type\":\"domain\",\"value\":\"example.com\"}"));
   ASSERT_TRUE(expected);
 
-  result.reset(base::JSONReader::Read(http_request_.content));
+  result.reset(base::JSONReader::DeprecatedRead(http_request_.content));
   EXPECT_TRUE(http_request_.has_content);
   EXPECT_TRUE(base::Value::Equals(expected.get(), result.get()));
 }
@@ -1997,7 +1998,7 @@ TEST_F(DriveApiRequestsTest, BatchUploadRequest) {
   drive::BatchUploadRequest* const request =
       new drive::BatchUploadRequest(request_sender_.get(), *url_generator_);
   request->SetBoundaryForTesting("OUTERBOUNDARY");
-  request_sender_->StartRequestWithRetry(request);
+  request_sender_->StartRequestWithAuthRetry(request);
 
   // Create child request.
   DriveApiErrorCode errors[] = {DRIVE_OTHER_ERROR, DRIVE_OTHER_ERROR};
@@ -2085,7 +2086,7 @@ TEST_F(DriveApiRequestsTest, BatchUploadRequestWithBodyIncludingZero) {
   drive::BatchUploadRequest* const request =
       new drive::BatchUploadRequest(request_sender_.get(), *url_generator_);
   request->SetBoundaryForTesting("OUTERBOUNDARY");
-  request_sender_->StartRequestWithRetry(request);
+  request_sender_->StartRequestWithAuthRetry(request);
 
   // Create child request.
   {

@@ -44,24 +44,6 @@ bool DelegatedRendererLayerImpl::HasContributingDelegatedRenderPasses() const {
   return render_passes_in_draw_order_.size() > 1;
 }
 
-static ResourceProvider::ResourceId ResourceRemapHelper(
-    bool* invalid_frame,
-    const ResourceProvider::ResourceIdMap& child_to_parent_map,
-    ResourceProvider::ResourceIdSet* resources_in_frame,
-    ResourceProvider::ResourceId id) {
-  ResourceProvider::ResourceIdMap::const_iterator it =
-      child_to_parent_map.find(id);
-  if (it == child_to_parent_map.end()) {
-    *invalid_frame = true;
-    return 0;
-  }
-
-  DCHECK_EQ(it->first, id);
-  ResourceProvider::ResourceId remapped_id = it->second;
-  resources_in_frame->insert(id);
-  return remapped_id;
-}
-
 void DelegatedRendererLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   LayerImpl::PushPropertiesTo(layer);
 
@@ -134,14 +116,22 @@ void DelegatedRendererLayerImpl::SetFrameData(
   if (reserve_size)
     resources_in_frame.resize(reserve_size);
 #endif
-  DrawQuad::ResourceIteratorCallback remap_resources_to_parent_callback =
-      base::Bind(&ResourceRemapHelper,
-                 &invalid_frame,
-                 resource_map,
-                 &resources_in_frame);
   for (const auto& pass : render_pass_list) {
-    for (const auto& quad : pass->quad_list)
-      quad->IterateResources(remap_resources_to_parent_callback);
+    for (const auto& quad : pass->quad_list) {
+      for (ResourceId& resource_id : quad->resources) {
+        ResourceProvider::ResourceIdMap::const_iterator it =
+            resource_map.find(resource_id);
+        if (it == resource_map.end()) {
+          invalid_frame = true;
+          break;
+        }
+
+        DCHECK_EQ(it->first, resource_id);
+        ResourceId remapped_id = it->second;
+        resources_in_frame.insert(resource_id);
+        resource_id = remapped_id;
+      }
+    }
   }
 
   if (invalid_frame) {
@@ -190,7 +180,7 @@ void DelegatedRendererLayerImpl::SetRenderPasses(
     RenderPassList::iterator to_take =
         render_passes_in_draw_order->begin() + i;
     render_passes_index_by_id_.insert(
-        std::pair<RenderPassId, int>((*to_take)->id, i));
+        RenderPassToIndexMap::value_type((*to_take)->id, i));
     scoped_ptr<RenderPass> taken_render_pass =
         render_passes_in_draw_order->take(to_take);
     render_passes_in_draw_order_.push_back(taken_render_pass.Pass());
@@ -220,8 +210,13 @@ void DelegatedRendererLayerImpl::ReleaseResources() {
   have_render_passes_to_push_ = false;
 }
 
-static inline int IndexToId(int index) { return index + 1; }
-static inline int IdToIndex(int id) { return id - 1; }
+static inline size_t IndexToId(size_t index) {
+  return index + 1;
+}
+static inline size_t IdToIndex(size_t id) {
+  DCHECK_GT(id, 0u);
+  return id - 1;
+}
 
 RenderPassId DelegatedRendererLayerImpl::FirstContributingRenderPassId() const {
   return RenderPassId(id(), IndexToId(0));
@@ -235,13 +230,13 @@ RenderPassId DelegatedRendererLayerImpl::NextContributingRenderPassId(
 bool DelegatedRendererLayerImpl::ConvertDelegatedRenderPassId(
     RenderPassId delegated_render_pass_id,
     RenderPassId* output_render_pass_id) const {
-  base::hash_map<RenderPassId, int>::const_iterator found =
+  RenderPassToIndexMap::const_iterator found =
       render_passes_index_by_id_.find(delegated_render_pass_id);
   if (found == render_passes_index_by_id_.end()) {
     // Be robust against a RenderPass id that isn't part of the frame.
     return false;
   }
-  unsigned delegated_render_pass_index = found->second;
+  size_t delegated_render_pass_index = found->second;
   *output_render_pass_id =
       RenderPassId(id(), IndexToId(delegated_render_pass_index));
   return true;
@@ -259,7 +254,7 @@ void DelegatedRendererLayerImpl::AppendContributingRenderPasses(
                                           inverse_device_scale_factor_);
 
   for (size_t i = 0; i < render_passes_in_draw_order_.size() - 1; ++i) {
-    RenderPassId output_render_pass_id(-1, -1);
+    RenderPassId output_render_pass_id;
     bool present =
         ConvertDelegatedRenderPassId(render_passes_in_draw_order_[i]->id,
                                      &output_render_pass_id);
@@ -267,7 +262,7 @@ void DelegatedRendererLayerImpl::AppendContributingRenderPasses(
     // Don't clash with the RenderPass we generate if we own a RenderSurface.
     DCHECK(present) << render_passes_in_draw_order_[i]->id.layer_id << ", "
                     << render_passes_in_draw_order_[i]->id.index;
-    DCHECK_GT(output_render_pass_id.index, 0);
+    DCHECK_GT(output_render_pass_id.index, 0u);
 
     scoped_ptr<RenderPass> copy_pass =
         render_passes_in_draw_order_[i]->Copy(output_render_pass_id);
@@ -318,7 +313,7 @@ void DelegatedRendererLayerImpl::AppendQuads(
     // Verify that the RenderPass we are appending to was created by us.
     DCHECK(target_render_pass_id.layer_id == id());
 
-    int render_pass_index = IdToIndex(target_render_pass_id.index);
+    size_t render_pass_index = IdToIndex(target_render_pass_id.index);
     const RenderPass* delegated_render_pass =
         render_passes_in_draw_order_[render_pass_index];
     AppendRenderPassQuads(render_pass,
@@ -353,25 +348,19 @@ void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
   const int kStripeWidth = 300;
   const int kStripeHeight = 300;
 
-  for (size_t i = 0; ; ++i) {
+  for (int i = 0;; ++i) {
     // For horizontal lines.
     int x =  kStripeWidth * i;
-    int width = std::min(kStripeWidth, content_bounds().width() - x - 1);
+    int width = std::min(kStripeWidth, bounds().width() - x - 1);
 
     // For vertical lines.
     int y = kStripeHeight * i;
-    int height = std::min(kStripeHeight, content_bounds().height() - y - 1);
+    int height = std::min(kStripeHeight, bounds().height() - y - 1);
 
     gfx::Rect top(x, 0, width, border_width);
-    gfx::Rect bottom(x,
-                     content_bounds().height() - border_width,
-                     width,
-                     border_width);
+    gfx::Rect bottom(x, bounds().height() - border_width, width, border_width);
     gfx::Rect left(0, y, border_width, height);
-    gfx::Rect right(content_bounds().width() - border_width,
-                    y,
-                    border_width,
-                    height);
+    gfx::Rect right(bounds().width() - border_width, y, border_width, height);
 
     if (top.IsEmpty() && left.IsEmpty())
       break;
@@ -400,7 +389,7 @@ void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
             colors[i % kNumColors],
             static_cast<uint8_t>(SkColorGetA(colors[i % kNumColors]) *
                                  kFillOpacity));
-        gfx::Rect fill_rect(x, 0, width, content_bounds().height());
+        gfx::Rect fill_rect(x, 0, width, bounds().height());
         solid_quad->SetNew(shared_quad_state, fill_rect, fill_rect, fill_color,
                            force_anti_aliasing_off);
       }
@@ -440,13 +429,13 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
       output_shared_quad_state->CopyFrom(delegated_shared_quad_state);
 
       if (is_root_delegated_render_pass) {
-        output_shared_quad_state->content_to_target_transform.ConcatTransform(
+        output_shared_quad_state->quad_to_target_transform.ConcatTransform(
             delegated_frame_to_target_transform);
 
         if (render_target() == this) {
           DCHECK(!is_clipped());
           DCHECK(render_surface());
-          DCHECK_EQ(0, num_unclipped_descendants());
+          DCHECK_EQ(0u, num_unclipped_descendants());
           output_shared_quad_state->clip_rect =
               MathUtil::MapEnclosingClippedRect(
                   delegated_frame_to_target_transform,
@@ -468,7 +457,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     DCHECK(output_shared_quad_state);
 
     gfx::Transform quad_content_to_delegated_target_space =
-        output_shared_quad_state->content_to_target_transform;
+        output_shared_quad_state->quad_to_target_transform;
     if (!is_root_delegated_render_pass) {
       quad_content_to_delegated_target_space.ConcatTransform(
           delegated_render_pass->transform_to_root_target);
@@ -496,7 +485,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     } else {
       RenderPassId delegated_contributing_render_pass_id =
           RenderPassDrawQuad::MaterialCast(delegated_quad)->render_pass_id;
-      RenderPassId output_contributing_render_pass_id(-1, -1);
+      RenderPassId output_contributing_render_pass_id;
 
       bool present =
           ConvertDelegatedRenderPassId(delegated_contributing_render_pass_id,

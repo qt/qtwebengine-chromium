@@ -52,18 +52,21 @@ X11Window::X11Window(PlatformWindowDelegate* delegate)
 }
 
 X11Window::~X11Window() {
-  Destroy();
 }
 
 void X11Window::Destroy() {
-  delegate_->OnClosed();
   if (xwindow_ == None)
     return;
 
   // Stop processing events.
   PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
-  XDestroyWindow(xdisplay_, xwindow_);
+  XID xwindow = xwindow_;
+  XDisplay* xdisplay = xdisplay_;
   xwindow_ = None;
+  delegate_->OnClosed();
+  // |this| might be deleted because of the above call.
+
+  XDestroyWindow(xdisplay, xwindow);
 }
 
 void X11Window::ProcessXInput2Event(XEvent* xev) {
@@ -195,7 +198,8 @@ void X11Window::Show() {
   size_hints.win_gravity = StaticGravity;
   XSetWMNormalHints(xdisplay_, xwindow_, &size_hints);
 
-  delegate_->OnAcceleratedWidgetAvailable(xwindow_);
+  // TODO(sky): provide real scale factor.
+  delegate_->OnAcceleratedWidgetAvailable(xwindow_, 1.f);
 
   XMapWindow(xdisplay_, xwindow_);
 

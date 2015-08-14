@@ -17,7 +17,6 @@
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_test_base.h"
 #include "ipc/ipc_test_channel_listener.h"
-#include "ipc/mojo/ipc_channel_mojo_host.h"
 #include "ipc/mojo/ipc_mojo_handle_attachment.h"
 #include "ipc/mojo/ipc_mojo_message_helper.h"
 #include "ipc/mojo/ipc_mojo_param_traits.h"
@@ -38,7 +37,7 @@ class ListenerThatExpectsOK : public IPC::Listener {
   ~ListenerThatExpectsOK() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     std::string should_be_ok;
     EXPECT_TRUE(iter.ReadString(&should_be_ok));
     EXPECT_EQ(should_be_ok, "OK");
@@ -68,9 +67,9 @@ class ListenerThatExpectsOK : public IPC::Listener {
 class ChannelClient {
  public:
   explicit ChannelClient(IPC::Listener* listener, const char* name) {
-    channel_ = IPC::ChannelMojo::Create(NULL, main_message_loop_.task_runner(),
-                                        IPCTestBase::GetChannelName(name),
-                                        IPC::Channel::MODE_CLIENT, listener);
+    channel_ = IPC::ChannelMojo::Create(
+        main_message_loop_.task_runner(), IPCTestBase::GetChannelName(name),
+        IPC::Channel::MODE_CLIENT, listener, nullptr);
   }
 
   void Connect() {
@@ -115,20 +114,15 @@ class IPCChannelMojoTest : public IPCChannelMojoTestBase {
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    host_.reset(new IPC::ChannelMojoHost(task_runner()));
-    return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 task_runner(), handle);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
+                                                 nullptr);
   }
 
   bool DidStartClient() override {
     bool ok = IPCTestBase::DidStartClient();
     DCHECK(ok);
-    host_->OnClientLaunched(client_process().Handle());
     return ok;
   }
-
- private:
-  scoped_ptr<IPC::ChannelMojoHost> host_;
 };
 
 
@@ -151,7 +145,13 @@ class TestChannelListenerWithExtraExpectations
   bool is_connected_called_;
 };
 
-TEST_F(IPCChannelMojoTest, ConnectedFromClient) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_ConnectedFromClient DISABLED_ConnectedFromClient
+#else
+#define MAYBE_ConnectedFromClient ConnectedFromClient
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_ConnectedFromClient) {
   InitWithMojo("IPCChannelMojoTestClient");
 
   // Set up IPC channel and start client.
@@ -223,20 +223,15 @@ class IPCChannelMojoErrorTest : public IPCChannelMojoTestBase {
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    host_.reset(new IPC::ChannelMojoHost(task_runner()));
-    return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 task_runner(), handle);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
+                                                 nullptr);
   }
 
   bool DidStartClient() override {
     bool ok = IPCTestBase::DidStartClient();
     DCHECK(ok);
-    host_->OnClientLaunched(client_process().Handle());
     return ok;
   }
-
- private:
-  scoped_ptr<IPC::ChannelMojoHost> host_;
 };
 
 class ListenerThatQuits : public IPC::Listener {
@@ -266,7 +261,13 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoErraticTestClient) {
   return 0;
 }
 
-TEST_F(IPCChannelMojoErrorTest, SendFailWithPendingMessages) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_SendFailWithPendingMessages DISABLED_SendFailWithPendingMessages
+#else
+#define MAYBE_SendFailWithPendingMessages SendFailWithPendingMessages
+#endif
+TEST_F(IPCChannelMojoErrorTest, MAYBE_SendFailWithPendingMessages) {
   InitWithMojo("IPCChannelMojoErraticTestClient");
 
   // Set up IPC channel and start client.
@@ -325,7 +326,7 @@ class HandleSendingHelper {
   }
 
   static void ReadReceivedPipe(const IPC::Message& message,
-                               PickleIterator* iter) {
+                               base::PickleIterator* iter) {
     mojo::ScopedMessagePipeHandle pipe;
     EXPECT_TRUE(
         IPC::MojoMessageHelper::ReadMessagePipeFrom(&message, iter, &pipe));
@@ -372,7 +373,7 @@ class HandleSendingHelper {
   }
 
   static void ReadReceivedFile(const IPC::Message& message,
-                               PickleIterator* iter) {
+                               base::PickleIterator* iter) {
     base::ScopedFD fd;
     scoped_refptr<IPC::MessageAttachment> attachment;
     EXPECT_TRUE(message.ReadAttachment(iter, &attachment));
@@ -391,7 +392,7 @@ class ListenerThatExpectsMessagePipe : public IPC::Listener {
   ~ListenerThatExpectsMessagePipe() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     HandleSendingHelper::ReadReceivedPipe(message, &iter);
     base::MessageLoop::current()->Quit();
     ListenerThatExpectsOK::SendOK(sender_);
@@ -406,7 +407,13 @@ class ListenerThatExpectsMessagePipe : public IPC::Listener {
   IPC::Sender* sender_;
 };
 
-TEST_F(IPCChannelMojoTest, SendMessagePipe) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_SendMessagePipe DISABLED_SendMessagePipe
+#else
+#define MAYBE_SendMessagePipe SendMessagePipe
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_SendMessagePipe) {
   InitWithMojo("IPCChannelMojoTestSendMessagePipeClient");
 
   ListenerThatExpectsOK listener;
@@ -461,7 +468,7 @@ class ListenerThatExpectsMessagePipeUsingParamTrait : public IPC::Listener {
   ~ListenerThatExpectsMessagePipeUsingParamTrait() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     mojo::MessagePipeHandle handle;
     EXPECT_TRUE(IPC::ParamTraits<mojo::MessagePipeHandle>::Read(&message, &iter,
                                                                 &handle));
@@ -497,7 +504,13 @@ void ParamTraitMessagePipeClient(bool receiving_valid_handle,
   client.Close();
 }
 
-TEST_F(IPCChannelMojoTest, ParamTraitValidMessagePipe) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_ParamTraitValidMessagePipe DISABLED_ParamTraitValidMessagePipe
+#else
+#define MAYBE_ParamTraitValidMessagePipe ParamTraitValidMessagePipe
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_ParamTraitValidMessagePipe) {
   InitWithMojo("ParamTraitValidMessagePipeClient");
 
   ListenerThatExpectsOK listener;
@@ -525,7 +538,13 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(ParamTraitValidMessagePipeClient) {
   return 0;
 }
 
-TEST_F(IPCChannelMojoTest, ParamTraitInvalidMessagePipe) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_ParamTraitInvalidMessagePipe DISABLED_ParamTraitInvalidMessagePipe
+#else
+#define MAYBE_ParamTraitInvalidMessagePipe ParamTraitInvalidMessagePipe
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_ParamTraitInvalidMessagePipe) {
   InitWithMojo("ParamTraitInvalidMessagePipeClient");
 
   ListenerThatExpectsOK listener;
@@ -551,30 +570,74 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(ParamTraitInvalidMessagePipeClient) {
   return 0;
 }
 
+TEST_F(IPCChannelMojoTest, SendFailAfterClose) {
+  InitWithMojo("IPCChannelMojoTestSendOkClient");
+
+  ListenerThatExpectsOK listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  base::MessageLoop::current()->Run();
+  this->channel()->Close();
+  ASSERT_FALSE(this->channel()->Send(new IPC::Message()));
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+class ListenerSendingOneOk : public IPC::Listener {
+ public:
+  ListenerSendingOneOk() {
+  }
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    return true;
+  }
+
+  void OnChannelConnected(int32 peer_pid) override {
+    ListenerThatExpectsOK::SendOK(sender_);
+    base::MessageLoop::current()->Quit();
+  }
+
+  void set_sender(IPC::Sender* sender) { sender_ = sender; }
+
+ private:
+  IPC::Sender* sender_;
+};
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoTestSendOkClient) {
+  ListenerSendingOneOk listener;
+  ChannelClient client(&listener, "IPCChannelMojoTestSendOkClient");
+  client.Connect();
+  listener.set_sender(client.channel());
+
+  base::MessageLoop::current()->Run();
+
+  client.Close();
+
+  return 0;
+}
+
 #if defined(OS_WIN)
 class IPCChannelMojoDeadHandleTest : public IPCChannelMojoTestBase {
  protected:
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
       base::SequencedTaskRunner* runner) override {
-    host_.reset(new IPC::ChannelMojoHost(task_runner()));
-    return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 task_runner(), handle);
+    return IPC::ChannelMojo::CreateServerFactory(task_runner(), handle,
+                                                 nullptr);
   }
 
   bool DidStartClient() override {
     IPCTestBase::DidStartClient();
-    const base::ProcessHandle client = client_process().Handle();
+    // const base::ProcessHandle client = client_process().Handle();
     // Forces GetFileHandleForProcess() fail. It happens occasionally
     // in production, so we should exercise it somehow.
     // TODO(morrita): figure out how to safely test this. See crbug.com/464109.
     // ::CloseHandle(client);
-    host_->OnClientLaunched(client);
     return true;
   }
-
- private:
-  scoped_ptr<IPC::ChannelMojoHost> host_;
 };
 
 TEST_F(IPCChannelMojoDeadHandleTest, InvalidClientHandle) {
@@ -622,7 +685,7 @@ class ListenerThatExpectsFile : public IPC::Listener {
   ~ListenerThatExpectsFile() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     HandleSendingHelper::ReadReceivedFile(message, &iter);
     base::MessageLoop::current()->Quit();
     ListenerThatExpectsOK::SendOK(sender_);
@@ -639,8 +702,13 @@ class ListenerThatExpectsFile : public IPC::Listener {
   IPC::Sender* sender_;
 };
 
-
-TEST_F(IPCChannelMojoTest, SendPlatformHandle) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_SendPlatformHandle DISABLED_SendPlatformHandle
+#else
+#define MAYBE_SendPlatformHandle SendPlatformHandle
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_SendPlatformHandle) {
   InitWithMojo("IPCChannelMojoTestSendPlatformHandleClient");
 
   ListenerThatExpectsOK listener;
@@ -681,7 +749,7 @@ class ListenerThatExpectsFileAndPipe : public IPC::Listener {
   ~ListenerThatExpectsFileAndPipe() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     HandleSendingHelper::ReadReceivedFile(message, &iter);
     HandleSendingHelper::ReadReceivedPipe(message, &iter);
     base::MessageLoop::current()->Quit();
@@ -697,7 +765,13 @@ class ListenerThatExpectsFileAndPipe : public IPC::Listener {
   IPC::Sender* sender_;
 };
 
-TEST_F(IPCChannelMojoTest, SendPlatformHandleAndPipe) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_SendPlatformHandleAndPipe DISABLED_SendPlatformHandleAndPipe
+#else
+#define MAYBE_SendPlatformHandleAndPipe SendPlatformHandleAndPipe
+#endif
+TEST_F(IPCChannelMojoTest, MAYBE_SendPlatformHandleAndPipe) {
   InitWithMojo("IPCChannelMojoTestSendPlatformHandleAndPipeClient");
 
   ListenerThatExpectsOK listener;

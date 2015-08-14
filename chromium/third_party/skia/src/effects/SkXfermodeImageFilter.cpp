@@ -14,6 +14,7 @@
 #include "SkXfermode.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
+#include "GrDrawContext.h"
 #include "effects/GrTextureDomain.h"
 #include "SkGr.h"
 #endif
@@ -104,14 +105,25 @@ void SkXfermodeImageFilter::toString(SkString* str) const {
     if (fMode) {
         fMode->toString(str);
     }
-    str->append("))");
+    str->append(")");
+    if (this->getInput(0)) {
+        str->appendf("foreground: (");
+        this->getInput(0)->toString(str);
+        str->appendf(")");
+    }
+    if (this->getInput(1)) {
+        str->appendf("background: (");
+        this->getInput(1)->toString(str);
+        str->appendf(")");
+    }
+    str->append(")");
 }
 #endif
 
 #if SK_SUPPORT_GPU
 
 bool SkXfermodeImageFilter::canFilterImageGPU() const {
-    return fMode && fMode->asFragmentProcessor(NULL, NULL) && !cropRectIsSet();
+    return fMode && fMode->asFragmentProcessor(NULL, NULL, NULL) && !cropRectIsSet();
 }
 
 bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
@@ -154,7 +166,9 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
         return false;
     }
 
-    if (!fMode || !fMode->asFragmentProcessor(&xferProcessor, backgroundTex)) {
+    GrPaint paint;
+    if (!fMode || !fMode->asFragmentProcessor(&xferProcessor, paint.getProcessorDataManager(),
+                                              backgroundTex)) {
         // canFilterImageGPU() should've taken care of this
         SkASSERT(false);
         return false;
@@ -168,8 +182,8 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     SkRect srcRect;
     src.getBounds(&srcRect);
 
-    GrPaint paint;
     SkAutoTUnref<GrFragmentProcessor> foregroundDomain(GrTextureDomainEffect::Create(
+        paint.getProcessorDataManager(),
         foregroundTex, foregroundMatrix,
         GrTextureDomain::MakeTexelDomain(foregroundTex, foreground.bounds()),
         GrTextureDomain::kDecal_Mode,
@@ -178,7 +192,14 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
 
     paint.addColorProcessor(foregroundDomain.get());
     paint.addColorProcessor(xferProcessor)->unref();
-    context->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, SkMatrix::I(), srcRect);
+
+    GrDrawContext* drawContext = context->drawContext();
+    if (!drawContext) {
+        return false;
+    }
+
+    drawContext->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, 
+                          SkMatrix::I(), srcRect);
 
     offset->fX = backgroundOffset.fX;
     offset->fY = backgroundOffset.fY;

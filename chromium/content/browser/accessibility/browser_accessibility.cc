@@ -188,6 +188,7 @@ BrowserAccessibility::GetHtmlAttributes() const {
 
 gfx::Rect BrowserAccessibility::GetLocalBoundsRect() const {
   gfx::Rect bounds = GetLocation();
+  FixEmptyBounds(&bounds);
   return ElementBoundsToLocalBounds(bounds);
 }
 
@@ -476,220 +477,98 @@ void BrowserAccessibility::NativeReleaseReference() {
 
 bool BrowserAccessibility::HasBoolAttribute(
     ui::AXBoolAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.bool_attributes.size(); ++i) {
-    if (data.bool_attributes[i].first == attribute)
-      return true;
-  }
-
-  return false;
+  return GetData().HasBoolAttribute(attribute);
 }
-
 
 bool BrowserAccessibility::GetBoolAttribute(
     ui::AXBoolAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.bool_attributes.size(); ++i) {
-    if (data.bool_attributes[i].first == attribute)
-      return data.bool_attributes[i].second;
-  }
-
-  return false;
+  return GetData().GetBoolAttribute(attribute);
 }
 
 bool BrowserAccessibility::GetBoolAttribute(
     ui::AXBoolAttribute attribute, bool* value) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.bool_attributes.size(); ++i) {
-    if (data.bool_attributes[i].first == attribute) {
-      *value = data.bool_attributes[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetBoolAttribute(attribute, value);
 }
 
 bool BrowserAccessibility::HasFloatAttribute(
     ui::AXFloatAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.float_attributes.size(); ++i) {
-    if (data.float_attributes[i].first == attribute)
-      return true;
-  }
-
-  return false;
+  return GetData().HasFloatAttribute(attribute);
 }
 
 float BrowserAccessibility::GetFloatAttribute(
     ui::AXFloatAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.float_attributes.size(); ++i) {
-    if (data.float_attributes[i].first == attribute)
-      return data.float_attributes[i].second;
-  }
-
-  return 0.0;
+  return GetData().GetFloatAttribute(attribute);
 }
 
 bool BrowserAccessibility::GetFloatAttribute(
     ui::AXFloatAttribute attribute, float* value) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.float_attributes.size(); ++i) {
-    if (data.float_attributes[i].first == attribute) {
-      *value = data.float_attributes[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetFloatAttribute(attribute, value);
 }
 
 bool BrowserAccessibility::HasIntAttribute(
     ui::AXIntAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.int_attributes.size(); ++i) {
-    if (data.int_attributes[i].first == attribute)
-      return true;
-  }
-
-  return false;
+  return GetData().HasIntAttribute(attribute);
 }
 
 int BrowserAccessibility::GetIntAttribute(ui::AXIntAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.int_attributes.size(); ++i) {
-    if (data.int_attributes[i].first == attribute)
-      return data.int_attributes[i].second;
-  }
-
-  return 0;
+  return GetData().GetIntAttribute(attribute);
 }
 
 bool BrowserAccessibility::GetIntAttribute(
     ui::AXIntAttribute attribute, int* value) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.int_attributes.size(); ++i) {
-    if (data.int_attributes[i].first == attribute) {
-      *value = data.int_attributes[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetIntAttribute(attribute, value);
 }
 
 bool BrowserAccessibility::HasStringAttribute(
     ui::AXStringAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.string_attributes.size(); ++i) {
-    if (data.string_attributes[i].first == attribute)
-      return true;
-  }
-
-  return false;
+  return GetData().HasStringAttribute(attribute);
 }
 
 const std::string& BrowserAccessibility::GetStringAttribute(
     ui::AXStringAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  CR_DEFINE_STATIC_LOCAL(std::string, empty_string, ());
-  for (size_t i = 0; i < data.string_attributes.size(); ++i) {
-    if (data.string_attributes[i].first == attribute)
-      return data.string_attributes[i].second;
-  }
-
-  return empty_string;
+  return GetData().GetStringAttribute(attribute);
 }
 
 bool BrowserAccessibility::GetStringAttribute(
     ui::AXStringAttribute attribute, std::string* value) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.string_attributes.size(); ++i) {
-    if (data.string_attributes[i].first == attribute) {
-      *value = data.string_attributes[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetStringAttribute(attribute, value);
 }
 
 base::string16 BrowserAccessibility::GetString16Attribute(
     ui::AXStringAttribute attribute) const {
-  std::string value_utf8;
-  if (!GetStringAttribute(attribute, &value_utf8))
-    return base::string16();
-  return base::UTF8ToUTF16(value_utf8);
+  return GetData().GetString16Attribute(attribute);
 }
 
 bool BrowserAccessibility::GetString16Attribute(
     ui::AXStringAttribute attribute,
     base::string16* value) const {
-  std::string value_utf8;
-  if (!GetStringAttribute(attribute, &value_utf8))
-    return false;
-  *value = base::UTF8ToUTF16(value_utf8);
-  return true;
+  return GetData().GetString16Attribute(attribute, value);
 }
 
 bool BrowserAccessibility::HasIntListAttribute(
     ui::AXIntListAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.intlist_attributes.size(); ++i) {
-    if (data.intlist_attributes[i].first == attribute)
-      return true;
-  }
-
-  return false;
+  return GetData().HasIntListAttribute(attribute);
 }
 
 const std::vector<int32>& BrowserAccessibility::GetIntListAttribute(
     ui::AXIntListAttribute attribute) const {
-  const ui::AXNodeData& data = GetData();
-  CR_DEFINE_STATIC_LOCAL(std::vector<int32>, empty_vector, ());
-  for (size_t i = 0; i < data.intlist_attributes.size(); ++i) {
-    if (data.intlist_attributes[i].first == attribute)
-      return data.intlist_attributes[i].second;
-  }
-
-  return empty_vector;
+  return GetData().GetIntListAttribute(attribute);
 }
 
 bool BrowserAccessibility::GetIntListAttribute(
     ui::AXIntListAttribute attribute,
     std::vector<int32>* value) const {
-  const ui::AXNodeData& data = GetData();
-  for (size_t i = 0; i < data.intlist_attributes.size(); ++i) {
-    if (data.intlist_attributes[i].first == attribute) {
-      *value = data.intlist_attributes[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetIntListAttribute(attribute, value);
 }
 
 bool BrowserAccessibility::GetHtmlAttribute(
     const char* html_attr, std::string* value) const {
-  for (size_t i = 0; i < GetHtmlAttributes().size(); ++i) {
-    const std::string& attr = GetHtmlAttributes()[i].first;
-    if (LowerCaseEqualsASCII(attr, html_attr)) {
-      *value = GetHtmlAttributes()[i].second;
-      return true;
-    }
-  }
-
-  return false;
+  return GetData().GetHtmlAttribute(html_attr, value);
 }
 
 bool BrowserAccessibility::GetHtmlAttribute(
     const char* html_attr, base::string16* value) const {
-  std::string value_utf8;
-  if (!GetHtmlAttribute(html_attr, &value_utf8))
-    return false;
-  *value = base::UTF8ToUTF16(value_utf8);
-  return true;
+  return GetData().GetHtmlAttribute(html_attr, value);
 }
 
 bool BrowserAccessibility::GetAriaTristate(
@@ -702,16 +581,16 @@ bool BrowserAccessibility::GetAriaTristate(
   base::string16 value;
   if (!GetHtmlAttribute(html_attr, &value) ||
       value.empty() ||
-      EqualsASCII(value, "undefined")) {
+      base::EqualsASCII(value, "undefined")) {
     return false;  // Not set (and *is_defined is also false)
   }
 
   *is_defined = true;
 
-  if (EqualsASCII(value, "true"))
+  if (base::EqualsASCII(value, "true"))
     return true;
 
-  if (EqualsASCII(value, "mixed"))
+  if (base::EqualsASCII(value, "mixed"))
     *is_mixed = true;
 
   return false;  // Not set
@@ -815,6 +694,32 @@ BrowserAccessibility* BrowserAccessibility::GetParentForBoundsCalculation()
     return NULL;
 
   return manager_->delegate()->AccessibilityGetParentFrame();
+}
+
+void BrowserAccessibility::FixEmptyBounds(gfx::Rect* bounds) const
+{
+  if (bounds->width() > 0 && bounds->height() > 0)
+    return;
+
+  for (size_t i = 0; i < InternalChildCount(); ++i) {
+    // Compute the bounds of each child - this calls FixEmptyBounds
+    // recursively if necessary.
+    BrowserAccessibility* child = InternalGetChild(i);
+    gfx::Rect child_bounds = child->GetLocalBoundsRect();
+
+    // Ignore children that don't have valid bounds themselves.
+    if (child_bounds.width() == 0 || child_bounds.height() == 0)
+      continue;
+
+    // For the first valid child, just set the bounds to that child's bounds.
+    if (bounds->width() == 0 || bounds->height() == 0) {
+      *bounds = child_bounds;
+      continue;
+    }
+
+    // Union each additional child's bounds.
+    bounds->Union(child_bounds);
+  }
 }
 
 gfx::Rect BrowserAccessibility::ElementBoundsToLocalBounds(gfx::Rect bounds)

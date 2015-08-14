@@ -182,7 +182,8 @@ OPENSSL_EXPORT void BN_clear_free(BIGNUM *bn);
  * allocated BIGNUM on success or NULL otherwise. */
 OPENSSL_EXPORT BIGNUM *BN_dup(const BIGNUM *src);
 
-/* BN_copy sets |dest| equal to |src| and returns |dest|. */
+/* BN_copy sets |dest| equal to |src| and returns |dest| or NULL on allocation
+ * failure. */
 OPENSSL_EXPORT BIGNUM *BN_copy(BIGNUM *dest, const BIGNUM *src);
 
 /* BN_clear sets |bn| to zero and erases the old data. */
@@ -548,15 +549,15 @@ OPENSSL_EXPORT BIGNUM *BN_mod_sqrt(BIGNUM *in, const BIGNUM *a, const BIGNUM *p,
 
 /* Random and prime number generation. */
 
-/* BN_rand sets |rnd| to a random number of length |bits|. If |top| is zero,
- * the most-significant bit will be set. If |top| is one, the two most
- * significant bits will be set.
+/* BN_rand sets |rnd| to a random number of length |bits|. If |top| is zero, the
+ * most-significant bit, if any, will be set. If |top| is one, the two most
+ * significant bits, if any, will be set.
  *
  * If |top| is -1 then no extra action will be taken and |BN_num_bits(rnd)| may
  * not equal |bits| if the most significant bits randomly ended up as zeros.
  *
- * If |bottom| is non-zero, the least-significant bit will be set. The function
- * returns one on success or zero otherwise. */
+ * If |bottom| is non-zero, the least-significant bit, if any, will be set. The
+ * function returns one on success or zero otherwise. */
 OPENSSL_EXPORT int BN_rand(BIGNUM *rnd, int bits, int top, int bottom);
 
 /* BN_pseudo_rand is an alias for |BN_rand|. */
@@ -852,6 +853,8 @@ OPENSSL_EXPORT BIGNUM *get_rfc3526_prime_1536(BIGNUM *bn);
 #define BN_F_BN_usub 122
 #define BN_F_bn_wexpand 123
 #define BN_F_mod_exp_recp 124
+#define BN_F_BN_lshift 125
+#define BN_F_BN_rshift 126
 #define BN_R_ARG2_LT_ARG3 100
 #define BN_R_BAD_RECIPROCAL 101
 #define BN_R_BIGNUM_TOO_LONG 102

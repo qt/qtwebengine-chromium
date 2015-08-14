@@ -6,12 +6,16 @@
 
 #include <algorithm>
 
+#include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
@@ -24,7 +28,6 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/drag_messages.h"
-#include "content/common/frame_messages.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -35,11 +38,13 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h"
+#include "content/common/frame_messages.h"
 #endif
 
 namespace content {
@@ -75,6 +80,7 @@ BrowserPluginGuest::BrowserPluginGuest(bool has_render_view,
     : WebContentsObserver(web_contents),
       owner_web_contents_(nullptr),
       attached_(false),
+      has_attached_since_surface_set_(false),
       browser_plugin_instance_id_(browser_plugin::kInstanceIDNone),
       focused_(false),
       mouse_locked_(false),
@@ -103,6 +109,13 @@ BrowserPluginGuest::BrowserPluginGuest(bool has_render_view,
 }
 
 int BrowserPluginGuest::GetGuestProxyRoutingID() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess)) {
+    // We don't use the proxy to send postMessage in --site-per-process, since
+    // we use the contentWindow directly from the frame element instead.
+    return MSG_ROUTING_NONE;
+  }
+
   if (guest_proxy_routing_id_ != MSG_ROUTING_NONE)
     return guest_proxy_routing_id_;
 
@@ -242,6 +255,8 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetVisibility, OnSetVisibility)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_UnlockMouse_ACK, OnUnlockMouseAck)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_UpdateGeometry, OnUpdateGeometry)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SatisfySequence, OnSatisfySequence)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_RequireSequence, OnRequireSequence)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -262,15 +277,21 @@ void BrowserPluginGuest::InitInternal(
   guest_window_rect_ = params.view_rect;
 
   if (owner_web_contents_ != owner_web_contents) {
-    WebContentsViewGuest* new_view =
-        static_cast<WebContentsViewGuest*>(GetWebContents()->GetView());
-    if (owner_web_contents_)
+    WebContentsViewGuest* new_view = nullptr;
+    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSitePerProcess)) {
+      new_view =
+          static_cast<WebContentsViewGuest*>(GetWebContents()->GetView());
+    }
+
+    if (owner_web_contents_ && new_view)
       new_view->OnGuestDetached(owner_web_contents_->GetView());
 
     // Once a BrowserPluginGuest has an embedder WebContents, it's considered to
     // be attached.
     owner_web_contents_ = owner_web_contents;
-    new_view->OnGuestAttached(owner_web_contents_->GetView());
+    if (new_view)
+      new_view->OnGuestAttached(owner_web_contents_->GetView());
   }
 
   RendererPreferences* renderer_prefs =
@@ -320,7 +341,7 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     WebContentsImpl* web_contents,
     BrowserPluginGuestDelegate* delegate) {
   return new BrowserPluginGuest(
-      web_contents->opener() != nullptr, web_contents, delegate);
+      web_contents->HasOpener(), web_contents, delegate);
 }
 
 // static
@@ -360,6 +381,19 @@ void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
       new BrowserPluginMsg_SetMouseLock(browser_plugin_instance_id(), allow));
 }
 
+void BrowserPluginGuest::UpdateGuestSizeIfNecessary(
+    const gfx::Size& frame_size, float scale_factor) {
+  gfx::Size view_size(
+      gfx::ToFlooredSize(gfx::ScaleSize(frame_size, 1.0f / scale_factor)));
+
+  if (last_seen_view_size_ != view_size) {
+    delegate_->GuestSizeChanged(view_size);
+    last_seen_view_size_ = view_size;
+  }
+}
+
+// TODO(wjmaclean): Remove this once any remaining users of this pathway
+// are gone.
 void BrowserPluginGuest::SwapCompositorFrame(
     uint32 output_surface_id,
     int host_process_id,
@@ -367,14 +401,8 @@ void BrowserPluginGuest::SwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
   cc::RenderPass* root_pass =
       frame->delegated_frame_data->render_pass_list.back();
-  gfx::Size view_size(gfx::ToFlooredSize(gfx::ScaleSize(
-      root_pass->output_rect.size(),
-      1.0f / frame->metadata.device_scale_factor)));
-
-  if (last_seen_view_size_ != view_size) {
-    delegate_->GuestSizeChanged(view_size);
-    last_seen_view_size_ = view_size;
-  }
+  UpdateGuestSizeIfNecessary(root_pass->output_rect.size(),
+                             frame->metadata.device_scale_factor);
 
   last_pending_frame_.reset(new FrameMsg_CompositorFrameSwapped_Params());
   frame->AssignTo(&last_pending_frame_->frame);
@@ -385,6 +413,39 @@ void BrowserPluginGuest::SwapCompositorFrame(
   SendMessageToEmbedder(
       new BrowserPluginMsg_CompositorFrameSwapped(
           browser_plugin_instance_id(), *last_pending_frame_));
+}
+
+void BrowserPluginGuest::SetChildFrameSurface(
+    const cc::SurfaceId& surface_id,
+    const gfx::Size& frame_size,
+    float scale_factor,
+    const cc::SurfaceSequence& sequence) {
+  has_attached_since_surface_set_ = false;
+  SendMessageToEmbedder(new BrowserPluginMsg_SetChildFrameSurface(
+      browser_plugin_instance_id(), surface_id, frame_size, scale_factor,
+      sequence));
+}
+
+void BrowserPluginGuest::OnSatisfySequence(
+    int instance_id,
+    const cc::SurfaceSequence& sequence) {
+  std::vector<uint32_t> sequences;
+  sequences.push_back(sequence.sequence);
+  cc::SurfaceManager* manager = GetSurfaceManager();
+  manager->DidSatisfySequences(sequence.id_namespace, &sequences);
+}
+
+void BrowserPluginGuest::OnRequireSequence(
+    int instance_id,
+    const cc::SurfaceId& id,
+    const cc::SurfaceSequence& sequence) {
+  cc::SurfaceManager* manager = GetSurfaceManager();
+  cc::Surface* surface = manager->GetSurfaceForId(id);
+  if (!surface) {
+    LOG(ERROR) << "Attempting to require callback on nonexistent surface";
+    return;
+  }
+  surface->AddDestructionDependency(sequence);
 }
 
 void BrowserPluginGuest::SetContentsOpaque(bool opaque) {
@@ -423,7 +484,9 @@ gfx::Point BrowserPluginGuest::GetScreenCoordinates(
 }
 
 void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
-  if (!attached()) {
+  // During tests, attache() may be true when there is no owner_web_contents_;
+  // in this case just queue any messages we receive.
+  if (!attached() || !owner_web_contents_) {
     // Some pages such as data URLs, javascript URLs, and about:blank
     // do not load external resources and so they load prior to attachment.
     // As a result, we must save all these IPCs until attachment and then
@@ -542,6 +605,9 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
   SendMessageToEmbedder(
       new BrowserPluginMsg_GuestGone(browser_plugin_instance_id()));
   switch (status) {
+#if defined(OS_CHROMEOS)
+    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM:
+#endif
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
       RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Killed"));
       break;
@@ -566,6 +632,18 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
 
 bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
+  // In --site-per-process, we do not need most of BrowserPluginGuest to drive
+  // inner WebContents.
+  // Right now InputHostMsg_ImeCompositionRangeChanged hits NOTREACHED() in
+  // RWHVChildFrame, so we're disabling message handling entirely here.
+  // TODO(lazyboy): Fix this as part of http://crbug.com/330264. The required
+  // parts of code from this class should be extracted to a separate class for
+  // --site-per-process.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess)) {
+    return false;
+  }
+
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginGuest, message)
     IPC_MESSAGE_HANDLER(InputHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
@@ -646,10 +724,12 @@ void BrowserPluginGuest::Attach(
 void BrowserPluginGuest::OnWillAttachComplete(
     WebContentsImpl* embedder_web_contents,
     const BrowserPluginHostMsg_Attach_Params& params) {
+  bool use_site_per_process = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSitePerProcess);
   // If a RenderView has already been created for this new window, then we need
   // to initialize the browser-side state now so that the RenderFrameHostManager
   // does not create a new RenderView on navigation.
-  if (has_render_view_) {
+  if (!use_site_per_process && has_render_view_) {
     // This will trigger a callback to RenderViewReady after a round-trip IPC.
     static_cast<RenderViewHostImpl*>(
         GetWebContents()->GetRenderViewHost())->Init();
@@ -664,18 +744,21 @@ void BrowserPluginGuest::OnWillAttachComplete(
   InitInternal(params, embedder_web_contents);
 
   attached_ = true;
+  has_attached_since_surface_set_ = true;
   SendQueuedMessages();
 
   delegate_->DidAttach(GetGuestProxyRoutingID());
 
-  has_render_view_ = true;
+  if (!use_site_per_process) {
+    has_render_view_ = true;
 
-  // Enable input method for guest if it's enabled for the embedder.
-  if (static_cast<RenderViewHostImpl*>(
-      owner_web_contents_->GetRenderViewHost())->input_method_active()) {
-    RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
-        GetWebContents()->GetRenderViewHost());
-    guest_rvh->SetInputMethodActive(true);
+    // Enable input method for guest if it's enabled for the embedder.
+    if (static_cast<RenderViewHostImpl*>(
+            owner_web_contents_->GetRenderViewHost())->input_method_active()) {
+      RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
+          GetWebContents()->GetRenderViewHost());
+      guest_rvh->SetInputMethodActive(true);
+    }
   }
 
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));

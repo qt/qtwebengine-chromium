@@ -40,6 +40,8 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
       Widget::InitParams::ACTIVATABLE_YES : Widget::InitParams::ACTIVATABLE_NO;
   bubble->OnBeforeBubbleWidgetInit(&bubble_params, bubble_widget);
   bubble_widget->Init(bubble_params);
+  if (bubble_params.parent)
+    bubble_widget->StackAbove(bubble_params.parent);
   return bubble_widget;
 }
 
@@ -178,7 +180,7 @@ void BubbleDelegateView::OnWidgetActivationChanged(Widget* widget,
 
 void BubbleDelegateView::OnWidgetBoundsChanged(Widget* widget,
                                                const gfx::Rect& new_bounds) {
-  if (anchor_widget() == widget)
+  if (GetBubbleFrameView() && anchor_widget() == widget)
     SizeToContents();
 }
 

@@ -177,7 +177,12 @@ void WebSocketEventHandler::DidWriteToReceiveStream(
 
 }  // namespace mojo
 
-WebSocketImpl::WebSocketImpl(NetworkContext* context) : context_(context) {
+WebSocketImpl::WebSocketImpl(
+    NetworkContext* context,
+    scoped_ptr<mojo::AppRefCount> app_refcount,
+    InterfaceRequest<WebSocket> request)
+    : context_(context), app_refcount_(app_refcount.Pass()),
+      binding_(this, request.Pass()) {
 }
 
 WebSocketImpl::~WebSocketImpl() {

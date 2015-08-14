@@ -116,8 +116,6 @@ public:
     void addHTTPHeaderFields(const HTTPHeaderMap& headerFields);
     void clearHTTPHeaderField(const AtomicString& name);
 
-    void clearHTTPAuthorization();
-
     const AtomicString& httpContentType() const { return httpHeaderField("Content-Type");  }
     void setHTTPContentType(const AtomicString& httpContentType) { setHTTPHeaderField("Content-Type", httpContentType); }
 
@@ -215,9 +213,6 @@ public:
     bool cacheControlContainsNoStore() const;
     bool hasCacheValidatorFields() const;
 
-    static double defaultTimeoutInterval(); // May return 0 when using platform default.
-    static void setDefaultTimeoutInterval(double);
-
     static bool compare(const ResourceRequest&, const ResourceRequest&);
 
     bool checkForBrowserSideNavigation() const { return m_checkForBrowserSideNavigation; }
@@ -232,8 +227,8 @@ public:
     InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy() const { return m_inputPerfMetricReportPolicy; }
     void setInputPerfMetricReportPolicy(InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy) { m_inputPerfMetricReportPolicy = inputPerfMetricReportPolicy; }
 
-    void setFollowedRedirect(bool followed) { m_followedRedirect = followed; };
-    bool followedRedirect() const { return m_followedRedirect; };
+    void setFollowedRedirect(bool followed) { m_followedRedirect = followed; }
+    bool followedRedirect() const { return m_followedRedirect; }
 
 private:
     void initialize(const KURL&);
@@ -323,8 +318,6 @@ public:
     InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
     bool m_followedRedirect;
 };
-
-unsigned initializeMaximumHTTPConnectionCountPerHost();
 
 } // namespace blink
 

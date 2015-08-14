@@ -101,11 +101,10 @@ void VideoPipelineImpl::SetClient(const VideoPipelineClient& client) {
 }
 
 void VideoPipelineImpl::Initialize(
-    const ::media::VideoDecoderConfig& video_config,
+    const std::vector<::media::VideoDecoderConfig>& configs,
     scoped_ptr<CodedFrameProvider> frame_provider,
     const ::media::PipelineStatusCB& status_cb) {
-  CMALOG(kLogControl) << "VideoPipelineImpl::Initialize "
-                      << video_config.AsHumanReadableString();
+  CMALOG(kLogControl) << __FUNCTION__ << " config (" << configs.size() << ")";
   VideoPipelineDevice::VideoClient client;
   client.natural_size_changed_cb =
       base::Bind(&VideoPipelineImpl::OnNaturalSizeChanged, weak_this_);
@@ -113,8 +112,23 @@ void VideoPipelineImpl::Initialize(
   if (frame_provider)
     SetCodedFrameProvider(frame_provider.Pass());
 
-  if (!video_device_->SetConfig(
-          DecoderConfigAdapter::ToCastVideoConfig(video_config)) ||
+  if (configs.empty()) {
+     status_cb.Run(::media::PIPELINE_ERROR_INITIALIZATION_FAILED);
+     return;
+  }
+  DCHECK(configs.size() <= 2);
+  DCHECK(configs[0].IsValidConfig());
+  VideoConfig video_config =
+      DecoderConfigAdapter::ToCastVideoConfig(kPrimary, configs[0]);
+  VideoConfig secondary_config;
+  if (configs.size() == 2) {
+    DCHECK(configs[1].IsValidConfig());
+    secondary_config = DecoderConfigAdapter::ToCastVideoConfig(kSecondary,
+                                                               configs[1]);
+    video_config.additional_config = &secondary_config;
+  }
+
+  if (!video_device_->SetConfig(video_config) ||
       !av_pipeline_impl_->Initialize()) {
     status_cb.Run(::media::PIPELINE_ERROR_INITIALIZATION_FAILED);
     return;
@@ -124,14 +138,15 @@ void VideoPipelineImpl::Initialize(
 }
 
 void VideoPipelineImpl::OnUpdateConfig(
+    StreamId id,
     const ::media::AudioDecoderConfig& audio_config,
     const ::media::VideoDecoderConfig& video_config) {
   if (video_config.IsValidConfig()) {
-    CMALOG(kLogControl) << "VideoPipelineImpl::OnUpdateConfig "
+    CMALOG(kLogControl) << "VideoPipelineImpl::OnUpdateConfig id:" << id << " "
                         << video_config.AsHumanReadableString();
 
     bool success = video_device_->SetConfig(
-        DecoderConfigAdapter::ToCastVideoConfig(video_config));
+        DecoderConfigAdapter::ToCastVideoConfig(id, video_config));
     if (!success &&
         !video_client_.av_pipeline_client.playback_error_cb.is_null()) {
       video_client_.av_pipeline_client.playback_error_cb.Run(

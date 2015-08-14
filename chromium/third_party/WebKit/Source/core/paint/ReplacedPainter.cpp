@@ -8,18 +8,16 @@
 #include "core/layout/LayoutReplaced.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/RoundedInnerRectClipper.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
 void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutReplaced);
-
     if (!m_layoutReplaced.shouldPaint(paintInfo, paintOffset))
         return;
 
@@ -33,9 +31,7 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
         m_layoutReplaced.paintBoxDecorationBackground(paintInfo, adjustedPaintOffset);
 
     if (paintInfo.phase == PaintPhaseMask) {
-        LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutReplaced, paintInfo.phase, visualOverflowRect);
-        if (!drawingRecorder.canUseCachedDrawing())
-            m_layoutReplaced.paintMask(paintInfo, adjustedPaintOffset);
+        m_layoutReplaced.paintMask(paintInfo, adjustedPaintOffset);
         return;
     }
 
@@ -59,7 +55,7 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
             return;
 
     {
-        OwnPtr<RoundedInnerRectClipper> clipper;
+        Optional<RoundedInnerRectClipper> clipper;
         bool completelyClippedOut = false;
         if (m_layoutReplaced.style()->hasBorderRadius()) {
             LayoutRect borderRect = LayoutRect(adjustedPaintOffset, m_layoutReplaced.size());
@@ -76,7 +72,7 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
                         -(m_layoutReplaced.paddingLeft() + m_layoutReplaced.borderLeft())),
                     true, true);
 
-                clipper = adoptPtr(new RoundedInnerRectClipper(m_layoutReplaced, paintInfo, paintRect, roundedInnerRect, ApplyToDisplayListIfEnabled));
+                clipper.emplace(m_layoutReplaced, paintInfo, paintRect, roundedInnerRect, ApplyToDisplayListIfEnabled);
             }
         }
 
@@ -92,14 +88,12 @@ void ReplacedPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
     // The selection tint never gets clipped by border-radius rounding, since we want it to run right up to the edges of
     // surrounding content.
     bool drawSelectionTint = paintInfo.phase == PaintPhaseForeground && m_layoutReplaced.selectionState() != LayoutObject::SelectionNone && !m_layoutReplaced.document().printing();
-    if (drawSelectionTint) {
+    if (drawSelectionTint && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint)) {
         LayoutRect selectionPaintingRect = m_layoutReplaced.localSelectionRect();
         selectionPaintingRect.moveBy(adjustedPaintOffset);
         IntRect selectionPaintingIntRect = pixelSnappedIntRect(selectionPaintingRect);
 
         LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutReplaced, DisplayItem::SelectionTint, selectionPaintingIntRect);
-        if (drawingRecorder.canUseCachedDrawing())
-            return;
         paintInfo.context->fillRect(selectionPaintingIntRect, m_layoutReplaced.selectionBackgroundColor());
     }
 }

@@ -24,19 +24,13 @@
 interface Attr : Node {
     readonly attribute DOMString? namespaceURI;
     readonly attribute DOMString? prefix;
-    // FIXME: localName/name/value/nodeValue/textContent should not be nullable.
-    readonly attribute DOMString? localName;
-    readonly attribute DOMString? name;
-    [ImplementedAs=valueForBindings, CustomElementCallbacks] attribute DOMString? value;
-    [ImplementedAs=valueForBindings, MeasureAs=AttrNodeValue] attribute DOMString? nodeValue; // legacy alias of .value
-    [ImplementedAs=valueForBindings, MeasureAs=AttrTextContent] attribute DOMString? textContent; // legacy alias of .value
+    readonly attribute DOMString localName;
+    readonly attribute DOMString name;
+    [ImplementedAs=valueForBindings, CustomElementCallbacks] attribute DOMString value;
+    [TreatNullAs=EmptyString, ImplementedAs=valueForBindings, MeasureAs=AttrNodeValue] attribute DOMString nodeValue; // legacy alias of .value
+    [TreatNullAs=EmptyString, ImplementedAs=valueForBindings, MeasureAs=AttrTextContent] attribute DOMString textContent; // legacy alias of .value
 
     [MeasureAs=AttributeOwnerElement] readonly attribute Element? ownerElement;
 
     [MeasureAs=AttributeSpecified] readonly attribute boolean specified; // useless; always returns true
-
-    // FIXME: Attr should not have any child nodes. crbug.com/305105
-    [DeprecateAs=AttrChildAccess] readonly attribute NodeList childNodes;
-    [DeprecateAs=AttrChildAccess] readonly attribute Node firstChild;
-    [DeprecateAs=AttrChildAccess] readonly attribute Node lastChild;
 };

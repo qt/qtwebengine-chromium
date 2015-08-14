@@ -25,6 +25,7 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
  public:
   MockGpuVideoAcceleratorFactories();
 
+  bool IsGpuVideoAcceleratorEnabled() override;
   // CreateVideo{Decode,Encode}Accelerator returns scoped_ptr, which the mocking
   // framework does not want.  Trampoline them.
   MOCK_METHOD0(DoCreateVideoDecodeAccelerator, VideoDecodeAccelerator*());
@@ -49,6 +50,7 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
       gfx::GpuMemoryBuffer::Format format,
       gfx::GpuMemoryBuffer::Usage usage) override;
 
+  unsigned ImageTextureTarget() override;
   MOCK_METHOD0(IsTextureRGSupported, bool());
   MOCK_METHOD0(GetGLES2Interface, gpu::gles2::GLES2Interface*());
 

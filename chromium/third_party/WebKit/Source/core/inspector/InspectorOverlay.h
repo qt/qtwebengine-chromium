@@ -29,6 +29,7 @@
 #ifndef InspectorOverlay_h
 #define InspectorOverlay_h
 
+#include "core/CoreExport.h"
 #include "core/inspector/InspectorHighlight.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/heap/Handle.h"
@@ -36,6 +37,7 @@
 
 namespace blink {
 
+class LayoutEditor;
 struct InspectorHighlightConfig;
 
 class InspectorOverlay : public WillBeGarbageCollectedMixin {
@@ -52,10 +54,11 @@ public:
     virtual void suspendUpdates() = 0;
     virtual void resumeUpdates() = 0;
     virtual void clear() = 0;
+    virtual void setLayoutEditor(PassOwnPtrWillBeRawPtr<LayoutEditor>) = 0;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 
-    class Listener : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT Listener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~Listener() { }
         virtual void overlayResumed() = 0;

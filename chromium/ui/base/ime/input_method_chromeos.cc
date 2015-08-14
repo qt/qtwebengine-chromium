@@ -17,7 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/third_party/icu/icu_utf.h"
-#include "ui/base/ime/chromeos/composition_text.h"
+#include "ui/base/ime/chromeos/composition_text_chromeos.h"
 #include "ui/base/ime/chromeos/ime_keyboard.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/text_input_client.h"
@@ -50,7 +50,8 @@ InputMethodChromeOS::~InputMethodChromeOS() {
   // We are dead, so we need to ask the client to stop relying on us.
   OnInputMethodChanged();
 
-  chromeos::IMEBridge::Get()->SetInputContextHandler(NULL);
+  if (chromeos::IMEBridge::Get())
+    chromeos::IMEBridge::Get()->SetInputContextHandler(NULL);
 }
 
 void InputMethodChromeOS::OnFocus() {
@@ -92,7 +93,8 @@ void InputMethodChromeOS::ProcessKeyEventDone(const ui::KeyEvent* event,
 }
 
 bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
-  DCHECK(event.type() == ET_KEY_PRESSED || event.type() == ET_KEY_RELEASED);
+  DCHECK(event.IsKeyEvent());
+  DCHECK(!(event.flags() & ui::EF_IS_SYNTHESIZED));
   DCHECK(system_toplevel_window_focused());
 
   // For linux_chromeos, the ime keyboard cannot track the caps lock state by
@@ -188,15 +190,19 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
     gfx::Rect rect;
     while (client->GetCompositionCharacterBounds(i++, &rect))
       rects.push_back(rect);
-  } else {
-    rects.push_back(caret_rect);
   }
 
-  if (rects.size() > 0) {
-    composition_head = rects[0];
-    if (GetEngine())
-      GetEngine()->SetCompositionBounds(rects);
-  }
+  // Pepper don't support composition bounds, so fallback to caret bounds to
+  // avoid bad user experience (the IME window moved to upper left corner).
+  // For case of no composition at present, also use caret bounds which is
+  // required by the IME extension for certain features (e.g. physical keyboard
+  // autocorrect).
+  if (rects.empty())
+    rects.push_back(caret_rect);
+
+  composition_head = rects[0];
+  if (GetEngine())
+    GetEngine()->SetCompositionBounds(rects);
 
   chromeos::IMECandidateWindowHandlerInterface* candidate_window =
       chromeos::IMEBridge::Get()->GetCandidateWindowHandler();

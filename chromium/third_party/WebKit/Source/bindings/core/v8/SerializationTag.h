@@ -78,7 +78,14 @@ enum SerializationTag {
     NumberObjectTag = 'n', // value:double -> new Number(value) (ref)
     TrueObjectTag = 'y', // new Boolean(true) (ref)
     FalseObjectTag = 'x', // new Boolean(false) (ref)
-    CompositorProxyTag = 'C',
+    CompositorProxyTag = 'C', // elementId:uint64_t, bitfields:uint32_t -> CompositorProxy (ref)
+    MapTag = ':', // length:uint32_t -> pops the last object from the open stack (it will be a Map);
+        //                              fills it with the last length elements pushed onto the deserialization stack, treating them as key/value pairs and passing them to Map::Set;
+        //                              length must be an even number.
+    SetTag = ',', // length:uint32_t -> pops the last object from the open stack (it will be a Set);
+        //                              fills it with the last length elements pushed onto the deserialization stack, using Set::Add
+    GenerateFreshMapTag = ';', // -> empty Map allocated an object ID and pushed onto the open stack (ref)
+    GenerateFreshSetTag = '\'', // -> empty Set allocated an object ID and pushed onto the open stack (ref)
     VersionTag = 0xFF // version:uint32_t -> Uses this as the file version.
 };
 

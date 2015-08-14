@@ -16,13 +16,12 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/cache_type.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/disk_cache.h"
@@ -46,8 +45,8 @@ const char kKb[] = "kB";
 struct CacheSpec {
  public:
   static scoped_ptr<CacheSpec> Parse(const std::string& spec_string) {
-    std::vector<std::string> tokens;
-    base::SplitString(spec_string, ':', &tokens);
+    std::vector<std::string> tokens = base::SplitString(
+        spec_string, ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     if (tokens.size() != 3)
       return scoped_ptr<CacheSpec>();
     if (tokens[0] != kBlockFileBackendType && tokens[0] != kSimpleBackendType)
@@ -97,7 +96,7 @@ scoped_ptr<Backend> CreateAndInitBackend(const CacheSpec& spec) {
       base::Unretained(&succeeded));
   const int net_error = CreateCacheBackend(
       spec.cache_type, spec.backend_type, spec.path, 0, false,
-      base::MessageLoopProxy::current(), NULL, &backend, callback);
+      base::ThreadTaskRunnerHandle::Get(), NULL, &backend, callback);
   if (net_error == net::OK)
     callback.Run(net::OK);
   else

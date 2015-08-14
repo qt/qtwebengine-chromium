@@ -20,13 +20,11 @@
 #include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class FrameSelectionTest : public ::testing::Test {
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
 
     DummyPageHolder& dummyPageHolder() const { return *m_dummyPageHolder; }
     HTMLDocument& document() const;
@@ -37,7 +35,7 @@ protected:
 
 private:
     OwnPtr<DummyPageHolder> m_dummyPageHolder;
-    RawPtr<HTMLDocument> m_document;
+    RawPtrWillBePersistent<HTMLDocument> m_document;
     RefPtrWillBePersistent<Text> m_textNode;
 };
 
@@ -101,7 +99,7 @@ TEST_F(FrameSelectionTest, SetInvalidSelection)
 TEST_F(FrameSelectionTest, InvalidateCaretRect)
 {
     RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     VisibleSelection validSelection(Position(text, 0), Position(text, 0));
     setSelection(validSelection);
@@ -121,7 +119,7 @@ TEST_F(FrameSelectionTest, InvalidateCaretRect)
 TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
 {
     RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
 
     document().body()->setContentEditable("true", ASSERT_NO_EXCEPTION);
     document().body()->focus();
@@ -187,4 +185,5 @@ TEST_F(FrameSelectionTest, MoveRangeSelectionTest)
     selection().moveRangeSelection(VisiblePosition(Position(text, 5)), VisiblePosition(Position(text, 2)), WordGranularity);
     EXPECT_EQ_SELECTED_TEXT("Foo Bar");
 }
-}
+
+} // namespace blink

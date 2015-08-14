@@ -4,6 +4,9 @@
 
 #include "media/audio/audio_output_device.h"
 
+#include <string>
+
+#include "base/callback_helpers.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -45,7 +48,8 @@ AudioOutputDevice::AudioOutputDevice(
       state_(IDLE),
       play_on_start_(true),
       session_id_(-1),
-      stopping_hack_(false) {
+      stopping_hack_(false),
+      current_switch_request_id_(0) {
   CHECK(ipc_);
 
   // The correctness of the code depends on the relative values assigned in the
@@ -75,6 +79,14 @@ AudioOutputDevice::~AudioOutputDevice() {
   // The current design requires that the user calls Stop() before deleting
   // this class.
   DCHECK(audio_thread_.IsStopped());
+
+  // The following makes it possible for |current_switch_callback_| to release
+  // its bound parameters in the correct thread instead of implicitly releasing
+  // them in the thread where this destructor runs.
+  if (!current_switch_callback_.is_null()) {
+    base::ResetAndReturn(&current_switch_callback_).Run(
+        SWITCH_OUTPUT_DEVICE_RESULT_ERROR_OBSOLETE);
+  }
 }
 
 void AudioOutputDevice::Start() {
@@ -115,6 +127,16 @@ bool AudioOutputDevice::SetVolume(double volume) {
   }
 
   return true;
+}
+
+void AudioOutputDevice::SwitchOutputDevice(
+    const std::string& device_id,
+    const GURL& security_origin,
+    const SwitchOutputDeviceCB& callback) {
+  DVLOG(1) << __FUNCTION__ << "(" << device_id << ")";
+  task_runner()->PostTask(
+      FROM_HERE, base::Bind(&AudioOutputDevice::SwitchOutputDeviceOnIOThread,
+                            this, device_id, security_origin, callback));
 }
 
 void AudioOutputDevice::CreateStreamOnIOThread(const AudioParameters& params) {
@@ -179,7 +201,22 @@ void AudioOutputDevice::SetVolumeOnIOThread(double volume) {
     ipc_->SetVolume(volume);
 }
 
-void AudioOutputDevice::OnStateChanged(AudioOutputIPCDelegate::State state) {
+void AudioOutputDevice::SwitchOutputDeviceOnIOThread(
+    const std::string& device_id,
+    const GURL& security_origin,
+    const SwitchOutputDeviceCB& callback) {
+  DCHECK(task_runner()->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__ << "(" << device_id << "," << security_origin << ")";
+  if (state_ >= CREATING_STREAM) {
+    SetCurrentSwitchRequest(callback);
+    ipc_->SwitchOutputDevice(device_id, security_origin,
+                             current_switch_request_id_);
+  } else {
+    callback.Run(SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED);
+  }
+}
+
+void AudioOutputDevice::OnStateChanged(AudioOutputIPCDelegateState state) {
   DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Do nothing if the stream has been closed.
@@ -189,11 +226,11 @@ void AudioOutputDevice::OnStateChanged(AudioOutputIPCDelegate::State state) {
   // TODO(miu): Clean-up inconsistent and incomplete handling here.
   // http://crbug.com/180640
   switch (state) {
-    case AudioOutputIPCDelegate::kPlaying:
-    case AudioOutputIPCDelegate::kPaused:
+    case AUDIO_OUTPUT_IPC_DELEGATE_STATE_PLAYING:
+    case AUDIO_OUTPUT_IPC_DELEGATE_STATE_PAUSED:
       break;
-    case AudioOutputIPCDelegate::kError:
-      DLOG(WARNING) << "AudioOutputDevice::OnStateChanged(kError)";
+    case AUDIO_OUTPUT_IPC_DELEGATE_STATE_ERROR:
+      DLOG(WARNING) << "AudioOutputDevice::OnStateChanged(ERROR)";
       // Don't dereference the callback object if the audio thread
       // is stopped or stopping.  That could mean that the callback
       // object has been deleted.
@@ -214,11 +251,10 @@ void AudioOutputDevice::OnStreamCreated(
     base::SyncSocket::Handle socket_handle,
     int length) {
   DCHECK(task_runner()->BelongsToCurrentThread());
+  DCHECK(base::SharedMemory::IsHandleValid(handle));
 #if defined(OS_WIN)
-  DCHECK(handle);
   DCHECK(socket_handle);
 #else
-  DCHECK_GE(handle.fd, 0);
   DCHECK_GE(socket_handle, 0);
 #endif
   DCHECK_GT(length, 0);
@@ -253,6 +289,32 @@ void AudioOutputDevice::OnStreamCreated(
   // multiple times before OnStreamCreated() gets called.
   if (play_on_start_)
     PlayOnIOThread();
+}
+
+void AudioOutputDevice::SetCurrentSwitchRequest(
+    const SwitchOutputDeviceCB& callback) {
+  DCHECK(task_runner()->BelongsToCurrentThread());
+  DVLOG(1) << __FUNCTION__;
+  // If there is a previous unresolved request, resolve it as obsolete
+  if (!current_switch_callback_.is_null()) {
+    base::ResetAndReturn(&current_switch_callback_).Run(
+        SWITCH_OUTPUT_DEVICE_RESULT_ERROR_OBSOLETE);
+  }
+  current_switch_callback_ = callback;
+  current_switch_request_id_++;
+}
+
+void AudioOutputDevice::OnOutputDeviceSwitched(
+    int request_id,
+    SwitchOutputDeviceResult result) {
+  DCHECK(task_runner()->BelongsToCurrentThread());
+  DCHECK(request_id <= current_switch_request_id_);
+  DVLOG(1) << __FUNCTION__
+           << "(" << request_id << ", " << result << ")";
+  if (request_id != current_switch_request_id_) {
+    return;
+  }
+  base::ResetAndReturn(&current_switch_callback_).Run(result);
 }
 
 void AudioOutputDevice::OnIPCClosed() {

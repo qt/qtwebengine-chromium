@@ -70,7 +70,7 @@ using NodeVector = WillBeHeapVector<RefPtrWillBeMember<Node>, initialNodeVectorS
 
 class CORE_EXPORT ContainerNode : public Node {
 public:
-    virtual ~ContainerNode();
+    ~ContainerNode() override;
 
     Node* firstChild() const { return m_firstChild; }
     Node* lastChild() const { return m_lastChild; }
@@ -110,13 +110,13 @@ public:
 
     void cloneChildNodes(ContainerNode* clone);
 
-    virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual void detach(const AttachContext& = AttachContext()) override;
-    virtual LayoutRect boundingBox() const override final;
-    virtual void setFocus(bool) override;
+    void attach(const AttachContext& = AttachContext()) override;
+    void detach(const AttachContext& = AttachContext()) override;
+    LayoutRect boundingBox() const final;
+    void setFocus(bool) override;
     void focusStateChanged();
-    virtual void setActive(bool = true) override;
-    virtual void setHovered(bool = true) override;
+    void setActive(bool = true) override;
+    void setHovered(bool = true) override;
 
     bool childrenOrSiblingsAffectedByFocus() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
     void setChildrenOrSiblingsAffectedByFocus() { setRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
@@ -259,6 +259,7 @@ private:
 
     inline bool checkAcceptChildGuaranteedNodeTypes(const Node& newChild, ExceptionState&) const;
     inline bool checkAcceptChild(const Node* newChild, const Node* oldChild, ExceptionState&) const;
+    inline bool checkParserAcceptChild(const Node& newChild) const;
     inline bool containsConsideringHostElements(const Node&) const;
     inline bool isChildTypeAllowed(const Node& child) const;
 
@@ -267,8 +268,6 @@ private:
 
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
-
-    void handleStyleChangeOnFocusStateChange();
 
     RawPtrWillBeMember<Node> m_firstChild;
     RawPtrWillBeMember<Node> m_lastChild;

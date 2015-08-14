@@ -59,8 +59,8 @@ namespace {
 void processMessageOnWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels, WorkerObjectProxy* workerObjectProxy, ExecutionContext* scriptContext)
 {
     WorkerGlobalScope* globalScope = toWorkerGlobalScope(scriptContext);
-    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::entanglePorts(*scriptContext, channels);
-    globalScope->dispatchEvent(MessageEvent::create(ports.release(), message));
+    MessagePortArray* ports = MessagePort::entanglePorts(*scriptContext, channels);
+    globalScope->dispatchEvent(MessageEvent::create(ports, message));
     workerObjectProxy->confirmMessageFromWorkerObject(scriptContext->hasPendingActivity());
 }
 
@@ -106,7 +106,7 @@ void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const S
     RefPtr<ContentSecurityPolicy> csp = m_workerObject->contentSecurityPolicy() ? m_workerObject->contentSecurityPolicy() : document->contentSecurityPolicy();
     ASSERT(csp);
 
-    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, csp->deprecatedHeader(), csp->deprecatedHeaderType(), starterOrigin, m_workerClients.release());
+    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, csp->headers(), starterOrigin, m_workerClients.release());
     double originTime = document->loader() ? document->loader()->timing().referenceMonotonicTime() : monotonicallyIncreasingTime();
 
     m_loaderProxy = WorkerLoaderProxy::create(this);
@@ -121,8 +121,8 @@ void WorkerMessagingProxy::postMessageToWorkerObject(PassRefPtr<SerializedScript
     if (!m_workerObject || m_askedToTerminate)
         return;
 
-    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::entanglePorts(*m_executionContext.get(), channels);
-    m_workerObject->dispatchEvent(MessageEvent::create(ports.release(), message));
+    MessagePortArray* ports = MessagePort::entanglePorts(*m_executionContext.get(), channels);
+    m_workerObject->dispatchEvent(MessageEvent::create(ports, message));
 }
 
 void WorkerMessagingProxy::postMessageToWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
@@ -233,7 +233,7 @@ void WorkerMessagingProxy::terminateWorkerGlobalScope()
     m_askedToTerminate = true;
 
     if (m_workerThread)
-        m_workerThread->stop();
+        m_workerThread->terminate();
 
     terminateInternally();
 }

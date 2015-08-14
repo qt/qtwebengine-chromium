@@ -104,11 +104,13 @@ static void ReportMediaKeyExceptionToUMA(const std::string& method,
 // so we keep it as simple as possible without breaking major use cases.
 static EmeInitDataType GuessInitDataType(const unsigned char* init_data,
                                          unsigned init_data_length) {
+#if defined(USE_PROPRIETARY_CODECS)
   // Most WebM files use KeyId of 16 bytes. CENC init data is always >16 bytes.
-  if (init_data_length == 16)
-    return EmeInitDataType::WEBM;
+  if (init_data_length > 16)
+    return EmeInitDataType::CENC;
+#endif
 
-  return EmeInitDataType::CENC;
+  return EmeInitDataType::WEBM;
 }
 
 EncryptedMediaPlayerSupport::EncryptedMediaPlayerSupport(
@@ -277,10 +279,6 @@ void EncryptedMediaPlayerSupport::SetInitDataType(
       << "Mixed init data type not supported. The new type is ignored.";
   if (init_data_type_ == EmeInitDataType::UNKNOWN)
     init_data_type_ = init_data_type;
-}
-
-void EncryptedMediaPlayerSupport::OnPipelineDecryptError() {
-  EmeUMAHistogramCounts(current_key_system_, "DecryptError", 1);
 }
 
 void EncryptedMediaPlayerSupport::OnKeyAdded(const std::string& session_id) {

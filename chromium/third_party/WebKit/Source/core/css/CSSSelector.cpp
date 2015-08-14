@@ -157,8 +157,6 @@ unsigned CSSSelector::specificityForPage() const
             case PseudoRightPage:
                 s += 1;
                 break;
-            case PseudoNotParsed:
-                break;
             default:
                 ASSERT_NOT_REACHED();
             }
@@ -267,9 +265,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoFullScreenAncestor:
     case PseudoSpatialNavigationFocus:
     case PseudoListBox:
-        return NOPSEUDO;
-    case PseudoNotParsed:
-        ASSERT_NOT_REACHED();
         return NOPSEUDO;
     }
 
@@ -418,7 +413,6 @@ void CSSSelector::show(int indent) const
 {
     printf("%*sselectorText(): %s\n", indent, "", selectorText().ascii().data());
     printf("%*sm_match: %d\n", indent, "", m_match);
-    printf("%*sisCustomPseudoElement(): %d\n", indent, "", isCustomPseudoElement());
     if (m_match != Tag)
         printf("%*svalue(): %s\n", indent, "", value().ascii().data());
     printf("%*spseudoType(): %d\n", indent, "", pseudoType());
@@ -457,23 +451,24 @@ CSSSelector::PseudoType CSSSelector::parsePseudoType(const AtomicString& name, b
     return PseudoUnknown;
 }
 
-void CSSSelector::extractPseudoType() const
+void CSSSelector::updatePseudoType(const AtomicString& value, bool hasArguments)
 {
-    if (m_match != PseudoClass && m_match != PseudoElement && m_match != PagePseudoClass)
-        return;
+    ASSERT(m_match == PseudoClass || m_match == PseudoElement || m_match == PagePseudoClass);
 
-    m_pseudoType = parsePseudoType(value(), !argument().isNull() || selectorList());
-
-    bool element = false; // pseudo-element
-    bool compat = false; // single colon compatbility mode
-    bool isPagePseudoClass = false; // Page pseudo-class
+    setValue(value);
+    setPseudoType(parsePseudoType(value, hasArguments));
 
     switch (m_pseudoType) {
     case PseudoAfter:
     case PseudoBefore:
     case PseudoFirstLetter:
     case PseudoFirstLine:
-        compat = true;
+        // The spec says some pseudos allow both single and double colons like
+        // :before for backwards compatability. Single colon becomes PseudoClass,
+        // but should be PseudoElement like double colon.
+        if (m_match == PseudoClass)
+            m_match = PseudoElement;
+        // fallthrough
     case PseudoBackdrop:
     case PseudoCue:
     case PseudoResizer:
@@ -487,88 +482,79 @@ void CSSSelector::extractPseudoType() const
     case PseudoWebKitCustomElement:
     case PseudoContent:
     case PseudoShadow:
-        element = true;
-        break;
-    case PseudoUnknown:
-    case PseudoEmpty:
-    case PseudoFirstChild:
-    case PseudoFirstOfType:
-    case PseudoLastChild:
-    case PseudoLastOfType:
-    case PseudoOnlyChild:
-    case PseudoOnlyOfType:
-    case PseudoNthChild:
-    case PseudoNthOfType:
-    case PseudoNthLastChild:
-    case PseudoNthLastOfType:
-    case PseudoLink:
-    case PseudoVisited:
-    case PseudoAny:
-    case PseudoAnyLink:
-    case PseudoAutofill:
-    case PseudoHover:
-    case PseudoDrag:
-    case PseudoFocus:
-    case PseudoActive:
-    case PseudoChecked:
-    case PseudoEnabled:
-    case PseudoFullPageMedia:
-    case PseudoDefault:
-    case PseudoDisabled:
-    case PseudoOptional:
-    case PseudoRequired:
-    case PseudoReadOnly:
-    case PseudoReadWrite:
-    case PseudoScope:
-    case PseudoValid:
-    case PseudoInvalid:
-    case PseudoIndeterminate:
-    case PseudoTarget:
-    case PseudoLang:
-    case PseudoNot:
-    case PseudoRoot:
-    case PseudoWindowInactive:
-    case PseudoCornerPresent:
-    case PseudoDecrement:
-    case PseudoIncrement:
-    case PseudoHorizontal:
-    case PseudoVertical:
-    case PseudoStart:
-    case PseudoEnd:
-    case PseudoDoubleButton:
-    case PseudoSingleButton:
-    case PseudoNoButton:
-    case PseudoNotParsed:
-    case PseudoFullScreen:
-    case PseudoFullScreenDocument:
-    case PseudoFullScreenAncestor:
-    case PseudoInRange:
-    case PseudoOutOfRange:
-    case PseudoFutureCue:
-    case PseudoPastCue:
-    case PseudoHost:
-    case PseudoHostContext:
-    case PseudoUnresolved:
-    case PseudoSpatialNavigationFocus:
-    case PseudoListBox:
+        if (m_match != PseudoElement)
+            m_pseudoType = PseudoUnknown;
         break;
     case PseudoFirstPage:
     case PseudoLeftPage:
     case PseudoRightPage:
-        isPagePseudoClass = true;
-        break;
-    }
-
-    bool matchPagePseudoClass = (m_match == PagePseudoClass);
-    if (matchPagePseudoClass != isPagePseudoClass)
-        m_pseudoType = PseudoUnknown;
-    else if (m_match == PseudoClass && element) {
-        if (!compat)
+        if (m_match != PagePseudoClass)
             m_pseudoType = PseudoUnknown;
-        else
-            m_match = PseudoElement;
-    } else if (m_match == PseudoElement && !element)
-        m_pseudoType = PseudoUnknown;
+        break;
+    case PseudoActive:
+    case PseudoAny:
+    case PseudoAnyLink:
+    case PseudoAutofill:
+    case PseudoChecked:
+    case PseudoCornerPresent:
+    case PseudoDecrement:
+    case PseudoDefault:
+    case PseudoDisabled:
+    case PseudoDoubleButton:
+    case PseudoDrag:
+    case PseudoEmpty:
+    case PseudoEnabled:
+    case PseudoEnd:
+    case PseudoFirstChild:
+    case PseudoFirstOfType:
+    case PseudoFocus:
+    case PseudoFullPageMedia:
+    case PseudoFullScreen:
+    case PseudoFullScreenAncestor:
+    case PseudoFullScreenDocument:
+    case PseudoFutureCue:
+    case PseudoHorizontal:
+    case PseudoHost:
+    case PseudoHostContext:
+    case PseudoHover:
+    case PseudoInRange:
+    case PseudoIncrement:
+    case PseudoIndeterminate:
+    case PseudoInvalid:
+    case PseudoLang:
+    case PseudoLastChild:
+    case PseudoLastOfType:
+    case PseudoLink:
+    case PseudoListBox:
+    case PseudoNoButton:
+    case PseudoNot:
+    case PseudoNthChild:
+    case PseudoNthLastChild:
+    case PseudoNthLastOfType:
+    case PseudoNthOfType:
+    case PseudoOnlyChild:
+    case PseudoOnlyOfType:
+    case PseudoOptional:
+    case PseudoOutOfRange:
+    case PseudoPastCue:
+    case PseudoReadOnly:
+    case PseudoReadWrite:
+    case PseudoRequired:
+    case PseudoRoot:
+    case PseudoScope:
+    case PseudoSingleButton:
+    case PseudoSpatialNavigationFocus:
+    case PseudoStart:
+    case PseudoTarget:
+    case PseudoUnknown:
+    case PseudoUnresolved:
+    case PseudoValid:
+    case PseudoVertical:
+    case PseudoVisited:
+    case PseudoWindowInactive:
+        if (m_match != PseudoClass)
+            m_pseudoType = PseudoUnknown;
+    }
 }
 
 bool CSSSelector::operator==(const CSSSelector& other) const
@@ -632,11 +618,30 @@ String CSSSelector::selectorText(const String& rightSide) const
                 str.append(cs->selectorList()->first()->selectorText());
                 str.append(')');
                 break;
-            case PseudoLang:
             case PseudoNthChild:
             case PseudoNthLastChild:
             case PseudoNthOfType:
-            case PseudoNthLastOfType:
+            case PseudoNthLastOfType: {
+                str.append('(');
+
+                // http://dev.w3.org/csswg/css-syntax/#serializing-anb
+                int a = cs->m_data.m_rareData->nthAValue();
+                int b = cs->m_data.m_rareData->nthBValue();
+                if (a == 0 && b == 0)
+                    str.append('0');
+                else if (a == 0)
+                    str.append(String::number(b));
+                else if (b == 0)
+                    str.append(String::format("%dn", a));
+                else if (b < 0)
+                    str.append(String::format("%dn%d", a, b));
+                else
+                    str.append(String::format("%dn+%d", a, b));
+
+                str.append(')');
+                break;
+            }
+            case PseudoLang:
                 str.append('(');
                 str.append(cs->argument());
                 str.append(')');
@@ -846,17 +851,6 @@ bool CSSSelector::isCompound() const
     return true;
 }
 
-bool CSSSelector::isCommonPseudoClass() const
-{
-    if (m_match != CSSSelector::PseudoClass)
-        return false;
-    CSSSelector::PseudoType pseudoType = this->pseudoType();
-    return pseudoType == CSSSelector::PseudoLink
-        || pseudoType == CSSSelector::PseudoAnyLink
-        || pseudoType == CSSSelector::PseudoVisited
-        || pseudoType == CSSSelector::PseudoFocus;
-}
-
 unsigned CSSSelector::computeLinkMatchType() const
 {
     unsigned linkMatchType = MatchAll;
@@ -899,14 +893,11 @@ unsigned CSSSelector::computeLinkMatchType() const
     return linkMatchType;
 }
 
-bool CSSSelector::parseNth() const
+void CSSSelector::setNth(int a, int b)
 {
-    if (!m_hasRareData)
-        return false;
-    if (m_parsedNth)
-        return true;
-    m_parsedNth = m_data.m_rareData->parseNth();
-    return m_parsedNth;
+    createRareData();
+    m_data.m_rareData->m_bits.m_nth.m_a = a;
+    m_data.m_rareData->m_bits.m_nth.m_b = b;
 }
 
 bool CSSSelector::matchNth(int count) const
@@ -925,53 +916,6 @@ CSSSelector::RareData::RareData(const AtomicString& value)
 
 CSSSelector::RareData::~RareData()
 {
-}
-
-// a helper function for parsing nth-arguments
-bool CSSSelector::RareData::parseNth()
-{
-    String argument = m_argument.lower();
-
-    if (argument.isEmpty())
-        return false;
-
-    int nthA = 0;
-    int nthB = 0;
-    if (argument == "odd") {
-        nthA = 2;
-        nthB = 1;
-    } else if (argument == "even") {
-        nthA = 2;
-        nthB = 0;
-    } else {
-        size_t n = argument.find('n');
-        if (n != kNotFound) {
-            if (argument[0] == '-') {
-                if (n == 1)
-                    nthA = -1; // -n == -1n
-                else
-                    nthA = argument.substring(0, n).toInt();
-            } else if (!n) {
-                nthA = 1; // n == 1n
-            } else {
-                nthA = argument.substring(0, n).toInt();
-            }
-
-            size_t p = argument.find('+', n);
-            if (p != kNotFound) {
-                nthB = argument.substring(p + 1, argument.length() - p - 1).toInt();
-            } else {
-                p = argument.find('-', n);
-                if (p != kNotFound)
-                    nthB = -argument.substring(p + 1, argument.length() - p - 1).toInt();
-            }
-        } else {
-            nthB = argument.toInt();
-        }
-    }
-    setNthAValue(nthA);
-    setNthBValue(nthB);
-    return true;
 }
 
 // a helper function for checking nth-arguments

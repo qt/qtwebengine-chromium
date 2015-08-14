@@ -26,6 +26,7 @@
 #ifndef DeviceOrientationEvent_h
 #define DeviceOrientationEvent_h
 
+#include "bindings/core/v8/Nullable.h"
 #include "modules/EventModules.h"
 #include "platform/heap/Handle.h"
 
@@ -36,7 +37,7 @@ class DeviceOrientationData;
 class DeviceOrientationEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~DeviceOrientationEvent();
+    ~DeviceOrientationEvent() override;
     static PassRefPtrWillBeRawPtr<DeviceOrientationEvent> create()
     {
         return adoptRefWillBeNoop(new DeviceOrientationEvent);
@@ -46,7 +47,7 @@ public:
         return adoptRefWillBeNoop(new DeviceOrientationEvent(eventType, orientation));
     }
 
-    void initDeviceOrientationEvent(const AtomicString& type, bool bubbles, bool cancelable, DeviceOrientationData*);
+    void initDeviceOrientationEvent(const AtomicString& type, bool bubbles, bool cancelable, const Nullable<double>& alpha, const Nullable<double>& beta, const Nullable<double>& gamma, const Nullable<bool>& absolute);
 
     DeviceOrientationData* orientation() const { return m_orientation.get(); }
 
@@ -55,7 +56,7 @@ public:
     double gamma(bool& isNull) const;
     bool absolute(bool& isNull) const;
 
-    virtual const AtomicString& interfaceName() const override;
+    const AtomicString& interfaceName() const override;
 
     DECLARE_VIRTUAL_TRACE();
 

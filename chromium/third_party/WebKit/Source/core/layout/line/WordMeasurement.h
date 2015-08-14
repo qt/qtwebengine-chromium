@@ -34,7 +34,7 @@ class LayoutText;
 class WordMeasurement {
 public:
     WordMeasurement()
-        : layoutText(0)
+        : layoutText(nullptr)
         , width(0)
         , startOffset(0)
         , endOffset(0)
@@ -46,6 +46,7 @@ public:
     int startOffset;
     int endOffset;
     HashSet<const SimpleFontData*> fallbackFonts;
+    FloatRect glyphBounds;
 };
 
 } // namespace blink

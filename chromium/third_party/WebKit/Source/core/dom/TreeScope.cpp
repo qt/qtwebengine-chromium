@@ -262,13 +262,12 @@ static bool pointWithScrollAndZoomIfPossible(const Document& document, IntPoint&
     return true;
 }
 
-HitTestResult hitTestInDocument(const Document* document, int x, int y)
+HitTestResult hitTestInDocument(const Document* document, int x, int y, const HitTestRequest& request)
 {
     IntPoint hitPoint(x, y);
     if (!pointWithScrollAndZoomIfPossible(*document, hitPoint))
         return HitTestResult();
 
-    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
     HitTestResult result(request, hitPoint);
     document->layoutView()->hitTest(result);
     return result;
@@ -276,7 +275,12 @@ HitTestResult hitTestInDocument(const Document* document, int x, int y)
 
 Element* TreeScope::elementFromPoint(int x, int y) const
 {
-    HitTestResult result = hitTestInDocument(&rootNode().document(), x, y);
+    return hitTestPoint(x, y, HitTestRequest::ReadOnly | HitTestRequest::Active);
+}
+
+Element* TreeScope::hitTestPoint(int x, int y, const HitTestRequest& request) const
+{
+    HitTestResult result = hitTestInDocument(&rootNode().document(), x, y, request);
     Node* node = result.innerNode();
     if (!node || node->isDocumentNode())
         return 0;
@@ -471,9 +475,10 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
             if (shadowHost1 != shadowHost2)
                 return shadowHost1->compareDocumentPosition(shadowHost2, Node::TreatShadowTreesAsDisconnected);
 
-            for (const ShadowRoot* child = toShadowRoot(child2->rootNode()).olderShadowRoot(); child; child = child->olderShadowRoot())
+            for (const ShadowRoot* child = toShadowRoot(child2->rootNode()).olderShadowRoot(); child; child = child->olderShadowRoot()) {
                 if (child == child1)
                     return Node::DOCUMENT_POSITION_FOLLOWING;
+            }
 
             return Node::DOCUMENT_POSITION_PRECEDING;
         }

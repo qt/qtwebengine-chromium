@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/events/devices/input_device.h"
 
 namespace ui {
@@ -22,26 +23,52 @@ EventConverterEvdev::EventConverterEvdev(int fd,
                                          uint16_t product_id)
     : fd_(fd),
       path_(path),
-      input_device_(id, type, name, vendor_id, product_id),
-      ignore_events_(false) {
+      input_device_(id, type, name, vendor_id, product_id) {
 }
 
 EventConverterEvdev::~EventConverterEvdev() {
-  Stop();
+  DCHECK(!enabled_);
+  DCHECK(!watching_);
+  if (fd_ >= 0)
+    close(fd_);
 }
 
 void EventConverterEvdev::Start() {
   base::MessageLoopForUI::current()->WatchFileDescriptor(
       fd_, true, base::MessagePumpLibevent::WATCH_READ, &controller_, this);
+  watching_ = true;
 }
 
 void EventConverterEvdev::Stop() {
   controller_.StopWatchingFileDescriptor();
+  watching_ = false;
+}
 
-  OnStopped();
+void EventConverterEvdev::SetEnabled(bool enabled) {
+  if (enabled == enabled_)
+    return;
+  if (enabled) {
+    TRACE_EVENT1("evdev", "EventConverterEvdev::OnEnabled", "path",
+                 path_.value());
+    OnEnabled();
+  } else {
+    TRACE_EVENT1("evdev", "EventConverterEvdev::OnDisabled", "path",
+                 path_.value());
+    OnDisabled();
+  }
+  enabled_ = enabled;
 }
 
 void EventConverterEvdev::OnStopped() {
+}
+
+void EventConverterEvdev::OnEnabled() {
+}
+
+void EventConverterEvdev::OnDisabled() {
+}
+
+void EventConverterEvdev::DumpTouchEventLog(const char* filename) {
 }
 
 void EventConverterEvdev::OnFileCanWriteWithoutBlocking(int fd) {
@@ -78,12 +105,8 @@ int EventConverterEvdev::GetTouchPoints() const {
   return 0;
 }
 
-void EventConverterEvdev::SetAllowedKeys(
-    scoped_ptr<std::set<DomCode>> allowed_keys) {
-  NOTREACHED();
-}
-
-void EventConverterEvdev::AllowAllKeys() {
+void EventConverterEvdev::SetKeyFilter(bool enable_filter,
+                                       std::vector<DomCode> allowed_keys) {
   NOTREACHED();
 }
 
@@ -112,6 +135,9 @@ void EventConverterEvdev::SetCapsLockLed(bool enabled) {
     LOG(ERROR) << "short write setting leds for " << path_.value();
     Stop();
   }
+}
+
+void EventConverterEvdev::SetTouchEventLoggingEnabled(bool enabled) {
 }
 
 base::TimeDelta EventConverterEvdev::TimeDeltaFromInputEvent(

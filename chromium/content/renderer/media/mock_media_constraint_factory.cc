@@ -83,8 +83,8 @@ void MockMediaConstraintFactory::AddOptional(const std::string& key,
 
 void MockMediaConstraintFactory::DisableDefaultAudioConstraints() {
   static const char* kDefaultAudioConstraints[] = {
-      webrtc::MediaConstraintsInterface::kEchoCancellation,
-      webrtc::MediaConstraintsInterface::kExperimentalEchoCancellation,
+      webrtc::MediaConstraintsInterface::kGoogEchoCancellation,
+      webrtc::MediaConstraintsInterface::kExtendedFilterEchoCancellation,
       webrtc::MediaConstraintsInterface::kAutoGainControl,
       webrtc::MediaConstraintsInterface::kExperimentalAutoGainControl,
       webrtc::MediaConstraintsInterface::kNoiseSuppression,

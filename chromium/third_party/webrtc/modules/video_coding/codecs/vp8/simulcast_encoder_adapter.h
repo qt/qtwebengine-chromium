@@ -40,7 +40,7 @@ class SimulcastEncoderAdapter : public VP8Encoder {
   int InitEncode(const VideoCodec* inst,
                  int number_of_cores,
                  size_t max_payload_size) override;
-  int Encode(const I420VideoFrame& input_image,
+  int Encode(const VideoFrame& input_image,
              const CodecSpecificInfo* codec_specific_info,
              const std::vector<VideoFrameType>* frame_types) override;
   int RegisterEncodeCompleteCallback(EncodedImageCallback* callback) override;
@@ -87,15 +87,18 @@ class SimulcastEncoderAdapter : public VP8Encoder {
   };
 
   // Get the stream bitrate, for the stream |stream_idx|, given the bitrate
-  // |new_bitrate_kbit|. The function also returns whether there's enough
+  // |new_bitrate_kbit| and the actual configured stream count in
+  // |total_number_of_streams|. The function also returns whether there's enough
   // bandwidth to send this stream via |send_stream|.
   uint32_t GetStreamBitrate(int stream_idx,
+                            size_t total_number_of_streams,
                             uint32_t new_bitrate_kbit,
                             bool* send_stream) const;
 
   // Populate the codec settings for each stream.
   void PopulateStreamCodec(const webrtc::VideoCodec* inst,
                            int stream_index,
+                           size_t total_number_of_streams,
                            bool highest_resolution_stream,
                            webrtc::VideoCodec* stream_codec,
                            bool* send_stream);

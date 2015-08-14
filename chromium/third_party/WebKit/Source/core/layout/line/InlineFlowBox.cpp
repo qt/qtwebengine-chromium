@@ -31,13 +31,13 @@
 #include "core/layout/LayoutRubyRun.h"
 #include "core/layout/LayoutRubyText.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/line/RootInlineBox.h"
-#include "core/style/ShadowList.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/InlineFlowBoxPainter.h"
+#include "core/style/ShadowList.h"
 #include "platform/fonts/Font.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 
 #include <math.h>
 
@@ -74,11 +74,11 @@ LayoutUnit InlineFlowBox::getFlowSpacingLogicalWidth()
 IntRect InlineFlowBox::roundedFrameRect() const
 {
     // Begin by snapping the x and y coordinates to the nearest pixel.
-    int snappedX = lroundf(x());
-    int snappedY = lroundf(y());
+    int snappedX = x().round();
+    int snappedY = y().round();
 
-    int snappedMaxX = lroundf(x() + width());
-    int snappedMaxY = lroundf(y() + height());
+    int snappedMaxX = (x() + width()).round();
+    int snappedMaxY = (y() + height()).round();
 
     return IntRect(snappedX, snappedY, snappedMaxX - snappedX, snappedMaxY - snappedY);
 }
@@ -196,7 +196,7 @@ void InlineFlowBox::removeChild(InlineBox* child, MarkLineBoxes markDirty)
     if (child->prevOnLine())
         child->prevOnLine()->setNextOnLine(child->nextOnLine());
 
-    child->setParent(0);
+    child->setParent(nullptr);
 
     checkConsistency();
 }
@@ -204,19 +204,19 @@ void InlineFlowBox::removeChild(InlineBox* child, MarkLineBoxes markDirty)
 void InlineFlowBox::deleteLine()
 {
     InlineBox* child = firstChild();
-    InlineBox* next = 0;
+    InlineBox* next = nullptr;
     while (child) {
         ASSERT(this == child->parent());
         next = child->nextOnLine();
 #if ENABLE(ASSERT)
-        child->setParent(0);
+        child->setParent(nullptr);
 #endif
         child->deleteLine();
         child = next;
     }
 #if ENABLE(ASSERT)
-    m_firstChild = 0;
-    m_lastChild = 0;
+    m_firstChild = nullptr;
+    m_lastChild = nullptr;
 #endif
 
     removeLineBoxFromLayoutObject();
@@ -254,16 +254,16 @@ void InlineFlowBox::attachLineBoxToLayoutObject()
     lineBoxes()->attachLineBox(this);
 }
 
-void InlineFlowBox::adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy)
+void InlineFlowBox::move(const LayoutSize& delta)
 {
-    InlineBox::adjustPosition(dx, dy);
+    InlineBox::move(delta);
     for (InlineBox* child = firstChild(); child; child = child->nextOnLine()) {
         if (child->layoutObject().isOutOfFlowPositioned())
             continue;
-        child->adjustPosition(dx, dy);
+        child->move(delta);
     }
     if (m_overflow)
-        m_overflow->move(dx, dy); // FIXME: Rounding error here since overflow was pixel snapped, but nobody other than list markers passes non-integral values here.
+        m_overflow->move(delta.width(), delta.height()); // FIXME: Rounding error here since overflow was pixel snapped, but nobody other than list markers passes non-integral values here.
 }
 
 LineBoxList* InlineFlowBox::lineBoxes() const
@@ -294,7 +294,7 @@ static inline bool isLastChildForLayoutObject(LayoutObject* ancestor, LayoutObje
     return true;
 }
 
-static bool isAnsectorAndWithinBlock(LayoutObject* ancestor, LayoutObject* child)
+static bool isAncestorAndWithinBlock(LayoutObject* ancestor, LayoutObject* child)
 {
     LayoutObject* object = child;
     while (object && (!object->isLayoutBlock() || object->isInline())) {
@@ -330,7 +330,7 @@ void InlineFlowBox::determineSpacingForFlowBoxes(bool lastLine, bool isLogically
 
         if (!lineBoxList->lastLineBox()->isConstructed()) {
             LayoutInline& inlineFlow = toLayoutInline(layoutObject());
-            bool isLastObjectOnLine = !isAnsectorAndWithinBlock(&layoutObject(), logicallyLastRunLayoutObject) || (isLastChildForLayoutObject(&layoutObject(), logicallyLastRunLayoutObject) && !isLogicallyLastRunWrapped);
+            bool isLastObjectOnLine = !isAncestorAndWithinBlock(&layoutObject(), logicallyLastRunLayoutObject) || (isLastChildForLayoutObject(&layoutObject(), logicallyLastRunLayoutObject) && !isLogicallyLastRunWrapped);
 
             // We include the border under these conditions:
             // (1) The next line was not created, or it is constructed. We check the previous line for rtl.
@@ -362,16 +362,16 @@ void InlineFlowBox::determineSpacingForFlowBoxes(bool lastLine, bool isLogically
     }
 }
 
-FloatWillBeLayoutUnit InlineFlowBox::placeBoxesInInlineDirection(FloatWillBeLayoutUnit logicalLeft, bool& needsWordSpacing)
+LayoutUnit InlineFlowBox::placeBoxesInInlineDirection(LayoutUnit logicalLeft, bool& needsWordSpacing)
 {
     // Set our x position.
     beginPlacingBoxRangesInInlineDirection(logicalLeft);
 
-    FloatWillBeLayoutUnit startLogicalLeft = logicalLeft;
+    LayoutUnit startLogicalLeft = logicalLeft;
     logicalLeft += borderLogicalLeft() + paddingLogicalLeft();
 
-    FloatWillBeLayoutUnit minLogicalLeft = startLogicalLeft;
-    FloatWillBeLayoutUnit maxLogicalRight = logicalLeft;
+    LayoutUnit minLogicalLeft = startLogicalLeft;
+    LayoutUnit maxLogicalRight = logicalLeft;
 
     placeBoxRangeInInlineDirection(firstChild(), 0, logicalLeft, minLogicalLeft, maxLogicalRight, needsWordSpacing);
 
@@ -380,14 +380,14 @@ FloatWillBeLayoutUnit InlineFlowBox::placeBoxesInInlineDirection(FloatWillBeLayo
     return logicalLeft;
 }
 
-FloatWillBeLayoutUnit InlineFlowBox::placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild,
-    FloatWillBeLayoutUnit& logicalLeft, FloatWillBeLayoutUnit& minLogicalLeft, FloatWillBeLayoutUnit& maxLogicalRight, bool& needsWordSpacing)
+LayoutUnit InlineFlowBox::placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild,
+    LayoutUnit& logicalLeft, LayoutUnit& minLogicalLeft, LayoutUnit& maxLogicalRight, bool& needsWordSpacing)
 {
     for (InlineBox* curr = firstChild; curr && curr != lastChild; curr = curr->nextOnLine()) {
         if (curr->layoutObject().isText()) {
             InlineTextBox* text = toInlineTextBox(curr);
             LayoutText& rt = text->layoutObject();
-            FloatWillBeLayoutUnit space;
+            LayoutUnit space;
             if (rt.textLength()) {
                 if (needsWordSpacing && isSpaceOrNewline(rt.characterAt(text->start())))
                     space = rt.style(isFirstLineStyle())->font().fontDescription().wordSpacing();
@@ -428,7 +428,7 @@ FloatWillBeLayoutUnit InlineFlowBox::placeBoxRangeInInlineDirection(InlineBox* f
                 logicalLeft += flow->marginLogicalRight();
             } else if (!curr->layoutObject().isListMarker() || toLayoutListMarker(curr->layoutObject()).isInside()) {
                 // The box can have a different writing-mode than the overall line, so this is a bit complicated.
-                // Just get all the physical margin and overflow values by hand based off |isVertical|.
+                // Just get all the physical margin and overflow values by hand based off |isHorizontal|.
                 LayoutUnit logicalLeftMargin = isHorizontal() ? curr->boxModelObject()->marginLeft() : curr->boxModelObject()->marginTop();
                 LayoutUnit logicalRightMargin = isHorizontal() ? curr->boxModelObject()->marginRight() : curr->boxModelObject()->marginBottom();
 
@@ -528,7 +528,7 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
         if (curr->layoutObject().isOutOfFlowPositioned())
             continue; // Positioned placeholders don't affect calculations.
 
-        InlineFlowBox* inlineFlowBox = curr->isInlineFlowBox() ? toInlineFlowBox(curr) : 0;
+        InlineFlowBox* inlineFlowBox = curr->isInlineFlowBox() ? toInlineFlowBox(curr) : nullptr;
 
         bool affectsAscent = false;
         bool affectsDescent = false;
@@ -536,7 +536,7 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
         // The verticalPositionForBox function returns the distance between the child box's baseline
         // and the root box's baseline.  The value is negative if the child box's baseline is above the
         // root box's baseline, and it is positive if the child box's baseline is below the root box's baseline.
-        curr->setLogicalTop(rootBox->verticalPositionForBox(curr, verticalPositionCache).toFloat());
+        curr->setLogicalTop(rootBox->verticalPositionForBox(curr, verticalPositionCache));
 
         int ascent = 0;
         int descent = 0;
@@ -556,8 +556,8 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
             // means is that ascent and descent (including leading), can end up being negative.  The setMaxAscent and
             // setMaxDescent booleans are used to ensure that we're willing to initially set maxAscent/Descent to negative
             // values.
-            ascent -= curr->logicalTop();
-            descent += curr->logicalTop();
+            ascent -= curr->logicalTop().round();
+            descent += curr->logicalTop().round();
             if (affectsAscent && (maxAscent < ascent || !setMaxAscent)) {
                 maxAscent = ascent;
                 setMaxAscent = true;
@@ -579,7 +579,7 @@ void InlineFlowBox::placeBoxesInBlockDirection(LayoutUnit top, LayoutUnit maxHei
     bool isRootBox = isRootInlineBox();
     if (isRootBox) {
         const FontMetrics& fontMetrics = layoutObject().style(isFirstLineStyle())->fontMetrics();
-        // RootInlineBoxes are always placed on at pixel boundaries in their logical y direction. Not doing
+        // RootInlineBoxes are always placed at pixel boundaries in their logical y direction. Not doing
         // so results in incorrect layout of text decorations, most notably underlines.
         setLogicalTop(roundToInt(top + maxAscent - fontMetrics.ascent(baselineType)));
     }
@@ -596,16 +596,16 @@ void InlineFlowBox::placeBoxesInBlockDirection(LayoutUnit top, LayoutUnit maxHei
             continue; // Positioned placeholders don't affect calculations.
 
         if (descendantsHaveSameLineHeightAndBaseline()) {
-            curr->adjustBlockDirectionPosition(adjustmentForChildrenWithSameLineHeightAndBaseline.toFloat());
+            curr->moveInBlockDirection(adjustmentForChildrenWithSameLineHeightAndBaseline);
             continue;
         }
 
-        InlineFlowBox* inlineFlowBox = curr->isInlineFlowBox() ? toInlineFlowBox(curr) : 0;
+        InlineFlowBox* inlineFlowBox = curr->isInlineFlowBox() ? toInlineFlowBox(curr) : nullptr;
         bool childAffectsTopBottomPos = true;
         if (curr->verticalAlign() == TOP) {
-            curr->setLogicalTop(top.toFloat());
+            curr->setLogicalTop(top);
         } else if (curr->verticalAlign() == BOTTOM) {
-            curr->setLogicalTop((top + maxHeight - curr->lineHeight()).toFloat());
+            curr->setLogicalTop((top + maxHeight - curr->lineHeight()));
         } else {
             if (!strictMode && inlineFlowBox && !inlineFlowBox->hasTextChildren() && !curr->boxModelObject()->hasInlineDirectionBordersOrPadding()
                 && !(inlineFlowBox->descendantsHaveSameLineHeightAndBaseline() && inlineFlowBox->hasTextDescendants()))
@@ -638,7 +638,7 @@ void InlineFlowBox::placeBoxesInBlockDirection(LayoutUnit top, LayoutUnit maxHei
             boxHeightIncludingMargins += overSideMargin + underSideMargin;
         }
 
-        curr->setLogicalTop(newLogicalTop.toFloat());
+        curr->setLogicalTop(newLogicalTop);
 
         if (childAffectsTopBottomPos) {
             if (curr->layoutObject().isRubyRun()) {
@@ -708,7 +708,7 @@ void InlineFlowBox::placeBoxesInBlockDirection(LayoutUnit top, LayoutUnit maxHei
     }
 }
 
-void InlineFlowBox::computeMaxLogicalTop(FloatWillBeLayoutUnit& maxLogicalTop) const
+void InlineFlowBox::computeMaxLogicalTop(LayoutUnit& maxLogicalTop) const
 {
     for (InlineBox* curr = firstChild(); curr; curr = curr->nextOnLine()) {
         if (curr->layoutObject().isOutOfFlowPositioned())
@@ -717,11 +717,11 @@ void InlineFlowBox::computeMaxLogicalTop(FloatWillBeLayoutUnit& maxLogicalTop) c
         if (descendantsHaveSameLineHeightAndBaseline())
             continue;
 
-        maxLogicalTop = std::max<FloatWillBeLayoutUnit>(maxLogicalTop, curr->y());
-        FloatWillBeLayoutUnit localMaxLogicalTop;
+        maxLogicalTop = std::max<LayoutUnit>(maxLogicalTop, curr->y());
+        LayoutUnit localMaxLogicalTop;
         if (curr->isInlineFlowBox())
             toInlineFlowBox(curr)->computeMaxLogicalTop(localMaxLogicalTop);
-        maxLogicalTop = std::max<FloatWillBeLayoutUnit>(maxLogicalTop, localMaxLogicalTop);
+        maxLogicalTop = std::max<LayoutUnit>(maxLogicalTop, localMaxLogicalTop);
     }
 }
 
@@ -743,11 +743,13 @@ void InlineFlowBox::flipLinesInBlockDirection(LayoutUnit lineTop, LayoutUnit lin
 
 inline void InlineFlowBox::addBoxShadowVisualOverflow(LayoutRect& logicalVisualOverflow)
 {
-    // box-shadow on root line boxes is applying to the block and not to the lines.
-    if (!parent())
+    const ComputedStyle& style = layoutObject().styleRef(isFirstLineStyle());
+
+    // box-shadow on the block element applies to the block and not to the lines,
+    // unless it is modified by :first-line pseudo element.
+    if (!parent() && (!isFirstLineStyle() || &style == layoutObject().style()))
         return;
 
-    const ComputedStyle& style = layoutObject().styleRef(isFirstLineStyle());
     WritingMode writingMode = style.writingMode();
     ShadowList* boxShadow = style.boxShadow();
     if (!boxShadow)
@@ -758,18 +760,20 @@ inline void InlineFlowBox::addBoxShadowVisualOverflow(LayoutRect& logicalVisualO
     // the line is "upside down" in terms of block coordinates.
     LayoutRectOutsets logicalOutsets(outsets.logicalOutsetsWithFlippedLines(writingMode));
 
-    LayoutRect shadowBounds(logicalFrameRect().toLayoutRect());
+    LayoutRect shadowBounds(logicalFrameRect());
     shadowBounds.expand(logicalOutsets);
     logicalVisualOverflow.unite(shadowBounds);
 }
 
 inline void InlineFlowBox::addBorderOutsetVisualOverflow(LayoutRect& logicalVisualOverflow)
 {
-    // border-image-outset on root line boxes is applying to the block and not to the lines.
-    if (!parent())
+    const ComputedStyle& style = layoutObject().styleRef(isFirstLineStyle());
+
+    // border-image-outset on the block element applies to the block and not to the lines,
+    // unless it is modified by :first-line pseudo element.
+    if (!parent() && (!isFirstLineStyle() || &style == layoutObject().style()))
         return;
 
-    const ComputedStyle& style = layoutObject().styleRef(isFirstLineStyle());
     if (!style.hasBorderImageOutsets())
         return;
 
@@ -782,7 +786,7 @@ inline void InlineFlowBox::addBorderOutsetVisualOverflow(LayoutRect& logicalVisu
     if (!includeLogicalRightEdge())
         logicalOutsets.setRight(LayoutUnit());
 
-    LayoutRect borderOutsetBounds(logicalFrameRect().toLayoutRect());
+    LayoutRect borderOutsetBounds(logicalFrameRect());
     borderOutsetBounds.expand(logicalOutsets);
     logicalVisualOverflow.unite(borderOutsetBounds);
 }
@@ -808,7 +812,7 @@ inline void InlineFlowBox::addTextBoxVisualOverflow(InlineTextBox* textBox, Glyp
     const ComputedStyle& style = textBox->layoutObject().styleRef(isFirstLineStyle());
 
     GlyphOverflowAndFallbackFontsMap::iterator it = textBoxDataMap.find(textBox);
-    GlyphOverflow* glyphOverflow = it == textBoxDataMap.end() ? 0 : &it->value.second;
+    GlyphOverflow* glyphOverflow = it == textBoxDataMap.end() ? nullptr : &it->value.second;
     bool isFlippedLine = style.isFlippedLinesWritingMode();
 
     int topGlyphEdge = glyphOverflow ? (isFlippedLine ? glyphOverflow->bottom : glyphOverflow->top) : 0;
@@ -831,7 +835,7 @@ inline void InlineFlowBox::addTextBoxVisualOverflow(InlineTextBox* textBox, Glyp
             bottomGlyphOverflow = std::max(bottomGlyphOverflow, emphasisMarkHeight);
     }
 
-    // If letter-spacing is negative, we should factor that into right layout overflow. (Even in RTL, letter-spacing is
+    // If letter-spacing is negative, we should factor that into right layout overflow. Even in RTL, letter-spacing is
     // applied to the right, so this is not an issue with left overflow.
     rightGlyphOverflow -= std::min(0, (int)style.font().fontDescription().letterSpacing());
 
@@ -896,9 +900,7 @@ void InlineFlowBox::computeOverflow(LayoutUnit lineTop, LayoutUnit lineBottom, G
     // Visual overflow just includes overflow for stuff we need to issues paint invalidations for ourselves. Self-painting layers are ignored.
     // Layout overflow is used to determine scrolling extent, so it still includes child layers and also factors in
     // transforms, relative positioning, etc.
-    // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
-    // the transition to LayoutUnit-based types is complete (crbug.com/321237)
-    LayoutRect logicalLayoutOverflow(logicalFrameRectIncludingLineHeight(lineTop, lineBottom).enclosingLayoutRect());
+    LayoutRect logicalLayoutOverflow(logicalFrameRectIncludingLineHeight(lineTop, lineBottom));
     LayoutRect logicalVisualOverflow(logicalLayoutOverflow);
 
     addBoxShadowVisualOverflow(logicalVisualOverflow);
@@ -914,9 +916,7 @@ void InlineFlowBox::computeOverflow(LayoutUnit lineTop, LayoutUnit lineBottom, G
             LayoutText& rt = text->layoutObject();
             if (rt.isBR())
                 continue;
-            // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
-            // the transition to LayoutUnit-based types is complete (crbug.com/321237)
-            LayoutRect textBoxOverflow(text->logicalFrameRect().enclosingLayoutRect());
+            LayoutRect textBoxOverflow(text->logicalFrameRect());
             addTextBoxVisualOverflow(text, textBoxDataMap, textBoxOverflow);
             logicalVisualOverflow.unite(textBoxOverflow);
         } else if (curr->layoutObject().isLayoutInline()) {
@@ -959,9 +959,7 @@ void InlineFlowBox::setVisualOverflow(const LayoutRect& rect, const LayoutRect& 
 
 void InlineFlowBox::setOverflowFromLogicalRects(const LayoutRect& logicalLayoutOverflow, const LayoutRect& logicalVisualOverflow, LayoutUnit lineTop, LayoutUnit lineBottom)
 {
-    // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
-    // the transition to LayoutUnit-based types is complete (crbug.com/321237)
-    LayoutRect frameBox = frameRectIncludingLineHeight(lineTop, lineBottom).enclosingLayoutRect();
+    LayoutRect frameBox = frameRectIncludingLineHeight(lineTop, lineBottom);
 
     LayoutRect layoutOverflow(isHorizontal() ? logicalLayoutOverflow : logicalLayoutOverflow.transposedRect());
     setLayoutOverflow(layoutOverflow, frameBox);
@@ -1047,7 +1045,7 @@ bool InlineFlowBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& lo
     rect.moveBy(accumulatedOffset);
 
     if (visibleToHitTestRequest(result.hitTestRequest()) && locationInContainer.intersects(rect)) {
-        layoutObject().updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(accumulatedOffset))); // Don't add in m_x or m_y here, we want coords in the containing block's space.
+        layoutObject().updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(accumulatedOffset))); // Don't add in m_topLeft here, we want coords in the containing block's space.
         if (!result.addNodeToListBasedTestResult(layoutObject().node(), locationInContainer, rect))
             return true;
     }
@@ -1071,7 +1069,7 @@ bool InlineFlowBox::boxShadowCanBeAppliedToBackground(const FillLayer& lastBackg
 
 InlineBox* InlineFlowBox::firstLeafChild() const
 {
-    InlineBox* leaf = 0;
+    InlineBox* leaf = nullptr;
     for (InlineBox* child = firstChild(); child && !leaf; child = child->nextOnLine())
         leaf = child->isLeaf() ? child : toInlineFlowBox(child)->firstLeafChild();
     return leaf;
@@ -1079,7 +1077,7 @@ InlineBox* InlineFlowBox::firstLeafChild() const
 
 InlineBox* InlineFlowBox::lastLeafChild() const
 {
-    InlineBox* leaf = 0;
+    InlineBox* leaf = nullptr;
     for (InlineBox* child = lastChild(); child && !leaf; child = child->prevOnLine())
         leaf = child->isLeaf() ? child : toInlineFlowBox(child)->lastLeafChild();
     return leaf;
@@ -1092,16 +1090,16 @@ LayoutObject::SelectionState InlineFlowBox::selectionState() const
 
 bool InlineFlowBox::canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const
 {
-    for (InlineBox *box = firstChild(); box; box = box->nextOnLine()) {
+    for (InlineBox* box = firstChild(); box; box = box->nextOnLine()) {
         if (!box->canAccommodateEllipsis(ltr, blockEdge, ellipsisWidth))
             return false;
     }
     return true;
 }
 
-FloatWillBeLayoutUnit InlineFlowBox::placeEllipsisBox(bool ltr, FloatWillBeLayoutUnit blockLeftEdge, FloatWillBeLayoutUnit blockRightEdge, FloatWillBeLayoutUnit ellipsisWidth, FloatWillBeLayoutUnit &truncatedWidth, bool& foundBox)
+LayoutUnit InlineFlowBox::placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool& foundBox)
 {
-    FloatWillBeLayoutUnit result = -1;
+    LayoutUnit result = -1;
     // We iterate over all children, the foundBox variable tells us when we've found the
     // box containing the ellipsis.  All boxes after that one in the flow are hidden.
     // If our flow is ltr then iterate over the boxes from left to right, otherwise iterate
@@ -1118,10 +1116,10 @@ FloatWillBeLayoutUnit InlineFlowBox::placeEllipsisBox(bool ltr, FloatWillBeLayou
             result = currResult;
 
         if (ltr) {
-            visibleLeftEdge += box->logicalWidth();
+            visibleLeftEdge += box->logicalWidth().round();
             box = box->nextOnLine();
         } else {
-            visibleRightEdge -= box->logicalWidth();
+            visibleRightEdge -= box->logicalWidth().round();
             box = box->prevOnLine();
         }
     }
@@ -1130,7 +1128,7 @@ FloatWillBeLayoutUnit InlineFlowBox::placeEllipsisBox(bool ltr, FloatWillBeLayou
 
 void InlineFlowBox::clearTruncation()
 {
-    for (InlineBox *box = firstChild(); box; box = box->nextOnLine())
+    for (InlineBox* box = firstChild(); box; box = box->nextOnLine())
         box->clearTruncation();
 }
 
@@ -1304,7 +1302,7 @@ void InlineFlowBox::checkConsistency() const
 {
 #ifdef CHECK_CONSISTENCY
     ASSERT(!m_hasBadChildList);
-    const InlineBox* prev = 0;
+    const InlineBox* prev = nullptr;
     for (const InlineBox* child = m_firstChild; child; child = child->nextOnLine()) {
         ASSERT(child->parent() == this);
         ASSERT(child->prevOnLine() == prev);

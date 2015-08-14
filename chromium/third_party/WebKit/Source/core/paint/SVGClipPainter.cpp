@@ -10,6 +10,7 @@
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "core/paint/CompositingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
@@ -82,7 +83,7 @@ bool SVGClipPainter::applyClippingToContext(const LayoutObject& target, const Fl
             return false;
         }
 
-        drawClipMaskContent(context, target, targetBoundingBox);
+        drawClipMaskContent(context, target, targetBoundingBox, paintInvalidationRect);
 
         if (clipPathClipper)
             SVGClipPainter(*clipPathClipper).postApplyStatefulResource(m_clip, context, clipPathClipperState);
@@ -100,9 +101,12 @@ void SVGClipPainter::postApplyStatefulResource(const LayoutObject& target, Graph
     case ClipperAppliedPath:
         // Path-only clipping, no layers to restore but we need to emit an end to the clip path display item.
         if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-            if (context->displayItemList()->displayItemConstructionIsDisabled())
-                return;
-            context->displayItemList()->add(EndClipPathDisplayItem::create(target));
+            if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
+                if (context->displayItemList()->lastDisplayItemIsNoopBegin())
+                    context->displayItemList()->removeLastDisplayItem();
+                else
+                    context->displayItemList()->createAndAppend<EndClipPathDisplayItem>(target);
+            }
         } else {
             EndClipPathDisplayItem endClipPathDisplayItem(target);
             endClipPathDisplayItem.replay(*context);
@@ -120,23 +124,21 @@ void SVGClipPainter::postApplyStatefulResource(const LayoutObject& target, Graph
     }
 }
 
-void SVGClipPainter::drawClipMaskContent(GraphicsContext* context, const LayoutObject& layoutObject, const FloatRect& targetBoundingBox)
+void SVGClipPainter::drawClipMaskContent(GraphicsContext* context, const LayoutObject& layoutObject, const FloatRect& targetBoundingBox, const FloatRect& targetPaintInvalidationRect)
 {
     ASSERT(context);
 
     AffineTransform contentTransformation;
-    RefPtr<const SkPicture> clipContentPicture = m_clip.createContentPicture(contentTransformation, targetBoundingBox);
+    RefPtr<const SkPicture> clipContentPicture = m_clip.createContentPicture(contentTransformation, targetBoundingBox, context);
 
-    TransformRecorder recorder(*context, layoutObject, contentTransformation);
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        ASSERT(context->displayItemList());
-        if (context->displayItemList()->displayItemConstructionIsDisabled())
-            return;
-        context->displayItemList()->add(DrawingDisplayItem::create(layoutObject, DisplayItem::SVGClip, clipContentPicture));
-    } else {
-        DrawingDisplayItem clipPicture(layoutObject, DisplayItem::SVGClip, clipContentPicture);
-        clipPicture.replay(*context);
-    }
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, layoutObject, DisplayItem::SVGClip))
+        return;
+
+    LayoutObjectDrawingRecorder drawingRecorder(*context, layoutObject, DisplayItem::SVGClip, targetPaintInvalidationRect);
+    context->save();
+    context->concatCTM(contentTransformation);
+    context->drawPicture(clipContentPicture.get());
+    context->restore();
 }
 
 }

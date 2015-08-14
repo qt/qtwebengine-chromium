@@ -180,20 +180,6 @@ WebElementCollection WebDocument::all()
     return WebElementCollection(unwrap<Document>()->all());
 }
 
-void WebDocument::images(WebVector<WebElement>& results)
-{
-    RefPtrWillBeRawPtr<HTMLCollection> images = unwrap<Document>()->images();
-    size_t sourceLength = images->length();
-    Vector<WebElement> temp;
-    temp.reserveCapacity(sourceLength);
-    for (size_t i = 0; i < sourceLength; ++i) {
-        Element* element = images->item(i);
-        if (element && element->isHTMLElement())
-            temp.append(WebElement(element));
-    }
-    results.assign(temp);
-}
-
 void WebDocument::forms(WebVector<WebFormElement>& results) const
 {
     RefPtrWillBeRawPtr<HTMLCollection> forms = const_cast<Document*>(constUnwrap<Document>())->forms();
@@ -241,6 +227,9 @@ void WebDocument::insertStyleSheet(const WebString& sourceCode)
 void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 {
     RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
+    CSSSelectorWatch* watch = CSSSelectorWatch::fromIfExists(*document);
+    if (!watch && webSelectors.isEmpty())
+        return;
     Vector<String> selectors;
     selectors.append(webSelectors.data(), webSelectors.size());
     CSSSelectorWatch::from(*document).watchCSSSelectors(selectors);
@@ -280,61 +269,6 @@ WebElement WebDocument::createElement(const WebString& tagName)
     if (exceptionState.hadException())
         return WebElement();
     return element;
-}
-
-WebSize WebDocument::scrollOffset() const
-{
-    if (FrameView* view = constUnwrap<Document>()->view())
-        return view->scrollOffset();
-    return WebSize();
-}
-
-WebSize WebDocument::minimumScrollOffset() const
-{
-    if (FrameView* view = constUnwrap<Document>()->view())
-        return toIntSize(view->minimumScrollPosition());
-    return WebSize();
-}
-
-WebSize WebDocument::maximumScrollOffset() const
-{
-    if (FrameView* view = constUnwrap<Document>()->view())
-        return toIntSize(view->maximumScrollPosition());
-    return WebSize();
-}
-
-void WebDocument::setIsTransitionDocument(bool isTransitionDocument)
-{
-    // When isTransitionDocument is true, it ensures the transition UA
-    // stylesheet gets applied. When isTransitionDocument is false, it ensures
-    // the transition UA stylesheet is not applied when reverting the transition.
-    unwrap<Document>()->setIsTransitionDocument(isTransitionDocument);
-}
-
-void WebDocument::beginExitTransition(const WebString& cssSelector, bool exitToNativeApp)
-{
-    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
-    if (!exitToNativeApp)
-        document->hideTransitionElements(cssSelector);
-    document->styleEngine().setExitTransitionStylesheetsEnabled(true);
-}
-
-void WebDocument::revertExitTransition()
-{
-    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
-    document->styleEngine().setExitTransitionStylesheetsEnabled(false);
-}
-
-void WebDocument::hideTransitionElements(const WebString& cssSelector)
-{
-    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
-    document->hideTransitionElements(cssSelector);
-}
-
-void WebDocument::showTransitionElements(const WebString& cssSelector)
-{
-    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
-    document->showTransitionElements(cssSelector);
 }
 
 WebAXObject WebDocument::accessibilityObject() const
@@ -390,6 +324,15 @@ WebURL WebDocument::manifestURL() const
     if (!linkElement)
         return WebURL();
     return linkElement->href();
+}
+
+bool WebDocument::manifestUseCredentials() const
+{
+    const Document* document = constUnwrap<Document>();
+    HTMLLinkElement* linkElement = document->linkManifest();
+    if (!linkElement)
+        return false;
+    return equalIgnoringCase(linkElement->fastGetAttribute(HTMLNames::crossoriginAttr), "use-credentials");
 }
 
 WebURL WebDocument::defaultPresentationURL() const

@@ -6,8 +6,7 @@
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_TETHERING_HANDLER_H_
 
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/protocol/devtools_protocol_dispatcher.h"
 
 namespace net {
 class ServerSocket;
@@ -25,7 +24,7 @@ class TetheringHandler {
       base::Callback<scoped_ptr<net::ServerSocket>(std::string*)>;
 
   TetheringHandler(const CreateServerSocketCallback& socket_callback,
-                   scoped_refptr<base::MessageLoopProxy> message_loop_proxy);
+                   scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~TetheringHandler();
 
   void SetClient(scoped_ptr<Client> client);
@@ -46,7 +45,7 @@ class TetheringHandler {
 
   scoped_ptr<Client> client_;
   CreateServerSocketCallback socket_callback_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   bool is_active_;
   base::WeakPtrFactory<TetheringHandler> weak_factory_;
 

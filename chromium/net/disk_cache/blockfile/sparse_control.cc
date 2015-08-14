@@ -4,12 +4,16 @@
 
 #include "net/disk_cache/blockfile/sparse_control.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -136,7 +140,7 @@ void ChildrenDeleter::DeleteChildren() {
   children_map_.Set(child_id, false);
 
   // Post a task to delete the next child.
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&ChildrenDeleter::DeleteChildren, this));
 }
 
@@ -253,7 +257,7 @@ int SparseControl::StartIO(SparseOperation op, int64 offset, net::IOBuffer* buf,
 
   // We only support up to 64 GB.
   if (static_cast<uint64>(offset) + static_cast<unsigned int>(buf_len) >=
-      GG_UINT64_C(0x1000000000)) {
+      UINT64_C(0x1000000000)) {
     return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
   }
 
@@ -359,11 +363,11 @@ void SparseControl::DeleteChildren(EntryImpl* entry) {
   deleter->AddRef();
 
   if (buffer) {
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&ChildrenDeleter::Start, deleter, buffer, data_len));
   } else {
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&ChildrenDeleter::ReadData, deleter, address, data_len));
   }

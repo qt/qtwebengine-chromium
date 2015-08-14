@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
@@ -128,7 +129,6 @@ class WebContentsViewAura
   gfx::Size GetMaximumSize() const override;
   void OnBoundsChanged(const gfx::Rect& old_bounds,
                        const gfx::Rect& new_bounds) override;
-  ui::TextInputClient* GetFocusedTextInputClient() override;
   gfx::NativeCursor GetCursor(const gfx::Point& point) override;
   int GetNonClientComponent(const gfx::Point& point) const override;
   bool ShouldDescendIntoChildForEventHandling(
@@ -159,6 +159,8 @@ class WebContentsViewAura
 
   // Update the web contents visiblity.
   void UpdateWebContentsVisibility(bool visible);
+
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest, EnableDisableOverscroll);
 
   scoped_ptr<aura::Window> window_;
 

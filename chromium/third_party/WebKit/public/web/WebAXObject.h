@@ -33,6 +33,7 @@
 
 #include "../platform/WebCommon.h"
 #include "../platform/WebPoint.h"
+#include "../platform/WebPrivateOwnPtr.h"
 #include "../platform/WebPrivatePtr.h"
 #include "../platform/WebVector.h"
 #include "WebAXEnums.h"
@@ -64,7 +65,7 @@ public:
     BLINK_EXPORT WebAXObject root() const;
 
 private:
-    WebPrivatePtr<ScopedAXObjectCache> m_private;
+    WebPrivateOwnPtr<ScopedAXObjectCache> m_private;
 };
 
 // A container for passing around a reference to AXObject.
@@ -102,7 +103,6 @@ public:
     BLINK_EXPORT WebAXObject parentObject() const;
 
     BLINK_EXPORT bool isAnchor() const;
-    BLINK_EXPORT WebAXOptionalBool isAriaGrabbed() const;
     BLINK_EXPORT bool isAriaReadOnly() const;
     BLINK_EXPORT bool isButtonStateMixed() const;
     BLINK_EXPORT bool isChecked() const;
@@ -136,10 +136,10 @@ public:
     BLINK_EXPORT WebAXObject ariaActiveDescendant() const;
     BLINK_EXPORT WebString ariaAutoComplete() const;
     BLINK_EXPORT bool ariaControls(WebVector<WebAXObject>& controlsElements) const;
-    BLINK_EXPORT WebString ariaDropEffect() const;
     BLINK_EXPORT bool ariaFlowTo(WebVector<WebAXObject>& flowToElements) const;
     BLINK_EXPORT bool ariaHasPopup() const;
     BLINK_EXPORT bool isMultiline() const;
+    BLINK_EXPORT bool isRichlyEditable() const;
     BLINK_EXPORT bool ariaOwns(WebVector<WebAXObject>& ownsElements) const;
     BLINK_EXPORT WebRect boundingBoxRect() const;
     BLINK_EXPORT float fontSize() const;
@@ -227,7 +227,6 @@ public:
     BLINK_EXPORT WebString computedStyleDisplay() const;
     BLINK_EXPORT bool accessibilityIsIgnored() const;
     BLINK_EXPORT bool lineBreaks(WebVector<int>&) const;
-    BLINK_EXPORT WebString textInputType() const;
 
     // Actions
     BLINK_EXPORT WebString actionVerb() const; // The verb corresponding to performDefaultAction.
@@ -299,9 +298,9 @@ public:
     BLINK_EXPORT void scrollToGlobalPoint(const WebPoint&) const;
 
 #if BLINK_IMPLEMENTATION
-    WebAXObject(const WTF::PassRefPtr<AXObject>&);
-    WebAXObject& operator=(const WTF::PassRefPtr<AXObject>&);
-    operator WTF::PassRefPtr<AXObject>() const;
+    WebAXObject(const PassRefPtrWillBeRawPtr<AXObject>&);
+    WebAXObject& operator=(const PassRefPtrWillBeRawPtr<AXObject>&);
+    operator PassRefPtrWillBeRawPtr<AXObject>() const;
 #endif
 
 private:

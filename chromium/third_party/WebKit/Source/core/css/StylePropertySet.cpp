@@ -300,7 +300,7 @@ void MutableStylePropertySet::parseDeclarationList(const String& styleDeclaratio
         context.setMode(cssParserMode());
     }
 
-    CSSParser::parseDeclarationList(context, this, styleDeclaration, 0, contextStyleSheet);
+    CSSParser::parseDeclarationList(context, this, styleDeclaration);
 }
 
 bool MutableStylePropertySet::addParsedProperties(const WillBeHeapVector<CSSProperty, 256>& properties)
@@ -348,51 +348,9 @@ bool StylePropertySet::hasFailedOrCanceledSubresources() const
     return false;
 }
 
-// This is the list of properties we want to copy in the copyBlockProperties() function.
-// It is the list of CSS properties that apply specially to block-level elements.
-static const CSSPropertyID staticBlockProperties[] = {
-    CSSPropertyOrphans,
-    CSSPropertyOverflow, // This can be also be applied to replaced elements
-    CSSPropertyWebkitColumnCount,
-    CSSPropertyWebkitColumnGap,
-    CSSPropertyWebkitColumnRuleColor,
-    CSSPropertyWebkitColumnRuleStyle,
-    CSSPropertyWebkitColumnRuleWidth,
-    CSSPropertyWebkitColumnBreakBefore,
-    CSSPropertyWebkitColumnBreakAfter,
-    CSSPropertyWebkitColumnBreakInside,
-    CSSPropertyWebkitColumnWidth,
-    CSSPropertyPageBreakAfter,
-    CSSPropertyPageBreakBefore,
-    CSSPropertyPageBreakInside,
-    CSSPropertyTextAlign,
-    CSSPropertyTextAlignLast,
-    CSSPropertyTextIndent,
-    CSSPropertyTextJustify,
-    CSSPropertyWidows
-};
-
-static const Vector<CSSPropertyID>& blockProperties()
-{
-    DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
-    if (properties.isEmpty())
-        CSSPropertyMetadata::filterEnabledCSSPropertiesIntoVector(staticBlockProperties, WTF_ARRAY_LENGTH(staticBlockProperties), properties);
-    return properties;
-}
-
 void MutableStylePropertySet::clear()
 {
     m_propertyVector.clear();
-}
-
-PassRefPtrWillBeRawPtr<MutableStylePropertySet> StylePropertySet::copyBlockProperties() const
-{
-    return copyPropertiesInSet(blockProperties());
-}
-
-void MutableStylePropertySet::removeBlockProperties()
-{
-    removePropertiesInSet(blockProperties().data(), blockProperties().size());
 }
 
 inline bool containsId(const CSSPropertyID* set, unsigned length, CSSPropertyID id)
@@ -502,19 +460,24 @@ CSSStyleDeclaration* MutableStylePropertySet::ensureCSSStyleDeclaration()
 
 int MutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
 {
+    const CSSProperty* begin = m_propertyVector.data();
+    const CSSProperty* end = begin + m_propertyVector.size();
     // Convert here propertyID into an uint16_t to compare it with the metadata's m_propertyID to avoid
     // the compiler converting it to an int multiple times in the loop.
     uint16_t id = static_cast<uint16_t>(propertyID);
-    const CSSProperty* properties = m_propertyVector.data();
-    for (int n = m_propertyVector.size() - 1 ; n >= 0; --n) {
-        if (properties[n].metadata().m_propertyID == id) {
+
+    auto compare = [propertyID, id](const CSSProperty& property) -> bool {
+        if (property.metadata().m_propertyID == id) {
             // Only enabled properties should be part of the style.
             ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID));
-            return n;
+            return true;
         }
-    }
+        return false;
+    };
 
-    return -1;
+    const CSSProperty* it = std::find_if(begin, end, compare);
+
+    return (it == end) ? -1 : it - begin;
 }
 
 DEFINE_TRACE_AFTER_DISPATCH(MutableStylePropertySet)

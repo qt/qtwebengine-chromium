@@ -28,7 +28,7 @@ namespace webrtc {
 // The implemented nonlinear postfilter algorithm taken from "A Robust Nonlinear
 // Beamforming Postprocessor" by Bastiaan Kleijn.
 //
-// TODO: Target angle assumed to be 0. Parameterize target angle.
+// TODO(aluebs): Target angle assumed to be 0. Parameterize target angle.
 class NonlinearBeamformer
   : public Beamformer<float>,
     public LappedTransform::Callback {
@@ -47,6 +47,8 @@ class NonlinearBeamformer
   // ChannelBuffer can be passed in as |input| and |output|.
   void ProcessChunk(const ChannelBuffer<float>& input,
                     ChannelBuffer<float>* output) override;
+
+  bool IsInBeam(const SphericalPointf& spherical_point) override;
 
   // After processing each block |is_target_present_| is set to true if the
   // target signal es present and to false otherwise. This methods can be called
@@ -69,7 +71,7 @@ class NonlinearBeamformer
   typedef complex<float> complex_f;
 
   void InitDelaySumMasks();
-  void InitTargetCovMats();  // TODO: Make this depend on target angle.
+  void InitTargetCovMats();  // TODO(aluebs): Make this depend on target angle.
   void InitInterfCovMats();
 
   // An implementation of equation 18, which calculates postfilter masks that,
@@ -84,7 +86,8 @@ class NonlinearBeamformer
 
   // Prevents the postfilter masks from degenerating too quickly (a cause of
   // musical noise).
-  void ApplyMaskSmoothing();
+  void ApplyMaskTimeSmoothing();
+  void ApplyMaskFrequencySmoothing();
 
   // The postfilter masks are unreliable at low frequencies. Calculates a better
   // mask by averaging mid-low frequency values.
@@ -96,6 +99,9 @@ class NonlinearBeamformer
   // resulting in one postfilter mask per audio chunk. This allows us to skip
   // both transforming and blocking the high-frequency signal.
   void ApplyHighFrequencyCorrection();
+
+  // Compute the means needed for the above frequency correction.
+  float MaskRangeMean(int start_bin, int end_bin);
 
   // Applies both sets of masks to |input| and store in |output|.
   void ApplyMasks(const complex_f* const* input, complex_f* const* output);
@@ -117,14 +123,17 @@ class NonlinearBeamformer
   const std::vector<Point> array_geometry_;
 
   // Calculated based on user-input and constants in the .cc file.
-  int low_average_start_bin_;
-  int low_average_end_bin_;
-  int high_average_start_bin_;
-  int high_average_end_bin_;
+  int low_mean_start_bin_;
+  int low_mean_end_bin_;
+  int high_mean_start_bin_;
+  int high_mean_end_bin_;
 
-  // Old masks are saved for smoothing. Matrix of size 1 x |kNumFreqBins|.
-  float postfilter_mask_[kNumFreqBins];
+  // Quickly varying mask updated every block.
   float new_mask_[kNumFreqBins];
+  // Time smoothed mask.
+  float time_smooth_mask_[kNumFreqBins];
+  // Time and frequency smoothed mask.
+  float final_mask_[kNumFreqBins];
 
   // Array of length |kNumFreqBins|, Matrix of size |1| x |num_channels_|.
   ComplexMatrixF delay_sum_masks_[kNumFreqBins];

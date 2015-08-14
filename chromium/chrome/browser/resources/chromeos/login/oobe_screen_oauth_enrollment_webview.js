@@ -178,6 +178,7 @@ login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
      */
     onBeforeShow: function(data) {
       $('login-header-bar').signinUIState = SIGNIN_UI_STATE.ENROLLMENT;
+      $('inner-container').classList.add('new-gaia-flow');
       var gaiaParams = {};
       gaiaParams.gaiaUrl = data.gaiaUrl;
       gaiaParams.gaiaPath = 'embedded/setup/chromeos';
@@ -187,7 +188,7 @@ login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
         gaiaParams.enterpriseDomain = data.management_domain;
         gaiaParams.emailDomain = data.management_domain;
       }
-      gaiaParams.flow = 'enterprise';
+      gaiaParams.flow = data.flow;
       this.authenticator_.load(cr.login.Authenticator.AuthMode.DEFAULT,
                                gaiaParams);
 

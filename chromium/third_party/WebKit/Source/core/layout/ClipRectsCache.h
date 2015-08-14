@@ -18,6 +18,7 @@ class DeprecatedPaintLayer;
 enum ClipRectsCacheSlot {
     // Relative to the ancestor treated as the root (e.g. transformed layer). Used for hit testing.
     RootRelativeClipRects,
+    RootRelativeClipRectsIgnoringViewportClip,
 
     // Relative to the LayoutView's layer. Used for compositing overlap testing.
     AbsoluteClipRects,
@@ -35,7 +36,7 @@ class ClipRectsCache {
 public:
     struct Entry {
         Entry()
-            : root(0)
+            : root(nullptr)
 #if ENABLE(ASSERT)
             , scrollbarRelevancy(IgnoreOverlayScrollbarSize)
 #endif

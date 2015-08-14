@@ -106,24 +106,25 @@ static const arg_def_t *all_args[] = {
 };
 
 #if CONFIG_VP8_DECODER
-static const arg_def_t addnoise_level = ARG_DEF(NULL, "noise-level", 1,
-                                                "Enable VP8 postproc add noise");
-static const arg_def_t deblock = ARG_DEF(NULL, "deblock", 0,
-                                         "Enable VP8 deblocking");
-static const arg_def_t demacroblock_level = ARG_DEF(NULL, "demacroblock-level", 1,
-                                                    "Enable VP8 demacroblocking, w/ level");
-static const arg_def_t pp_debug_info = ARG_DEF(NULL, "pp-debug-info", 1,
-                                               "Enable VP8 visible debug info");
-static const arg_def_t pp_disp_ref_frame = ARG_DEF(NULL, "pp-dbg-ref-frame", 1,
-                                                   "Display only selected reference frame per macro block");
-static const arg_def_t pp_disp_mb_modes = ARG_DEF(NULL, "pp-dbg-mb-modes", 1,
-                                                  "Display only selected macro block modes");
-static const arg_def_t pp_disp_b_modes = ARG_DEF(NULL, "pp-dbg-b-modes", 1,
-                                                 "Display only selected block modes");
-static const arg_def_t pp_disp_mvs = ARG_DEF(NULL, "pp-dbg-mvs", 1,
-                                             "Draw only selected motion vectors");
-static const arg_def_t mfqe = ARG_DEF(NULL, "mfqe", 0,
-                                      "Enable multiframe quality enhancement");
+static const arg_def_t addnoise_level = ARG_DEF(
+    NULL, "noise-level", 1, "Enable VP8 postproc add noise");
+static const arg_def_t deblock = ARG_DEF(
+    NULL, "deblock", 0, "Enable VP8 deblocking");
+static const arg_def_t demacroblock_level = ARG_DEF(
+    NULL, "demacroblock-level", 1, "Enable VP8 demacroblocking, w/ level");
+static const arg_def_t pp_debug_info = ARG_DEF(
+    NULL, "pp-debug-info", 1, "Enable VP8 visible debug info");
+static const arg_def_t pp_disp_ref_frame = ARG_DEF(
+    NULL, "pp-dbg-ref-frame", 1,
+    "Display only selected reference frame per macro block");
+static const arg_def_t pp_disp_mb_modes = ARG_DEF(
+    NULL, "pp-dbg-mb-modes", 1, "Display only selected macro block modes");
+static const arg_def_t pp_disp_b_modes = ARG_DEF(
+    NULL, "pp-dbg-b-modes", 1, "Display only selected block modes");
+static const arg_def_t pp_disp_mvs = ARG_DEF(
+    NULL, "pp-dbg-mvs", 1, "Draw only selected motion vectors");
+static const arg_def_t mfqe = ARG_DEF(
+    NULL, "mfqe", 0, "Enable multiframe quality enhancement");
 
 static const arg_def_t *vp8_pp_args[] = {
   &addnoise_level, &deblock, &demacroblock_level, &pp_debug_info,
@@ -169,7 +170,7 @@ static INLINE int libyuv_scale(vpx_image_t *src, vpx_image_t *dst,
 }
 #endif
 
-void usage_exit() {
+void usage_exit(void) {
   int i;
 
   fprintf(stderr, "Usage: %s <options> filename\n\n"
@@ -312,7 +313,7 @@ static void write_image_file(const vpx_image_t *img, const int planes[3],
   }
 }
 
-int file_is_raw(struct VpxInputContext *input) {
+static int file_is_raw(struct VpxInputContext *input) {
   uint8_t buf[32];
   int is_raw = 0;
   vpx_codec_stream_info_t si;
@@ -343,7 +344,7 @@ int file_is_raw(struct VpxInputContext *input) {
   return is_raw;
 }
 
-void show_progress(int frame_in, int frame_out, uint64_t dx_time) {
+static void show_progress(int frame_in, int frame_out, uint64_t dx_time) {
   fprintf(stderr,
           "%d decoded frames/%d showed frames in %"PRId64" us (%.2f fps)\r",
           frame_in, frame_out, dx_time,
@@ -365,8 +366,8 @@ struct ExternalFrameBufferList {
 // Application private data passed into the set function. |min_size| is the
 // minimum size in bytes needed to decode the next frame. |fb| pointer to the
 // frame buffer.
-int get_vp9_frame_buffer(void *cb_priv, size_t min_size,
-                         vpx_codec_frame_buffer_t *fb) {
+static int get_vp9_frame_buffer(void *cb_priv, size_t min_size,
+                                vpx_codec_frame_buffer_t *fb) {
   int i;
   struct ExternalFrameBufferList *const ext_fb_list =
       (struct ExternalFrameBufferList *)cb_priv;
@@ -403,8 +404,8 @@ int get_vp9_frame_buffer(void *cb_priv, size_t min_size,
 // Callback used by libvpx when there are no references to the frame buffer.
 // |cb_priv| user private data passed into the set function. |fb| pointer
 // to the frame buffer.
-int release_vp9_frame_buffer(void *cb_priv,
-                             vpx_codec_frame_buffer_t *fb) {
+static int release_vp9_frame_buffer(void *cb_priv,
+                                    vpx_codec_frame_buffer_t *fb) {
   struct ExternalFrameBuffer *const ext_fb =
       (struct ExternalFrameBuffer *)fb->priv;
   (void)cb_priv;
@@ -412,9 +413,9 @@ int release_vp9_frame_buffer(void *cb_priv,
   return 0;
 }
 
-void generate_filename(const char *pattern, char *out, size_t q_len,
-                       unsigned int d_w, unsigned int d_h,
-                       unsigned int frame_in) {
+static void generate_filename(const char *pattern, char *out, size_t q_len,
+                              unsigned int d_w, unsigned int d_h,
+                              unsigned int frame_in) {
   const char *p = pattern;
   char *q = out;
 
@@ -536,7 +537,7 @@ static int img_shifted_realloc_required(const vpx_image_t *img,
 }
 #endif
 
-int main_loop(int argc, const char **argv_) {
+static int main_loop(int argc, const char **argv_) {
   vpx_codec_ctx_t       decoder;
   char                  *fn = NULL;
   int                    i;
@@ -813,34 +814,42 @@ int main_loop(int argc, const char **argv_) {
     fprintf(stderr, "%s\n", decoder.name);
 
 #if CONFIG_VP8_DECODER
-
   if (vp8_pp_cfg.post_proc_flag
       && vpx_codec_control(&decoder, VP8_SET_POSTPROC, &vp8_pp_cfg)) {
-    fprintf(stderr, "Failed to configure postproc: %s\n", vpx_codec_error(&decoder));
+    fprintf(stderr, "Failed to configure postproc: %s\n",
+            vpx_codec_error(&decoder));
     return EXIT_FAILURE;
   }
 
   if (vp8_dbg_color_ref_frame
-      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_REF_FRAME, vp8_dbg_color_ref_frame)) {
-    fprintf(stderr, "Failed to configure reference block visualizer: %s\n", vpx_codec_error(&decoder));
+      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_REF_FRAME,
+                           vp8_dbg_color_ref_frame)) {
+    fprintf(stderr, "Failed to configure reference block visualizer: %s\n",
+            vpx_codec_error(&decoder));
     return EXIT_FAILURE;
   }
 
   if (vp8_dbg_color_mb_modes
-      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_MB_MODES, vp8_dbg_color_mb_modes)) {
-    fprintf(stderr, "Failed to configure macro block visualizer: %s\n", vpx_codec_error(&decoder));
+      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_MB_MODES,
+                           vp8_dbg_color_mb_modes)) {
+    fprintf(stderr, "Failed to configure macro block visualizer: %s\n",
+            vpx_codec_error(&decoder));
     return EXIT_FAILURE;
   }
 
   if (vp8_dbg_color_b_modes
-      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_B_MODES, vp8_dbg_color_b_modes)) {
-    fprintf(stderr, "Failed to configure block visualizer: %s\n", vpx_codec_error(&decoder));
+      && vpx_codec_control(&decoder, VP8_SET_DBG_COLOR_B_MODES,
+                           vp8_dbg_color_b_modes)) {
+    fprintf(stderr, "Failed to configure block visualizer: %s\n",
+            vpx_codec_error(&decoder));
     return EXIT_FAILURE;
   }
 
   if (vp8_dbg_display_mv
-      && vpx_codec_control(&decoder, VP8_SET_DBG_DISPLAY_MV, vp8_dbg_display_mv)) {
-    fprintf(stderr, "Failed to configure motion vector visualizer: %s\n", vpx_codec_error(&decoder));
+      && vpx_codec_control(&decoder, VP8_SET_DBG_DISPLAY_MV,
+                           vp8_dbg_display_mv)) {
+    fprintf(stderr, "Failed to configure motion vector visualizer: %s\n",
+            vpx_codec_error(&decoder));
     return EXIT_FAILURE;
   }
 #endif

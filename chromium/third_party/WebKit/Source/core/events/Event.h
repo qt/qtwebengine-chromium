@@ -27,7 +27,7 @@
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/dom/DOMTimeStamp.h"
-#include "core/events/EventInitDictionary.h"
+#include "core/events/EventInit.h"
 #include "core/events/EventPath.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
@@ -35,17 +35,9 @@
 
 namespace blink {
 
+class DOMWrapperWorld;
 class EventTarget;
 class ExecutionContext;
-
-struct EventInit {
-    STACK_ALLOCATED();
-public:
-    EventInit();
-
-    bool bubbles;
-    bool cancelable;
-};
 
 class CORE_EXPORT Event : public RefCountedWillBeGarbageCollectedFinalized<Event>,  public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
@@ -187,12 +179,16 @@ public:
     EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
     void initEventPath(Node&);
 
-    WillBeHeapVector<RefPtrWillBeMember<EventTarget>> path() const;
+    WillBeHeapVector<RefPtrWillBeMember<EventTarget>> path(ScriptState*) const;
 
     bool isBeingDispatched() const { return eventPhase(); }
 
     double uiCreateTime() const { return m_uiCreateTime; }
     void setUICreateTime(double uiCreateTime) { m_uiCreateTime = uiCreateTime; }
+
+    // Events that must not leak across isolated world, similar to how
+    // ErrorEvent behaves, can override this method.
+    virtual bool canBeDispatchedInWorld(const DOMWrapperWorld&) const { return true; }
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -200,7 +196,6 @@ protected:
     Event();
     Event(const AtomicString& type, bool canBubble, bool cancelable);
     Event(const AtomicString& type, const EventInit&);
-    Event(const AtomicString& type, const EventInitDictionary&);
 
     virtual void receivedTarget();
     bool dispatched() const { return m_target; }
@@ -209,14 +204,14 @@ protected:
 
 private:
     AtomicString m_type;
-    bool m_canBubble;
-    bool m_cancelable;
+    unsigned m_canBubble:1;
+    unsigned m_cancelable:1;
 
-    bool m_propagationStopped;
-    bool m_immediatePropagationStopped;
-    bool m_defaultPrevented;
-    bool m_defaultHandled;
-    bool m_cancelBubble;
+    unsigned m_propagationStopped:1;
+    unsigned m_immediatePropagationStopped:1;
+    unsigned m_defaultPrevented:1;
+    unsigned m_defaultHandled:1;
+    unsigned m_cancelBubble:1;
 
     unsigned short m_eventPhase;
     RefPtrWillBeMember<EventTarget> m_currentTarget;

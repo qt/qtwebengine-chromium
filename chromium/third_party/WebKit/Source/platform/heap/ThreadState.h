@@ -32,9 +32,9 @@
 #define ThreadState_h
 
 #include "platform/PlatformExport.h"
-#include "platform/heap/AddressSanitizer.h"
 #include "platform/heap/ThreadingTraits.h"
 #include "public/platform/WebThread.h"
+#include "wtf/AddressSanitizer.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -52,12 +52,13 @@ namespace blink {
 
 class BasePage;
 class CallbackStack;
+class CrossThreadPersistentRegion;
 struct GCInfo;
 class GarbageCollectedMixinConstructorMarker;
 class HeapObjectHeader;
 class PageMemoryRegion;
 class PageMemory;
-class PersistentNode;
+class PersistentRegion;
 class BaseHeap;
 class SafePointAwareMutexLocker;
 class SafePointBarrier;
@@ -69,16 +70,23 @@ using Address = uint8_t*;
 using FinalizationCallback = void (*)(void*);
 using VisitorCallback = void (*)(Visitor*, void* self);
 using TraceCallback = VisitorCallback;
-using WeakPointerCallback = VisitorCallback;
+using WeakCallback = VisitorCallback;
 using EphemeronCallback = VisitorCallback;
+using PreFinalizerCallback = bool(*)(void*);
 
-// Declare that a class has a pre-finalizer function.  The function is called in
-// the object's owner thread, and can access Member<>s to other
-// garbage-collected objects allocated in the thread.  However we must not
-// allocate new garbage-collected objects, nor update Member<> and Persistent<>
-// pointers.
+// Declare that a class has a pre-finalizer. The pre-finalizer is called
+// before any object gets swept, so it is safe to touch on-heap objects
+// that may be collected in the same GC cycle. If you cannot avoid touching
+// on-heap objects in a destructor (which is not allowed), you can consider
+// using the pre-finalizer. The only restriction is that the pre-finalizer
+// must not resurrect dead objects (e.g., store unmarked objects into
+// Members etc). The pre-finalizer is called on the thread that registered
+// the pre-finalizer.
 //
-// This feature is similar to the HeapHashMap<WeakMember<Foo>, OwnPtr<Disposer>>
+// Since a pre-finalizer adds pressure on GC performance, you should use it
+// only if necessary.
+//
+// A pre-finalizer is similar to the HeapHashMap<WeakMember<Foo>, OwnPtr<Disposer>>
 // idiom.  The difference between this and the idiom is that pre-finalizer
 // function is called whenever an object is destructed with this feature.  The
 // HeapHashMap<WeakMember<Foo>, OwnPtr<Disposer>> idiom requires an assumption
@@ -87,8 +95,6 @@ using EphemeronCallback = VisitorCallback;
 // idiom usages with the pre-finalizer if the replacement won't cause
 // performance regressions.
 //
-// See ThreadState::registerPreFinalizer.
-//
 // Usage:
 //
 // class Foo : GarbageCollected<Foo> {
@@ -96,28 +102,26 @@ using EphemeronCallback = VisitorCallback;
 // public:
 //     Foo()
 //     {
-//         ThreadState::current()->registerPreFinalizer(*this);
+//         ThreadState::current()->registerPreFinalizer(this, dispose);
 //     }
 // private:
-//     void dispose();
+//     void dispose()
+//     {
+//         m_bar->...; // It is safe to touch other on-heap objects.
+//     }
 //     Member<Bar> m_bar;
 // };
-//
-// void Foo::dispose()
-// {
-//     m_bar->...
-// }
-#define USING_PRE_FINALIZER(Class, method)   \
-    public: \
-        static bool invokePreFinalizer(void* object, Visitor& visitor)   \
-        { \
-            Class* self = reinterpret_cast<Class*>(object); \
-            if (visitor.isHeapObjectAlive(self)) \
-                return false; \
-            self->method(); \
-            return true; \
-        } \
-        using UsingPreFinazlizerMacroNeedsTrailingSemiColon = char
+#define USING_PRE_FINALIZER(Class, preFinalizer)    \
+public:                                             \
+static bool invokePreFinalizer(void* object)        \
+{                                                   \
+    Class* self = reinterpret_cast<Class*>(object); \
+    if (Heap::isHeapObjectAlive(self))              \
+        return false;                               \
+    self->Class::preFinalizer();                    \
+    return true;                                    \
+}                                                   \
+using UsingPreFinazlizerMacroNeedsTrailingSemiColon = char
 
 #if ENABLE(OILPAN)
 #define WILL_BE_USING_PRE_FINALIZER(Class, method) USING_PRE_FINALIZER(Class, method)
@@ -136,23 +140,6 @@ using EphemeronCallback = VisitorCallback;
 
 #define TypedHeapEnumName(Type) Type##HeapIndex,
 
-enum HeapIndices {
-    NormalPage1HeapIndex = 0,
-    NormalPage2HeapIndex,
-    NormalPage3HeapIndex,
-    NormalPage4HeapIndex,
-    Vector1HeapIndex,
-    Vector2HeapIndex,
-    Vector3HeapIndex,
-    Vector4HeapIndex,
-    InlineVectorHeapIndex,
-    HashTableHeapIndex,
-    FOR_EACH_TYPED_HEAP(TypedHeapEnumName)
-    LargeObjectHeapIndex,
-    // Values used for iteration of heap segments.
-    NumberOfHeaps,
-};
-
 #if ENABLE(GC_PROFILING)
 const size_t numberOfGenerationsToTrack = 8;
 const size_t maxHeapObjectAge = numberOfGenerationsToTrack - 1;
@@ -167,6 +154,8 @@ typedef HashMap<String, AgeCounts> ClassAgeCountsMap;
 class PLATFORM_EXPORT ThreadState {
     WTF_MAKE_NONCOPYABLE(ThreadState);
 public:
+    typedef std::pair<void*, PreFinalizerCallback> PreFinalizer;
+
     // When garbage collecting we need to know whether or not there
     // can be pointers to Blink GC managed objects on the stack for
     // each thread. When threads reach a safe point they record
@@ -177,8 +166,19 @@ public:
     };
 
     enum GCType {
-        GCWithSweep, // Sweeping is completed in Heap::collectGarbage().
-        GCWithoutSweep, // Lazy sweeping is scheduled.
+        // Both of the marking task and the sweeping task run in
+        // Heap::collectGarbage().
+        GCWithSweep,
+        // Only the marking task runs in Heap::collectGarbage().
+        // The sweeping task is split into chunks and scheduled lazily.
+        GCWithoutSweep,
+        // Only the marking task runs just to take a heap snapshot.
+        // The sweeping task doesn't run. The marks added in the marking task
+        // are just cleared.
+        TakeSnapshot,
+        // The marking task does not mark objects outside the heap of the GCing
+        // thread.
+        ThreadTerminationGC,
     };
 
     // See setGCState() for possible state transitions.
@@ -187,7 +187,6 @@ public:
         IdleGCScheduled,
         PreciseGCScheduled,
         FullGCScheduled,
-        StoppingOtherThreads,
         GCRunning,
         EagerSweepScheduled,
         LazySweepScheduled,
@@ -195,6 +194,38 @@ public:
         SweepingAndIdleGCScheduled,
         SweepingAndPreciseGCScheduled,
     };
+
+    enum HeapIndices {
+        EagerSweepHeapIndex = 0,
+        NormalPage1HeapIndex,
+        NormalPage2HeapIndex,
+        NormalPage3HeapIndex,
+        NormalPage4HeapIndex,
+        Vector1HeapIndex,
+        Vector2HeapIndex,
+        Vector3HeapIndex,
+        Vector4HeapIndex,
+        InlineVectorHeapIndex,
+        HashTableHeapIndex,
+        FOR_EACH_TYPED_HEAP(TypedHeapEnumName)
+        LargeObjectHeapIndex,
+        // Values used for iteration of heap segments.
+        NumberOfHeaps,
+    };
+
+#if defined(ADDRESS_SANITIZER)
+    // Heaps can have their object payloads be poisoned, or cleared
+    // of their poisoning.
+    enum Poisoning {
+        SetPoison,
+        ClearPoison,
+    };
+
+    enum ObjectsToPoison {
+        UnmarkedOnly,
+        MarkedAndUnmarked,
+    };
+#endif
 
     // The NoAllocationScope class is used in debug mode to catch unwanted
     // allocations. E.g. allocations during GC.
@@ -232,8 +263,9 @@ public:
     // garbage collector.
     using AttachedThreadStateSet = HashSet<ThreadState*>;
     static AttachedThreadStateSet& attachedThreads();
-    void lockThreadAttachMutex();
-    void unlockThreadAttachMutex();
+    static RecursiveMutex& threadAttachMutex();
+    static void lockThreadAttachMutex();
+    static void unlockThreadAttachMutex();
 
     // Initialize threading infrastructure. Should be called from the main
     // thread.
@@ -287,13 +319,11 @@ public:
     }
 
     bool isMainThread() const { return this == mainThreadState(); }
-    bool checkThread() const
-    {
-        ASSERT(m_thread == currentThread());
-        return true;
-    }
+#if ENABLE(ASSERT)
+    bool checkThread() const { return m_thread == currentThread(); }
+#endif
 
-    void didV8GC();
+    void didV8MajorGC();
 
     void performIdleGC(double deadlineSeconds);
     void performIdleLazySweep(double deadlineSeconds);
@@ -330,14 +360,18 @@ public:
     // - It is valid that the next GC is scheduled while some thread
     //   has not yet completed its lazy sweeping of the last GC.
     //   In this case, the next GC just cancels the remaining lazy sweeping.
-    //   Specifically, preGC() of the next GC calls makeConsistentForSweeping()
+    //   Specifically, preGC() of the next GC calls makeConsistentForGC()
     //   and it marks all not-yet-swept objets as dead.
-    void makeConsistentForSweeping();
+    void makeConsistentForGC();
     void preGC();
     void postGC(GCType);
     void preSweep();
     void completeSweep();
     void postSweep();
+    // makeConsistentForMutator() drops marks from marked objects and rebuild
+    // free lists. This is called after taking a snapshot and before resuming
+    // the executions of mutators.
+    void makeConsistentForMutator();
 
     // Support for disallowing allocation. Mainly used for sanity
     // checks asserts.
@@ -346,7 +380,11 @@ public:
     void leaveNoAllocationScope() { m_noAllocationCount--; }
     bool isGCForbidden() const { return m_gcForbiddenCount; }
     void enterGCForbiddenScope() { m_gcForbiddenCount++; }
-    void leaveGCForbiddenScope() { m_gcForbiddenCount--; }
+    void leaveGCForbiddenScope()
+    {
+        ASSERT(m_gcForbiddenCount > 0);
+        m_gcForbiddenCount--;
+    }
     bool sweepForbidden() const { return m_sweepForbidden; }
 
     void prepareRegionTree();
@@ -384,7 +422,7 @@ public:
     void safePoint(StackState);
 
     // Mark current thread as running inside safepoint.
-    void enterSafePointWithPointers(void* scopeMarker) { enterSafePoint(HeapPointersOnStack, scopeMarker); }
+    void enterSafePoint(StackState, void*);
     void leaveSafePoint(SafePointAwareMutexLocker* = nullptr);
     bool isAtSafePoint() const { return m_atSafePoint; }
 
@@ -436,16 +474,14 @@ public:
     // address ranges for the Blink heap. If the address is in the Blink
     // heap the containing heap page is returned.
     BasePage* findPageFromAddress(Address);
-    BasePage* findPageFromAddress(void* pointer) { return findPageFromAddress(reinterpret_cast<Address>(pointer)); }
+    BasePage* findPageFromAddress(const void* pointer) { return findPageFromAddress(reinterpret_cast<Address>(const_cast<void*>(pointer))); }
 #endif
 
-    // List of persistent roots allocated on the given thread.
-    PersistentNode* roots() const { return m_persistents.get(); }
+    // A region of PersistentNodes allocated on the given thread.
+    PersistentRegion* persistentRegion() const { return m_persistentRegion.get(); }
 
-    // List of global persistent roots not owned by any particular thread.
-    // globalRootsMutex must be acquired before any modifications.
-    static PersistentNode& globalRoots();
-    static Mutex& globalRootsMutex();
+    // A region of PersistentNodes not owned by any particular thread.
+    static CrossThreadPersistentRegion& crossThreadPersistentRegion();
 
     // Visit local thread stack and trace all pointers conservatively.
     void visitStack(Visitor*);
@@ -497,35 +533,37 @@ public:
     void reportMarkSweepStats(const char* statsName, const ClassAgeCountsMap&) const;
 #endif
 
-    void pushWeakPointerCallback(void*, WeakPointerCallback);
-    bool popAndInvokeWeakPointerCallback(Visitor*);
+    void pushThreadLocalWeakCallback(void*, WeakCallback);
+    bool popAndInvokeThreadLocalWeakCallback(Visitor*);
+    void threadLocalWeakProcessing();
 
     size_t objectPayloadSizeForTesting();
     void prepareHeapForTermination();
 
-    // Request to call a pref-finalizer of the target object before the object
-    // is destructed.  The class T must have USING_PRE_FINALIZER().  The
-    // argument should be |*this|.  Registering a lot of objects affects GC
-    // performance.  We should register an object only if the object really
-    // requires pre-finalizer, and we should unregister the object if
-    // pre-finalizer is unnecessary.
+    // Register the pre-finalizer for the |self| object. This method is normally
+    // called in the constructor of the |self| object. The class T must have
+    // USING_PRE_FINALIZER().
     template<typename T>
-    void registerPreFinalizer(T& target)
+    void registerPreFinalizer(T* self)
     {
-        checkThread();
-        ASSERT(!m_preFinalizers.contains(&target));
+        static_assert(sizeof(&T::invokePreFinalizer) > 0, "USING_PRE_FINALIZER(T) must be defined.");
+        ASSERT(checkThread());
         ASSERT(!sweepForbidden());
-        m_preFinalizers.add(&target, &T::invokePreFinalizer);
+        ASSERT(!m_orderedPreFinalizers.contains(PreFinalizer(self, T::invokePreFinalizer)));
+        m_orderedPreFinalizers.add(PreFinalizer(self, T::invokePreFinalizer));
     }
 
-    // Cancel above requests.  The argument should be |*this|.  This function is
-    // ignored if it is called in pre-finalizer functions.
+    // Unregister the pre-finalizer for the |self| object.
     template<typename T>
-    void unregisterPreFinalizer(T& target)
+    void unregisterPreFinalizer(T* self)
     {
-        static_assert(sizeof(&T::invokePreFinalizer) > 0, "Declaration of USING_PRE_FINALIZER()'s prefinalizer trampoline not in scope.");
-        checkThread();
-        unregisterPreFinalizerInternal(&target);
+        static_assert(sizeof(&T::invokePreFinalizer) > 0, "USING_PRE_FINALIZER(T) must be defined.");
+        ASSERT(checkThread());
+        // Ignore pre-finalizers called during pre-finalizers or destructors.
+        if (sweepForbidden())
+            return;
+        ASSERT(m_orderedPreFinalizers.contains(PreFinalizer(self, T::invokePreFinalizer)));
+        m_orderedPreFinalizers.remove(PreFinalizer(self, &T::invokePreFinalizer));
     }
 
     Vector<PageMemoryRegion*>& allocatedRegionsSinceLastGC() { return m_allocatedRegionsSinceLastGC; }
@@ -546,6 +584,7 @@ public:
     // constructed.
     void enterGCForbiddenScopeIfNeeded(GarbageCollectedMixinConstructorMarker* gcMixinMarker)
     {
+        ASSERT(checkThread());
         if (!m_gcMixinMarker) {
             enterGCForbiddenScope();
             m_gcMixinMarker = gcMixinMarker;
@@ -553,7 +592,7 @@ public:
     }
     void leaveGCForbiddenScopeIfNeeded(GarbageCollectedMixinConstructorMarker* gcMixinMarker)
     {
-        ASSERT(m_gcForbiddenCount > 0);
+        ASSERT(checkThread());
         if (m_gcMixinMarker == gcMixinMarker) {
             leaveGCForbiddenScope();
             m_gcMixinMarker = nullptr;
@@ -588,6 +627,7 @@ public:
     //
     BaseHeap* vectorBackingHeap(size_t gcInfoIndex)
     {
+        ASSERT(checkThread());
         size_t entryIndex = gcInfoIndex & likelyToBePromptlyFreedArrayMask;
         --m_likelyToBePromptlyFreed[entryIndex];
         int heapIndex = m_vectorBackingHeapIndex;
@@ -610,10 +650,14 @@ public:
     void promptlyFreed(size_t gcInfoIndex);
 
 private:
+    enum SnapshotType {
+        HeapSnapshot,
+        FreelistSnapshot
+    };
+
     ThreadState();
     ~ThreadState();
 
-    void enterSafePoint(StackState, void*);
     NO_SANITIZE_ADDRESS void copyStackUntilSafePointScope();
     void clearSafePointScopeMarker()
     {
@@ -624,14 +668,26 @@ private:
     // shouldSchedule{Precise,Idle}GC and shouldForceConservativeGC
     // implement the heuristics that are used to determine when to collect garbage.
     // If shouldForceConservativeGC returns true, we force the garbage
-    // collection immediately. Otherwise, if shouldGC returns true, we
+    // collection immediately. Otherwise, if should*GC returns true, we
     // record that we should garbage collect the next time we return
     // to the event loop. If both return false, we don't need to
     // collect garbage at this point.
     bool shouldScheduleIdleGC();
     bool shouldSchedulePreciseGC();
     bool shouldForceConservativeGC();
+
+    // Internal helper for GC policy handling code. Returns true if
+    // an urgent conservative GC is now needed due to memory pressure.
+    bool shouldForceMemoryPressureGC();
+
     void runScheduledGC(StackState);
+
+    void eagerSweep();
+
+#if defined(ADDRESS_SANITIZER)
+    void poisonEagerHeap(Poisoning);
+    void poisonAllHeaps();
+#endif
 
     // When ThreadState is detaching from non-main thread its
     // heap is expected to be empty (because it is going away).
@@ -643,9 +699,9 @@ private:
     void cleanup();
     void cleanupPages();
 
-    void unregisterPreFinalizerInternal(void*);
-    void invokePreFinalizers(Visitor&);
+    void invokePreFinalizers();
 
+    void takeSnapshot(SnapshotType);
 #if ENABLE(GC_PROFILING)
     void snapshotFreeList();
 #endif
@@ -671,7 +727,7 @@ private:
     static uint8_t s_mainThreadStateStorage[];
 
     ThreadIdentifier m_thread;
-    OwnPtr<PersistentNode> m_persistents;
+    OwnPtr<PersistentRegion> m_persistentRegion;
     StackState m_stackState;
     intptr_t* m_startOfStack;
     intptr_t* m_endOfStack;
@@ -694,8 +750,12 @@ private:
     bool m_shouldFlushHeapDoesNotContainCache;
     GCState m_gcState;
 
-    CallbackStack* m_weakCallbackStack;
-    HashMap<void*, bool (*)(void*, Visitor&)> m_preFinalizers;
+    CallbackStack* m_threadLocalWeakCallbackStack;
+
+    // Pre-finalizers are called in the reverse order in which they are
+    // registered by the constructors (including constructors of Mixin objects)
+    // for an object, by processing the m_orderedPreFinalizers back-to-front.
+    ListHashSet<PreFinalizer> m_orderedPreFinalizers;
 
     v8::Isolate* m_isolate;
     void (*m_traceDOMWrappers)(v8::Isolate*, Visitor*);

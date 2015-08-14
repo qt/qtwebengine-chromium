@@ -7,6 +7,7 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
+#include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
@@ -23,6 +24,8 @@ public:
     // Properties handled here shouldn't be explicitly handled in CSSPropertyParser
     static bool isKeywordPropertyID(CSSPropertyID);
     static bool isValidKeywordPropertyAndValue(CSSPropertyID, CSSValueID);
+
+    static PassRefPtrWillBeRawPtr<CSSValue> parseColor(const String&, bool quirksMode);
 };
 
 } // namespace blink

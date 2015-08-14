@@ -63,9 +63,9 @@ class FullStackTest : public test::CallTest {
 class VideoAnalyzer : public PacketReceiver,
                       public newapi::Transport,
                       public VideoRenderer,
-                      public VideoSendStreamInput {
+                      public VideoCaptureInput {
  public:
-  VideoAnalyzer(VideoSendStreamInput* input,
+  VideoAnalyzer(VideoCaptureInput* input,
                 Transport* transport,
                 const char* test_label,
                 double avg_psnr_threshold,
@@ -135,8 +135,8 @@ class VideoAnalyzer : public PacketReceiver,
     return receiver_->DeliverPacket(media_type, packet, length);
   }
 
-  void IncomingCapturedFrame(const I420VideoFrame& video_frame) override {
-    I420VideoFrame copy = video_frame;
+  void IncomingCapturedFrame(const VideoFrame& video_frame) override {
+    VideoFrame copy = video_frame;
     copy.set_timestamp(copy.ntp_time_ms() * 90);
 
     {
@@ -173,7 +173,7 @@ class VideoAnalyzer : public PacketReceiver,
     return transport_->SendRtcp(packet, length);
   }
 
-  void RenderFrame(const I420VideoFrame& video_frame,
+  void RenderFrame(const VideoFrame& video_frame,
                    int time_to_render_ms) override {
     int64_t render_time_ms =
         Clock::GetRealTimeClock()->CurrentNtpInMilliseconds();
@@ -187,7 +187,7 @@ class VideoAnalyzer : public PacketReceiver,
       frames_.pop_front();
     }
 
-    I420VideoFrame reference_frame = frames_.front();
+    VideoFrame reference_frame = frames_.front();
     frames_.pop_front();
     assert(!reference_frame.IsZeroSize());
     EXPECT_EQ(reference_frame.timestamp(), send_timestamp);
@@ -224,7 +224,7 @@ class VideoAnalyzer : public PacketReceiver,
     }
   }
 
-  VideoSendStreamInput* input_;
+  VideoCaptureInput* input_;
   Transport* transport_;
   PacketReceiver* receiver_;
 
@@ -233,8 +233,8 @@ class VideoAnalyzer : public PacketReceiver,
     FrameComparison()
         : dropped(false), send_time_ms(0), recv_time_ms(0), render_time_ms(0) {}
 
-    FrameComparison(const I420VideoFrame& reference,
-                    const I420VideoFrame& render,
+    FrameComparison(const VideoFrame& reference,
+                    const VideoFrame& render,
                     bool dropped,
                     int64_t send_time_ms,
                     int64_t recv_time_ms,
@@ -246,16 +246,16 @@ class VideoAnalyzer : public PacketReceiver,
           recv_time_ms(recv_time_ms),
           render_time_ms(render_time_ms) {}
 
-    I420VideoFrame reference;
-    I420VideoFrame render;
+    VideoFrame reference;
+    VideoFrame render;
     bool dropped;
     int64_t send_time_ms;
     int64_t recv_time_ms;
     int64_t render_time_ms;
   };
 
-  void AddFrameComparison(const I420VideoFrame& reference,
-                          const I420VideoFrame& render,
+  void AddFrameComparison(const VideoFrame& reference,
+                          const VideoFrame& render,
                           bool dropped,
                           int64_t render_time_ms)
       EXCLUSIVE_LOCKS_REQUIRED(crit_) {
@@ -282,8 +282,8 @@ class VideoAnalyzer : public PacketReceiver,
     if (AllFramesRecorded())
       return false;
 
-    I420VideoFrame reference;
-    I420VideoFrame render;
+    VideoFrame reference;
+    VideoFrame render;
     FrameComparison comparison;
 
     if (!PopComparison(&comparison)) {
@@ -411,11 +411,11 @@ class VideoAnalyzer : public PacketReceiver,
   uint32_t rtp_timestamp_delta_;
 
   rtc::CriticalSection crit_;
-  std::deque<I420VideoFrame> frames_ GUARDED_BY(crit_);
-  I420VideoFrame last_rendered_frame_ GUARDED_BY(crit_);
+  std::deque<VideoFrame> frames_ GUARDED_BY(crit_);
+  VideoFrame last_rendered_frame_ GUARDED_BY(crit_);
   std::map<uint32_t, int64_t> send_times_ GUARDED_BY(crit_);
   std::map<uint32_t, int64_t> recv_times_ GUARDED_BY(crit_);
-  I420VideoFrame first_send_frame_ GUARDED_BY(crit_);
+  VideoFrame first_send_frame_ GUARDED_BY(crit_);
   const double avg_psnr_threshold_;
   const double avg_ssim_threshold_;
 
@@ -649,8 +649,8 @@ TEST_F(FullStackTest, ScreenshareSlides) {
       {"screenshare_slides", 1850, 1110, 5},
       true,
       50000,
-      100000,
-      1000000,
+      200000,
+      2000000,
       0.0,
       0.0,
       kFullStackTestDurationSecs};

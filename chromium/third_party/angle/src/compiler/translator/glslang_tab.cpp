@@ -87,6 +87,7 @@
 #endif
 
 #include "angle_gl.h"
+#include "compiler/translator/Cache.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/ParseContext.h"
 #include "GLSLANG/ShaderLang.h"
@@ -354,28 +355,28 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
   } while (0)
 
 #define VERTEX_ONLY(S, L) {  \
-    if (context->shaderType != GL_VERTEX_SHADER) {  \
+    if (context->getShaderType() != GL_VERTEX_SHADER) {  \
         context->error(L, " supported in vertex shaders only ", S);  \
         context->recover();  \
     }  \
 }
 
 #define FRAG_ONLY(S, L) {  \
-    if (context->shaderType != GL_FRAGMENT_SHADER) {  \
+    if (context->getShaderType() != GL_FRAGMENT_SHADER) {  \
         context->error(L, " supported in fragment shaders only ", S);  \
         context->recover();  \
     }  \
 }
 
 #define ES2_ONLY(S, L) {  \
-    if (context->shaderVersion != 100) {  \
+    if (context->getShaderVersion() != 100) {  \
         context->error(L, " supported in GLSL ES 1.00 only ", S);  \
         context->recover();  \
     }  \
 }
 
 #define ES3_ONLY(TOKEN, LINE, REASON) {  \
-    if (context->shaderVersion != 300) {  \
+    if (context->getShaderVersion() != 300) {  \
         context->error(LINE, REASON " supported in GLSL ES 3.00 only ", TOKEN);  \
         context->recover();  \
     }  \
@@ -2560,8 +2561,8 @@ yyreduce:
   case 25:
 
     {
-        TParameter param = { 0, new TType((yyvsp[0].interm.intermTypedNode)->getType()) };
-        (yyvsp[-1].interm.function)->addParameter(param);
+        const TType *type = new TType((yyvsp[0].interm.intermTypedNode)->getType());
+        (yyvsp[-1].interm.function)->addParameter(TConstParameter(type));
         (yyval.interm).function = (yyvsp[-1].interm.function);
         (yyval.interm).nodePair.node1 = (yyvsp[0].interm.intermTypedNode);
     }
@@ -2571,8 +2572,8 @@ yyreduce:
   case 26:
 
     {
-        TParameter param = { 0, new TType((yyvsp[0].interm.intermTypedNode)->getType()) };
-        (yyvsp[-2].interm).function->addParameter(param);
+        const TType *type = new TType((yyvsp[0].interm.intermTypedNode)->getType());
+        (yyvsp[-2].interm).function->addParameter(TConstParameter(type));
         (yyval.interm).function = (yyvsp[-2].interm).function;
         (yyval.interm).nodePair.node1 = context->intermediate.growAggregate((yyvsp[-2].interm).intermNode, (yyvsp[0].interm.intermTypedNode), (yylsp[-1]));
     }
@@ -2603,7 +2604,7 @@ yyreduce:
     {
         if (context->reservedErrorCheck((yylsp[0]), *(yyvsp[0].lex).string))
             context->recover();
-        TType type(EbtVoid, EbpUndefined);
+        const TType *type = TCache::getType(EbtVoid, EbpUndefined);
         TFunction *function = new TFunction((yyvsp[0].lex).string, type);
         (yyval.interm.function) = function;
     }
@@ -2615,7 +2616,7 @@ yyreduce:
     {
         if (context->reservedErrorCheck((yylsp[0]), *(yyvsp[0].lex).string))
             context->recover();
-        TType type(EbtVoid, EbpUndefined);
+        const TType *type = TCache::getType(EbtVoid, EbpUndefined);
         TFunction *function = new TFunction((yyvsp[0].lex).string, type);
         (yyval.interm.function) = function;
     }
@@ -3075,7 +3076,7 @@ yyreduce:
         
         for (size_t i = 0; i < function.getParamCount(); i++)
         {
-            const TParameter &param = function.getParam(i);
+            const TConstParameter &param = function.getParam(i);
             if (param.name != 0)
             {
                 TVariable variable(param.name, *param.type);
@@ -3110,7 +3111,7 @@ yyreduce:
   case 90:
 
     {
-        if (((yyvsp[-2].interm.precision) == EbpHigh) && (context->shaderType == GL_FRAGMENT_SHADER) && !context->fragmentPrecisionHigh) {
+        if (((yyvsp[-2].interm.precision) == EbpHigh) && (context->getShaderType() == GL_FRAGMENT_SHADER) && !context->getFragmentPrecisionHigh()) {
             context->error((yylsp[-3]), "precision is not supported in fragment shader", "highp");
             context->recover();
         }
@@ -3170,7 +3171,7 @@ yyreduce:
         //
         // Redeclarations are allowed.  But, return types and parameter qualifiers must match.
         //
-        TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find((yyvsp[-1].interm.function)->getMangledName(), context->shaderVersion));
+        TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find((yyvsp[-1].interm.function)->getMangledName(), context->getShaderVersion()));
         if (prevDec) {
             if (prevDec->getReturnType() != (yyvsp[-1].interm.function)->getReturnType()) {
                 context->error((yylsp[0]), "overloaded functions must have the same return type", (yyvsp[-1].interm.function)->getReturnType().getBasicString());
@@ -3187,7 +3188,7 @@ yyreduce:
         //
         // Check for previously declared variables using the same name.
         //
-        TSymbol *prevSym = context->symbolTable.find((yyvsp[-1].interm.function)->getName(), context->shaderVersion);
+        TSymbol *prevSym = context->symbolTable.find((yyvsp[-1].interm.function)->getName(), context->getShaderVersion());
         if (prevSym)
         {
             if (!prevSym->isFunction())
@@ -3199,7 +3200,7 @@ yyreduce:
         else
         {
             // Insert the unmangled name to detect potential future redefinition as a variable.
-            TFunction *function = new TFunction(NewPoolTString((yyvsp[-1].interm.function)->getName().c_str()), (yyvsp[-1].interm.function)->getReturnType());
+            TFunction *function = new TFunction(NewPoolTString((yyvsp[-1].interm.function)->getName().c_str()), &(yyvsp[-1].interm.function)->getReturnType());
             context->symbolTable.getOuterLevel()->insertUnmangled(function);
         }
 
@@ -3239,7 +3240,7 @@ yyreduce:
         // Add the parameter
         (yyval.interm.function) = (yyvsp[-1].interm.function);
         if ((yyvsp[0].interm).param.type->getBasicType() != EbtVoid)
-            (yyvsp[-1].interm.function)->addParameter((yyvsp[0].interm).param);
+            (yyvsp[-1].interm.function)->addParameter((yyvsp[0].interm).param.turnToConst());
         else
             delete (yyvsp[0].interm).param.type;
     }
@@ -3263,7 +3264,7 @@ yyreduce:
         } else {
             // Add the parameter
             (yyval.interm.function) = (yyvsp[-2].interm.function);
-            (yyvsp[-2].interm.function)->addParameter((yyvsp[0].interm).param);
+            (yyvsp[-2].interm.function)->addParameter((yyvsp[0].interm).param.turnToConst());
         }
     }
 
@@ -3282,7 +3283,7 @@ yyreduce:
 
         // Add the function as a prototype after parsing it (we do not support recursion)
         TFunction *function;
-        TType type((yyvsp[-2].interm.type));
+        const TType *type = new TType((yyvsp[-2].interm.type));
         function = new TFunction((yyvsp[-1].lex).string, type);
         (yyval.interm.function) = function;
         
@@ -3540,7 +3541,7 @@ yyreduce:
 
         if ((yyvsp[0].interm.type).array) {
             ES3_ONLY("[]", (yylsp[0]), "first-class-array");
-            if (context->shaderVersion != 300) {
+            if (context->getShaderVersion() != 300) {
                 (yyvsp[0].interm.type).clearArrayness();
             }
         }
@@ -3598,7 +3599,7 @@ yyreduce:
         ES2_ONLY("varying", (yylsp[0]));
         if (context->globalErrorCheck((yylsp[0]), context->symbolTable.atGlobalLevel(), "varying"))
             context->recover();
-        if (context->shaderType == GL_VERTEX_SHADER)
+        if (context->getShaderType() == GL_VERTEX_SHADER)
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingOut, (yylsp[0]));
         else
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingIn, (yylsp[0]));
@@ -3612,7 +3613,7 @@ yyreduce:
         ES2_ONLY("varying", (yylsp[-1]));
         if (context->globalErrorCheck((yylsp[-1]), context->symbolTable.atGlobalLevel(), "invariant varying"))
             context->recover();
-        if (context->shaderType == GL_VERTEX_SHADER)
+        if (context->getShaderType() == GL_VERTEX_SHADER)
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingOut, (yylsp[-1]));
         else
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingIn, (yylsp[-1]));
@@ -3704,7 +3705,7 @@ yyreduce:
 
     {
         ES3_ONLY("in", (yylsp[0]), "storage qualifier");
-        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
+        (yyval.interm.type).qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
     }
 
     break;
@@ -3713,7 +3714,7 @@ yyreduce:
 
     {
         ES3_ONLY("out", (yylsp[0]), "storage qualifier");
-        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
+        (yyval.interm.type).qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
     }
 
     break;
@@ -3722,12 +3723,12 @@ yyreduce:
 
     {
         ES3_ONLY("centroid in", (yylsp[-1]), "storage qualifier");
-        if (context->shaderType == GL_VERTEX_SHADER)
+        if (context->getShaderType() == GL_VERTEX_SHADER)
         {
             context->error((yylsp[-1]), "invalid storage qualifier", "it is an error to use 'centroid in' in the vertex shader");
             context->recover();
         }
-        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
+        (yyval.interm.type).qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
     }
 
     break;
@@ -3736,12 +3737,12 @@ yyreduce:
 
     {
         ES3_ONLY("centroid out", (yylsp[-1]), "storage qualifier");
-        if (context->shaderType == GL_FRAGMENT_SHADER)
+        if (context->getShaderType() == GL_FRAGMENT_SHADER)
         {
             context->error((yylsp[-1]), "invalid storage qualifier", "it is an error to use 'centroid out' in the fragment shader");
             context->recover();
         }
-        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
+        (yyval.interm.type).qualifier = (context->getShaderType() == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
     }
 
     break;
@@ -4662,7 +4663,7 @@ yyreduce:
 
   case 247:
 
-    { ++context->mSwitchNestingLevel; }
+    { context->incrSwitchNestingLevel(); }
 
     break;
 
@@ -4670,7 +4671,7 @@ yyreduce:
 
     {
         (yyval.interm.intermSwitch) = context->addSwitch((yyvsp[-3].interm.intermTypedNode), (yyvsp[0].interm.intermAggregate), (yylsp[-5]));
-        --context->mSwitchNestingLevel;
+        context->decrSwitchNestingLevel();
     }
 
     break;
@@ -4720,7 +4721,7 @@ yyreduce:
 
   case 253:
 
-    { context->symbolTable.push(); ++context->mLoopNestingLevel; }
+    { context->symbolTable.push(); context->incrLoopNestingLevel(); }
 
     break;
 
@@ -4729,14 +4730,14 @@ yyreduce:
     {
         context->symbolTable.pop();
         (yyval.interm.intermNode) = context->intermediate.addLoop(ELoopWhile, 0, (yyvsp[-2].interm.intermTypedNode), 0, (yyvsp[0].interm.intermNode), (yylsp[-5]));
-        --context->mLoopNestingLevel;
+        context->decrLoopNestingLevel();
     }
 
     break;
 
   case 255:
 
-    { ++context->mLoopNestingLevel; }
+    { context->incrLoopNestingLevel(); }
 
     break;
 
@@ -4747,14 +4748,14 @@ yyreduce:
             context->recover();
 
         (yyval.interm.intermNode) = context->intermediate.addLoop(ELoopDoWhile, 0, (yyvsp[-2].interm.intermTypedNode), 0, (yyvsp[-5].interm.intermNode), (yylsp[-4]));
-        --context->mLoopNestingLevel;
+        context->decrLoopNestingLevel();
     }
 
     break;
 
   case 257:
 
-    { context->symbolTable.push(); ++context->mLoopNestingLevel; }
+    { context->symbolTable.push(); context->incrLoopNestingLevel(); }
 
     break;
 
@@ -4763,7 +4764,7 @@ yyreduce:
     {
         context->symbolTable.pop();
         (yyval.interm.intermNode) = context->intermediate.addLoop(ELoopFor, (yyvsp[-3].interm.intermNode), reinterpret_cast<TIntermTyped*>((yyvsp[-2].interm.nodePair).node1), reinterpret_cast<TIntermTyped*>((yyvsp[-2].interm.nodePair).node2), (yyvsp[0].interm.intermNode), (yylsp[-6]));
-        --context->mLoopNestingLevel;
+        context->decrLoopNestingLevel();
     }
 
     break;
@@ -4863,7 +4864,7 @@ yyreduce:
 
     {
         (yyval.interm.intermNode) = (yyvsp[0].interm.intermNode);
-        context->treeRoot = (yyval.interm.intermNode);
+        context->setTreeRoot((yyval.interm.intermNode));
     }
 
     break;
@@ -4872,7 +4873,7 @@ yyreduce:
 
     {
         (yyval.interm.intermNode) = context->intermediate.growAggregate((yyvsp[-1].interm.intermNode), (yyvsp[0].interm.intermNode), (yyloc));
-        context->treeRoot = (yyval.interm.intermNode);
+        context->setTreeRoot((yyval.interm.intermNode));
     }
 
     break;
@@ -4898,7 +4899,7 @@ yyreduce:
     {
         TFunction* function = (yyvsp[0].interm).function;
         
-        const TSymbol *builtIn = context->symbolTable.findBuiltIn(function->getMangledName(), context->shaderVersion);
+        const TSymbol *builtIn = context->symbolTable.findBuiltIn(function->getMangledName(), context->getShaderVersion());
         
         if (builtIn)
         {
@@ -4906,7 +4907,7 @@ yyreduce:
             context->recover();
         }
         
-        TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find(function->getMangledName(), context->shaderVersion));
+        TFunction* prevDec = static_cast<TFunction*>(context->symbolTable.find(function->getMangledName(), context->getShaderVersion()));
         //
         // Note:  'prevDec' could be 'function' if this is the first time we've seen function
         // as it would have just been put in the symbol table.  Otherwise, we're looking up
@@ -4944,8 +4945,8 @@ yyreduce:
         //
         // Remember the return type for later checking for RETURN statements.
         //
-        context->currentFunctionType = &(prevDec->getReturnType());
-        context->mFunctionReturnsValue = false;
+        context->setCurrentFunctionType(&(prevDec->getReturnType()));
+        context->setFunctionReturnsValue(false);
 
         //
         // Insert parameters into the symbol table.
@@ -4957,7 +4958,7 @@ yyreduce:
         //
         TIntermAggregate* paramNodes = new TIntermAggregate;
         for (size_t i = 0; i < function->getParamCount(); i++) {
-            const TParameter& param = function->getParam(i);
+            const TConstParameter& param = function->getParam(i);
             if (param.name != 0) {
                 TVariable *variable = new TVariable(param.name, *param.type);
                 //
@@ -4984,7 +4985,7 @@ yyreduce:
         }
         context->intermediate.setAggregateOperator(paramNodes, EOpParameters, (yylsp[0]));
         (yyvsp[0].interm).intermAggregate = paramNodes;
-        context->mLoopNestingLevel = 0;
+        context->setLoopNestingLevel(0);
     }
 
     break;
@@ -4994,7 +4995,7 @@ yyreduce:
     {
         //?? Check that all paths return a value if return type != void ?
         //   May be best done as post process phase on intermediate code
-        if (context->currentFunctionType->getBasicType() != EbtVoid && ! context->mFunctionReturnsValue) {
+        if (context->getCurrentFunctionType()->getBasicType() != EbtVoid && !context->getFunctionReturnsValue()) {
             context->error((yylsp[-2]), "function does not return a value:", "", (yyvsp[-2].interm).function->getName().c_str());
             context->recover();
         }
@@ -5255,5 +5256,5 @@ yyreturn:
 
 
 int glslang_parse(TParseContext* context) {
-    return yyparse(context, context->scanner);
+    return yyparse(context, context->getScanner());
 }

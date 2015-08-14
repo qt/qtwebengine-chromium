@@ -9,21 +9,23 @@
 #include "core/layout/svg/LayoutSVGViewportContainer.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/paint/FloatClipRecorder.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/SVGPaintContext.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGSVGElement.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
 void SVGContainerPainter::paint(const PaintInfo& paintInfo)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutSVGContainer);
-
     // Spec: groups w/o children still may render filter content.
     if (!m_layoutSVGContainer.firstChild() && !m_layoutSVGContainer.selfWillPaint())
+        return;
+
+    FloatRect boundingBox = m_layoutSVGContainer.paintInvalidationRectInLocalCoordinates();
+    if (!paintInfo.intersectsCullRect(m_layoutSVGContainer.localToParentTransform(), boundingBox))
         return;
 
     // Spec: An empty viewBox on the <svg> element disables rendering.
@@ -32,12 +34,13 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         return;
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
+    paintInfoBeforeFiltering.updateCullRectForSVGTransform(m_layoutSVGContainer.localToParentTransform());
     TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGContainer, m_layoutSVGContainer.localToParentTransform());
     {
-        OwnPtr<FloatClipRecorder> clipRecorder;
+        Optional<FloatClipRecorder> clipRecorder;
         if (m_layoutSVGContainer.isSVGViewportContainer() && SVGLayoutSupport::isOverflowHidden(&m_layoutSVGContainer)) {
             FloatRect viewport = m_layoutSVGContainer.localToParentTransform().inverse().mapRect(toLayoutSVGViewportContainer(m_layoutSVGContainer).viewport());
-            clipRecorder = adoptPtr(new FloatClipRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGContainer, paintInfoBeforeFiltering.phase, viewport));
+            clipRecorder.emplace(*paintInfoBeforeFiltering.context, m_layoutSVGContainer, paintInfoBeforeFiltering.phase, viewport);
         }
 
         SVGPaintContext paintContext(m_layoutSVGContainer, paintInfoBeforeFiltering);
@@ -52,10 +55,17 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         }
     }
 
-    if (paintInfoBeforeFiltering.phase == PaintPhaseForeground && m_layoutSVGContainer.style()->outlineWidth() && m_layoutSVGContainer.style()->visibility() == VISIBLE) {
-        LayoutRect layoutBoundingBox(m_layoutSVGContainer.paintInvalidationRectInLocalCoordinates());
-        ObjectPainter(m_layoutSVGContainer).paintOutline(paintInfoBeforeFiltering, layoutBoundingBox, layoutBoundingBox);
+    if (paintInfoBeforeFiltering.phase != PaintPhaseForeground)
+        return;
+
+    if (m_layoutSVGContainer.style()->outlineWidth() && m_layoutSVGContainer.style()->visibility() == VISIBLE) {
+        LayoutRect layoutBoundingBox(boundingBox);
+        LayoutRect visualOverflowRect = ObjectPainter::outlineBounds(layoutBoundingBox, m_layoutSVGContainer.styleRef());
+        ObjectPainter(m_layoutSVGContainer).paintOutline(paintInfoBeforeFiltering, layoutBoundingBox, visualOverflowRect);
     }
+
+    if (paintInfoBeforeFiltering.context->printing())
+        ObjectPainter(m_layoutSVGContainer).addPDFURLRectIfNeeded(paintInfoBeforeFiltering, LayoutPoint());
 }
 
 } // namespace blink

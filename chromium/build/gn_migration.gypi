@@ -62,7 +62,6 @@
         '../cloud_print/cloud_print.gyp:cloud_print_unittests',
         '../components/components.gyp:network_hints_browser',
         '../components/components.gyp:policy_templates',
-        '../components/components.gyp:webui_generator',
         '../components/components_tests.gyp:components_browsertests',
         '../components/components_tests.gyp:components_perftests',
         '../components/components_tests.gyp:components_unittests',
@@ -108,7 +107,7 @@
         '../media/cast/cast.gyp:generate_barcode_video',
         '../media/cast/cast.gyp:generate_timecode_audio',
         '../mojo/mojo.gyp:mojo',
-        '../mojo/mojo_base.gyp:mojo_application_chromium',
+        '../mojo/mojo_base.gyp:mojo_application_base',
         '../mojo/mojo_base.gyp:mojo_common_unittests',
         '../net/net.gyp:crash_cache',
         '../net/net.gyp:crl_set_dump',
@@ -240,7 +239,7 @@
             '../remoting/remoting_all.gyp:remoting_all',
           ],
         }],
-        ['remoting==1 and chromeos==0', {
+        ['remoting==1 and chromeos==0 and use_x11==1', {
           'dependencies': [
             '../remoting/remoting.gyp:remoting_me2me_host',
             '../remoting/remoting.gyp:remoting_me2me_native_messaging_host',
@@ -295,6 +294,8 @@
             '../base/base.gyp:chromium_android_linker',
             '../breakpad/breakpad.gyp:dump_syms',
             '../build/android/rezip.gyp:rezip_apk_jar',
+            '../chrome/chrome.gyp:chrome_public_apk',
+            '../chrome/chrome.gyp:chrome_public_test_apk',
             '../chrome/chrome.gyp:chrome_shell_apk',
             '../chrome/chrome.gyp:chromedriver_webview_shell_apk',
             #"//clank" TODO(GYP) - conditional somehow?
@@ -471,6 +472,7 @@
           'dependencies': [
             '../base/base.gyp:pe_image_test',
             '../chrome/chrome.gyp:crash_service',
+            '../chrome/chrome.gyp:setup_unittests',
             '../chrome_elf/chrome_elf.gyp:chrome_elf_unittests',
             '../chrome_elf/chrome_elf.gyp:dll_hash_main',
             '../components/components.gyp:wifi_test',
@@ -527,30 +529,69 @@
             '../components/components_tests.gyp:components_unittests_run',
             '../content/content_shell_and_tests.gyp:content_browsertests_run',
             '../content/content_shell_and_tests.gyp:content_unittests_run',
-            '../crypto/crypto.gyp:crypto_unittests_run',
             '../courgette/courgette.gyp:courgette_unittests_run',
+            '../crypto/crypto.gyp:crypto_unittests_run',
+            '../google_apis/gcm/gcm.gyp:gcm_unit_tests_run',
             '../gpu/gpu.gyp:gpu_unittests_run',
+            '../ipc/ipc.gyp:ipc_tests_run',
             '../media/cast/cast.gyp:cast_unittests_run',
             '../media/media.gyp:media_unittests_run',
             '../media/midi/midi.gyp:midi_unittests_run',
             '../net/net.gyp:net_unittests_run',
+            '../printing/printing.gyp:printing_unittests_run',
+            '../remoting/remoting.gyp:remoting_unittests_run',
+            '../skia/skia_tests.gyp:skia_unittests_run',
             '../sql/sql.gyp:sql_unittests_run',
+            '../sync/sync.gyp:sync_unit_tests_run',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests_run',
+            '../tools/gn/gn.gyp:gn_unittests_run',
             '../ui/accessibility/accessibility.gyp:accessibility_unittests_run',
             '../ui/app_list/app_list.gyp:app_list_unittests_run',
+            '../ui/compositor/compositor.gyp:compositor_unittests_run',
             '../ui/events/events.gyp:events_unittests_run',
+            '../ui/gl/gl_tests.gyp:gl_unittests_run',
             '../ui/message_center/message_center.gyp:message_center_unittests_run',
             '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests_run',
+            '../url/url.gyp:url_unittests_run',
           ],
-        }],
-        ['test_isolation_mode!="noop" and use_ash==1', {
-          'dependencies': [
-            '../ash/ash.gyp:ash_unittests_run',
-          ],
-        }],
-        ['test_isolation_mode!="noop" and OS=="linux"', {
-          'dependencies': [
-            '../sandbox/sandbox.gyp:sandbox_linux_unittests_run',
+          'conditions': [
+            ['OS=="linux"', {
+              'dependencies': [
+                '../sandbox/sandbox.gyp:sandbox_linux_unittests_run',
+                '../ui/display/display.gyp:display_unittests_run',
+              ],
+            }],
+            ['OS=="mac"', {
+              'dependencies': [
+                '../sandbox/sandbox.gyp:sandbox_mac_unittests_run',
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../sandbox/sandbox.gyp:sbox_integration_tests',
+              ],
+            }],
+            ['use_ash==1', {
+              'dependencies': [
+                '../ash/ash.gyp:ash_unittests_run',
+              ],
+            }],
+            ['use_aura==1', {
+              'dependencies': [
+                '../ui/aura/aura.gyp:aura_unittests_run',
+                '../ui/wm/wm.gyp:wm_unittests_run',
+              ],
+            }],
+            ['enable_webrtc==1 or OS!="android"', {
+              'dependencies': [
+                '../jingle/jingle.gyp:jingle_unittests_run',
+              ],
+            }],
+            ['disable_nacl==0 and disable_nacl_untrusted==0', {
+              'dependencies': [
+                '../components/nacl.gyp:nacl_loader_unittests_run',
+              ]
+            }],
           ],
         }],
         ['use_openssl==1', {
@@ -604,7 +645,7 @@
           'dependencies': [
             # TODO(GYP): Figure out which of these run on android/mac/win/ios/etc.
             '../net/net.gyp:net_docs',
-            '../remoting/app_remoting_test.gyp:ar_sample_test_driver',
+            '../remoting/remoting.gyp:ar_sample_test_driver',
 
             # TODO(GYP): in progress - see tfarina.
             '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
@@ -615,8 +656,6 @@
           'dependencies': [
             # TODO(GYP): All of these targets still need to be converted.
             '../base/base.gyp:debug_message',
-            '../chrome/chrome.gyp:app_installer',
-            '../chrome/chrome.gyp:app_installer_unittests',
             '../chrome/chrome.gyp:app_shim',
             '../chrome/chrome.gyp:gcapi_dll',
             '../chrome/chrome.gyp:gcapi_test',
@@ -624,23 +663,22 @@
             '../chrome/chrome.gyp:pack_policy_templates',
             '../chrome/chrome.gyp:sb_sigutil',
             '../chrome/chrome.gyp:setup',
-            '../chrome/chrome.gyp:setup_unittests',
             '../chrome/installer/mini_installer.gyp:mini_installer',
             '../chrome/tools/crash_service/caps/caps.gyp:caps',
             '../cloud_print/gcp20/prototype/gcp20_device.gyp:gcp20_device',
             '../cloud_print/gcp20/prototype/gcp20_device.gyp:gcp20_device_unittests',
-            '../cloud_print/service/service.gyp:cloud_print_service',
-            '../cloud_print/service/service.gyp:cloud_print_service_config',
-            '../cloud_print/service/service.gyp:cloud_print_service_setup',
+            '../cloud_print/service/win/service.gyp:cloud_print_service',
+            '../cloud_print/service/win/service.gyp:cloud_print_service_config',
+            '../cloud_print/service/win/service.gyp:cloud_print_service_setup',
             '../cloud_print/virtual_driver/win/install/virtual_driver_install.gyp:virtual_driver_setup',
             '../cloud_print/virtual_driver/win/virtual_driver.gyp:gcp_portmon',
+            '../components/test_runner/test_runner.gyp:layout_test_helper',
             '../content/content_shell_and_tests.gyp:content_shell_crash_service',
-            '../content/content_shell_and_tests.gyp:layout_test_helper',
             '../gpu/gpu.gyp:angle_end2end_tests',
             '../gpu/gpu.gyp:angle_perftests',
             '../net/net.gyp:net_docs',
             '../ppapi/ppapi_internal.gyp:ppapi_perftests',
-            '../remoting/app_remoting_test.gyp:ar_sample_test_driver',
+            '../remoting/remoting.gyp:ar_sample_test_driver',
             '../remoting/remoting.gyp:remoting_breakpad_tester',
             '../remoting/remoting.gyp:remoting_console',
             '../remoting/remoting.gyp:remoting_desktop',

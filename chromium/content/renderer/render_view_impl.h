@@ -72,7 +72,6 @@
 #pragma warning(disable: 4250)
 #endif
 
-class PepperDeviceTest;
 class SkBitmap;
 struct PP_NetAddress_Private;
 struct ViewMsg_New_Params;
@@ -176,8 +175,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Returns the RenderViewImpl for the given routing ID.
   static RenderViewImpl* FromRoutingID(int routing_id);
-
-  static size_t GetRenderViewCount();
 
   // May return NULL when the view is closing.
   blink::WebView* webview() const;
@@ -330,6 +327,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool isPointerLocked();
   virtual void didHandleGestureEvent(const blink::WebGestureEvent& event,
                                      bool event_cancelled) override;
+  virtual void onMouseDown(const blink::WebNode& mouse_down_node) override;
+
   virtual void initializeLayerTreeView() override;
 
   // blink::WebViewClient implementation --------------------------------------
@@ -378,7 +377,7 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void focusedNodeChanged(const blink::WebNode& fromNode,
                                   const blink::WebNode& toNode);
   virtual void didUpdateLayout();
-#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
+#if defined(OS_ANDROID) || defined(USE_AURA)
   virtual bool didTapMultipleTargets(
       const blink::WebSize& inner_viewport_offset,
       const blink::WebRect& touch_rect,
@@ -394,11 +393,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void pageScaleFactorChanged();
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
   virtual double zoomFactorToZoomLevel(double factor) const;
-  virtual void registerProtocolHandler(const blink::WebString& scheme,
-                                       const blink::WebURL& url,
-                                       const blink::WebString& title);
-  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
-                                         const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual void draggableRegionsChanged();
 
@@ -465,7 +459,6 @@ class CONTENT_EXPORT RenderViewImpl
   void DidHandleKeyEvent() override;
   bool WillHandleMouseEvent(const blink::WebMouseEvent& event) override;
   bool WillHandleGestureEvent(const blink::WebGestureEvent& event) override;
-  void DidHandleMouseEvent(const blink::WebMouseEvent& event) override;
   bool HasTouchEventHandlersAt(const gfx::Point& point) const override;
   void OnSetFocus(bool enable) override;
   void OnWasHidden() override;
@@ -509,7 +502,6 @@ class CONTENT_EXPORT RenderViewImpl
  private:
   // For unit tests.
   friend class DevToolsAgentTest;
-  friend class PepperDeviceTest;
   friend class RenderViewImplTest;
   friend class RenderViewTest;
   friend class RendererAccessibilityTest;
@@ -589,6 +581,10 @@ class CONTENT_EXPORT RenderViewImpl
 
   void UpdateSessionHistory(blink::WebFrame* frame);
   void SendUpdateState(HistoryEntry* entry);
+
+  void ApplyWebPreferencesInternal(const WebPreferences& prefs,
+                                   blink::WebView* web_view,
+                                   CompositorDependencies* compositor_deps);
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
@@ -748,9 +744,7 @@ class CONTENT_EXPORT RenderViewImpl
   // to access RenderViewImpl state. The set of state variables are page-level
   // specific, so they don't belong in RenderFrameImpl and should remain in
   // this object.
-  ObserverList<RenderViewObserver>& observers() {
-    return observers_;
-  }
+  base::ObserverList<RenderViewObserver>& observers() { return observers_; }
 
   // TODO(nasko): Remove this method when we move to frame proxy objects, since
   // the concept of swapped out will be eliminated.
@@ -996,7 +990,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // All the registered observers.  We expect this list to be small, so vector
   // is fine.
-  ObserverList<RenderViewObserver> observers_;
+  base::ObserverList<RenderViewObserver> observers_;
 
   // Wraps the |webwidget_| as a MouseLockDispatcher::LockTarget interface.
   scoped_ptr<MouseLockDispatcher::LockTarget> webwidget_mouse_lock_target_;

@@ -41,6 +41,8 @@ class VideoDecodeAccelerator;
 class MEDIA_EXPORT GpuVideoAcceleratorFactories
     : public base::RefCountedThreadSafe<GpuVideoAcceleratorFactories> {
  public:
+  // Return whether GPU encoding/decoding is enabled.
+  virtual bool IsGpuVideoAcceleratorEnabled() = 0;
   // Caller owns returned pointer, but should call Destroy() on it (instead of
   // directly deleting) for proper destruction, as per the
   // VideoDecodeAccelerator interface.
@@ -66,6 +68,7 @@ class MEDIA_EXPORT GpuVideoAcceleratorFactories
       gfx::GpuMemoryBuffer::Format format,
       gfx::GpuMemoryBuffer::Usage usage) = 0;
 
+  virtual unsigned ImageTextureTarget() = 0;
   virtual bool IsTextureRGSupported() = 0;
 
   virtual gpu::gles2::GLES2Interface* GetGLES2Interface() = 0;

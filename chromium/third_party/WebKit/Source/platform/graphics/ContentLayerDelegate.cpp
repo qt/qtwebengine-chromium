@@ -28,6 +28,8 @@
 
 #include "platform/EventTracer.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/TraceEvent.h"
+#include "platform/TracedValue.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/DisplayItemList.h"
@@ -51,23 +53,31 @@ ContentLayerDelegate::~ContentLayerDelegate()
 {
 }
 
+PassRefPtr<TracedValue> toTracedValue(const WebRect& clip)
+{
+    RefPtr<TracedValue> tracedValue = TracedValue::create();
+    tracedValue->beginArray("clip_rect");
+    tracedValue->pushInteger(clip.x);
+    tracedValue->pushInteger(clip.y);
+    tracedValue->pushInteger(clip.width);
+    tracedValue->pushInteger(clip.height);
+    tracedValue->endArray();
+    return tracedValue;
+}
+
 void ContentLayerDelegate::paintContents(
     SkCanvas* canvas, const WebRect& clip,
     WebContentLayerClient::PaintingControlSetting paintingControl)
 {
-    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
+    TRACE_EVENT1("blink,benchmark", "ContentLayerDelegate::paintContents", "clip_rect", toTracedValue(clip));
 
-    static const unsigned char* annotationsEnabled = 0;
-    if (UNLIKELY(!annotationsEnabled))
-        annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
+    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
 
     GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
     if (paintingControl == WebContentLayerClient::DisplayListPaintingDisabled
         || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
         disabledMode = GraphicsContext::FullyDisabled;
     OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas, disabledMode);
-    if (*annotationsEnabled)
-        context->setAnnotationMode(AnnotateAll);
 
     m_painter->paint(*context, clip);
 }
@@ -76,11 +86,9 @@ void ContentLayerDelegate::paintContents(
     WebDisplayItemList* webDisplayItemList, const WebRect& clip,
     WebContentLayerClient::PaintingControlSetting paintingControl)
 {
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+    TRACE_EVENT1("blink,benchmark", "ContentLayerDelegate::paintContents", "clip_rect", toTracedValue(clip));
 
-    static const unsigned char* annotationsEnabled = 0;
-    if (UNLIKELY(!annotationsEnabled))
-        annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
 
     DisplayItemList* displayItemList = m_painter->displayItemList();
     ASSERT(displayItemList);
@@ -97,16 +105,10 @@ void ContentLayerDelegate::paintContents(
         || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
         disabledMode = GraphicsContext::FullyDisabled;
     GraphicsContext context(displayItemList, disabledMode);
-    if (*annotationsEnabled)
-        context.setAnnotationMode(AnnotateAll);
 
     m_painter->paint(context, clip);
 
-    displayItemList->commitNewDisplayItems();
-
-    const DisplayItems& paintList = displayItemList->displayItems();
-    for (DisplayItems::const_iterator it = paintList.begin(); it != paintList.end(); ++it)
-        (*it)->appendToWebDisplayItemList(webDisplayItemList);
+    displayItemList->commitNewDisplayItemsAndAppendToWebDisplayItemList(webDisplayItemList);
 }
 
 } // namespace blink

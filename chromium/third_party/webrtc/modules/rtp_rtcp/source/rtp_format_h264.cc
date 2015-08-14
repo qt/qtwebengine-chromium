@@ -10,6 +10,7 @@
 
 #include <string.h>
 
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/h264_sps_parser.h"
@@ -55,6 +56,7 @@ bool ParseSingleNalu(RtpDepacketizer::ParsedPayload* parsed_payload,
   if (nal_type == kStapA) {
     // Skip the StapA header (StapA nal type + length).
     if (payload_data_length <= kStapAHeaderSize) {
+      LOG(LS_ERROR) << "StapA header truncated.";
       return false;
     }
     nal_type = payload_data[kStapAHeaderSize] & kTypeMask;
@@ -92,6 +94,7 @@ bool ParseFuaNalu(RtpDepacketizer::ParsedPayload* parsed_payload,
                   size_t payload_data_length,
                   size_t* offset) {
   if (payload_data_length < kFuAHeaderSize) {
+    LOG(LS_ERROR) << "FU-A NAL units truncated.";
     return false;
   }
   uint8_t fnri = payload_data[0] & (kFBit | kNriMask);
@@ -325,6 +328,7 @@ bool RtpDepacketizerH264::Parse(ParsedPayload* parsed_payload,
                                 size_t payload_data_length) {
   assert(parsed_payload != NULL);
   if (payload_data_length == 0) {
+    LOG(LS_ERROR) << "Empty payload.";
     return false;
   }
 

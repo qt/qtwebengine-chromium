@@ -18,6 +18,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
@@ -38,8 +39,6 @@ namespace blink {
 
 static const unsigned maxInvalidationTrackingCallstackSize = 5;
 
-namespace {
-
 String toHexString(const void* p)
 {
     return String::format("0x%" PRIx64, static_cast<uint64_t>(reinterpret_cast<intptr_t>(p)));
@@ -47,14 +46,18 @@ String toHexString(const void* p)
 
 void setCallStack(TracedValue* value)
 {
-    bool stacksEnabled;
-    TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), &stacksEnabled);
-    if (!stacksEnabled)
+    static const unsigned char* traceCategoryEnabled = 0;
+    WTF_ANNOTATE_BENIGN_RACE(&traceCategoryEnabled, "trace_event category");
+    if (!traceCategoryEnabled)
+        traceCategoryEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"));
+    if (!*traceCategoryEnabled)
         return;
     RefPtrWillBeRawPtr<ScriptCallStack> scriptCallStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
     if (scriptCallStack)
         scriptCallStack->toTracedValue(value, "stackTrace");
 }
+
+namespace {
 
 void setNodeInfo(TracedValue* value, Node* node, const char* idFieldName, const char* nameFieldName = nullptr)
 {
@@ -67,7 +70,6 @@ const char* pseudoTypeToString(CSSSelector::PseudoType pseudoType)
 {
     switch (pseudoType) {
 #define DEFINE_STRING_MAPPING(pseudoType) case CSSSelector::pseudoType: return #pseudoType;
-        DEFINE_STRING_MAPPING(PseudoNotParsed)
         DEFINE_STRING_MAPPING(PseudoUnknown)
         DEFINE_STRING_MAPPING(PseudoEmpty)
         DEFINE_STRING_MAPPING(PseudoFirstChild)
@@ -368,12 +370,12 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayoutInvalidationTrac
     return value.release();
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorPaintInvalidationTrackingEvent::data(const LayoutObject* layoutObject, const LayoutObject* paintContainer)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorPaintInvalidationTrackingEvent::data(const LayoutObject* layoutObject, const LayoutObject& paintContainer)
 {
     ASSERT(layoutObject);
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("frame", toHexString(layoutObject->frame()));
-    setGeneratingNodeInfo(value.get(), paintContainer, "paintId");
+    setGeneratingNodeInfo(value.get(), &paintContainer, "paintId");
     setGeneratingNodeInfo(value.get(), layoutObject, "nodeId", "nodeName");
     return value.release();
 }
@@ -483,27 +485,6 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorAnimationFrameEvent::d
         value->setString("frame", toHexString(toDocument(context)->frame()));
     else if (context->isWorkerGlobalScope())
         value->setString("worker", toHexString(toWorkerGlobalScope(context)));
-    setCallStack(value.get());
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorWebSocketCreateEvent::data(Document* document, unsigned long identifier, const KURL& url, const String& protocol)
-{
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setInteger("identifier", identifier);
-    value->setString("url", url.string());
-    value->setString("frame", toHexString(document->frame()));
-    if (!protocol.isNull())
-        value->setString("webSocketProtocol", protocol);
-    setCallStack(value.get());
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorWebSocketEvent::data(Document* document, unsigned long identifier)
-{
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setInteger("identifier", identifier);
-    value->setString("frame", toHexString(document->frame()));
     setCallStack(value.get());
     return value.release();
 }
@@ -690,9 +671,9 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorUpdateCountersEvent::d
 {
     RefPtr<TracedValue> value = TracedValue::create();
     if (isMainThread()) {
-        value->setInteger("documents", InspectorCounters::counterValue(InspectorCounters::DocumentCounter));
-        value->setInteger("nodes", InspectorCounters::counterValue(InspectorCounters::NodeCounter));
-        value->setInteger("jsEventListeners", InspectorCounters::counterValue(InspectorCounters::JSEventListenerCounter));
+        value->setInteger("documents", InstanceCounters::counterValue(InstanceCounters::DocumentCounter));
+        value->setInteger("nodes", InstanceCounters::counterValue(InstanceCounters::NodeCounter));
+        value->setInteger("jsEventListeners", InstanceCounters::counterValue(InstanceCounters::JSEventListenerCounter));
     }
     value->setDouble("jsHeapSizeUsed", static_cast<double>(usedHeapSize()));
     return value.release();
@@ -761,10 +742,10 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorAnimationEvent::data(c
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("id", String::number(player.sequenceNumber()));
     value->setString("state", player.playState());
-    if (const AnimationEffect* source = player.source()) {
-        value->setString("name", source->name());
-        if (source->isAnimation()) {
-            if (Element* target = toKeyframeEffect(source)->target())
+    if (const AnimationEffect* effect = player.effect()) {
+        value->setString("name", effect->name());
+        if (effect->isAnimation()) {
+            if (Element* target = toKeyframeEffect(effect)->target())
                 setNodeInfo(value.get(), target, "nodeId", "nodeName");
         }
     }
@@ -776,6 +757,26 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorAnimationStateEvent::d
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("state", player.playState());
     return value.release();
+}
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorHitTestEvent::endData(const HitTestRequest& request, const HitTestLocation& location, const HitTestResult& result)
+{
+    RefPtr<TracedValue> value(TracedValue::create());
+    value->setInteger("x", location.roundedPoint().x());
+    value->setInteger("y", location.roundedPoint().y());
+    if (location.isRectBasedTest())
+        value->setBoolean("rect", true);
+    if (location.isRectilinear())
+        value->setBoolean("rectilinear", true);
+    if (request.touchEvent())
+        value->setBoolean("touch", true);
+    if (request.move())
+        value->setBoolean("move", true);
+    if (request.listBased())
+        value->setBoolean("listBased", true);
+    else if (Node* node = result.innerNode())
+        setNodeInfo(value.get(), node, "nodeId", "nodeName");
+    return value;
 }
 
 }

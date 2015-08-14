@@ -106,7 +106,7 @@
               # https://connect.microsoft.com/VisualStudio/feedback/details/1014689/internal-compiler-error
               'msvs_settings': {
                 'VCCLCompilerTool': {
-                  'AdditionalOptions!': [ '/analyze' ]
+                  'AdditionalOptions!': [ '/analyze:WX-' ]
                 },
               },
             }],
@@ -114,17 +114,6 @@
         },
       ],
     }, { # 'use_system_libexif!=0
-      'conditions': [
-        ['sysroot!=""', {
-          'variables': {
-            'pkg-config': '../../build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
-          },
-        }, {
-          'variables': {
-            'pkg-config': 'pkg-config'
-          },
-        }],
-      ],
       'targets': [
         {
           'target_name': 'libexif',

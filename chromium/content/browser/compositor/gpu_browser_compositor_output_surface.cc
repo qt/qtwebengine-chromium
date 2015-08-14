@@ -105,7 +105,8 @@ void GpuBrowserCompositorOutputSurface::SwapBuffers(
 }
 
 void GpuBrowserCompositorOutputSurface::OnSwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
+    const std::vector<ui::LatencyInfo>& latency_info,
+    gfx::SwapResult result) {
 #if defined(OS_MACOSX)
   // On Mac, delay acknowledging the swap to the output surface client until
   // it has been drawn, see OnSurfaceDisplayed();
@@ -151,5 +152,13 @@ bool GpuBrowserCompositorOutputSurface::
   return should_show_frames_state_ != SHOULD_SHOW_FRAMES;
 }
 #endif
+
+bool GpuBrowserCompositorOutputSurface::SurfaceIsSuspendForRecycle() const {
+#if defined(OS_MACOSX)
+  return should_show_frames_state_ == SHOULD_NOT_SHOW_FRAMES_SUSPENDED;
+#else
+  return false;
+#endif
+}
 
 }  // namespace content

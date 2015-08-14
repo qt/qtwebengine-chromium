@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
@@ -187,34 +188,47 @@ void GetNativeRtcConfiguration(
   }
 
   switch (blink_config.iceTransports()) {
-  case blink::WebRTCIceTransportsNone:
-    webrtc_config->type = webrtc::PeerConnectionInterface::kNone;
-    break;
-  case blink::WebRTCIceTransportsRelay:
-    webrtc_config->type = webrtc::PeerConnectionInterface::kRelay;
-    break;
-  case blink::WebRTCIceTransportsAll:
-    webrtc_config->type = webrtc::PeerConnectionInterface::kAll;
-    break;
-  default:
-    NOTREACHED();
+    case blink::WebRTCIceTransportsNone:
+      webrtc_config->type = webrtc::PeerConnectionInterface::kNone;
+      break;
+    case blink::WebRTCIceTransportsRelay:
+      webrtc_config->type = webrtc::PeerConnectionInterface::kRelay;
+      break;
+    case blink::WebRTCIceTransportsAll:
+      webrtc_config->type = webrtc::PeerConnectionInterface::kAll;
+      break;
+    default:
+      NOTREACHED();
   }
 
   switch (blink_config.bundlePolicy()) {
-  case blink::WebRTCBundlePolicyBalanced:
-    webrtc_config->bundle_policy =
-        webrtc::PeerConnectionInterface::kBundlePolicyBalanced;
-    break;
-  case blink::WebRTCBundlePolicyMaxBundle:
-    webrtc_config->bundle_policy =
-        webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
-    break;
-  case blink::WebRTCBundlePolicyMaxCompat:
-    webrtc_config->bundle_policy =
-        webrtc::PeerConnectionInterface::kBundlePolicyMaxCompat;
-    break;
-  default:
-    NOTREACHED();
+    case blink::WebRTCBundlePolicyBalanced:
+      webrtc_config->bundle_policy =
+          webrtc::PeerConnectionInterface::kBundlePolicyBalanced;
+      break;
+    case blink::WebRTCBundlePolicyMaxBundle:
+      webrtc_config->bundle_policy =
+          webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
+      break;
+    case blink::WebRTCBundlePolicyMaxCompat:
+      webrtc_config->bundle_policy =
+          webrtc::PeerConnectionInterface::kBundlePolicyMaxCompat;
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  switch (blink_config.rtcpMuxPolicy()) {
+    case blink::WebRTCRtcpMuxPolicyNegotiate:
+      webrtc_config->rtcp_mux_policy =
+          webrtc::PeerConnectionInterface::kRtcpMuxPolicyNegotiate;
+      break;
+    case blink::WebRTCRtcpMuxPolicyRequire:
+      webrtc_config->rtcp_mux_policy =
+          webrtc::PeerConnectionInterface::kRtcpMuxPolicyRequire;
+      break;
+    default:
+      NOTREACHED();
   }
 }
 
@@ -296,7 +310,7 @@ class CreateSessionDescriptionRequest
 
  protected:
   ~CreateSessionDescriptionRequest() override {
-    DCHECK(webkit_request_.isNull());
+    CHECK(webkit_request_.isNull());
   }
 
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
@@ -1036,10 +1050,9 @@ bool RTCPeerConnectionHandler::addICECandidate(
   // TODO(tommi): Instead of calling addICECandidate here, we can do a
   // PostTaskAndReply kind of a thing.
   bool result = addICECandidate(candidate);
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&RTCPeerConnectionHandler::OnaddICECandidateResult,
-                 weak_factory_.GetWeakPtr(), request, result));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&RTCPeerConnectionHandler::OnaddICECandidateResult,
+                            weak_factory_.GetWeakPtr(), request, result));
   // On failure callback will be triggered.
   return true;
 }
@@ -1306,9 +1319,18 @@ void RTCPeerConnectionHandler::OnIceConnectionChange(
     // If the state becomes connected, send the time needed for PC to become
     // connected from checking to UMA. UMA data will help to know how much
     // time needed for PC to connect with remote peer.
+    if (ice_connection_checking_start_.is_null()) {
+      // From UMA, we have observed a large number of calls falling into the
+      // overflow buckets. One possibility is that the Checking is not signaled
+      // before Connected. This is to guard against that situation to make the
+      // metric more robust.
+      UMA_HISTOGRAM_MEDIUM_TIMES("WebRTC.PeerConnection.TimeToConnect",
+                                 base::TimeDelta());
+    } else {
     UMA_HISTOGRAM_MEDIUM_TIMES(
         "WebRTC.PeerConnection.TimeToConnect",
         base::TimeTicks::Now() - ice_connection_checking_start_);
+    }
   }
 
   track_metrics_.IceConnectionChange(new_state);

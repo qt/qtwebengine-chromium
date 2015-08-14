@@ -392,8 +392,6 @@ class CrossCallParamsMock : public CrossCallParams {
   CrossCallParamsMock(uint32 tag, uint32 params_count)
       :  CrossCallParams(tag, params_count) {
   }
- private:
-  void* params[4];
 };
 
 void FakeOkAnswerInChannel(void* channel) {
@@ -584,16 +582,12 @@ class UnitTestIPCDispatcher : public Dispatcher {
 };
 
 UnitTestIPCDispatcher::UnitTestIPCDispatcher() {
-  static const IPCCall call_one = {
-    {CALL_ONE_TAG, VOIDPTR_TYPE, UINT32_TYPE},
-    reinterpret_cast<CallbackGeneric>(
-        &UnitTestIPCDispatcher::CallOneHandler)
-  };
-  static const IPCCall call_two = {
-    {CALL_TWO_TAG, VOIDPTR_TYPE, UINT32_TYPE},
-    reinterpret_cast<CallbackGeneric>(
-        &UnitTestIPCDispatcher::CallTwoHandler)
-  };
+  static const IPCCall call_one = {{CALL_ONE_TAG, {VOIDPTR_TYPE, UINT32_TYPE}},
+                                   reinterpret_cast<CallbackGeneric>(
+                                       &UnitTestIPCDispatcher::CallOneHandler)};
+  static const IPCCall call_two = {{CALL_TWO_TAG, {VOIDPTR_TYPE, UINT32_TYPE}},
+                                   reinterpret_cast<CallbackGeneric>(
+                                       &UnitTestIPCDispatcher::CallTwoHandler)};
   ipc_calls_.push_back(call_one);
   ipc_calls_.push_back(call_two);
 }
@@ -620,10 +614,10 @@ TEST(IPCTest, SharedMemServerTests) {
   UnitTestIPCDispatcher dispatcher;
   // Since we are directly calling InvokeCallback, most of this structure
   // can be set to NULL.
-  sandbox::SharedMemIPCServer::ServerControl srv_control = {
-      NULL, NULL, kIPCChannelSize, NULL,
-      reinterpret_cast<char*>(client_control),
-      NULL, &dispatcher, {0} };
+  sandbox::SharedMemIPCServer::ServerControl srv_control = {};
+  srv_control.channel_size = kIPCChannelSize;
+  srv_control.shared_base = reinterpret_cast<char*>(client_control);
+  srv_control.dispatcher = &dispatcher;
 
   sandbox::CrossCallReturn call_return = {0};
   EXPECT_TRUE(SharedMemIPCServer::InvokeCallback(&srv_control, buff,

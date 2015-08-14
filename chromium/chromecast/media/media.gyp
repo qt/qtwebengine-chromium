@@ -10,6 +10,13 @@
     'use_default_libcast_media%': 1,
   },
   'targets': [
+    # TODO(gunsch): delete this target once Chromecast M44/earlier is obsolete.
+    # See: b/21639416
+    {
+      'target_name': 'libffmpegsumo',
+      'type': 'loadable_module',
+      'sources': ['empty.cc'],
+    },
     {
       'target_name': 'media_base',
       'type': '<(component)',
@@ -30,6 +37,8 @@
         'base/media_caps.h',
         'base/media_codec_support.cc',
         'base/media_codec_support.h',
+        'base/media_message_loop.cc',
+        'base/media_message_loop.h',
         'base/switching_media_renderer.cc',
         'base/switching_media_renderer.h',
       ],
@@ -56,6 +65,8 @@
       'sources': [
         'cdm/browser_cdm_cast.cc',
         'cdm/browser_cdm_cast.h',
+        'cdm/chromecast_init_data.cc',
+        'cdm/chromecast_init_data.h',
       ],
       'conditions': [
         ['use_playready==1', {
@@ -99,6 +110,8 @@
         'cma/base/decoder_config_adapter.h',
         'cma/base/media_task_runner.cc',
         'cma/base/media_task_runner.h',
+        'cma/base/simple_media_task_runner.cc',
+        'cma/base/simple_media_task_runner.h',         
       ],
     },
     {
@@ -116,22 +129,27 @@
       'sources': [
         'cma/backend/audio_pipeline_device.cc',
         'cma/backend/audio_pipeline_device.h',
+        'cma/backend/audio_pipeline_device_default.cc',
+        'cma/backend/audio_pipeline_device_default.h',
         'cma/backend/media_clock_device.cc',
         'cma/backend/media_clock_device.h',
+        'cma/backend/media_clock_device_default.cc',
+        'cma/backend/media_clock_device_default.h',
         'cma/backend/media_component_device.cc',
         'cma/backend/media_component_device.h',
+        'cma/backend/media_component_device_default.cc',
+        'cma/backend/media_component_device_default.h',
         'cma/backend/media_pipeline_device.cc',
         'cma/backend/media_pipeline_device.h',
-        'cma/backend/media_pipeline_device_fake.cc',
-        'cma/backend/media_pipeline_device_fake.h',
+        'cma/backend/media_pipeline_device_factory.h',
+        'cma/backend/media_pipeline_device_factory_default.cc',
+        'cma/backend/media_pipeline_device_factory_default.h',
         'cma/backend/media_pipeline_device_params.cc',
         'cma/backend/media_pipeline_device_params.h',
         'cma/backend/video_pipeline_device.cc',
+        'cma/backend/video_pipeline_device_default.cc',
+        'cma/backend/video_pipeline_device_default.h',
         'cma/backend/video_pipeline_device.h',
-        'cma/backend/video_plane.cc',
-        'cma/backend/video_plane.h',
-        'cma/backend/video_plane_fake.cc',
-        'cma/backend/video_plane_fake.h',
       ],
       'conditions': [
         ['chromecast_branding=="Chrome"', {
@@ -140,8 +158,7 @@
           ],
         }, {
           'sources': [
-            'cma/backend/media_pipeline_device_fake_factory.cc',
-            'cma/backend/video_plane_fake_factory.cc',
+            'cma/backend/media_pipeline_device_factory_simple.cc'
           ],
         }],
       ],
@@ -195,17 +212,7 @@
         '../../base/base.gyp:base',
         '../../crypto/crypto.gyp:crypto',
         '../../media/media.gyp:media',
-      ],
-      'conditions': [
-        ['chromecast_branding=="Chrome"', {
-          'dependencies': [
-            '../internal/cast_system.gyp:openssl',
-          ],
-        }, {
-          'dependencies': [
-            '../../third_party/boringssl/boringssl.gyp:boringssl',
-          ],
-        }],
+        '../../third_party/boringssl/boringssl.gyp:boringssl',
       ],
       'sources': [
         'cma/pipeline/audio_pipeline.cc',
@@ -245,6 +252,8 @@
         'cma/filters/cma_renderer.h',
         'cma/filters/demuxer_stream_adapter.cc',
         'cma/filters/demuxer_stream_adapter.h',
+        'cma/filters/hole_frame_factory.cc',
+        'cma/filters/hole_frame_factory.h',
       ],
     },
     {
@@ -269,21 +278,28 @@
         '../../base/base.gyp:base_i18n',
         '../../base/base.gyp:test_support_base',
         '../../chromecast/chromecast.gyp:cast_metrics_test_support',
+        '../../gpu/gpu.gyp:gpu_unittest_utils',
         '../../media/media.gyp:media_test_support',
         '../../testing/gmock.gyp:gmock',
         '../../testing/gtest.gyp:gtest',
         '../../testing/gtest.gyp:gtest_main',
+        '../../ui/gfx/gfx.gyp:gfx_test_support',
       ],
       'sources': [
+        'cdm/chromecast_init_data_unittest.cc',
         'cma/backend/audio_video_pipeline_device_unittest.cc',
         'cma/base/balanced_media_task_runner_unittest.cc',
         'cma/base/buffering_controller_unittest.cc',
         'cma/base/buffering_frame_provider_unittest.cc',
         'cma/filters/demuxer_stream_adapter_unittest.cc',
+        'cma/filters/multi_demuxer_stream_adapter_unittest.cc',
         'cma/ipc/media_message_fifo_unittest.cc',
         'cma/ipc/media_message_unittest.cc',
         'cma/ipc_streamer/av_streamer_unittest.cc',
         'cma/pipeline/audio_video_pipeline_impl_unittest.cc',
+        'cma/test/cma_end_to_end_test.cc',
+        'cma/test/demuxer_stream_for_test.cc',
+        'cma/test/demuxer_stream_for_test.h',
         'cma/test/frame_generator_for_test.cc',
         'cma/test/frame_generator_for_test.h',
         'cma/test/frame_segmenter_for_test.cc',

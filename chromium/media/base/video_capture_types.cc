@@ -11,14 +11,29 @@
 namespace media {
 
 VideoCaptureFormat::VideoCaptureFormat()
-    : frame_rate(0.0f), pixel_format(PIXEL_FORMAT_UNKNOWN) {}
+    : frame_rate(0.0f),
+      pixel_format(PIXEL_FORMAT_UNKNOWN),
+      pixel_storage(PIXEL_STORAGE_CPU) {
+}
 
 VideoCaptureFormat::VideoCaptureFormat(const gfx::Size& frame_size,
                                        float frame_rate,
                                        VideoPixelFormat pixel_format)
     : frame_size(frame_size),
       frame_rate(frame_rate),
-      pixel_format(pixel_format) {}
+      pixel_format(pixel_format),
+      pixel_storage(PIXEL_STORAGE_CPU) {
+}
+
+VideoCaptureFormat::VideoCaptureFormat(const gfx::Size& frame_size,
+                                       float frame_rate,
+                                       VideoPixelFormat pixel_format,
+                                       VideoPixelStorage pixel_storage)
+    : frame_size(frame_size),
+      frame_rate(frame_rate),
+      pixel_format(pixel_format),
+      pixel_storage(pixel_storage) {
+}
 
 bool VideoCaptureFormat::IsValid() const {
   return (frame_size.width() < media::limits::kMaxDimension) &&
@@ -27,8 +42,8 @@ bool VideoCaptureFormat::IsValid() const {
          (frame_size.GetArea() < media::limits::kMaxCanvas) &&
          (frame_rate >= 0.0f) &&
          (frame_rate < media::limits::kMaxFramesPerSecond) &&
-         (pixel_format >= 0) &&
-         (pixel_format < PIXEL_FORMAT_MAX);
+         (pixel_storage != PIXEL_STORAGE_TEXTURE ||
+          pixel_format == PIXEL_FORMAT_ARGB);
 }
 
 size_t VideoCaptureFormat::ImageAllocationSize() const {
@@ -49,13 +64,9 @@ size_t VideoCaptureFormat::ImageAllocationSize() const {
       break;
     case PIXEL_FORMAT_RGB32:
     case PIXEL_FORMAT_ARGB:
-    // GpuMemoryBuffer is an endianness-agnostic 32bpp pixel format until
-    // http://crbug.com/439520 is closed.
-    case PIXEL_FORMAT_GPUMEMORYBUFFER:
       result_frame_size *= 4;
       break;
     case PIXEL_FORMAT_MJPEG:
-    case PIXEL_FORMAT_TEXTURE:
       result_frame_size = 0;
       break;
     default:  // Sizes for the rest of the formats are unknown.
@@ -65,49 +76,64 @@ size_t VideoCaptureFormat::ImageAllocationSize() const {
   return result_frame_size;
 }
 
-std::string VideoCaptureFormat::ToString() const {
-  return base::StringPrintf("resolution: %s, fps: %.3f, pixel format: %s",
-                            frame_size.ToString().c_str(),
-                            frame_rate,
-                            PixelFormatToString(pixel_format).c_str());
+//static
+std::string VideoCaptureFormat::ToString(const VideoCaptureFormat& format) {
+  return base::StringPrintf("(%s)@%.3ffps, pixel format: %s storage: %s.",
+                            format.frame_size.ToString().c_str(),
+                            format.frame_rate,
+                            PixelFormatToString(format.pixel_format).c_str(),
+                            PixelStorageToString(format.pixel_storage).c_str());
 }
 
+// static
 std::string VideoCaptureFormat::PixelFormatToString(VideoPixelFormat format) {
   switch (format) {
-  case PIXEL_FORMAT_UNKNOWN:
-    return "UNKNOWN";
-  case PIXEL_FORMAT_I420:
-    return "I420";
-  case PIXEL_FORMAT_YUY2:
-    return "YUY2";
-  case PIXEL_FORMAT_UYVY:
-    return "UYVY";
-  case PIXEL_FORMAT_RGB24:
-    return "RGB24";
-  case PIXEL_FORMAT_RGB32:
-    return "RGB32";
-  case PIXEL_FORMAT_ARGB:
-    return "ARGB";
-  case PIXEL_FORMAT_MJPEG:
-    return "MJPEG";
-  case PIXEL_FORMAT_NV12:
-    return "NV12";
-  case PIXEL_FORMAT_NV21:
-    return "NV21";
-  case PIXEL_FORMAT_YV12:
-    return "YV12";
-  case PIXEL_FORMAT_TEXTURE:
-    return "TEXTURE";
-  case PIXEL_FORMAT_GPUMEMORYBUFFER:
-    return "GPUMEMORYBUFFER";
-  case PIXEL_FORMAT_MAX:
-    break;
+    case PIXEL_FORMAT_UNKNOWN:
+      return "UNKNOWN";
+    case PIXEL_FORMAT_I420:
+      return "I420";
+    case PIXEL_FORMAT_YUY2:
+      return "YUY2";
+    case PIXEL_FORMAT_UYVY:
+      return "UYVY";
+    case PIXEL_FORMAT_RGB24:
+      return "RGB24";
+    case PIXEL_FORMAT_RGB32:
+      return "RGB32";
+    case PIXEL_FORMAT_ARGB:
+      return "ARGB";
+    case PIXEL_FORMAT_MJPEG:
+      return "MJPEG";
+    case PIXEL_FORMAT_NV12:
+      return "NV12";
+    case PIXEL_FORMAT_NV21:
+      return "NV21";
+    case PIXEL_FORMAT_YV12:
+      return "YV12";
   }
   NOTREACHED() << "Invalid VideoPixelFormat provided: " << format;
-  return "";
+  return std::string();
+}
+
+// static
+std::string VideoCaptureFormat::PixelStorageToString(
+    VideoPixelStorage storage) {
+  switch (storage) {
+    case PIXEL_STORAGE_CPU:
+      return "CPU";
+    case PIXEL_STORAGE_TEXTURE:
+      return "TEXTURE";
+    case PIXEL_STORAGE_GPUMEMORYBUFFER:
+      return "GPUMEMORYBUFFER";
+  }
+  NOTREACHED() << "Invalid VideoPixelStorage provided: "
+               << static_cast<int>(storage);
+  return std::string();
 }
 
 VideoCaptureParams::VideoCaptureParams()
-    : resolution_change_policy(RESOLUTION_POLICY_FIXED_RESOLUTION) {}
+    : resolution_change_policy(RESOLUTION_POLICY_FIXED_RESOLUTION),
+      use_gpu_memory_buffers(false) {
+}
 
 }  // namespace media

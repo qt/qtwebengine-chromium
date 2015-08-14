@@ -243,27 +243,27 @@ TEST_F(SiteInstanceTest, CloneNavigationEntry) {
       TestSiteInstance::CreateTestSiteInstance(NULL, &site_delete_counter2,
                                                &browsing_delete_counter);
 
-  NavigationEntryImpl* e1 = new NavigationEntryImpl(
+  scoped_ptr<NavigationEntryImpl> e1 = make_scoped_ptr(new NavigationEntryImpl(
       instance1, 0, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
-      false);
-  // Clone the entry
-  NavigationEntryImpl* e2 = e1->Clone();
+      false));
+  // Clone the entry.
+  scoped_ptr<NavigationEntryImpl> e2 = e1->Clone();
 
   // Should be able to change the SiteInstance of the cloned entry.
   e2->set_site_instance(instance2);
 
-  // The first SiteInstance should go away after deleting e1, since e2 should
+  // The first SiteInstance should go away after resetting e1, since e2 should
   // no longer be referencing it.
-  delete e1;
+  e1.reset();
   EXPECT_EQ(1, site_delete_counter1);
   EXPECT_EQ(0, site_delete_counter2);
 
-  // The second SiteInstance should go away after deleting e2.
-  delete e2;
+  // The second SiteInstance should go away after resetting e2.
+  e2.reset();
   EXPECT_EQ(1, site_delete_counter1);
   EXPECT_EQ(1, site_delete_counter2);
 
-  // Both BrowsingInstances are also now deleted
+  // Both BrowsingInstances are also now deleted.
   EXPECT_EQ(2, browsing_delete_counter);
 
   DrainMessageLoops();
@@ -567,13 +567,11 @@ static SiteInstanceImpl* CreateSiteInstance(BrowserContext* browser_context,
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
-  // This test shouldn't run with --site-per-process or
-  // --enable-strict-site-isolation modes, since they don't allow render
-  // process reuse, which this test explicitly exercises.
+  // This test shouldn't run with --site-per-process mode, which prohibits
+  // the renderer process reuse this test explicitly exercises.
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess) ||
-      command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
+  if (command_line.HasSwitch(switches::kSitePerProcess))
     return;
 
   // On Android by default the number of renderer hosts is unlimited and process

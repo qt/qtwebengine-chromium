@@ -33,28 +33,35 @@ ComputeClips(ClipTree* clip_tree, const TransformTree& transform_tree);
 // tree. This must be done prior to calling |ComputeClips|.
 void CC_EXPORT ComputeTransforms(TransformTree* transform_tree);
 
+// Computes screen space opacity for every node in the opacity tree.
+void CC_EXPORT ComputeOpacities(OpacityTree* opacity_tree);
+
 // Computes the visible content rect for every layer under |root_layer|. The
 // visible content rect is the clipped content space rect that will be used for
 // recording.
-void CC_EXPORT
-BuildPropertyTreesAndComputeVisibleRects(Layer* root_layer,
-                                         const Layer* page_scale_layer,
-                                         float page_scale_factor,
-                                         float device_scale_factor,
-                                         const gfx::Rect& viewport,
-                                         const gfx::Transform& device_transform,
-                                         PropertyTrees* property_trees,
-                                         LayerList* update_layer_list);
+void CC_EXPORT BuildPropertyTreesAndComputeVisibleRects(
+    Layer* root_layer,
+    const Layer* page_scale_layer,
+    const Layer* inner_viewport_scroll_layer,
+    const Layer* outer_viewport_scroll_layer,
+    float page_scale_factor,
+    float device_scale_factor,
+    const gfx::Rect& viewport,
+    const gfx::Transform& device_transform,
+    PropertyTrees* property_trees,
+    LayerList* update_layer_list);
 
-void CC_EXPORT
-BuildPropertyTreesAndComputeVisibleRects(LayerImpl* root_layer,
-                                         const LayerImpl* page_scale_layer,
-                                         float page_scale_factor,
-                                         float device_scale_factor,
-                                         const gfx::Rect& viewport,
-                                         const gfx::Transform& device_transform,
-                                         PropertyTrees* property_trees,
-                                         LayerImplList* update_layer_list);
+void CC_EXPORT BuildPropertyTreesAndComputeVisibleRects(
+    LayerImpl* root_layer,
+    const LayerImpl* page_scale_layer,
+    const LayerImpl* inner_viewport_scroll_layer,
+    const LayerImpl* outer_viewport_scroll_layer,
+    float page_scale_factor,
+    float device_scale_factor,
+    const gfx::Rect& viewport,
+    const gfx::Transform& device_transform,
+    PropertyTrees* property_trees,
+    LayerImplList* update_layer_list);
 
 void CC_EXPORT
 ComputeVisibleRectsUsingPropertyTrees(Layer* root_layer,
@@ -86,6 +93,12 @@ DrawOpacityFromPropertyTrees(const Layer* layer, const OpacityTree& tree);
 
 float CC_EXPORT
 DrawOpacityFromPropertyTrees(const LayerImpl* layer, const OpacityTree& tree);
+
+bool CC_EXPORT
+CanUseLcdTextFromPropertyTrees(const LayerImpl* layer,
+                               bool layers_always_allowed_lcd_text,
+                               bool can_use_lcd_text,
+                               PropertyTrees* property_trees);
 
 }  // namespace cc
 

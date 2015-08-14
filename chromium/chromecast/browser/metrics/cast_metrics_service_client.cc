@@ -7,14 +7,15 @@
 #include "base/command_line.h"
 #include "base/guid.h"
 #include "base/i18n/rtl.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/thread_task_runner_handle.h"
+#include "chromecast/base/chromecast_switches.h"
 #include "chromecast/browser/metrics/cast_stability_metrics_provider.h"
 #include "chromecast/browser/metrics/platform_metrics_providers.h"
-#include "chromecast/common/chromecast_switches.h"
 #include "chromecast/common/pref_names.h"
 #include "components/metrics/client_info.h"
 #include "components/metrics/gpu/gpu_metrics_provider.h"
-#include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_provider.h"
 #include "components/metrics/metrics_service.h"
 #include "components/metrics/metrics_state_manager.h"
@@ -32,7 +33,11 @@ namespace chromecast {
 namespace metrics {
 
 namespace {
+
 const int kStandardUploadIntervalMinutes = 5;
+
+const char kMetricsOldClientID[] = "user_experience_metrics.client_id";
+
 }  // namespace
 
 // static
@@ -43,6 +48,10 @@ scoped_ptr<CastMetricsServiceClient> CastMetricsServiceClient::Create(
   return make_scoped_ptr(new CastMetricsServiceClient(io_task_runner,
                                                       pref_service,
                                                       request_context));
+}
+
+void CastMetricsServiceClient::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterStringPref(kMetricsOldClientID, std::string());
 }
 
 void CastMetricsServiceClient::SetMetricsClientId(
@@ -71,8 +80,7 @@ scoped_ptr< ::metrics::ClientInfo> CastMetricsServiceClient::LoadClientInfo() {
   if (!pref_service_->GetBoolean(prefs::kMetricsIsNewClientID)) {
     // If the old client id exists, the device must be on pre-v1.2 build,
     // instead of just being FDR'ed.
-    if (!pref_service_->GetString(::metrics::prefs::kMetricsOldClientID)
-        .empty()) {
+    if (!pref_service_->GetString(kMetricsOldClientID).empty()) {
       // Force old client id to be regenerated. See b/9487011.
       client_info->client_id = base::GenerateGUID();
       pref_service_->SetBoolean(prefs::kMetricsIsNewClientID, true);
@@ -162,12 +170,10 @@ base::TimeDelta CastMetricsServiceClient::GetStandardUploadInterval() {
 }
 
 void CastMetricsServiceClient::EnableMetricsService(bool enabled) {
-  if (!metrics_service_loop_->BelongsToCurrentThread()) {
-    metrics_service_loop_->PostTask(
-        FROM_HERE,
-        base::Bind(&CastMetricsServiceClient::EnableMetricsService,
-                   base::Unretained(this),
-                   enabled));
+  if (!task_runner_->BelongsToCurrentThread()) {
+    task_runner_->PostTask(
+        FROM_HERE, base::Bind(&CastMetricsServiceClient::EnableMetricsService,
+                              base::Unretained(this), enabled));
     return;
   }
 
@@ -188,7 +194,7 @@ CastMetricsServiceClient::CastMetricsServiceClient(
 #if !defined(OS_ANDROID)
       external_metrics_(NULL),
 #endif  // !defined(OS_ANDROID)
-      metrics_service_loop_(base::MessageLoopProxy::current()),
+      task_runner_(base::ThreadTaskRunnerHandle::Get()),
       request_context_(request_context) {
 }
 

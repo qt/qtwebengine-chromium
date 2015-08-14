@@ -91,7 +91,16 @@ WebInspector.SourceMap = function(sourceMappingURL, payload)
  */
 WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 {
-    WebInspector.ResourceLoader.load(sourceMapURL, null, contentLoaded);
+    var parsedURL = new WebInspector.ParsedURL(sourceMapURL);
+    if (parsedURL.isDataURL()) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", sourceMapURL, false);
+        xhr.send(null);
+        contentLoaded(xhr.status, {}, xhr.responseText);
+        return;
+    }
+
+    WebInspector.ResourceLoader.loadUsingTargetUA(sourceMapURL, null, contentLoaded);
 
     /**
      * @param {number} statusCode

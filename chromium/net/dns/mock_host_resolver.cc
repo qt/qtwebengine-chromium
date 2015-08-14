@@ -8,11 +8,14 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/strings/pattern.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -39,13 +42,12 @@ int ParseAddressList(const std::string& host_list,
                      const std::string& canonical_name,
                      AddressList* addrlist) {
   *addrlist = AddressList();
-  std::vector<std::string> addresses;
-  base::SplitString(host_list, ',', &addresses);
   addrlist->set_canonical_name(canonical_name);
-  for (size_t index = 0; index < addresses.size(); ++index) {
+  for (const base::StringPiece& address : base::SplitStringPiece(
+           host_list, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
     IPAddressNumber ip_number;
-    if (!ParseIPLiteralToNumber(addresses[index], &ip_number)) {
-      LOG(WARNING) << "Not a supported IP literal: " << addresses[index];
+    if (!ParseIPLiteralToNumber(address, &ip_number)) {
+      LOG(WARNING) << "Not a supported IP literal: " << address.as_string();
       return ERR_UNEXPECTED;
     }
     addrlist->push_back(IPEndPoint(ip_number, 0));
@@ -91,7 +93,7 @@ int MockHostResolverBase::Resolve(const RequestInfo& info,
     *handle = reinterpret_cast<RequestHandle>(id);
 
   if (!ondemand_mode_) {
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&MockHostResolverBase::ResolveNow, AsWeakPtr(), id));
   }
@@ -130,7 +132,7 @@ void MockHostResolverBase::ResolveAllPending() {
   DCHECK(CalledOnValidThread());
   DCHECK(ondemand_mode_);
   for (RequestMap::iterator i = requests_.begin(); i != requests_.end(); ++i) {
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&MockHostResolverBase::ResolveNow, AsWeakPtr(), i->first));
   }
@@ -363,7 +365,7 @@ int RuleBasedHostResolverProc::Resolve(const std::string& host,
     // match.
     bool matches_flags = (r->host_resolver_flags & flags) == flags;
     if (matches_flags && matches_address_family &&
-        MatchPattern(host, r->host_pattern)) {
+        base::MatchPattern(host, r->host_pattern)) {
       if (r->latency_ms != 0) {
         base::PlatformThread::Sleep(
             base::TimeDelta::FromMilliseconds(r->latency_ms));

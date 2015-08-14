@@ -21,7 +21,7 @@ class HTMLOptionElement;
 class PopupMenuImpl final : public PopupMenu, public PagePopupClient {
 public:
     static PassRefPtrWillBeRawPtr<PopupMenuImpl> create(ChromeClientImpl*, PopupMenuClient*);
-    virtual ~PopupMenuImpl();
+    ~PopupMenuImpl() override;
 
     void update();
 
@@ -30,11 +30,11 @@ public:
 private:
     PopupMenuImpl(ChromeClientImpl*, PopupMenuClient*);
 
-    bool hasTooManyItemsForStyling();
-    void addOption(HTMLOptionElement&, bool enableExtraStyling, SharedBuffer*);
-    void addOptGroup(HTMLOptGroupElement&, bool enableExtraStyling, SharedBuffer*);
-    void addSeparator(HTMLHRElement&, bool enableExtraStyling, SharedBuffer*);
-    void addElementStyle(HTMLElement&, bool enableExtraStyling, SharedBuffer*);
+    class ItemIterationContext;
+    void addOption(ItemIterationContext&, HTMLOptionElement&);
+    void addOptGroup(ItemIterationContext&, HTMLOptGroupElement&);
+    void addSeparator(ItemIterationContext&, HTMLHRElement&);
+    void addElementStyle(ItemIterationContext&, HTMLElement&);
 
     // PopupMenu functions:
     void show(const FloatQuad& controlPosition, const IntSize& controlSize, int index) override;

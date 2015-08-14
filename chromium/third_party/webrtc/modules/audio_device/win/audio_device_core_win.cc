@@ -35,7 +35,7 @@
 #include <strsafe.h>
 #include <uuids.h>
 
-#include "webrtc/modules/audio_device/audio_device_utility.h"
+#include "webrtc/base/platform_thread.h"
 #include "webrtc/system_wrappers/interface/sleep.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
@@ -3389,7 +3389,7 @@ DWORD AudioDeviceWindowsCore::DoRenderThread()
       return 1;
     }
 
-    _SetThreadName(0, "webrtc_core_audio_render_thread");
+    rtc::SetCurrentThreadName("webrtc_core_audio_render_thread");
 
     // Use Multimedia Class Scheduler Service (MMCSS) to boost the thread priority.
     //
@@ -3666,7 +3666,7 @@ DWORD AudioDeviceWindowsCore::InitCaptureThreadPriority()
 {
     _hMmTask = NULL;
 
-    _SetThreadName(0, "webrtc_core_audio_capture_thread");
+    rtc::SetCurrentThreadName("webrtc_core_audio_capture_thread");
 
     // Use Multimedia Class Scheduler Service (MMCSS) to boost the thread
     // priority.
@@ -4205,7 +4205,7 @@ int AudioDeviceWindowsCore::SetDMOProperties()
     HRESULT hr = S_OK;
     assert(_dmo != NULL);
 
-    scoped_refptr<IPropertyStore> ps;
+    rtc::scoped_refptr<IPropertyStore> ps;
     {
         IPropertyStore* ptrPS = NULL;
         hr = _dmo->QueryInterface(IID_IPropertyStore,
@@ -4638,7 +4638,7 @@ int32_t AudioDeviceWindowsCore::_GetDefaultDeviceIndex(EDataFlow dir,
     for (UINT i = 0; i < count; i++)
     {
         memset(szDeviceID, 0, sizeof(szDeviceID));
-        scoped_refptr<IMMDevice> device;
+        rtc::scoped_refptr<IMMDevice> device;
         {
             IMMDevice* ptrDevice = NULL;
             hr = collection->Item(i, &ptrDevice);
@@ -5067,30 +5067,6 @@ void AudioDeviceWindowsCore::_TraceCOMError(HRESULT hr) const
     StringCchPrintf(buf, MAXERRORLENGTH, TEXT("Error details: "));
     StringCchCat(buf, MAXERRORLENGTH, errorText);
     WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id, "%s", WideToUTF8(buf));
-}
-
-// ----------------------------------------------------------------------------
-//  _SetThreadName
-// ----------------------------------------------------------------------------
-
-void AudioDeviceWindowsCore::_SetThreadName(DWORD dwThreadID, LPCSTR szThreadName)
-{
-    // See http://msdn.microsoft.com/en-us/library/xcb2z8hs(VS.71).aspx for details on the code
-    // in this function. Name of article is "Setting a Thread Name (Unmanaged)".
-
-    THREADNAME_INFO info;
-    info.dwType = 0x1000;
-    info.szName = szThreadName;
-    info.dwThreadID = dwThreadID;
-    info.dwFlags = 0;
-
-    __try
-    {
-        RaiseException( 0x406D1388, 0, sizeof(info)/sizeof(DWORD), (ULONG_PTR *)&info );
-    }
-    __except (EXCEPTION_CONTINUE_EXECUTION)
-    {
-    }
 }
 
 // ----------------------------------------------------------------------------

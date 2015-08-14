@@ -38,7 +38,7 @@
 #include "bindings/core/v8/V8HiddenValue.h"
 #include "core/events/BeforeUnloadEvent.h"
 #include "core/events/Event.h"
-#include "core/inspector/InspectorCounters.h"
+#include "core/inspector/InstanceCounters.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace blink {
@@ -50,7 +50,7 @@ V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, DOMWrapperWor
     , m_isolate(isolate)
 {
     if (isMainThread())
-        InspectorCounters::incrementCounter(InspectorCounters::JSEventListenerCounter);
+        InstanceCounters::incrementCounter(InstanceCounters::JSEventListenerCounter);
 }
 
 V8AbstractEventListener::~V8AbstractEventListener()
@@ -60,7 +60,7 @@ V8AbstractEventListener::~V8AbstractEventListener()
         V8EventListenerList::clearWrapper(m_listener.newLocal(isolate()), m_isAttribute, isolate());
     }
     if (isMainThread())
-        InspectorCounters::decrementCounter(InspectorCounters::JSEventListenerCounter);
+        InstanceCounters::decrementCounter(InstanceCounters::JSEventListenerCounter);
 }
 
 void V8AbstractEventListener::handleEvent(ExecutionContext* executionContext, Event* event)
@@ -108,6 +108,9 @@ void V8AbstractEventListener::setListenerObject(v8::Local<v8::Object> listener)
 
 void V8AbstractEventListener::invokeEventHandler(ScriptState* scriptState, Event* event, v8::Local<v8::Value> jsEvent)
 {
+    if (!event->canBeDispatchedInWorld(world()))
+        return;
+
     v8::Local<v8::Value> returnValue;
     {
         // Catch exceptions thrown in the event handler so they do not propagate to javascript code that caused the event to fire.
@@ -175,7 +178,7 @@ v8::Local<v8::Object> V8AbstractEventListener::getReceiverObject(ScriptState* sc
 
 bool V8AbstractEventListener::belongsToTheCurrentWorld() const
 {
-    return isolate()->InContext() && &world() == &DOMWrapperWorld::current(isolate());
+    return ScriptState::hasCurrentScriptState(isolate()) && &world() == &DOMWrapperWorld::current(isolate());
 }
 
 void V8AbstractEventListener::setWeakCallback(const v8::WeakCallbackInfo<V8AbstractEventListener> &data)

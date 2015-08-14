@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/devtools/ipc_devtools_agent_host.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/web_contents_observer.h"
 
@@ -22,7 +22,7 @@ namespace content {
 
 class BrowserContext;
 class DevToolsFrameTraceRecorder;
-class RenderFrameHost;
+class DevToolsProtocolHandler;
 class RenderFrameHostImpl;
 
 #if defined(OS_ANDROID)
@@ -37,12 +37,13 @@ namespace inspector { class InspectorHandler; }
 namespace network { class NetworkHandler; }
 namespace page { class PageHandler; }
 namespace power { class PowerHandler; }
+namespace security { class SecurityHandler; }
 namespace service_worker { class ServiceWorkerHandler; }
 namespace tracing { class TracingHandler; }
 }
 
 class CONTENT_EXPORT RenderFrameDevToolsAgentHost
-    : public IPCDevToolsAgentHost,
+    : public DevToolsAgentHostImpl,
       private WebContentsObserver {
  public:
   static void AddAllAgentHosts(DevToolsAgentHost::List* result);
@@ -65,21 +66,23 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   GURL GetURL() override;
   bool Activate() override;
   bool Close() override;
+  bool DispatchProtocolMessage(const std::string& message) override;
 
  private:
   friend class DevToolsAgentHost;
-  explicit RenderFrameDevToolsAgentHost(RenderFrameHost*);
+  explicit RenderFrameDevToolsAgentHost(RenderFrameHostImpl*);
   ~RenderFrameDevToolsAgentHost() override;
 
-  static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(RenderFrameHost* host);
+  static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(
+      RenderFrameHostImpl* host);
   static void AppendAgentHostForFrameIfApplicable(
       DevToolsAgentHost::List* result,
       RenderFrameHost* host);
 
-  // IPCDevToolsAgentHost overrides.
-  void SendMessageToAgent(IPC::Message* msg) override;
-  void OnClientAttached(bool reattached) override;
-  void OnClientDetached() override;
+  // DevToolsAgentHostImpl overrides.
+  void Attach() override;
+  void Detach() override;
+  void InspectElement(int x, int y) override;
 
   // WebContentsObserver overrides.
   void AboutToNavigateRenderFrame(RenderFrameHost* old_host,
@@ -98,35 +101,39 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
       RenderFrameHost* render_frame_host,
       const GURL& url,
       ui::PageTransition transition_type) override;
+  void DidFailProvisionalLoad(
+      RenderFrameHost* render_frame_host,
+      const GURL& validated_url,
+      int error_code,
+      const base::string16& error_description,
+      bool was_ignored_by_handler) override;
 
-  void DisconnectRenderFrameHost();
-  void ConnectRenderFrameHost(RenderFrameHost* rvh);
-  void ReattachToRenderFrameHost(RenderFrameHost* rvh);
+  void SetPending(RenderFrameHostImpl* host);
+  void CommitPending();
+  void DiscardPending();
+  void UpdateProtocolHandlers(RenderFrameHostImpl* host);
 
-  void SetRenderFrameHost(RenderFrameHost* rvh);
-  void ClearRenderFrameHost();
+  bool IsChildFrame();
+
+  void OnClientAttached();
+  void OnClientDetached();
 
   void RenderFrameCrashed();
   void OnSwapCompositorFrame(const IPC::Message& message);
-  bool OnSetTouchEventEmulationEnabled(const IPC::Message& message);
-
-  void OnDispatchOnInspectorFrontend(const DevToolsMessageChunk& message);
-
-  void ClientDetachedFromRenderer();
-
-  void InnerOnClientAttached();
-  void InnerClientDetachedFromRenderer();
-
-  bool IsChildFrame();
   void DestroyOnRenderFrameGone();
 
-  RenderFrameHostImpl* render_frame_host_;
+  class FrameHostHolder;
+
+  scoped_ptr<FrameHostHolder> current_;
+  scoped_ptr<FrameHostHolder> pending_;
+
   scoped_ptr<devtools::dom::DOMHandler> dom_handler_;
   scoped_ptr<devtools::input::InputHandler> input_handler_;
   scoped_ptr<devtools::inspector::InspectorHandler> inspector_handler_;
   scoped_ptr<devtools::network::NetworkHandler> network_handler_;
   scoped_ptr<devtools::page::PageHandler> page_handler_;
   scoped_ptr<devtools::power::PowerHandler> power_handler_;
+  scoped_ptr<devtools::security::SecurityHandler> security_handler_;
   scoped_ptr<devtools::service_worker::ServiceWorkerHandler>
       service_worker_handler_;
   scoped_ptr<devtools::tracing::TracingHandler> tracing_handler_;
@@ -135,7 +142,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 #if defined(OS_ANDROID)
   scoped_ptr<PowerSaveBlockerImpl> power_save_blocker_;
 #endif
-  bool reattaching_;
+  scoped_ptr<DevToolsProtocolHandler> protocol_handler_;
+  bool current_frame_crashed_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameDevToolsAgentHost);
 };

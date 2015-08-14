@@ -7,25 +7,30 @@
 
 #include "base/pickle.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
+#include "third_party/skia/include/core/SkFontHost.h"
+#include "third_party/skia/include/core/SkSurfaceProps.h"
 
 namespace skia {
 
 // Return true if the pickle/iterator contains a string. If so, and if str
 // is not null, copy that string into str.
-SK_API bool ReadSkString(PickleIterator* iter, SkString* str);
+SK_API bool ReadSkString(base::PickleIterator* iter, SkString* str);
 
 // Return true if the pickle/iterator contains a FontIdentity. If so, and if
 // identity is not null, copy it into identity.
-SK_API bool ReadSkFontIdentity(PickleIterator* iter,
+SK_API bool ReadSkFontIdentity(base::PickleIterator* iter,
                                SkFontConfigInterface::FontIdentity* identity);
 
 // Return true if str can be written into the request pickle.
-SK_API bool WriteSkString(Pickle* pickle, const SkString& str);
+SK_API bool WriteSkString(base::Pickle* pickle, const SkString& str);
 
 // Return true if identity can be written into the request pickle.
 SK_API bool WriteSkFontIdentity(
-    Pickle* pickle,
+    base::Pickle* pickle,
     const SkFontConfigInterface::FontIdentity& identity);
+
+// Determine the default pixel geometry (for LCD) by querying the font host
+SK_API SkPixelGeometry ComputeDefaultPixelGeometry();
 
 }  // namespace skia
 

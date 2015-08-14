@@ -45,7 +45,7 @@ class CORE_EXPORT Touch final : public RefCountedWillBeGarbageCollected<Touch>, 
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<Touch> create(LocalFrame* frame, EventTarget* target,
-        unsigned identifier, const FloatPoint& screenPos, const FloatPoint& pagePos,
+        int identifier, const FloatPoint& screenPos, const FloatPoint& pagePos,
         const FloatSize& radius, float rotationAngle, float force)
     {
         return adoptRefWillBeNoop(
@@ -54,20 +54,17 @@ public:
 
     // DOM Touch implementation
     EventTarget* target() const { return m_target.get(); }
-    unsigned identifier() const { return m_identifier; }
+    int identifier() const { return m_identifier; }
     double clientX() const { return m_clientPos.x(); }
     double clientY() const { return m_clientPos.y(); }
     double screenX() const { return m_screenPos.x(); }
     double screenY() const { return m_screenPos.y(); }
     double pageX() const { return m_pagePos.x(); }
     double pageY() const { return m_pagePos.y(); }
-    double radiusX() const { return m_radius.width(); }
-    double webkitRadiusX() const { return m_radius.width(); }
-    double radiusY() const { return m_radius.height(); }
-    double webkitRadiusY() const { return m_radius.height(); }
-    float webkitRotationAngle() const { return m_rotationAngle; }
+    float radiusX() const { return m_radius.width(); }
+    float radiusY() const { return m_radius.height(); }
+    float rotationAngle() const { return m_rotationAngle; }
     float force() const { return m_force; }
-    float webkitForce() const { return m_force; }
 
     // Blink-internal methods
     const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
@@ -77,16 +74,16 @@ public:
     DECLARE_TRACE();
 
 private:
-    Touch(LocalFrame* frame, EventTarget* target, unsigned identifier,
+    Touch(LocalFrame*, EventTarget*, int identifier,
         const FloatPoint& screenPos, const FloatPoint& pagePos,
         const FloatSize& radius, float rotationAngle, float force);
 
-    Touch(EventTarget*, unsigned identifier, const FloatPoint& clientPos,
+    Touch(EventTarget*, int identifier, const FloatPoint& clientPos,
         const FloatPoint& screenPos, const FloatPoint& pagePos,
         const FloatSize& radius, float rotationAngle, float force, LayoutPoint absoluteLocation);
 
     RefPtrWillBeMember<EventTarget> m_target;
-    unsigned m_identifier;
+    int m_identifier;
     // Position relative to the viewport in CSS px.
     FloatPoint m_clientPos;
     // Position relative to the screen in DIPs.

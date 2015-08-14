@@ -93,7 +93,7 @@ class MockAudioManagerAlsa : public AudioManagerAlsa {
   // We don't mock this method since all tests will do the same thing
   // and use the current task runner.
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override {
-    return base::MessageLoop::current()->message_loop_proxy();
+    return base::MessageLoop::current()->task_runner();
   }
 
  private:
@@ -231,17 +231,6 @@ TEST_F(AlsaPcmOutputStreamTest, ConstructedState) {
                                  kTestFramesPerPacket);
   test_stream = new AlsaPcmOutputStream(kTestDeviceName,
                                         bad_bps_params,
-                                        &mock_alsa_wrapper_,
-                                        mock_manager_.get());
-  EXPECT_EQ(AlsaPcmOutputStream::kInError, test_stream->state());
-  test_stream->Close();
-
-  // Bad format.
-  AudioParameters bad_format_params(
-      AudioParameters::AUDIO_LAST_FORMAT, kTestChannelLayout, kTestSampleRate,
-      kTestBitsPerSample, kTestFramesPerPacket);
-  test_stream = new AlsaPcmOutputStream(kTestDeviceName,
-                                        bad_format_params,
                                         &mock_alsa_wrapper_,
                                         mock_manager_.get());
   EXPECT_EQ(AlsaPcmOutputStream::kInError, test_stream->state());

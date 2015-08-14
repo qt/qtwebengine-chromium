@@ -44,23 +44,35 @@ RenderFrameProxyHost* RenderFrameProxyHost::FromID(int process_id,
 }
 
 RenderFrameProxyHost::RenderFrameProxyHost(SiteInstance* site_instance,
+                                           RenderViewHostImpl* render_view_host,
                                            FrameTreeNode* frame_tree_node)
     : routing_id_(site_instance->GetProcess()->GetNextRoutingID()),
       site_instance_(site_instance),
       process_(site_instance->GetProcess()),
       frame_tree_node_(frame_tree_node),
-      render_frame_proxy_created_(false) {
+      render_frame_proxy_created_(false),
+      render_view_host_(render_view_host) {
   GetProcess()->AddRoute(routing_id_, this);
   CHECK(g_routing_id_frame_proxy_map.Get().insert(
       std::make_pair(
           RenderFrameProxyHostID(GetProcess()->GetID(), routing_id_),
           this)).second);
+  CHECK_IMPLIES(!render_view_host,
+                frame_tree_node_->render_manager()->ForInnerDelegate());
+  if (render_view_host)
+    frame_tree_node_->frame_tree()->AddRenderViewHostRef(render_view_host_);
 
-  if (!frame_tree_node_->IsMainFrame() &&
-      frame_tree_node_->parent()
-              ->render_manager()
-              ->current_frame_host()
-              ->GetSiteInstance() == site_instance) {
+  bool is_proxy_to_parent = !frame_tree_node_->IsMainFrame() &&
+                            frame_tree_node_->parent()
+                                    ->render_manager()
+                                    ->current_frame_host()
+                                    ->GetSiteInstance() == site_instance;
+
+  // If this is a proxy to parent frame or this proxy is for the inner
+  // WebContents's FrameTreeNode in outer WebContents's SiteInstance, then we
+  // need a CrossProcessFrameConnector.
+  if (is_proxy_to_parent ||
+      frame_tree_node_->render_manager()->ForInnerDelegate()) {
     // The RenderFrameHost navigating cross-process is destroyed and a proxy for
     // it is created in the parent's process. CrossProcessFrameConnector
     // initialization only needs to happen on an initial cross-process
@@ -82,6 +94,8 @@ RenderFrameProxyHost::~RenderFrameProxyHost() {
       Send(new FrameMsg_DeleteProxy(routing_id_));
   }
 
+  if (render_view_host_)
+    frame_tree_node_->frame_tree()->ReleaseRenderViewHostRef(render_view_host_);
   GetProcess()->RemoveRoute(routing_id_);
   g_routing_id_frame_proxy_map.Get().erase(
       RenderFrameProxyHostID(GetProcess()->GetID(), routing_id_));
@@ -95,6 +109,11 @@ void RenderFrameProxyHost::SetChildRWHView(RenderWidgetHostView* view) {
 RenderViewHostImpl* RenderFrameProxyHost::GetRenderViewHost() {
   return frame_tree_node_->frame_tree()->GetRenderViewHost(
       site_instance_.get());
+}
+
+RenderWidgetHostView* RenderFrameProxyHost::GetRenderWidgetHostView() {
+  return frame_tree_node_->parent()->render_manager()
+      ->GetRenderWidgetHostView();
 }
 
 void RenderFrameProxyHost::TakeFrameHostOwnership(
@@ -150,10 +169,14 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
         frame_tree_node_->parent()->render_manager()->GetRenderFrameProxyHost(
             site_instance_.get());
     CHECK(parent_proxy);
-    // When this is called, the parent RenderFrameProxy should already exist.
-    // The FrameNew_NewFrameProxy will crash on the renderer side if there's no
-    // parent proxy.
-    CHECK(parent_proxy->is_render_frame_proxy_live());
+
+    // Proxies that aren't live in the parent node should not be initialized
+    // here, since there is no valid parent RenderFrameProxy on the renderer
+    // side.  This can happen when adding a new child frame after an opener
+    // process crashed and was reloaded.  See https://crbug.com/501152.
+    if (!parent_proxy->is_render_frame_proxy_live())
+      return false;
+
     parent_routing_id = parent_proxy->GetRoutingID();
     CHECK_NE(parent_routing_id, MSG_ROUTING_NONE);
   }
@@ -175,6 +198,11 @@ void RenderFrameProxyHost::DisownOpener() {
 }
 
 void RenderFrameProxyHost::OnDetach() {
+  if (frame_tree_node_->render_manager()->ForInnerDelegate()) {
+    frame_tree_node_->render_manager()->RemoveOuterDelegateFrame();
+    return;
+  }
+
   // This message should only be received for subframes.  Note that we can't
   // restrict it to just the current SiteInstances of the ancestors of this
   // frame, because another frame in the tree may be able to detach this frame
@@ -220,32 +248,23 @@ void RenderFrameProxyHost::OnRouteMessageEvent(
     if (!source_rfh) {
       new_params.source_routing_id = MSG_ROUTING_NONE;
     } else {
-      // Ensure that we have a swapped-out RVH and proxy for the source frame.
-      // If it doesn't exist, create it on demand and also create its opener
-      // chain, since those will also be accessible to the target page.
-      //
-      // TODO(alexmos): This currently only works for top-level frames and
-      // won't create the right proxy if the message source is a subframe on a
-      // cross-process tab.  This will be cleaned up as part of moving opener
-      // tracking to FrameTreeNode (https://crbug.com/225940). For now, if the
-      // message is sent from a subframe on a cross-process tab, set the source
-      // routing ID to the main frame of the source tab, which matches legacy
-      // postMessage behavior prior to --site-per-process.
-      int source_view_routing_id =
-          target_rfh->delegate()->EnsureOpenerRenderViewsExist(source_rfh);
+      // Ensure that we have a swapped-out RVH and proxy for the source frame
+      // in the target SiteInstance. If it doesn't exist, create it on demand
+      // and also create its opener chain, since that will also be accessible
+      // to the target page.
+      target_rfh->delegate()->EnsureOpenerProxiesExist(source_rfh);
 
+      // If the message source is a cross-process subframe, its proxy will only
+      // be created in --site-per-process mode.  If the proxy wasn't created,
+      // set the source routing ID to MSG_ROUTING_NONE (see
+      // https://crbug.com/485520 for discussion on why this is ok).
       RenderFrameProxyHost* source_proxy_in_target_site_instance =
           source_rfh->frame_tree_node()
               ->render_manager()
-              ->GetRenderFrameProxyHost(target_rfh->GetSiteInstance());
+              ->GetRenderFrameProxyHost(target_site_instance);
       if (source_proxy_in_target_site_instance) {
         new_params.source_routing_id =
             source_proxy_in_target_site_instance->GetRoutingID();
-      } else if (source_view_routing_id != MSG_ROUTING_NONE) {
-        RenderViewHostImpl* source_rvh = RenderViewHostImpl::FromID(
-            target_rfh->GetProcess()->GetID(), source_view_routing_id);
-        CHECK(source_rvh);
-        new_params.source_routing_id = source_rvh->main_frame_routing_id();
       } else {
         new_params.source_routing_id = MSG_ROUTING_NONE;
       }

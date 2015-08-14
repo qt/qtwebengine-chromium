@@ -206,7 +206,7 @@ TrayBubbleContentMask::~TrayBubbleContentMask() {
 }
 
 void TrayBubbleContentMask::OnPaintLayer(const ui::PaintContext& context) {
-  ui::PaintRecorder recorder(context);
+  ui::PaintRecorder recorder(context, layer()->size());
   SkPaint paint;
   paint.setAlpha(255);
   paint.setStyle(SkPaint::kFill_Style);
@@ -357,9 +357,11 @@ void TrayBubbleView::InitializeAndShowBubble() {
 }
 
 void TrayBubbleView::UpdateBubble() {
-  SizeToContents();
-  bubble_content_mask_->layer()->SetBounds(layer()->bounds());
-  GetWidget()->GetRootView()->SchedulePaint();
+  if (GetWidget()) {
+    SizeToContents();
+    bubble_content_mask_->layer()->SetBounds(layer()->bounds());
+    GetWidget()->GetRootView()->SchedulePaint();
+  }
 }
 
 void TrayBubbleView::SetMaxHeight(int height) {

@@ -15,10 +15,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/test/test_io_thread.h"
-#include "base/threading/platform_thread.h"  // For |Sleep()|.
 #include "build/build_config.h"              // TODO(vtl): Remove this.
 #include "mojo/edk/embedder/platform_channel_pair.h"
 #include "mojo/edk/embedder/platform_shared_buffer.h"
@@ -36,6 +34,7 @@
 #include "mojo/edk/system/test_utils.h"
 #include "mojo/edk/system/waiter.h"
 #include "mojo/edk/test/test_utils.h"
+#include "mojo/public/cpp/system/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -165,7 +164,7 @@ class RemoteMessagePipeTest : public testing::Test {
   embedder::ScopedPlatformHandle platform_handles_[2];
   scoped_refptr<Channel> channels_[2];
 
-  DISALLOW_COPY_AND_ASSIGN(RemoteMessagePipeTest);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(RemoteMessagePipeTest);
 };
 
 TEST_F(RemoteMessagePipeTest, Basic) {
@@ -616,8 +615,9 @@ TEST_F(RemoteMessagePipeTest, HandlePassing) {
   BootstrapChannelEndpoints(ep0, ep1);
 
   // We'll try to pass this dispatcher.
-  scoped_refptr<MessagePipeDispatcher> dispatcher(
-      new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipeDispatcher> dispatcher =
+      MessagePipeDispatcher::Create(
+          MessagePipeDispatcher::kDefaultCreateOptions);
   scoped_refptr<MessagePipe> local_mp(MessagePipe::CreateLocalLocal());
   dispatcher->Init(local_mp, 0);
 
@@ -674,7 +674,7 @@ TEST_F(RemoteMessagePipeTest, HandlePassing) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypeMessagePipe, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::MESSAGE_PIPE, read_dispatchers[0]->GetType());
   dispatcher = static_cast<MessagePipeDispatcher*>(read_dispatchers[0].get());
 
   // Add the waiter now, before it becomes readable to avoid a race.
@@ -760,8 +760,9 @@ TEST_F(RemoteMessagePipeTest, HandlePassingHalfClosed) {
   uint32_t context = 0;
 
   // We'll try to pass this dispatcher.
-  scoped_refptr<MessagePipeDispatcher> dispatcher(
-      new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipeDispatcher> dispatcher =
+      MessagePipeDispatcher::Create(
+          MessagePipeDispatcher::kDefaultCreateOptions);
   scoped_refptr<MessagePipe> local_mp(MessagePipe::CreateLocalLocal());
   dispatcher->Init(local_mp, 0);
 
@@ -848,7 +849,7 @@ TEST_F(RemoteMessagePipeTest, HandlePassingHalfClosed) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypeMessagePipe, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::MESSAGE_PIPE, read_dispatchers[0]->GetType());
   dispatcher = static_cast<MessagePipeDispatcher*>(read_dispatchers[0].get());
 
   // |dispatcher| should already be readable and not writable.
@@ -982,7 +983,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypeSharedBuffer, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::SHARED_BUFFER, read_dispatchers[0]->GetType());
   dispatcher = static_cast<SharedBufferDispatcher*>(read_dispatchers[0].get());
 
   // Make another mapping.
@@ -1044,9 +1045,9 @@ TEST_F(RemoteMessagePipeTest, MAYBE_PlatformHandlePassing) {
   EXPECT_EQ(sizeof(kHello), fwrite(kHello, 1, sizeof(kHello), fp.get()));
   // We'll try to pass this dispatcher, which will cause a |PlatformHandle| to
   // be passed.
-  scoped_refptr<PlatformHandleDispatcher> dispatcher(
-      new PlatformHandleDispatcher(
-          mojo::test::PlatformHandleFromFILE(fp.Pass())));
+  scoped_refptr<PlatformHandleDispatcher> dispatcher =
+      PlatformHandleDispatcher::Create(
+          mojo::test::PlatformHandleFromFILE(fp.Pass()));
 
   // Prepare to wait on MP 1, port 1. (Add the waiter now. Otherwise, if we do
   // it later, it might already be readable.)
@@ -1101,7 +1102,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_PlatformHandlePassing) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypePlatformHandle, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::PLATFORM_HANDLE, read_dispatchers[0]->GetType());
   dispatcher =
       static_cast<PlatformHandleDispatcher*>(read_dispatchers[0].get());
 
@@ -1129,7 +1130,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_PlatformHandlePassing) {
 // itself (not in the test). Also, any logged warnings/errors would also
 // probably be indicative of bugs.
 TEST_F(RemoteMessagePipeTest, RacingClosesStress) {
-  base::TimeDelta delay = base::TimeDelta::FromMilliseconds(5);
+  MojoDeadline delay = test::DeadlineFromMilliseconds(5);
 
   for (unsigned i = 0; i < 256; i++) {
     DVLOG(2) << "---------------------------------------- " << i;
@@ -1142,20 +1143,20 @@ TEST_F(RemoteMessagePipeTest, RacingClosesStress) {
     BootstrapChannelEndpointNoWait(1, ep1);
 
     if (i & 1u) {
-      io_thread()->task_runner()->PostTask(
-          FROM_HERE, base::Bind(&base::PlatformThread::Sleep, delay));
+      io_thread()->task_runner()->PostTask(FROM_HERE,
+                                           base::Bind(&test::Sleep, delay));
     }
     if (i & 2u)
-      base::PlatformThread::Sleep(delay);
+      test::Sleep(delay);
 
     mp0->Close(0);
 
     if (i & 4u) {
-      io_thread()->task_runner()->PostTask(
-          FROM_HERE, base::Bind(&base::PlatformThread::Sleep, delay));
+      io_thread()->task_runner()->PostTask(FROM_HERE,
+                                           base::Bind(&test::Sleep, delay));
     }
     if (i & 8u)
-      base::PlatformThread::Sleep(delay);
+      test::Sleep(delay);
 
     mp1->Close(1);
 
@@ -1180,8 +1181,9 @@ TEST_F(RemoteMessagePipeTest, PassMessagePipeHandleAcrossAndBack) {
   BootstrapChannelEndpoints(ep0, ep1);
 
   // We'll try to pass this dispatcher.
-  scoped_refptr<MessagePipeDispatcher> dispatcher(
-      new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
+  scoped_refptr<MessagePipeDispatcher> dispatcher =
+      MessagePipeDispatcher::Create(
+          MessagePipeDispatcher::kDefaultCreateOptions);
   scoped_refptr<MessagePipe> local_mp(MessagePipe::CreateLocalLocal());
   dispatcher->Init(local_mp, 0);
 
@@ -1238,7 +1240,7 @@ TEST_F(RemoteMessagePipeTest, PassMessagePipeHandleAcrossAndBack) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypeMessagePipe, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::MESSAGE_PIPE, read_dispatchers[0]->GetType());
   dispatcher = static_cast<MessagePipeDispatcher*>(read_dispatchers[0].get());
   read_dispatchers.clear();
 
@@ -1295,7 +1297,7 @@ TEST_F(RemoteMessagePipeTest, PassMessagePipeHandleAcrossAndBack) {
   ASSERT_TRUE(read_dispatchers[0]);
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
-  EXPECT_EQ(Dispatcher::kTypeMessagePipe, read_dispatchers[0]->GetType());
+  EXPECT_EQ(Dispatcher::Type::MESSAGE_PIPE, read_dispatchers[0]->GetType());
   dispatcher = static_cast<MessagePipeDispatcher*>(read_dispatchers[0].get());
   read_dispatchers.clear();
 

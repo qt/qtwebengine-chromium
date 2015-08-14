@@ -9,7 +9,6 @@
 #include "SkCanvasPriv.h"
 #include "SkBitmapDevice.h"
 #include "SkColorFilter.h"
-#include "SkDeviceImageFilterProxy.h"
 #include "SkDraw.h"
 #include "SkDrawable.h"
 #include "SkDrawFilter.h"
@@ -17,6 +16,7 @@
 #include "SkErrorInternals.h"
 #include "SkImage.h"
 #include "SkMetaData.h"
+#include "SkNinePatchIter.h"
 #include "SkPathOps.h"
 #include "SkPatchUtils.h"
 #include "SkPicture.h"
@@ -270,7 +270,9 @@ public:
             fClip   = &((SkRasterClip*)&rec->fClip)->forceGetBW();
             fRC     = &rec->fClip;
             fDevice = rec->fDevice;
-            fBitmap = &fDevice->accessBitmap(true);
+            if (!fDevice->accessPixels(&fDst)) {
+                fDst.reset(fDevice->imageInfo(), NULL, 0);
+            }
             fPaint  = rec->fPaint;
             SkDEBUGCODE(this->validate();)
 
@@ -535,7 +537,8 @@ SkBaseDevice* SkCanvas::init(SkBaseDevice* device, InitFlags flags) {
     fSurfaceBase = NULL;
 
     if (device) {
-        device->initForRootLayer(fProps.pixelGeometry());
+        // The root device and the canvas should always have the same pixel geometry
+        SkASSERT(fProps.pixelGeometry() == device->surfaceProps().pixelGeometry());
         if (device->forceConservativeRasterClip()) {
             fConservativeRasterClip = true;
         }
@@ -563,8 +566,8 @@ static SkBitmap make_nopixels(int width, int height) {
 
 class SkNoPixelsBitmapDevice : public SkBitmapDevice {
 public:
-    SkNoPixelsBitmapDevice(const SkIRect& bounds)
-        : INHERITED(make_nopixels(bounds.width(), bounds.height()))
+    SkNoPixelsBitmapDevice(const SkIRect& bounds, const SkSurfaceProps& surfaceProps)
+        : INHERITED(make_nopixels(bounds.width(), bounds.height()), surfaceProps)
     {
         this->setOrigin(bounds.x(), bounds.y());
     }
@@ -581,7 +584,7 @@ SkCanvas::SkCanvas(int width, int height, const SkSurfaceProps* props)
     inc_canvas();
 
     this->init(SkNEW_ARGS(SkNoPixelsBitmapDevice,
-                          (SkIRect::MakeWH(width, height))), kDefault_InitFlags)->unref();
+                          (SkIRect::MakeWH(width, height), fProps)), kDefault_InitFlags)->unref();
 }
 
 SkCanvas::SkCanvas(const SkIRect& bounds, InitFlags flags)
@@ -590,25 +593,25 @@ SkCanvas::SkCanvas(const SkIRect& bounds, InitFlags flags)
 {
     inc_canvas();
 
-    this->init(SkNEW_ARGS(SkNoPixelsBitmapDevice, (bounds)), flags)->unref();
-}
-
-SkCanvas::SkCanvas(SkBaseDevice* device, const SkSurfaceProps* props, InitFlags flags)
-    : fMCStack(sizeof(MCRec), fMCRecStorage, sizeof(fMCRecStorage))
-    , fProps(SkSurfacePropsCopyOrDefault(props))
-{
-    inc_canvas();
-
-    this->init(device, flags);
+    this->init(SkNEW_ARGS(SkNoPixelsBitmapDevice, (bounds, fProps)), flags)->unref();
 }
 
 SkCanvas::SkCanvas(SkBaseDevice* device)
     : fMCStack(sizeof(MCRec), fMCRecStorage, sizeof(fMCRecStorage))
-    , fProps(SkSurfaceProps::kLegacyFontHost_InitType)
+    , fProps(device->surfaceProps())
 {
     inc_canvas();
 
     this->init(device, kDefault_InitFlags);
+}
+
+SkCanvas::SkCanvas(SkBaseDevice* device, InitFlags flags)
+    : fMCStack(sizeof(MCRec), fMCRecStorage, sizeof(fMCRecStorage))
+    , fProps(device->surfaceProps())
+{
+    inc_canvas();
+
+    this->init(device, flags);
 }
 
 SkCanvas::SkCanvas(const SkBitmap& bitmap, const SkSurfaceProps& props)
@@ -617,7 +620,7 @@ SkCanvas::SkCanvas(const SkBitmap& bitmap, const SkSurfaceProps& props)
 {
     inc_canvas();
 
-    SkAutoTUnref<SkBaseDevice> device(SkNEW_ARGS(SkBitmapDevice, (bitmap)));
+    SkAutoTUnref<SkBaseDevice> device(SkNEW_ARGS(SkBitmapDevice, (bitmap, fProps)));
     this->init(device, kDefault_InitFlags);
 }
 
@@ -627,7 +630,7 @@ SkCanvas::SkCanvas(const SkBitmap& bitmap)
 {
     inc_canvas();
 
-    SkAutoTUnref<SkBaseDevice> device(SkNEW_ARGS(SkBitmapDevice, (bitmap)));
+    SkAutoTUnref<SkBaseDevice> device(SkNEW_ARGS(SkBitmapDevice, (bitmap, fProps)));
     this->init(device, kDefault_InitFlags);
 }
 
@@ -712,10 +715,12 @@ bool SkCanvas::readPixels(SkBitmap* bitmap, int x, int y) {
         weAllocated = true;
     }
 
-    SkBitmap bm(*bitmap);
-    bm.lockPixels();
-    if (bm.getPixels() && this->readPixels(bm.info(), bm.getPixels(), bm.rowBytes(), x, y)) {
-        return true;
+    SkAutoPixmapUnlock unlocker;
+    if (bitmap->requestLock(&unlocker)) {
+        const SkPixmap& pm = unlocker.pixmap();
+        if (this->readPixels(pm.info(), pm.writable_addr(), pm.rowBytes(), x, y)) {
+            return true;
+        }
     }
 
     if (weAllocated) {
@@ -763,10 +768,11 @@ bool SkCanvas::writePixels(const SkBitmap& bitmap, int x, int y) {
     if (bitmap.getTexture()) {
         return false;
     }
-    SkBitmap bm(bitmap);
-    bm.lockPixels();
-    if (bm.getPixels()) {
-        return this->writePixels(bm.info(), bm.getPixels(), bm.rowBytes(), x, y);
+
+    SkAutoPixmapUnlock unlocker;
+    if (bitmap.requestLock(&unlocker)) {
+        const SkPixmap& pm = unlocker.pixmap();
+        return this->writePixels(pm.info(), pm.addr(), pm.rowBytes(), x, y);
     }
     return false;
 }
@@ -1034,7 +1040,8 @@ void SkCanvas::internalSaveLayer(const SkRect* bounds, const SkPaint* paint, Sav
         SkBaseDevice* newDev = device->onCreateDevice(createInfo, paint);
         if (NULL == newDev) {
             // If onCreateDevice didn't succeed, try raster (e.g. PDF couldn't handle the paint)
-            newDev = SkBitmapDevice::Create(createInfo.fInfo);
+            const SkSurfaceProps surfaceProps(fProps.flags(), createInfo.fPixelGeometry);
+            newDev = SkBitmapDevice::Create(createInfo.fInfo, surfaceProps);
             if (NULL == newDev) {
                 SkErrorInternals::SetError(kInternalError_SkError,
                                            "Unable to create device for layer.");
@@ -1130,25 +1137,44 @@ SkImageInfo SkCanvas::imageInfo() const {
 }
 
 const void* SkCanvas::peekPixels(SkImageInfo* info, size_t* rowBytes) {
-    return this->onPeekPixels(info, rowBytes);
+    SkPixmap pmap;
+    if (!this->onPeekPixels(&pmap)) {
+        return NULL;
+    }
+    if (info) {
+        *info = pmap.info();
+    }
+    if (rowBytes) {
+        *rowBytes = pmap.rowBytes();
+    }
+    return pmap.addr();
 }
 
-const void* SkCanvas::onPeekPixels(SkImageInfo* info, size_t* rowBytes) {
+bool SkCanvas::onPeekPixels(SkPixmap* pmap) {
     SkBaseDevice* dev = this->getDevice();
-    return dev ? dev->peekPixels(info, rowBytes) : NULL;
+    return dev && dev->peekPixels(pmap);
 }
 
 void* SkCanvas::accessTopLayerPixels(SkImageInfo* info, size_t* rowBytes, SkIPoint* origin) {
-    void* pixels = this->onAccessTopLayerPixels(info, rowBytes);
-    if (pixels && origin) {
+    SkPixmap pmap;
+    if (!this->onAccessTopLayerPixels(&pmap)) {
+        return NULL;
+    }
+    if (info) {
+        *info = pmap.info();
+    }
+    if (rowBytes) {
+        *rowBytes = pmap.rowBytes();
+    }
+    if (origin) {
         *origin = this->getTopDevice(false)->getOrigin();
     }
-    return pixels;
+    return pmap.writable_addr();
 }
 
-void* SkCanvas::onAccessTopLayerPixels(SkImageInfo* info, size_t* rowBytes) {
+bool SkCanvas::onAccessTopLayerPixels(SkPixmap* pmap) {
     SkBaseDevice* dev = this->getTopDevice();
-    return dev ? dev->accessPixels(info, rowBytes) : NULL;
+    return dev && dev->accessPixels(pmap);
 }
 
 SkAutoROCanvasPixels::SkAutoROCanvasPixels(SkCanvas* canvas) {
@@ -1221,7 +1247,7 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, int x, int y,
         SkImageFilter* filter = paint->getImageFilter();
         SkIPoint pos = { x - iter.getX(), y - iter.getY() };
         if (filter && !dstDev->canHandleImageFilter(filter)) {
-            SkDeviceImageFilterProxy proxy(dstDev, fProps);
+            SkImageFilter::Proxy proxy(dstDev);
             SkBitmap dst;
             SkIPoint offset = SkIPoint::Make(0, 0);
             const SkBitmap& src = srcDev->accessBitmap(false);
@@ -1237,7 +1263,7 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, int x, int y,
                                    tmpUnfiltered);
             }
         } else if (deviceIsBitmapDevice) {
-            const SkBitmap& src = srcDev->accessBitmap(false);
+            const SkBitmap& src = static_cast<SkBitmapDevice*>(srcDev)->fBitmap;
             dstDev->drawSprite(iter, src, pos.x(), pos.y(), *paint);
         } else {
             dstDev->drawDevice(iter, srcDev, pos.x(), pos.y(), *paint);
@@ -1273,7 +1299,7 @@ void SkCanvas::onDrawSprite(const SkBitmap& bitmap, int x, int y, const SkPaint*
         SkImageFilter* filter = paint->getImageFilter();
         SkIPoint pos = { x - iter.getX(), y - iter.getY() };
         if (filter && !iter.fDevice->canHandleImageFilter(filter)) {
-            SkDeviceImageFilterProxy proxy(iter.fDevice, fProps);
+            SkImageFilter::Proxy proxy(iter.fDevice);
             SkBitmap dst;
             SkIPoint offset = SkIPoint::Make(0, 0);
             SkMatrix matrix = *iter.fMatrix;
@@ -1746,8 +1772,19 @@ void SkCanvas::drawImageRect(const SkImage* image, const SkRect* src, const SkRe
     this->onDrawImageRect(image, src, dst, paint);
 }
 
+void SkCanvas::drawImageNine(const SkImage* image, const SkIRect& center, const SkRect& dst,
+                             const SkPaint* paint) {
+    if (dst.isEmpty()) {
+        return;
+    }
+    if (!SkNinePatchIter::Valid(image->width(), image->height(), center)) {
+        this->drawImageRect(image, NULL, dst, paint);
+    }
+    this->onDrawImageNine(image, center, dst, paint);
+}
+
 void SkCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar dx, SkScalar dy, const SkPaint* paint) {
-    if (bitmap.empty()) {
+    if (bitmap.drawsNothing()) {
         return;
     }
     this->onDrawBitmap(bitmap, dx, dy, paint);
@@ -1755,7 +1792,7 @@ void SkCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar dx, SkScalar dy, cons
 
 void SkCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst,
                                     const SkPaint* paint, DrawBitmapRectFlags flags) {
-    if (bitmap.empty()) {
+    if (bitmap.drawsNothing() || dst.isEmpty()) {
         return;
     }
     this->onDrawBitmapRect(bitmap, src, dst, paint, flags);
@@ -1763,17 +1800,32 @@ void SkCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src, c
 
 void SkCanvas::drawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst,
                               const SkPaint* paint) {
-    if (bitmap.empty()) {
+    if (bitmap.drawsNothing() || dst.isEmpty()) {
         return;
+    }
+    if (!SkNinePatchIter::Valid(bitmap.width(), bitmap.height(), center)) {
+        this->drawBitmapRectToRect(bitmap, NULL, dst, paint);
     }
     this->onDrawBitmapNine(bitmap, center, dst, paint);
 }
 
 void SkCanvas::drawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint) {
-    if (bitmap.empty()) {
+    if (bitmap.drawsNothing()) {
         return;
     }
     this->onDrawSprite(bitmap, left, top, paint);
+}
+
+void SkCanvas::drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[],
+                         const SkColor colors[], int count, SkXfermode::Mode mode,
+                         const SkRect* cull, const SkPaint* paint) {
+    if (count <= 0) {
+        return;
+    }
+    SkASSERT(atlas);
+    SkASSERT(xform);
+    SkASSERT(tex);
+    this->onDrawAtlas(atlas, xform, tex, colors, count, mode, cull, paint);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2079,15 +2131,13 @@ void SkCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const
     this->internalDrawBitmapRect(bitmap, src, dst, paint, flags);
 }
 
-void SkCanvas::internalDrawBitmapNine(const SkBitmap& bitmap,
-                                      const SkIRect& center, const SkRect& dst,
-                                      const SkPaint* paint) {
-    if (bitmap.drawsNothing()) {
-        return;
-    }
+void SkCanvas::onDrawImageNine(const SkImage* image, const SkIRect& center, const SkRect& dst,
+                               const SkPaint* paint) {
+    TRACE_EVENT0("disabled-by-default-skia", "SkCanvas::drawImageNine()");
+    
+    SkRect storage;
+    const SkRect* bounds = &dst;
     if (NULL == paint || paint->canComputeFastBounds()) {
-        SkRect storage;
-        const SkRect* bounds = &dst;
         if (paint) {
             bounds = &paint->computeFastBounds(dst, &storage);
         }
@@ -2095,58 +2145,19 @@ void SkCanvas::internalDrawBitmapNine(const SkBitmap& bitmap,
             return;
         }
     }
-
-    const int32_t w = bitmap.width();
-    const int32_t h = bitmap.height();
-
-    SkIRect c = center;
-    // pin center to the bounds of the bitmap
-    c.fLeft = SkMax32(0, center.fLeft);
-    c.fTop = SkMax32(0, center.fTop);
-    c.fRight = SkPin32(center.fRight, c.fLeft, w);
-    c.fBottom = SkPin32(center.fBottom, c.fTop, h);
-
-    const SkScalar srcX[4] = {
-        0, SkIntToScalar(c.fLeft), SkIntToScalar(c.fRight), SkIntToScalar(w)
-    };
-    const SkScalar srcY[4] = {
-        0, SkIntToScalar(c.fTop), SkIntToScalar(c.fBottom), SkIntToScalar(h)
-    };
-    SkScalar dstX[4] = {
-        dst.fLeft, dst.fLeft + SkIntToScalar(c.fLeft),
-        dst.fRight - SkIntToScalar(w - c.fRight), dst.fRight
-    };
-    SkScalar dstY[4] = {
-        dst.fTop, dst.fTop + SkIntToScalar(c.fTop),
-        dst.fBottom - SkIntToScalar(h - c.fBottom), dst.fBottom
-    };
-
-    if (dstX[1] > dstX[2]) {
-        dstX[1] = dstX[0] + (dstX[3] - dstX[0]) * c.fLeft / (w - c.width());
-        dstX[2] = dstX[1];
+    
+    SkLazyPaint lazy;
+    if (NULL == paint) {
+        paint = lazy.init();
     }
-
-    if (dstY[1] > dstY[2]) {
-        dstY[1] = dstY[0] + (dstY[3] - dstY[0]) * c.fTop / (h - c.height());
-        dstY[2] = dstY[1];
+    
+    LOOPER_BEGIN(*paint, SkDrawFilter::kBitmap_Type, bounds)
+    
+    while (iter.next()) {
+        iter.fDevice->drawImageNine(iter, image, center, dst, looper.paint());
     }
-
-    for (int y = 0; y < 3; y++) {
-        SkRect s, d;
-
-        s.fTop = srcY[y];
-        s.fBottom = srcY[y+1];
-        d.fTop = dstY[y];
-        d.fBottom = dstY[y+1];
-        for (int x = 0; x < 3; x++) {
-            s.fLeft = srcX[x];
-            s.fRight = srcX[x+1];
-            d.fLeft = dstX[x];
-            d.fRight = dstX[x+1];
-            this->internalDrawBitmapRect(bitmap, &s, d, paint,
-                                         kNone_DrawBitmapRectFlag);
-        }
-    }
+    
+    LOOPER_END
 }
 
 void SkCanvas::onDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst,
@@ -2154,8 +2165,29 @@ void SkCanvas::onDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, c
     TRACE_EVENT0("disabled-by-default-skia", "SkCanvas::drawBitmapNine()");
     SkDEBUGCODE(bitmap.validate();)
 
-    // Need a device entry-point, so gpu can use a mesh
-    this->internalDrawBitmapNine(bitmap, center, dst, paint);
+    SkRect storage;
+    const SkRect* bounds = &dst;
+    if (NULL == paint || paint->canComputeFastBounds()) {
+        if (paint) {
+            bounds = &paint->computeFastBounds(dst, &storage);
+        }
+        if (this->quickReject(*bounds)) {
+            return;
+        }
+    }
+    
+    SkLazyPaint lazy;
+    if (NULL == paint) {
+        paint = lazy.init();
+    }
+    
+    LOOPER_BEGIN(*paint, SkDrawFilter::kBitmap_Type, bounds)
+    
+    while (iter.next()) {
+        iter.fDevice->drawBitmapNine(iter, bitmap, center, dst, looper.paint());
+    }
+    
+    LOOPER_END
 }
 
 class SkDeviceFilteredPaint {
@@ -2414,14 +2446,54 @@ void SkCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
     LOOPER_END
 }
 
-void SkCanvas::drawDrawable(SkDrawable* dr) {
-    if (dr && !this->quickReject(dr->getBounds())) {
-        this->onDrawDrawable(dr);
+void SkCanvas::drawDrawable(SkDrawable* dr, SkScalar x, SkScalar y) {
+    if (dr) {
+        if (x || y) {
+            SkMatrix matrix = SkMatrix::MakeTrans(x, y);
+            this->onDrawDrawable(dr, &matrix);
+        } else {
+            this->onDrawDrawable(dr, NULL);
+        }
     }
 }
 
-void SkCanvas::onDrawDrawable(SkDrawable* dr) {
-    dr->draw(this);
+void SkCanvas::drawDrawable(SkDrawable* dr, const SkMatrix* matrix) {
+    if (dr) {
+        if (matrix && matrix->isIdentity()) {
+            matrix = NULL;
+        }
+        this->onDrawDrawable(dr, matrix);
+    }
+}
+
+void SkCanvas::onDrawDrawable(SkDrawable* dr, const SkMatrix* matrix) {
+    SkRect bounds = dr->getBounds();
+    if (matrix) {
+        matrix->mapRect(&bounds);
+    }
+    if (this->quickReject(bounds)) {
+        return;
+    }
+    dr->draw(this, matrix);
+}
+
+void SkCanvas::onDrawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[],
+                           const SkColor colors[], int count, SkXfermode::Mode mode,
+                           const SkRect* cull, const SkPaint* paint) {
+    if (cull && this->quickReject(*cull)) {
+        return;
+    }
+
+    SkPaint pnt;
+    if (paint) {
+        pnt = *paint;
+    }
+    
+    LOOPER_BEGIN(pnt, SkDrawFilter::kPath_Type, NULL)
+    while (iter.next()) {
+        iter.fDevice->drawAtlas(iter, atlas, xform, tex, colors, count, mode, pnt);
+    }
+    LOOPER_END
 }
 
 //////////////////////////////////////////////////////////////////////////////

@@ -46,6 +46,10 @@ public:
         unsigned numberOfLiveRenderObjects;
         unsigned numberOfLiveLayoutObjects;
         unsigned numberOfLiveResources;
+        unsigned numberOfLiveActiveDOMObjects;
+        unsigned numberOfLiveScriptPromises;
+        unsigned numberOfLiveFrames;
+        unsigned numberOfLiveV8PerContextData;
     };
 
     virtual void onLeakDetectionComplete(const Result&) = 0;

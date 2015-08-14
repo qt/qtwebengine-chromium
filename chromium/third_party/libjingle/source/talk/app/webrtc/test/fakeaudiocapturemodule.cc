@@ -45,7 +45,7 @@ static const uint32 kAdmMaxIdleTimeProcess = 1000;
 // Constants here are derived by running VoE using a real ADM.
 // The constants correspond to 10ms of mono audio at 44kHz.
 static const int kTimePerFrameMs = 10;
-static const int kNumberOfChannels = 1;
+static const uint8_t kNumberOfChannels = 1;
 static const int kSamplesPerSecond = 44000;
 static const int kTotalDelayMs = 0;
 static const int kClockDriftMs = 0;
@@ -623,8 +623,8 @@ bool FakeAudioCaptureModule::Initialize() {
 
 void FakeAudioCaptureModule::SetSendBuffer(int value) {
   Sample* buffer_ptr = reinterpret_cast<Sample*>(send_buffer_);
-  const int buffer_size_in_samples = sizeof(send_buffer_) /
-      kNumberBytesPerSample;
+  const int buffer_size_in_samples =
+      sizeof(send_buffer_) / kNumberBytesPerSample;
   for (int i = 0; i < buffer_size_in_samples; ++i) {
     buffer_ptr[i] = value;
   }
@@ -636,8 +636,8 @@ void FakeAudioCaptureModule::ResetRecBuffer() {
 
 bool FakeAudioCaptureModule::CheckRecBuffer(int value) {
   const Sample* buffer_ptr = reinterpret_cast<const Sample*>(rec_buffer_);
-  const int buffer_size_in_samples = sizeof(rec_buffer_) /
-      kNumberBytesPerSample;
+  const int buffer_size_in_samples =
+      sizeof(rec_buffer_) / kNumberBytesPerSample;
   for (int i = 0; i < buffer_size_in_samples; ++i) {
     if (buffer_ptr[i] >= value) return true;
   }

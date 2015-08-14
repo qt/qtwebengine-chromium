@@ -86,16 +86,16 @@
                 '../android_webview/android_webview.gyp:android_webview_apk',
                 '../android_webview/android_webview.gyp:system_webview_apk',
                 '../android_webview/android_webview_shell.gyp:android_webview_shell_apk',
-                '../android_webview/android_webview_telemetry_shell.gyp:android_webview_telemetry_shell_apk',
+                '../chrome/android/chrome_apk.gyp:chrome_public_apk',
                 '../chrome/chrome.gyp:chrome_shell_apk',
                 '../chrome/chrome.gyp:chrome_sync_shell_apk',
                 '../remoting/remoting.gyp:remoting_apk',
               ],
             }],
-            ['target_arch == "arm" or target_arch == "arm64"', {
+            # TODO: Enable packed relocations for x64. See: b/20532404
+            ['target_arch != "x64"', {
               'dependencies': [
-                # The relocation packer only works on ARM or ARM64.
-                '../tools/relocation_packer/relocation_packer.gyp:relocation_packer_unittests#host',
+                '../third_party/android_platform/relocation_packer.gyp:android_relocation_packer_unittests#host',
               ],
             }],
           ],
@@ -160,6 +160,7 @@
           'dependencies': [
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
+            '../gpu/skia_runner/skia_runner.gyp:*',
           ],
         }],
         ['use_openssl==0 and (OS=="mac" or OS=="ios" or OS=="win")', {
@@ -376,10 +377,9 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../chrome/chrome.gyp:app_installer',
-            '../chrome/chrome.gyp:app_installer_unittests',
             '../chrome/chrome.gyp:crash_service',
             '../chrome/chrome.gyp:installer_util_unittests',
+            '../chrome/chrome.gyp:setup_unittests',
             # ../chrome/test/mini_installer requires mini_installer.
             '../chrome/installer/mini_installer.gyp:mini_installer',
             '../chrome_elf/chrome_elf.gyp:chrome_elf_unittests',
@@ -489,6 +489,11 @@
             '../components/nacl.gyp:nacl_loader_unittests',
           ],
         }],
+        ['disable_nacl==0 and disable_nacl_untrusted==0 and enable_nacl_nonsfi_test==1', {
+          'dependencies': [
+            '../components/nacl.gyp:nacl_helper_nonsfi_unittests',
+          ],
+        }],
         ['disable_nacl==0 and disable_nacl_untrusted==0', {
           'dependencies': [
             '../mojo/mojo_nacl_untrusted.gyp:libmojo',
@@ -529,8 +534,8 @@
             }],
             ['OS=="win"', {
               'dependencies': [
+                '../components/test_runner/test_runner.gyp:layout_test_helper',
                 '../content/content_shell_and_tests.gyp:content_shell_crash_service',
-                '../content/content_shell_and_tests.gyp:layout_test_helper',
               ],
             }],
             ['OS!="win" and OS!="android"', {
@@ -540,8 +545,8 @@
             }],
             ['OS=="mac"', {
               'dependencies': [
+                '../components/test_runner/test_runner.gyp:layout_test_helper',
                 '../breakpad/breakpad.gyp:dump_syms#host',
-                '../content/content_shell_and_tests.gyp:layout_test_helper',
               ],
             }],
             ['OS=="linux"', {
@@ -805,7 +810,6 @@
             '../breakpad/breakpad.gyp:symupload#host',
             '../breakpad/breakpad.gyp:minidump_dump#host',
             '../breakpad/breakpad.gyp:minidump_stackwalk#host',
-            '../build/android/tests/multiple_proguards/multiple_proguards.gyp:multiple_proguards_test_apk',
             '../build/android/pylib/device/commands/commands.gyp:chromium_commands',
             '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_perftests_apk',
@@ -876,12 +880,14 @@
                 # Unit test bundles packaged as an apk.
                 '../android_webview/android_webview.gyp:android_webview_test_apk',
                 '../android_webview/android_webview.gyp:android_webview_unittests_apk',
+                '../chrome/android/chrome_apk.gyp:chrome_public_test_apk',
                 '../chrome/chrome.gyp:chrome_junit_tests',
                 '../chrome/chrome.gyp:chrome_shell_test_apk',
                 '../chrome/chrome.gyp:chrome_sync_shell_test_apk',
                 '../chrome/chrome.gyp:chrome_shell_uiautomator_tests',
                 '../chrome/chrome.gyp:chromedriver_webview_shell_apk',
                 '../chrome/chrome.gyp:unit_tests_apk',
+                '../third_party/custom_tabs_client/src/custom_tabs_client.gyp:custom_tabs_client_example_apk',
               ],
             }],
           ],
@@ -1065,6 +1071,7 @@
             '../chrome/chrome.gyp:installer_util_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
+            '../chrome/chrome.gyp:setup_unittests',
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
@@ -1139,9 +1146,9 @@
           'target_name': 'chromium_builder_lkgr_drmemory_win',
           'type': 'none',
           'dependencies': [
+            '../components/test_runner/test_runner.gyp:layout_test_helper',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_shell_crash_service',
-            '../content/content_shell_and_tests.gyp:layout_test_helper',
           ],
         },
         {
@@ -1157,14 +1164,15 @@
             '../chrome/chrome.gyp:chrome_app_unittests',
             '../chrome/chrome.gyp:chromedriver_unittests',
             '../chrome/chrome.gyp:installer_util_unittests',
+            '../chrome/chrome.gyp:setup_unittests',
             '../chrome/chrome.gyp:unit_tests',
             '../chrome_elf/chrome_elf.gyp:chrome_elf_unittests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
             '../components/components_tests.gyp:components_unittests',
+            '../components/test_runner/test_runner.gyp:layout_test_helper',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_shell_crash_service',
-            '../content/content_shell_and_tests.gyp:layout_test_helper',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../courgette/courgette.gyp:courgette_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
@@ -1217,7 +1225,6 @@
               'target_name': 'chrome_official_builder_no_unittests',
               'type': 'none',
               'dependencies': [
-                '../chrome/chrome.gyp:app_installer',
                 '../chrome/chrome.gyp:crash_service',
                 '../chrome/chrome.gyp:gcapi_dll',
                 '../chrome/chrome.gyp:pack_policy_templates',
@@ -1247,7 +1254,6 @@
               'dependencies': [
                 'chrome_official_builder_no_unittests',
                 '../base/base.gyp:base_unittests',
-		'../chrome/chrome.gyp:app_installer_unittests',
                 '../chrome/chrome.gyp:browser_tests',
                 '../chrome/chrome.gyp:sync_integration_tests',
                 '../ipc/ipc.gyp:ipc_tests',
@@ -1384,7 +1390,7 @@
           'target_name': 'chromoting_swarm_tests',
           'type': 'none',
           'dependencies': [
-            '../testing/chromoting/integration_tests.gyp:chromoting_integration_tests_run',
+            '../testing/chromoting/integration_tests.gyp:*',
           ],
         }, # target_name: chromoting_swarm_tests
       ]

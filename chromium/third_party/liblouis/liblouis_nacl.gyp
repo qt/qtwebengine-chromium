@@ -41,8 +41,12 @@
             'build_newlib': 1,
           },
           'compile_flags': [
-            '-Wno-switch',
-            '-Wno-unused-but-set-variable',
+            # Needed for target_arch=mipsel
+            # src/liblouis/compileTranslationTable.c:1414
+            '-Wno-tautological-compare',
+            # Needed for target_arch=mipsel
+            # src/liblouis/logging.c:58
+            '-Wno-non-literal-null-conversion',
           ],
           'include_dirs': [
             'overrides/liblouis',

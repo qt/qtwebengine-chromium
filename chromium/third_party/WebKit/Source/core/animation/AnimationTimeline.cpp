@@ -68,6 +68,7 @@ AnimationTimeline::AnimationTimeline(Document* document, PassOwnPtrWillBeRawPtr<
     : m_document(document)
     , m_zeroTime(0) // 0 is used by unit tests which cannot initialize from the loader
     , m_zeroTimeInitialized(false)
+    , m_outdatedAnimationCount(0)
     , m_playbackRate(1)
     , m_lastCurrentTimeInternal(0)
 {
@@ -115,7 +116,7 @@ WillBeHeapVector<RefPtrWillBeMember<Animation>> AnimationTimeline::getAnimations
 {
     WillBeHeapVector<RefPtrWillBeMember<Animation>> animations;
     for (const auto& animation : m_animations) {
-        if (animation->source() && (animation->source()->isCurrent() || animation->source()->isInEffect()))
+        if (animation->effect() && (animation->effect()->isCurrent() || animation->effect()->isInEffect()))
             animations.append(animation);
     }
     std::sort(animations.begin(), animations.end(), compareAnimations);
@@ -147,12 +148,17 @@ void AnimationTimeline::serviceAnimations(TimingUpdateReason reason)
             m_animationsNeedingUpdate.remove(animation);
     }
 
-    ASSERT(!hasOutdatedAnimation());
+    ASSERT(m_outdatedAnimationCount == 0);
+
+#if ENABLE(ASSERT)
+    for (const auto& animation : m_animationsNeedingUpdate)
+        ASSERT(!animation->outdated());
+#endif
 }
 
 void AnimationTimeline::scheduleNextService()
 {
-    ASSERT(!hasOutdatedAnimation());
+    ASSERT(m_outdatedAnimationCount == 0);
 
     double timeToNextEffect = std::numeric_limits<double>::infinity();
     for (const auto& animation : m_animationsNeedingUpdate) {
@@ -244,7 +250,7 @@ void AnimationTimeline::setCurrentTimeInternal(double currentTime)
         // The Player needs a timing update to pick up a new time.
         animation->setOutdated();
         // Any corresponding compositor animation will need to be restarted. Marking the
-        // source changed forces this.
+        // effect changed forces this.
         animation->setCompositorPending(true);
     }
 }
@@ -262,23 +268,21 @@ void AnimationTimeline::pauseAnimationsForTesting(double pauseTime)
     serviceAnimations(TimingUpdateOnDemand);
 }
 
-bool AnimationTimeline::hasOutdatedAnimation() const
-{
-    for (const auto& animation : m_animationsNeedingUpdate) {
-        if (animation->outdated())
-            return true;
-    }
-    return false;
-}
-
 bool AnimationTimeline::needsAnimationTimingUpdate()
 {
     return m_animationsNeedingUpdate.size() && currentTimeInternal() != m_lastCurrentTimeInternal;
 }
 
+void AnimationTimeline::clearOutdatedAnimation(Animation* animation)
+{
+    ASSERT(!animation->outdated());
+    m_outdatedAnimationCount--;
+}
+
 void AnimationTimeline::setOutdatedAnimation(Animation* animation)
 {
     ASSERT(animation->outdated());
+    m_outdatedAnimationCount++;
     m_animationsNeedingUpdate.add(animation);
     if (m_document && m_document->page() && !m_document->page()->animator().isServicingAnimations())
         m_timing->serviceOnNextFrame();
@@ -297,7 +301,7 @@ void AnimationTimeline::setPlaybackRate(double playbackRate)
 
     for (const auto& animation : m_animations) {
         // Corresponding compositor animation may need to be restarted to pick up
-        // the new playback rate. Marking the source changed forces this.
+        // the new playback rate. Marking the effect changed forces this.
         animation->setCompositorPending(true);
     }
 }

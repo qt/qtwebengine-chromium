@@ -25,11 +25,6 @@ using std::max;
 using std::min;
 
 namespace aura {
-namespace {
-
-bool use_popup_as_root_window_for_test = false;
-
-}  // namespace
 
 // static
 WindowTreeHost* WindowTreeHost::Create(const gfx::Rect& bounds) {
@@ -62,11 +57,11 @@ gfx::AcceleratedWidget WindowTreeHostWin::GetAcceleratedWidget() {
   return widget_;
 }
 
-void WindowTreeHostWin::Show() {
+void WindowTreeHostWin::ShowImpl() {
   window_->Show();
 }
 
-void WindowTreeHostWin::Hide() {
+void WindowTreeHostWin::HideImpl() {
   window_->Hide();
 }
 
@@ -112,10 +107,6 @@ void WindowTreeHostWin::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
 }
 
-ui::EventProcessor* WindowTreeHostWin::GetEventProcessor() {
-  return dispatcher();
-}
-
 void WindowTreeHostWin::OnBoundsChanged(const gfx::Rect& new_bounds) {
   gfx::Rect old_bounds = bounds_;
   bounds_ = new_bounds;
@@ -155,7 +146,8 @@ void WindowTreeHostWin::OnLostCapture() {
 }
 
 void WindowTreeHostWin::OnAcceleratedWidgetAvailable(
-    gfx::AcceleratedWidget widget) {
+    gfx::AcceleratedWidget widget,
+    float device_pixel_ratio) {
   widget_ = widget;
   CreateCompositor(widget);
 }

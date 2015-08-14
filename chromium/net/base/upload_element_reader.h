@@ -13,6 +13,7 @@ namespace net {
 
 class IOBuffer;
 class UploadBytesElementReader;
+class UploadDiskCacheEntryElementReader;
 class UploadFileElementReader;
 
 // An interface to read an upload data element.
@@ -20,6 +21,11 @@ class NET_EXPORT UploadElementReader {
  public:
   UploadElementReader() {}
   virtual ~UploadElementReader() {}
+
+  // Returns this instance's pointer as UploadDiskCacheEntryElementReader when
+  // possible, otherwise returns nullptr.
+  virtual const UploadDiskCacheEntryElementReader*
+  AsDiskCacheEntryReaderForTests() const;
 
   // Returns this instance's pointer as UploadBytesElementReader when possible,
   // otherwise returns NULL.
@@ -37,10 +43,10 @@ class NET_EXPORT UploadElementReader {
 
   // Returns the byte-length of the element. For files that do not exist, 0
   // is returned. This is done for consistency with Mozilla.
-  virtual uint64 GetContentLength() const = 0;
+  virtual uint64_t GetContentLength() const = 0;
 
   // Returns the number of bytes remaining to read.
-  virtual uint64 BytesRemaining() const = 0;
+  virtual uint64_t BytesRemaining() const = 0;
 
   // Returns true if the upload element is entirely in memory.
   // The default implementation returns false.

@@ -8,10 +8,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/traced_value.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/geometry/rect.h"
 
 class SkCanvas;
-class SkDrawPictureCallback;
 
 namespace cc {
 
@@ -21,29 +21,32 @@ class CC_EXPORT DisplayItem {
 
   void SetNew(bool is_suitable_for_gpu_rasterization,
               int approximate_op_count,
-              size_t picture_memory_usage) {
+              size_t external_memory_usage) {
     is_suitable_for_gpu_rasterization_ = is_suitable_for_gpu_rasterization;
     approximate_op_count_ = approximate_op_count;
-    picture_memory_usage_ =
-        picture_memory_usage + sizeof(bool) + sizeof(int) + sizeof(size_t);
+    external_memory_usage_ = external_memory_usage;
   }
 
   virtual void Raster(SkCanvas* canvas,
-                      SkDrawPictureCallback* callback) const = 0;
+                      const gfx::Rect& canvas_target_playback_rect,
+                      SkPicture::AbortCallback* callback) const = 0;
   virtual void AsValueInto(base::trace_event::TracedValue* array) const = 0;
 
   bool is_suitable_for_gpu_rasterization() const {
     return is_suitable_for_gpu_rasterization_;
   }
   int approximate_op_count() const { return approximate_op_count_; }
-  size_t picture_memory_usage() const { return picture_memory_usage_; }
+  size_t external_memory_usage() const { return external_memory_usage_; }
 
  protected:
   DisplayItem();
 
   bool is_suitable_for_gpu_rasterization_;
   int approximate_op_count_;
-  size_t picture_memory_usage_;
+
+  // The size, in bytes, of the memory owned by this display item but not
+  // allocated within it (e.g. held through scoped_ptr or vector).
+  size_t external_memory_usage_;
 };
 
 }  // namespace cc

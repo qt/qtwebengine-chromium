@@ -55,8 +55,8 @@ NextProtoVector SpdyNextProtos() {
   NextProtoVector next_protos;
   next_protos.push_back(kProtoHTTP11);
   next_protos.push_back(kProtoSPDY31);
-  next_protos.push_back(kProtoSPDY4_14);
-  next_protos.push_back(kProtoSPDY4);
+  next_protos.push_back(kProtoHTTP2_14);
+  next_protos.push_back(kProtoHTTP2);
   next_protos.push_back(kProtoQUIC1SPDY3);
   return next_protos;
 }
@@ -230,6 +230,8 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
   void OnHeaders(SpdyStreamId stream_id,
                  bool has_priority,
                  SpdyPriority priority,
+                 SpdyStreamId parent_stream_id,
+                 bool exclusive,
                  bool fin,
                  const SpdyHeaderBlock& headers) override {
     if (has_priority) {
@@ -251,8 +253,7 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
                    SpdyRstStreamStatus status) override {}
   void OnGoAway(SpdyStreamId last_accepted_stream_id,
                 SpdyGoAwayStatus status) override {}
-  void OnWindowUpdate(SpdyStreamId stream_id,
-                      uint32 delta_window_size) override {}
+  void OnWindowUpdate(SpdyStreamId stream_id, int delta_window_size) override {}
   void OnPushPromise(SpdyStreamId stream_id,
                      SpdyStreamId promised_stream_id,
                      const SpdyHeaderBlock& headers) override {}
@@ -867,11 +868,10 @@ std::string SpdyTestUtil::ConstructSpdyReplyString(
     // above).
     if (spdy_version() >= SPDY3 && key[0] == ':')
       key = key.substr(1);
-    std::vector<std::string> values;
-    base::SplitString(it->second, '\0', &values);
-    for (std::vector<std::string>::const_iterator it2 = values.begin();
-         it2 != values.end(); ++it2) {
-      reply_string += key + ": " + *it2 + "\n";
+    for (const std::string& value :
+         base::SplitString(it->second, base::StringPiece("\0", 1),
+                           base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
+      reply_string += key + ": " + value + "\n";
     }
   }
   return reply_string;
@@ -990,7 +990,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
                                            int stream_id,
                                            int associated_stream_id,
                                            const char* url) {
-  if (spdy_version() < SPDY4) {
+  if (spdy_version() < HTTP2) {
     SpdySynStreamIR syn_stream(stream_id);
     syn_stream.set_associated_to_stream_id(associated_stream_id);
     syn_stream.SetHeader("hello", "bye");
@@ -1034,7 +1034,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
                                            const char* url,
                                            const char* status,
                                            const char* location) {
-  if (spdy_version() < SPDY4) {
+  if (spdy_version() < HTTP2) {
     SpdySynStreamIR syn_stream(stream_id);
     syn_stream.set_associated_to_stream_id(associated_stream_id);
     syn_stream.SetHeader("hello", "bye");
@@ -1077,7 +1077,7 @@ SpdyFrame* SpdyTestUtil::ConstructInitialSpdyPushFrame(
     scoped_ptr<SpdyHeaderBlock> headers,
     int stream_id,
     int associated_stream_id) {
-  if (spdy_version() < SPDY4) {
+  if (spdy_version() < HTTP2) {
     SpdySynStreamIR syn_stream(stream_id);
     syn_stream.set_associated_to_stream_id(associated_stream_id);
     SetPriority(LOWEST, &syn_stream);
@@ -1107,7 +1107,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdySyn(int stream_id,
                                           RequestPriority priority,
                                           bool compressed,
                                           bool fin) const {
-  if (protocol_ < kProtoSPDY4MinimumVersion) {
+  if (protocol_ < kProtoHTTP2MinimumVersion) {
     SpdySynStreamIR syn_stream(stream_id);
     syn_stream.set_name_value_block(block);
     syn_stream.set_priority(
@@ -1127,7 +1127,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdySyn(int stream_id,
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyReply(int stream_id,
                                             const SpdyHeaderBlock& headers) {
-  if (protocol_ < kProtoSPDY4MinimumVersion) {
+  if (protocol_ < kProtoHTTP2MinimumVersion) {
     SpdySynReplyIR syn_reply(stream_id);
     syn_reply.set_name_value_block(headers);
     return CreateFramer(false)->SerializeFrame(syn_reply);
@@ -1276,7 +1276,7 @@ const char* SpdyTestUtil::GetStatusKey() const {
 }
 
 const char* SpdyTestUtil::GetHostKey() const {
-  if (protocol_ < kProtoSPDY4MinimumVersion)
+  if (protocol_ < kProtoHTTP2MinimumVersion)
     return ":host";
   else
     return ":authority";

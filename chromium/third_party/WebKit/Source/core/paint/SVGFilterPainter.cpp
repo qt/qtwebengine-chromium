@@ -6,6 +6,7 @@
 #include "core/paint/SVGFilterPainter.h"
 
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
+#include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/paint/CompositingRecorder.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/TransformRecorder.h"
@@ -15,18 +16,22 @@
 #include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 
+#define CHECK_CTM_FOR_TRANSFORMED_IMAGEFILTER
+
 namespace blink {
 
-static GraphicsContext* beginRecordingContent(GraphicsContext* context, FilterData* filterData)
+GraphicsContext* SVGFilterRecordingContext::beginContent(FilterData* filterData)
 {
     ASSERT(filterData->m_state == FilterData::Initial);
+
+    GraphicsContext* context = paintingContext();
 
     // For slimming paint we need to create a new context so the contents of the
     // filter can be drawn and cached.
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        filterData->m_displayItemList = DisplayItemList::create();
-        filterData->m_context = adoptPtr(new GraphicsContext(filterData->m_displayItemList.get()));
-        context = filterData->m_context.get();
+        m_displayItemList = DisplayItemList::create();
+        m_context = adoptPtr(new GraphicsContext(m_displayItemList.get()));
+        context = m_context.get();
     } else {
         context->beginRecording(filterData->filter->filterRegion());
     }
@@ -35,7 +40,7 @@ static GraphicsContext* beginRecordingContent(GraphicsContext* context, FilterDa
     return context;
 }
 
-static void endRecordingContent(GraphicsContext* context, FilterData* filterData)
+void SVGFilterRecordingContext::endContent(FilterData* filterData)
 {
     ASSERT(filterData->m_state == FilterData::RecordingContent);
 
@@ -43,28 +48,30 @@ static void endRecordingContent(GraphicsContext* context, FilterData* filterData
     SourceGraphic* sourceGraphic = static_cast<SourceGraphic*>(filterData->builder->getEffectById(SourceGraphic::effectName()));
     ASSERT(sourceGraphic);
 
+    GraphicsContext* context = paintingContext();
+
     // For slimming paint we need to use the context that contains the filtered
     // content.
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        ASSERT(filterData->m_displayItemList);
-        ASSERT(filterData->m_context);
-        context = filterData->m_context.get();
+        ASSERT(m_displayItemList);
+        ASSERT(m_context);
+        context = m_context.get();
         context->beginRecording(filterData->filter->filterRegion());
-        filterData->m_displayItemList->commitNewDisplayItemsAndReplay(*context);
+        m_displayItemList->commitNewDisplayItemsAndReplay(*context);
     }
 
     sourceGraphic->setPicture(context->endRecording());
 
     // Content is cached by the source graphic so temporaries can be freed.
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        filterData->m_displayItemList = nullptr;
-        filterData->m_context = nullptr;
+        m_displayItemList = nullptr;
+        m_context = nullptr;
     }
 
     filterData->m_state = FilterData::ReadyToPaint;
 }
 
-static void paintFilteredContent(GraphicsContext* context, FilterData* filterData, SVGFilterElement* filterElement)
+static void paintFilteredContent(LayoutObject& object, GraphicsContext* context, FilterData* filterData)
 {
     ASSERT(filterData->m_state == FilterData::ReadyToPaint);
     ASSERT(filterData->builder->getEffectById(SourceGraphic::effectName()));
@@ -79,39 +86,23 @@ static void paintFilteredContent(GraphicsContext* context, FilterData* filterDat
     // Clip drawing of filtered image to the minimum required paint rect.
     FilterEffect* lastEffect = filterData->builder->lastEffect();
     context->clipRect(lastEffect->determineAbsolutePaintRect(lastEffect->maxEffectRect()));
-    if (filterElement->hasAttribute(SVGNames::filterResAttr)) {
-        // Get boundaries in device coords.
-        // FIXME: See crbug.com/382491. Is the use of getCTM OK here, given it does not include device
-        // zoom or High DPI adjustments?
-        FloatSize size = context->getCTM().mapSize(boundaries.size());
-        // Compute the scale amount required so that the resulting offscreen is exactly filterResX by filterResY pixels.
-        float filterResScaleX = filterElement->filterResX()->currentValue()->value() / size.width();
-        float filterResScaleY = filterElement->filterResY()->currentValue()->value() / size.height();
-        // Scale the CTM so the primitive is drawn to filterRes.
-        context->scale(filterResScaleX, filterResScaleY);
-        // Create a resize filter with the inverse scale.
-        AffineTransform resizeMatrix;
-        resizeMatrix.scale(1 / filterResScaleX, 1 / filterResScaleY);
-        imageFilter = builder.buildTransform(resizeMatrix, imageFilter.get());
-    }
 
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_CTM
-    // See crbug.com/382491.
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        // If the CTM contains rotation or shearing, apply the filter to
-        // the unsheared/unrotated matrix, and do the shearing/rotation
-        // as a final pass.
-        AffineTransform ctm = context->getCTM();
-        if (ctm.b() || ctm.c()) {
-            AffineTransform scaleAndTranslate;
-            scaleAndTranslate.translate(ctm.e(), ctm.f());
-            scaleAndTranslate.scale(ctm.xScale(), ctm.yScale());
-            ASSERT(scaleAndTranslate.isInvertible());
-            AffineTransform shearAndRotate = scaleAndTranslate.inverse();
-            shearAndRotate.multiply(ctm);
-            context->setCTM(scaleAndTranslate);
-            imageFilter = builder.buildTransform(shearAndRotate, imageFilter.get());
-        }
+#ifdef CHECK_CTM_FOR_TRANSFORMED_IMAGEFILTER
+    // TODO: Remove this workaround once skew/rotation support is added in Skia
+    // (https://code.google.com/p/skia/issues/detail?id=3288, crbug.com/446935).
+    // If the CTM contains rotation or shearing, apply the filter to
+    // the unsheared/unrotated matrix, and do the shearing/rotation
+    // as a final pass.
+    AffineTransform ctm = SVGLayoutSupport::deprecatedCalculateTransformToLayer(&object);
+    if (ctm.b() || ctm.c()) {
+        AffineTransform scaleAndTranslate;
+        scaleAndTranslate.translate(ctm.e(), ctm.f());
+        scaleAndTranslate.scale(ctm.xScale(), ctm.yScale());
+        ASSERT(scaleAndTranslate.isInvertible());
+        AffineTransform shearAndRotate = scaleAndTranslate.inverse();
+        shearAndRotate.multiply(ctm);
+        context->concatCTM(shearAndRotate.inverse());
+        imageFilter = builder.buildTransform(shearAndRotate, imageFilter.get());
     }
 #endif
 
@@ -122,9 +113,9 @@ static void paintFilteredContent(GraphicsContext* context, FilterData* filterDat
     filterData->m_state = FilterData::ReadyToPaint;
 }
 
-GraphicsContext* SVGFilterPainter::prepareEffect(LayoutObject& object, GraphicsContext* context)
+GraphicsContext* SVGFilterPainter::prepareEffect(LayoutObject& object, SVGFilterRecordingContext& recordingContext)
 {
-    ASSERT(context);
+    ASSERT(recordingContext.paintingContext());
 
     m_filter.clearInvalidationMask();
 
@@ -168,13 +159,11 @@ GraphicsContext* SVGFilterPainter::prepareEffect(LayoutObject& object, GraphicsC
 
     FilterData* data = filterData.get();
     m_filter.setFilterDataForLayoutObject(&object, filterData.release());
-    return beginRecordingContent(context, data);
+    return recordingContext.beginContent(data);
 }
 
-void SVGFilterPainter::finishEffect(LayoutObject& object, GraphicsContext* context)
+void SVGFilterPainter::finishEffect(LayoutObject& object, SVGFilterRecordingContext& recordingContext)
 {
-    ASSERT(context);
-
     FilterData* filterData = m_filter.getFilterDataForLayoutObject(&object);
     if (filterData) {
         // A painting cycle can occur when an FeImage references a source that
@@ -186,18 +175,20 @@ void SVGFilterPainter::finishEffect(LayoutObject& object, GraphicsContext* conte
         // Check for RecordingContent here because we may can be re-painting
         // without re-recording the contents to be filtered.
         if (filterData->m_state == FilterData::RecordingContent)
-            endRecordingContent(context, filterData);
+            recordingContext.endContent(filterData);
 
         if (filterData->m_state == FilterData::RecordingContentCycleDetected)
             filterData->m_state = FilterData::RecordingContent;
     }
 
-    LayoutObjectDrawingRecorder recorder(*context, object, DisplayItem::SVGFilter, LayoutRect::infiniteIntRect());
-    if (recorder.canUseCachedDrawing())
+    GraphicsContext* context = recordingContext.paintingContext();
+    ASSERT(context);
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, object, DisplayItem::SVGFilter))
         return;
 
+    LayoutObjectDrawingRecorder recorder(*context, object, DisplayItem::SVGFilter, LayoutRect::infiniteIntRect());
     if (filterData && filterData->m_state == FilterData::ReadyToPaint)
-        paintFilteredContent(context, filterData, toSVGFilterElement(m_filter.element()));
+        paintFilteredContent(object, context, filterData);
 }
 
 }

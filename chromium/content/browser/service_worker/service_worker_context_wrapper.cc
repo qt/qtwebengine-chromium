@@ -13,8 +13,11 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
@@ -41,7 +44,7 @@ base::LazyInstance<HeaderNameSet> g_excluded_header_name_set =
     LAZY_INSTANCE_INITIALIZER;
 
 void RunSoon(const base::Closure& closure) {
-  base::MessageLoop::current()->PostTask(FROM_HERE, closure);
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
 }
 
 void WorkerStarted(const ServiceWorkerContextWrapper::StatusCallback& callback,
@@ -101,7 +104,7 @@ ServiceWorkerContext* ServiceWorkerContext::GetServiceWorkerContext(
 ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : observer_list_(
-          new ObserverListThreadSafe<ServiceWorkerContextObserver>()),
+          new base::ObserverListThreadSafe<ServiceWorkerContextObserver>()),
       process_manager_(new ServiceWorkerProcessManager(browser_context)),
       is_incognito_(false),
       storage_partition_(nullptr) {
@@ -201,9 +204,8 @@ void ServiceWorkerContextWrapper::RegisterServiceWorker(
     return;
   }
   context()->RegisterServiceWorker(
-      pattern,
-      script_url,
-      NULL /* provider_host */,
+      net::SimplifyUrlForRequest(pattern),
+      net::SimplifyUrlForRequest(script_url), NULL /* provider_host */,
       base::Bind(&FinishRegistrationOnIO, continuation));
 }
 
@@ -240,7 +242,7 @@ void ServiceWorkerContextWrapper::UnregisterServiceWorker(
   }
 
   context()->UnregisterServiceWorker(
-      pattern,
+      net::SimplifyUrlForRequest(pattern),
       base::Bind(&FinishUnregistrationOnIO, continuation));
 }
 
@@ -257,7 +259,7 @@ void ServiceWorkerContextWrapper::UpdateRegistration(const GURL& pattern) {
     return;
   }
   context_core_->storage()->FindRegistrationForPattern(
-      pattern,
+      net::SimplifyUrlForRequest(pattern),
       base::Bind(&ServiceWorkerContextWrapper::DidFindRegistrationForUpdate,
                  this));
 }
@@ -279,7 +281,8 @@ void ServiceWorkerContextWrapper::StartServiceWorker(
     return;
   }
   context_core_->storage()->FindRegistrationForPattern(
-      pattern, base::Bind(&StartActiveWorkerOnIO, callback));
+      net::SimplifyUrlForRequest(pattern),
+      base::Bind(&StartActiveWorkerOnIO, callback));
 }
 
 void ServiceWorkerContextWrapper::SimulateSkipWaiting(int64_t version_id) {
@@ -321,7 +324,7 @@ void ServiceWorkerContextWrapper::CanHandleMainResourceOffline(
       const net::CompletionCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   context()->storage()->FindRegistrationForDocument(
-      url,
+      net::SimplifyUrlForRequest(url),
       base::Bind(&DidFindRegistrationForDocument, callback));
 }
 
@@ -336,10 +339,9 @@ void ServiceWorkerContextWrapper::GetAllOriginsInfo(
         base::Bind(callback, std::vector<ServiceWorkerUsageInfo>()));
     return;
   }
-  context()->storage()->GetAllRegistrations(base::Bind(
+  context()->storage()->GetAllRegistrationsInfos(base::Bind(
       &ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins,
-      this,
-      callback));
+      this, callback));
 }
 
 void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
@@ -414,7 +416,7 @@ void EmptySuccessCallback(bool success) {
 }  // namespace
 
 void ServiceWorkerContextWrapper::DeleteForOrigin(
-    const GURL& origin_url,
+    const GURL& origin,
     const ResultCallback& result) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!context_core_.get()) {
@@ -426,11 +428,11 @@ void ServiceWorkerContextWrapper::DeleteForOrigin(
     return;
   }
   context()->UnregisterServiceWorkers(
-      origin_url, base::Bind(&StatusCodeToBoolCallbackAdapter, result));
+      origin.GetOrigin(), base::Bind(&StatusCodeToBoolCallbackAdapter, result));
 }
 
-void ServiceWorkerContextWrapper::DeleteForOrigin(const GURL& origin_url) {
-  DeleteForOrigin(origin_url, base::Bind(&EmptySuccessCallback));
+void ServiceWorkerContextWrapper::DeleteForOrigin(const GURL& origin) {
+  DeleteForOrigin(origin, base::Bind(&EmptySuccessCallback));
 }
 
 void ServiceWorkerContextWrapper::CheckHasServiceWorker(
@@ -450,11 +452,11 @@ void ServiceWorkerContextWrapper::CheckHasServiceWorker(
                             base::Bind(callback, false));
     return;
   }
-  GURL stripped_url = net::SimplifyUrlForRequest(url);
   context()->storage()->FindRegistrationForDocument(
-      stripped_url, base::Bind(&ServiceWorkerContextWrapper::
-                                   DidFindRegistrationForCheckHasServiceWorker,
-                               this, other_url, callback));
+      net::SimplifyUrlForRequest(url),
+      base::Bind(&ServiceWorkerContextWrapper::
+                     DidFindRegistrationForCheckHasServiceWorker,
+                 this, net::SimplifyUrlForRequest(other_url), callback));
 }
 
 ServiceWorkerRegistration* ServiceWorkerContextWrapper::GetLiveRegistration(
@@ -498,7 +500,8 @@ void ServiceWorkerContextWrapper::FindRegistrationForDocument(
     callback.Run(SERVICE_WORKER_ERROR_ABORT, nullptr);
     return;
   }
-  context_core_->storage()->FindRegistrationForDocument(document_url, callback);
+  context_core_->storage()->FindRegistrationForDocument(
+      net::SimplifyUrlForRequest(document_url), callback);
 }
 
 void ServiceWorkerContextWrapper::FindRegistrationForId(
@@ -511,8 +514,8 @@ void ServiceWorkerContextWrapper::FindRegistrationForId(
     callback.Run(SERVICE_WORKER_ERROR_ABORT, nullptr);
     return;
   }
-  context_core_->storage()->FindRegistrationForId(registration_id, origin,
-                                                  callback);
+  context_core_->storage()->FindRegistrationForId(registration_id,
+                                                  origin.GetOrigin(), callback);
 }
 
 void ServiceWorkerContextWrapper::GetAllRegistrations(
@@ -522,7 +525,7 @@ void ServiceWorkerContextWrapper::GetAllRegistrations(
     RunSoon(base::Bind(callback, std::vector<ServiceWorkerRegistrationInfo>()));
     return;
   }
-  context_core_->storage()->GetAllRegistrations(callback);
+  context_core_->storage()->GetAllRegistrationsInfos(callback);
 }
 
 void ServiceWorkerContextWrapper::GetRegistrationUserData(
@@ -548,8 +551,8 @@ void ServiceWorkerContextWrapper::StoreRegistrationUserData(
     RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_ABORT));
     return;
   }
-  context_core_->storage()->StoreUserData(registration_id, origin, key, data,
-                                          callback);
+  context_core_->storage()->StoreUserData(registration_id, origin.GetOrigin(),
+                                          key, data, callback);
 }
 
 void ServiceWorkerContextWrapper::ClearRegistrationUserData(

@@ -417,8 +417,6 @@ if (enable_webrtc) {
       "source/talk/media/base/constants.cc",
       "source/talk/media/base/constants.h",
       "source/talk/media/base/cryptoparams.h",
-      "source/talk/media/base/filemediaengine.cc",
-      "source/talk/media/base/filemediaengine.h",
       "source/talk/media/base/hybriddataengine.h",
       "source/talk/media/base/mediachannel.h",
       "source/talk/media/base/mediaengine.cc",
@@ -448,13 +446,10 @@ if (enable_webrtc) {
       "source/talk/media/webrtc/webrtccommon.h",
       "source/talk/media/webrtc/webrtcpassthroughrender.cc",
       "source/talk/media/webrtc/webrtcpassthroughrender.h",
-      "source/talk/media/webrtc/webrtcvideocapturer.cc",
-      "source/talk/media/webrtc/webrtcvideocapturer.h",
       "source/talk/media/webrtc/webrtcvideoframe.cc",
       "source/talk/media/webrtc/webrtcvideoframe.h",
       "source/talk/media/webrtc/webrtcvideoframefactory.cc",
       "source/talk/media/webrtc/webrtcvideoframefactory.h",
-      "source/talk/media/webrtc/webrtcvie.h",
       "source/talk/media/webrtc/webrtcvoe.h",
       "source/talk/session/media/audiomonitor.cc",
       "source/talk/session/media/audiomonitor.h",
@@ -517,8 +512,6 @@ if (enable_webrtc) {
       "source/talk/media/webrtc/simulcast.h",
       "source/talk/media/webrtc/webrtcmediaengine.cc",
       "source/talk/media/webrtc/webrtcmediaengine.h",
-      "source/talk/media/webrtc/webrtcvideoengine.cc",
-      "source/talk/media/webrtc/webrtcvideoengine.h",
       "source/talk/media/webrtc/webrtcvideoengine2.cc",
       "source/talk/media/webrtc/webrtcvideoengine2.h",
       "source/talk/media/webrtc/webrtcvoiceengine.cc",
@@ -537,6 +530,18 @@ if (enable_webrtc) {
       "//third_party/webrtc",
       "//third_party/webrtc/system_wrappers",
       "//third_party/webrtc/voice_engine",
+    ]
+  }
+
+  source_set("libstunprober") {
+    p2p_dir = "../webrtc/p2p"
+    sources = [
+      "$p2p_dir/stunprober/stunprober.cc",
+    ]
+
+    deps = [
+      "//third_party/webrtc/base:rtc_base",
+      ":libjingle_webrtc_common",
     ]
   }
 }  # enable_webrtc

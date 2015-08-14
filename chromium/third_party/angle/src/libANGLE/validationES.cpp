@@ -1406,7 +1406,7 @@ static bool ValidateDrawBase(Context *context, GLenum mode, GLsizei count, GLsiz
     const VertexArray *vao = state.getVertexArray();
     const auto &vertexAttribs = vao->getVertexAttributes();
     const int *semanticIndexes = program->getSemanticIndexes();
-    unsigned int maxEnabledAttrib = vao->getMaxEnabledAttribute();
+    size_t maxEnabledAttrib = vao->getMaxEnabledAttribute();
     for (size_t attributeIndex = 0; attributeIndex < maxEnabledAttrib; ++attributeIndex)
     {
         const VertexAttribute &attrib = vertexAttribs[attributeIndex];
@@ -1601,7 +1601,7 @@ bool ValidateDrawElements(Context *context, GLenum mode, GLsizei count, GLenum t
     }
 
     const gl::VertexArray *vao = state.getVertexArray();
-    gl::Buffer *elementArrayBuffer = vao->getElementArrayBuffer();
+    gl::Buffer *elementArrayBuffer = vao->getElementArrayBuffer().get();
     if (!indices && !elementArrayBuffer)
     {
         context->recordError(Error(GL_INVALID_OPERATION));
@@ -1882,6 +1882,98 @@ bool ValidateGetnUniformfvEXT(Context *context, GLuint program, GLint location, 
 bool ValidateGetnUniformivEXT(Context *context, GLuint program, GLint location, GLsizei bufSize, GLint* params)
 {
     return ValidateSizedGetUniform(context, program, location, bufSize);
+}
+
+bool ValidateDiscardFramebufferBase(Context *context, GLenum target, GLsizei numAttachments,
+                                    const GLenum *attachments, bool defaultFramebuffer)
+{
+    if (numAttachments < 0)
+    {
+        context->recordError(Error(GL_INVALID_VALUE, "numAttachments must not be less than zero"));
+        return false;
+    }
+
+    for (GLsizei i = 0; i < numAttachments; ++i)
+    {
+        if (attachments[i] >= GL_COLOR_ATTACHMENT0 && attachments[i] <= GL_COLOR_ATTACHMENT15)
+        {
+            if (defaultFramebuffer)
+            {
+                context->recordError(Error(GL_INVALID_ENUM, "Invalid attachment when the default framebuffer is bound"));
+                return false;
+            }
+
+            if (attachments[i] >= GL_COLOR_ATTACHMENT0 + context->getCaps().maxColorAttachments)
+            {
+                context->recordError(Error(GL_INVALID_OPERATION,
+                                           "Requested color attachment is greater than the maximum supported color attachments"));
+                return false;
+            }
+        }
+        else
+        {
+            switch (attachments[i])
+            {
+              case GL_DEPTH_ATTACHMENT:
+              case GL_STENCIL_ATTACHMENT:
+              case GL_DEPTH_STENCIL_ATTACHMENT:
+                if (defaultFramebuffer)
+                {
+                    context->recordError(Error(GL_INVALID_ENUM, "Invalid attachment when the default framebuffer is bound"));
+                    return false;
+                }
+                break;
+              case GL_COLOR:
+              case GL_DEPTH:
+              case GL_STENCIL:
+                if (!defaultFramebuffer)
+                {
+                    context->recordError(Error(GL_INVALID_ENUM, "Invalid attachment when the default framebuffer is not bound"));
+                    return false;
+                }
+                break;
+              default:
+                context->recordError(Error(GL_INVALID_ENUM, "Invalid attachment"));
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool ValidateInsertEventMarkerEXT(Context *context, GLsizei length, const char *marker)
+{
+    // Note that debug marker calls must not set error state
+
+    if (length < 0)
+    {
+        return false;
+    }
+
+    if (marker == nullptr)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidatePushGroupMarkerEXT(Context *context, GLsizei length, const char *marker)
+{
+    // Note that debug marker calls must not set error state
+
+    if (length < 0)
+    {
+        return false;
+    }
+
+    if (length > 0 && marker == nullptr)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 }

@@ -17,10 +17,6 @@ class DictionaryValue;
 class ListValue;
 }
 
-namespace extensions {
-class Extension;
-}
-
 namespace blink {
 struct WebURLError;
 }
@@ -50,20 +46,17 @@ class LocalizedError {
   // Returns true if an error page exists for the specified parameters.
   static bool HasStrings(const std::string& error_domain, int error_code);
 
-#if defined(ENABLE_EXTENSIONS)
-  // Fills |error_strings| with values to be used to build an error page used
-  // on HTTP errors, like 404 or connection reset, but using information from
-  // the associated |app| in order to make the error page look like it's more
-  // part of the app.
-  static void GetAppErrorStrings(const GURL& display_url,
-                                 const extensions::Extension* app,
-                                 const std::string& locale,
-                                 base::DictionaryValue* error_strings);
-#endif
-
   static const char kHttpErrorDomain[];
 
  private:
+  // Sets up the Google Cached Copy button experiment if part of the
+  // field trial. This promotes the Google cached copy suggestion from under
+  // the details section to a blue button. Also experiments with the
+  // button label.
+  static void EnableGoogleCachedCopyButtonExperiment(
+      base::ListValue* suggestions,
+      base::DictionaryValue* error_strings);
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(LocalizedError);
 };
 

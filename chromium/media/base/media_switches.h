@@ -19,7 +19,6 @@ MEDIA_EXPORT extern const char kDisableNewVideoRenderer[];
 MEDIA_EXPORT extern const char kVideoThreads[];
 
 #if defined(OS_ANDROID)
-MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
 MEDIA_EXPORT extern const char kEnableMediaThreadForMediaPlayback[];
 #endif
 
@@ -27,6 +26,8 @@ MEDIA_EXPORT extern const char kEnableMediaThreadForMediaPlayback[];
 MEDIA_EXPORT extern const char kAlsaInputDevice[];
 MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 #endif
+
+MEDIA_EXPORT extern const char kUseGpuMemoryBuffersForCapture[];
 
 #if defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kEnableAVFoundation[];

@@ -10,11 +10,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "url/third_party/mozilla/url_parse.h"
 #include "url/url_canon.h"
 #include "url/url_canon_stdstring.h"
 #include "url/url_constants.h"
 #include "url/url_export.h"
-#include "url/url_parse.h"
 
 class URL_EXPORT GURL {
  public:
@@ -194,10 +194,11 @@ class URL_EXPORT GURL {
   // returned.
   GURL GetAsReferrer() const;
 
-  // Returns true if the scheme for the current URL is a known "standard"
-  // scheme. Standard schemes have an authority and a path section. This
-  // includes file: and filesystem:, which some callers may want to filter out
-  // explicitly by calling SchemeIsFile[System].
+  // Returns true if the scheme for the current URL is a known "standard-format"
+  // scheme. A standard-format scheme adheres to what RFC 3986 calls "generic
+  // URI syntax" (https://tools.ietf.org/html/rfc3986#section-3). This includes
+  // file: and filesystem:, which some callers may want to filter out explicitly
+  // by calling SchemeIsFile[System].
   bool IsStandard() const;
 
   // Returns true if the given parameter (should be lower-case ASCII to match

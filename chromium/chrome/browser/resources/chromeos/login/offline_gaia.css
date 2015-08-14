@@ -4,10 +4,11 @@
  */
 
 :host {
+  display: flex;
+  flex-direction: column;
   font-size: 18px;
-  height: 100%;
   overflow: hidden;
-  width: 100%;
+  position: relative;
 }
 
 #backButton {
@@ -23,3 +24,12 @@
   right: 10px;
   transform: scaleX(-1);
 }
+
+paper-dialog {
+  --paper-dialog-title: {
+    font-size: 15px;
+  };
+
+  width: 384px;
+}
+

@@ -57,9 +57,6 @@ class UI_BASE_IME_EXPORT TextInputClient {
 
   // Input context information -------------------------------------------------
 
-  // Returns native window to which input context is bound.
-  virtual gfx::NativeWindow GetAttachedWindow() const = 0;
-
   // Returns current text input type. It could be changed and even becomes
   // TEXT_INPUT_TYPE_NONE at runtime.
   virtual ui::TextInputType GetTextInputType() const = 0;
@@ -164,13 +161,6 @@ class UI_BASE_IME_EXPORT TextInputClient {
   // TODO(ime): Have a clear spec whether the returned value is DIP or not.
   // http://crbug.com/360334
   virtual void EnsureCaretInRect(const gfx::Rect& rect) = 0;
-
-  // Called when IME shows a candidate window.
-  virtual void OnCandidateWindowShown() = 0;
-  // Called when IME updates any appearance of the current candidate window.
-  virtual void OnCandidateWindowUpdated() = 0;
-  // Called when IME hides the candidate window.
-  virtual void OnCandidateWindowHidden() = 0;
 
   // Returns true if |command_id| is currently allowed to be executed.
   virtual bool IsEditCommandEnabled(int command_id) = 0;

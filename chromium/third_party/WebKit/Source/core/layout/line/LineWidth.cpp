@@ -29,13 +29,14 @@
 
 #include "config.h"
 #include "core/layout/line/LineWidth.h"
+#include "core/layout/shapes/ShapeOutsideInfo.h"
 
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutRubyRun.h"
 
 namespace blink {
 
-LineWidth::LineWidth(LayoutBlockFlow& block, bool isFirstLine, IndentTextOrNot shouldIndentText)
+LineWidth::LineWidth(LineLayoutBlockFlow block, bool isFirstLine, IndentTextOrNot shouldIndentText)
     : m_block(block)
     , m_uncommittedWidth(0)
     , m_committedWidth(0)
@@ -60,19 +61,19 @@ void LineWidth::updateAvailableWidth(LayoutUnit replacedHeight)
     computeAvailableWidthFromLeftAndRight();
 }
 
-void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(FloatingObject* newFloat)
+void LineWidth::shrinkAvailableWidthForNewFloatIfNeeded(const FloatingObject& newFloat)
 {
     LayoutUnit height = m_block.logicalHeight();
     if (height < m_block.logicalTopForFloat(newFloat) || height >= m_block.logicalBottomForFloat(newFloat))
         return;
 
     ShapeOutsideDeltas shapeDeltas;
-    if (ShapeOutsideInfo* shapeOutsideInfo = newFloat->layoutObject()->shapeOutsideInfo()) {
+    if (ShapeOutsideInfo* shapeOutsideInfo = newFloat.layoutObject()->shapeOutsideInfo()) {
         LayoutUnit lineHeight = m_block.lineHeight(m_isFirstLine, m_block.isHorizontalWritingMode() ? HorizontalLine : VerticalLine, PositionOfInteriorLineBoxes);
-        shapeDeltas = shapeOutsideInfo->computeDeltasForContainingBlockLine(m_block, *newFloat, m_block.logicalHeight(), lineHeight);
+        shapeDeltas = shapeOutsideInfo->computeDeltasForContainingBlockLine(m_block, newFloat, m_block.logicalHeight(), lineHeight);
     }
 
-    if (newFloat->type() == FloatingObject::FloatLeft) {
+    if (newFloat.type() == FloatingObject::FloatLeft) {
         float newLeft = m_block.logicalRightForFloat(newFloat).toFloat();
         if (shapeDeltas.isValid()) {
             if (shapeDeltas.lineOverlapsShape())
@@ -119,7 +120,7 @@ void LineWidth::applyOverhang(LayoutRubyRun* rubyRun, LayoutObject* startLayoutO
     m_overhangWidth += startOverhang + endOverhang;
 }
 
-inline static float availableWidthAtOffset(const LayoutBlockFlow& block, const LayoutUnit& offset, bool shouldIndentText, float& newLineLeft,
+inline static float availableWidthAtOffset(LineLayoutBlockFlow block, const LayoutUnit& offset, bool shouldIndentText, float& newLineLeft,
     float& newLineRight, const LayoutUnit& lineHeight = 0)
 {
     newLineLeft = block.logicalLeftOffsetForLine(offset, shouldIndentText, lineHeight).toFloat();
@@ -173,7 +174,7 @@ void LineWidth::fitBelowFloats(bool isFirstLine)
     float newLineLeft = m_left;
     float newLineRight = m_right;
 
-    FloatingObject* lastFloatFromPreviousLine = (m_block.containsFloats() ? m_block.m_floatingObjects->set().last().get() : 0);
+    FloatingObject* lastFloatFromPreviousLine = m_block.lastFloatFromPreviousLine();
         if (lastFloatFromPreviousLine && lastFloatFromPreviousLine->layoutObject()->shapeOutsideInfo())
             return wrapNextToShapeOutside(isFirstLine);
 

@@ -12,6 +12,7 @@
 #include "SkColorPriv.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
+#include "GrDrawContext.h"
 #include "GrCoordTransform.h"
 #include "GrInvariantOutput.h"
 #include "effects/GrTextureDomain.h"
@@ -331,11 +332,13 @@ private:
 class GrDisplacementMapEffect : public GrFragmentProcessor {
 public:
     static GrFragmentProcessor* Create(
+            GrProcessorDataManager* procDataManager,
             SkDisplacementMapEffect::ChannelSelectorType xChannelSelector,
             SkDisplacementMapEffect::ChannelSelectorType yChannelSelector, SkVector scale,
             GrTexture* displacement, const SkMatrix& offsetMatrix, GrTexture* color,
             const SkISize& colorDimensions) {
-        return SkNEW_ARGS(GrDisplacementMapEffect, (xChannelSelector,
+        return SkNEW_ARGS(GrDisplacementMapEffect, (procDataManager,
+                                                    xChannelSelector,
                                                     yChannelSelector,
                                                     scale,
                                                     displacement,
@@ -369,7 +372,8 @@ private:
 
     void onComputeInvariantOutput(GrInvariantOutput* inout) const override;
 
-    GrDisplacementMapEffect(SkDisplacementMapEffect::ChannelSelectorType xChannelSelector,
+    GrDisplacementMapEffect(GrProcessorDataManager*,
+                            SkDisplacementMapEffect::ChannelSelectorType xChannelSelector,
                             SkDisplacementMapEffect::ChannelSelectorType yChannelSelector,
                             const SkVector& scale,
                             GrTexture* displacement, const SkMatrix& offsetMatrix,
@@ -445,7 +449,8 @@ bool SkDisplacementMapEffect::filterImageGPU(Proxy* proxy, const SkBitmap& src, 
                               SkIntToScalar(colorOffset.fY - displacementOffset.fY));
 
     paint.addColorProcessor(
-        GrDisplacementMapEffect::Create(fXChannelSelector,
+        GrDisplacementMapEffect::Create(paint.getProcessorDataManager(),
+                                        fXChannelSelector,
                                         fYChannelSelector,
                                         scale,
                                         displacement,
@@ -457,8 +462,14 @@ bool SkDisplacementMapEffect::filterImageGPU(Proxy* proxy, const SkBitmap& src, 
     SkMatrix matrix;
     matrix.setTranslate(-SkIntToScalar(colorBounds.x()),
                         -SkIntToScalar(colorBounds.y()));
-    context->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, matrix,
-                      SkRect::Make(colorBounds));
+
+    GrDrawContext* drawContext = context->drawContext();
+    if (!drawContext) {
+        return false;
+    }
+
+    drawContext->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, matrix,
+                          SkRect::Make(colorBounds));
     offset->fX = bounds.left();
     offset->fY = bounds.top();
     WrapTexture(dst, bounds.width(), bounds.height(), result);
@@ -468,6 +479,7 @@ bool SkDisplacementMapEffect::filterImageGPU(Proxy* proxy, const SkBitmap& src, 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrDisplacementMapEffect::GrDisplacementMapEffect(
+                             GrProcessorDataManager*,
                              SkDisplacementMapEffect::ChannelSelectorType xChannelSelector,
                              SkDisplacementMapEffect::ChannelSelectorType yChannelSelector,
                              const SkVector& scale,
@@ -515,29 +527,27 @@ void GrDisplacementMapEffect::onComputeInvariantOutput(GrInvariantOutput* inout)
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrDisplacementMapEffect);
 
-GrFragmentProcessor* GrDisplacementMapEffect::TestCreate(SkRandom* random,
-                                              GrContext*,
-                                              const GrDrawTargetCaps&,
-                                              GrTexture* textures[]) {
-    int texIdxDispl = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                           GrProcessorUnitTest::kAlphaTextureIdx;
-    int texIdxColor = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                           GrProcessorUnitTest::kAlphaTextureIdx;
+GrFragmentProcessor* GrDisplacementMapEffect::TestCreate(GrProcessorTestData* d) {
+    int texIdxDispl = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
+                                               GrProcessorUnitTest::kAlphaTextureIdx;
+    int texIdxColor = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
+                                               GrProcessorUnitTest::kAlphaTextureIdx;
     static const int kMaxComponent = 4;
     SkDisplacementMapEffect::ChannelSelectorType xChannelSelector =
         static_cast<SkDisplacementMapEffect::ChannelSelectorType>(
-        random->nextRangeU(1, kMaxComponent));
+                d->fRandom->nextRangeU(1, kMaxComponent));
     SkDisplacementMapEffect::ChannelSelectorType yChannelSelector =
         static_cast<SkDisplacementMapEffect::ChannelSelectorType>(
-        random->nextRangeU(1, kMaxComponent));
-    SkVector scale = SkVector::Make(random->nextRangeScalar(0, 100.0f),
-                                    random->nextRangeScalar(0, 100.0f));
+                d->fRandom->nextRangeU(1, kMaxComponent));
+    SkVector scale = SkVector::Make(d->fRandom->nextRangeScalar(0, 100.0f),
+                                    d->fRandom->nextRangeScalar(0, 100.0f));
     SkISize colorDimensions;
-    colorDimensions.fWidth = random->nextRangeU(0, textures[texIdxColor]->width());
-    colorDimensions.fHeight = random->nextRangeU(0, textures[texIdxColor]->height());
-    return GrDisplacementMapEffect::Create(xChannelSelector, yChannelSelector, scale,
-                                           textures[texIdxDispl], SkMatrix::I(),
-                                           textures[texIdxColor], colorDimensions);
+    colorDimensions.fWidth = d->fRandom->nextRangeU(0, d->fTextures[texIdxColor]->width());
+    colorDimensions.fHeight = d->fRandom->nextRangeU(0, d->fTextures[texIdxColor]->height());
+    return GrDisplacementMapEffect::Create(d->fProcDataManager,
+                                           xChannelSelector, yChannelSelector, scale,
+                                           d->fTextures[texIdxDispl], SkMatrix::I(),
+                                           d->fTextures[texIdxColor], colorDimensions);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -9,7 +9,7 @@
 cr.define('login', function() {
   /**
    * Number of displayed columns depending on user pod count.
-   * @type {Array.<number>}
+   * @type {Array<number>}
    * @const
    */
   var COLUMNS = [0, 1, 2, 3, 4, 5, 4, 4, 4, 5, 5, 6, 6, 5, 5, 6, 6, 6, 6];
@@ -17,7 +17,7 @@ cr.define('login', function() {
   /**
    * Mapping between number of columns in pod-row and margin between user pods
    * for such layout.
-   * @type {Array.<number>}
+   * @type {Array<number>}
    * @const
    */
   var MARGIN_BY_COLUMNS = [undefined, 40, 40, 40, 40, 40, 12];
@@ -25,7 +25,7 @@ cr.define('login', function() {
   /**
    * Mapping between number of columns in the desktop pod-row and margin
    * between user pods for such layout.
-   * @type {Array.<number>}
+   * @type {Array<number>}
    * @const
    */
   var DESKTOP_MARGIN_BY_COLUMNS = [undefined, 15, 15, 15, 15, 15, 15];
@@ -187,7 +187,7 @@ cr.define('login', function() {
    * The supported user pod custom icons.
    * {@code id} properties should be in sync with values set by C++ side.
    * {@code class} properties are CSS classes used to set the icons' background.
-   * @const {Array.<{id: !string, class: !string}>}
+   * @const {Array<{id: !string, class: !string}>}
    */
   UserPodCustomIcon.ICONS = [
     {id: 'locked', class: 'custom-icon-locked'},
@@ -709,8 +709,8 @@ cr.define('login', function() {
       this.addEventListener('click', this.handleClickOnPod_.bind(this));
       this.addEventListener('mousedown', this.handlePodMouseDown_.bind(this));
 
-      this.signinButtonElement.addEventListener('click',
-          this.activate.bind(this));
+      this.reauthWarningElement.addEventListener('click',
+                                                 this.activate.bind(this));
 
       this.actionBoxAreaElement.addEventListener('mousedown',
                                                  stopEventPropagation);
@@ -833,6 +833,14 @@ cr.define('login', function() {
     },
 
     /**
+     * Gets reauth name hint element.
+     * @type {!HTMLDivElement}
+     */
+    get reauthNameHintElement() {
+      return this.querySelector('.reauth-name-hint');
+    },
+
+    /**
      * Gets the container holding the password field.
      * @type {!HTMLInputElement}
      */
@@ -858,11 +866,11 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets user sign in button.
-     * @type {!HTMLButtonElement}
+     * Gets user online sign in hint element.
+     * @type {!HTMLDivElement}
      */
-    get signinButtonElement() {
-      return this.querySelector('.signin-button');
+    get reauthWarningElement() {
+      return this.querySelector('.reauth-hint-container');
     },
 
     /**
@@ -995,6 +1003,7 @@ cr.define('login', function() {
           '?id=' + UserPod.userImageSalt_[this.user.username];
 
       this.nameElement.textContent = this.user_.displayName;
+      this.reauthNameHintElement.textContent = this.user_.displayName;
       this.classList.toggle('signed-in', this.user_.signedIn);
 
       if (this.isAuthTypeUserClick)
@@ -1093,7 +1102,7 @@ cr.define('login', function() {
       if (this.isAuthTypePassword) {
         return this.passwordElement;
       } else if (this.isAuthTypeOnlineSignIn) {
-        return this.signinButtonElement;
+        return this;
       } else if (this.isAuthTypeUserClick) {
         return this.passwordLabelElement;
       }
@@ -1279,20 +1288,20 @@ cr.define('login', function() {
       error.appendChild(messageDiv);
 
       $('bubble').showContentForElement(
-          this.signinButtonElement,
+          this.reauthWarningElement,
           cr.ui.Bubble.Attachment.TOP,
           error,
-          this.signinButtonElement.offsetWidth / 2,
+          this.reauthWarningElement.offsetWidth / 2,
           4);
       // Move warning bubble up if it overlaps the shelf.
       var maxHeight =
           cr.ui.LoginUITools.getMaxHeightBeforeShelfOverlapping($('bubble'));
       if (maxHeight < $('bubble').offsetHeight) {
         $('bubble').showContentForElement(
-            this.signinButtonElement,
+            this.reauthWarningElement,
             cr.ui.Bubble.Attachment.BOTTOM,
             error,
-            this.signinButtonElement.offsetWidth / 2,
+            this.reauthWarningElement.offsetWidth / 2,
             4);
       }
     },
@@ -1932,6 +1941,7 @@ cr.define('login', function() {
     update: function() {
       this.imageElement.src = this.user.userImage;
       this.nameElement.textContent = this.user.displayName;
+      this.reauthNameHintElement.textContent = this.user.displayName;
 
       var isLockedUser = this.user.needsSignin;
       var isLegacySupervisedUser = this.user.legacySupervisedUser;
@@ -2024,6 +2034,7 @@ cr.define('login', function() {
       this.passwordEntryContainerElement.hidden = true;
       this.launchAppButtonContainerElement.hidden = false;
       this.nameElement.textContent = this.user.label;
+      this.reauthNameHintElement.textContent = this.user.label;
 
       UserPod.prototype.updateActionBoxArea.call(this);
       UserPod.prototype.customizeUserPodPerUserType.call(this);
@@ -2321,6 +2332,10 @@ cr.define('login', function() {
 
       // First check whether focused pod is already fully visible.
       var visibleArea = $('scroll-container');
+      // Visible area may not defined at user manager screen on all platforms.
+      // Windows, Mac and Linux do not have visible area.
+      if (!visibleArea)
+        return;
       var scrollTop = visibleArea.scrollTop;
       var clientHeight = visibleArea.clientHeight;
       var podTop = $('oobe').offsetTop + pod.offsetTop;
@@ -2584,8 +2599,7 @@ cr.define('login', function() {
       if (layout.columns != this.columns || layout.rows != this.rows)
         this.placePods_();
 
-      if (Oobe.getInstance().virtualKeyboardShown)
-        this.scrollFocusedPodIntoView();
+      this.scrollFocusedPodIntoView();
     },
 
     /**
@@ -2783,9 +2797,7 @@ cr.define('login', function() {
           chrome.send('focusPod', [podToFocus.user.username]);
         this.firstShown_ = false;
         this.lastFocusedPod_ = podToFocus;
-
-        if (Oobe.getInstance().virtualKeyboardShown)
-          this.scrollFocusedPodIntoView();
+        this.scrollFocusedPodIntoView();
       }
       this.insideFocusPod_ = false;
       this.keyboardActivated_ = false;
@@ -2937,6 +2949,8 @@ cr.define('login', function() {
 
       // Return focus back to single pod.
       if (this.alwaysFocusSinglePod && !pod) {
+        if ($('login-header-bar').contains(e.target))
+          return;
         this.focusPod(this.focusedPod_, true /* force */);
         this.focusedPod_.userTypeBubbleElement.classList.remove('bubble-shown');
         this.focusedPod_.isActionBoxMenuHovered = false;

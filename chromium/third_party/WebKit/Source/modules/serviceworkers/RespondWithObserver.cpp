@@ -10,6 +10,7 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/modules/v8/V8Response.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/streams/Stream.h"
@@ -22,67 +23,6 @@
 #include <v8.h>
 
 namespace blink {
-namespace {
-
-class StreamUploader : public BodyStreamBuffer::Observer {
-public:
-    StreamUploader(BodyStreamBuffer* buffer, Stream* outStream)
-        : m_buffer(buffer), m_outStream(outStream)
-    {
-    }
-    ~StreamUploader() override { }
-    void onWrite() override
-    {
-        bool needToFlush = false;
-        while (RefPtr<DOMArrayBuffer> buf = m_buffer->read()) {
-            needToFlush = true;
-            m_outStream->addData(static_cast<const char*>(buf->data()), buf->byteLength());
-        }
-        if (needToFlush)
-            m_outStream->flush();
-    }
-    void onClose() override
-    {
-        m_outStream->finalize();
-        cleanup();
-    }
-    void onError() override
-    {
-        // If the stream is aborted soon after the stream is registered to the
-        // StreamRegistry, ServiceWorkerURLRequestJob may not notice the error
-        // and continue waiting forever.
-        // FIXME: Add new message to report the error to the browser process.
-        m_outStream->abort();
-        cleanup();
-    }
-    DEFINE_INLINE_TRACE()
-    {
-        visitor->trace(m_buffer);
-        visitor->trace(m_outStream);
-        BodyStreamBuffer::Observer::trace(visitor);
-    }
-    void start()
-    {
-        m_buffer->registerObserver(this);
-        onWrite();
-        if (m_buffer->hasError())
-            return onError();
-        if (m_buffer->isClosed())
-            return onClose();
-    }
-
-private:
-    void cleanup()
-    {
-        m_buffer->unregisterObserver();
-        m_buffer.clear();
-        m_outStream.clear();
-    }
-    Member<BodyStreamBuffer> m_buffer;
-    Member<Stream> m_outStream;
-};
-
-} // namespace
 
 class RespondWithObserver::ThenFunction final : public ScriptFunction {
 public:
@@ -111,12 +51,12 @@ private:
     {
     }
 
-    virtual ScriptValue call(ScriptValue value) override
+    ScriptValue call(ScriptValue value) override
     {
         ASSERT(m_observer);
         ASSERT(m_resolveType == Fulfilled || m_resolveType == Rejected);
         if (m_resolveType == Rejected) {
-            m_observer->responseWasRejected();
+            m_observer->responseWasRejected(WebServiceWorkerResponseErrorPromiseRejected);
             value = ScriptPromise::reject(value.scriptState(), value).scriptValue();
         } else {
             m_observer->responseWasFulfilled(value);
@@ -147,7 +87,7 @@ void RespondWithObserver::didDispatchEvent(bool defaultPrevented)
         return;
 
     if (defaultPrevented) {
-        responseWasRejected();
+        responseWasRejected(WebServiceWorkerResponseErrorDefaultPrevented);
         return;
     }
 
@@ -157,7 +97,6 @@ void RespondWithObserver::didDispatchEvent(bool defaultPrevented)
 
 void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValue& value, ExceptionState& exceptionState)
 {
-    ASSERT(RuntimeEnabledFeatures::serviceWorkerOnFetchEnabled());
     if (m_state != Initial) {
         exceptionState.throwDOMException(InvalidStateError, "The fetch event has already been responded to.");
         return;
@@ -169,12 +108,13 @@ void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValu
         ThenFunction::createFunction(scriptState, this, ThenFunction::Rejected));
 }
 
-void RespondWithObserver::responseWasRejected()
+void RespondWithObserver::responseWasRejected(WebServiceWorkerResponseError error)
 {
     ASSERT(executionContext());
     // The default value of WebServiceWorkerResponse's status is 0, which maps
     // to a network error.
     WebServiceWorkerResponse webResponse;
+    webResponse.setError(error);
     ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
     m_state = Done;
 }
@@ -183,7 +123,7 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
 {
     ASSERT(executionContext());
     if (!V8Response::hasInstance(value.v8Value(), toIsolate(executionContext()))) {
-        responseWasRejected();
+        responseWasRejected(WebServiceWorkerResponseErrorNoV8Instance);
         return;
     }
     Response* response = V8Response::toImplWithTypeCheck(toIsolate(executionContext()), value.v8Value());
@@ -193,27 +133,38 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
     //   - |request| is a client request and |response|'s type is neither
     //     |basic| nor |default|."
     const FetchResponseData::Type responseType = response->response()->type();
-    if (responseType == FetchResponseData::ErrorType
-        || (m_requestMode != WebURLRequest::FetchRequestModeNoCORS && responseType == FetchResponseData::OpaqueType)
-        || (m_frameType != WebURLRequest::FrameTypeNone && responseType != FetchResponseData::BasicType && responseType != FetchResponseData::DefaultType)) {
-        responseWasRejected();
+    if (responseType == FetchResponseData::ErrorType) {
+        responseWasRejected(WebServiceWorkerResponseErrorResponseTypeError);
+        return;
+    }
+    if (m_requestMode != WebURLRequest::FetchRequestModeNoCORS && responseType == FetchResponseData::OpaqueType) {
+        responseWasRejected(WebServiceWorkerResponseErrorResponseTypeOpaque);
+        return;
+    }
+    if (m_frameType != WebURLRequest::FrameTypeNone && responseType != FetchResponseData::BasicType && responseType != FetchResponseData::DefaultType) {
+        responseWasRejected(WebServiceWorkerResponseErrorResponseTypeNotBasicOrDefault);
         return;
     }
     if (response->bodyUsed()) {
-        responseWasRejected();
+        responseWasRejected(WebServiceWorkerResponseErrorBodyUsed);
         return;
     }
+
     response->lockBody(Body::PassBody);
-    if (BodyStreamBuffer* buffer = response->internalBuffer()) {
-        if (buffer == response->buffer() && response->isBodyConsumed())
-            buffer = response->createDrainingStream();
+    if (OwnPtr<DrainingBodyStreamBuffer> buffer = response->createInternalDrainingStream()) {
         WebServiceWorkerResponse webResponse;
         response->populateWebServiceWorkerResponse(webResponse);
+        if (RefPtr<BlobDataHandle> blobDataHandle = buffer->drainAsBlobDataHandle(FetchDataConsumerHandle::Reader::AllowBlobWithInvalidSize)) {
+            webResponse.setBlobDataHandle(blobDataHandle);
+            ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
+            m_state = Done;
+            return;
+        }
         Stream* outStream = Stream::create(executionContext(), "");
         webResponse.setStreamURL(outStream->url());
         ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
-        StreamUploader* uploader = new StreamUploader(buffer, outStream);
-        uploader->start();
+        FetchDataLoader* loader = FetchDataLoader::createLoaderAsStream(outStream);
+        buffer->startLoading(loader, nullptr);
         m_state = Done;
         return;
     }

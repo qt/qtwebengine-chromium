@@ -59,6 +59,7 @@
 #include "core/style/ComputedStyle.h"
 #include "platform/Length.h"
 #include "platform/LengthBox.h"
+#include "wtf/StdLibExtras.h"
 
 namespace blink {
 
@@ -258,6 +259,13 @@ static PassRefPtrWillBeRawPtr<AnimatableValue> createFromFontStretch(FontStretch
     return createFromDouble(fontStretchToDouble(fontStretch));
 }
 
+static PassRefPtrWillBeRawPtr<AnimatableValue> createFromTransformProperties(PassRefPtr<TransformOperation> transform, PassRefPtr<TransformOperation> initialTransform)
+{
+    TransformOperations operation;
+    operation.operations().append(transform ? transform : initialTransform);
+    return AnimatableTransform::create(operation);
+}
+
 static double fontWeightToDouble(FontWeight fontWeight)
 {
     switch (fontWeight) {
@@ -300,7 +308,7 @@ static SVGPaintType normalizeSVGPaintType(SVGPaintType paintType)
 // FIXME: Generate this function.
 PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID property, const ComputedStyle& style)
 {
-    ASSERT(CSSPropertyMetadata::isAnimatableProperty(property));
+    ASSERT(CSSPropertyMetadata::isInterpolableProperty(property));
     switch (property) {
     case CSSPropertyBackgroundColor:
         return createFromColor(property, style);
@@ -478,6 +486,8 @@ PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPro
             return AnimatableClipPathOperation::create(operation);
         return AnimatableUnknown::create(CSSValueNone);
     case CSSPropertyWebkitColumnCount:
+        if (style.hasAutoColumnCount())
+            return AnimatableUnknown::create(CSSValueAuto);
         return createFromDouble(style.columnCount());
     case CSSPropertyWebkitColumnGap:
         return createFromDouble(style.columnGap());
@@ -486,6 +496,8 @@ PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPro
     case CSSPropertyWebkitColumnRuleWidth:
         return createFromDouble(style.columnRuleWidth());
     case CSSPropertyWebkitColumnWidth:
+        if (style.hasAutoColumnWidth())
+            return AnimatableUnknown::create(CSSValueAuto);
         return createFromDouble(style.columnWidth());
     case CSSPropertyWebkitFilter:
         return AnimatableFilterOperations::create(style.filter());
@@ -519,6 +531,18 @@ PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPro
         return createFromColor(property, style);
     case CSSPropertyTransform:
         return AnimatableTransform::create(style.transform());
+    case CSSPropertyTranslate: {
+        DEFINE_STATIC_REF(TranslateTransformOperation, initialTranslate, TranslateTransformOperation::create(Length(0, Fixed), Length(0, Fixed), 0, TransformOperation::Translate3D));
+        return createFromTransformProperties(style.translate(), initialTranslate);
+    }
+    case CSSPropertyRotate: {
+        DEFINE_STATIC_REF(RotateTransformOperation, initialRotate, RotateTransformOperation::create(0, 0, 1, 0, TransformOperation::Rotate3D));
+        return createFromTransformProperties(style.rotate(), initialRotate);
+    }
+    case CSSPropertyScale: {
+        DEFINE_STATIC_REF(ScaleTransformOperation, initialScale, ScaleTransformOperation::create(1, 1, 1, TransformOperation::Scale3D));
+        return createFromTransformProperties(style.scale(), initialScale);
+    }
     case CSSPropertyTransformOrigin:
         return createFromTransformOrigin(style.transformOrigin(), style);
     case CSSPropertyMotionOffset:
@@ -562,6 +586,8 @@ PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPro
     case CSSPropertyRy:
         return createFromLength(style.svgStyle().ry(), style);
     case CSSPropertyZIndex:
+        if (style.hasAutoZIndex())
+            return AnimatableUnknown::create(CSSValueAuto);
         return createFromDouble(style.zIndex());
     default:
         ASSERT_NOT_REACHED();

@@ -136,8 +136,6 @@ WebInspector.Target.prototype = {
         this.heapProfilerModel = new WebInspector.HeapProfilerModel(this);
         /** @type {!WebInspector.LayerTreeModel} */
         this.layerTreeModel = new WebInspector.LayerTreeModel(this);
-        /** @type {!WebInspector.AnimationModel} */
-        this.animationModel = new WebInspector.AnimationModel(this);
 
         this.tracingManager = new WebInspector.TracingManager(this);
 
@@ -564,6 +562,20 @@ WebInspector.TargetManager.prototype = {
                 result.push(target);
         }
         return result;
+    },
+
+    /**
+     *
+     * @param {number} id
+     * @return {?WebInspector.Target}
+     */
+    targetById: function(id)
+    {
+        for (var i = 0; i < this._targets.length; ++i) {
+            if (this._targets[i].id() === id)
+                return this._targets[i];
+        }
+        return null;
     },
 
     /**

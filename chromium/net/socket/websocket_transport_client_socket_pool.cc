@@ -7,9 +7,12 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
@@ -432,11 +435,12 @@ LoadState WebSocketTransportClientSocketPool::GetLoadState(
   return LookupConnectJob(handle)->GetLoadState();
 }
 
-base::DictionaryValue* WebSocketTransportClientSocketPool::GetInfoAsValue(
-    const std::string& name,
-    const std::string& type,
-    bool include_nested_pools) const {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+scoped_ptr<base::DictionaryValue>
+    WebSocketTransportClientSocketPool::GetInfoAsValue(
+        const std::string& name,
+        const std::string& type,
+        bool include_nested_pools) const {
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("name", name);
   dict->SetString("type", type);
   dict->SetInteger("handed_out_socket_count", handed_out_socket_count_);
@@ -445,7 +449,7 @@ base::DictionaryValue* WebSocketTransportClientSocketPool::GetInfoAsValue(
   dict->SetInteger("max_socket_count", max_sockets_);
   dict->SetInteger("max_sockets_per_group", max_sockets_);
   dict->SetInteger("pool_generation_number", 0);
-  return dict;
+  return dict.Pass();
 }
 
 TimeDelta WebSocketTransportClientSocketPool::ConnectionTimeout() const {
@@ -505,13 +509,10 @@ void WebSocketTransportClientSocketPool::InvokeUserCallbackLater(
     int rv) {
   DCHECK(!pending_callbacks_.count(handle));
   pending_callbacks_.insert(handle);
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&WebSocketTransportClientSocketPool::InvokeUserCallback,
-                 weak_factory_.GetWeakPtr(),
-                 handle,
-                 callback,
-                 rv));
+                 weak_factory_.GetWeakPtr(), handle, callback, rv));
 }
 
 void WebSocketTransportClientSocketPool::InvokeUserCallback(

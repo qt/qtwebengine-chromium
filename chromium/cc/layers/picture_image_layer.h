@@ -15,7 +15,7 @@ namespace cc {
 
 class CC_EXPORT PictureImageLayer : public PictureLayer, ContentLayerClient {
  public:
-  static scoped_refptr<PictureImageLayer> Create();
+  static scoped_refptr<PictureImageLayer> Create(const LayerSettings& settings);
 
   void SetBitmap(const SkBitmap& image);
 
@@ -27,8 +27,7 @@ class CC_EXPORT PictureImageLayer : public PictureLayer, ContentLayerClient {
       SkCanvas* canvas,
       const gfx::Rect& clip,
       ContentLayerClient::PaintingControlSetting painting_control) override;
-  void PaintContentsToDisplayList(
-      DisplayItemList* display_list,
+  scoped_refptr<DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
       ContentLayerClient::PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
@@ -37,7 +36,7 @@ class CC_EXPORT PictureImageLayer : public PictureLayer, ContentLayerClient {
   bool HasDrawableContent() const override;
 
  private:
-  PictureImageLayer();
+  explicit PictureImageLayer(const LayerSettings& settings);
   ~PictureImageLayer() override;
 
   SkBitmap bitmap_;

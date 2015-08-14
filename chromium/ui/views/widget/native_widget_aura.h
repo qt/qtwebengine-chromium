@@ -12,7 +12,6 @@
 #include "ui/aura/window_observer.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/events/event_constants.h"
-#include "ui/views/ime/input_method_delegate.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/wm/public/activation_change_observer.h"
@@ -34,7 +33,6 @@ class WindowReorderer;
 
 class VIEWS_EXPORT NativeWidgetAura
     : public internal::NativeWidgetPrivate,
-      public internal::InputMethodDelegate,
       public aura::WindowDelegate,
       public aura::WindowObserver,
       public aura::client::ActivationDelegate,
@@ -71,9 +69,7 @@ class VIEWS_EXPORT NativeWidgetAura
   void SetCapture() override;
   void ReleaseCapture() override;
   bool HasCapture() const override;
-  InputMethod* CreateInputMethod() override;
-  internal::InputMethodDelegate* GetInputMethodDelegate() override;
-  ui::InputMethod* GetHostInputMethod() override;
+  ui::InputMethod* GetInputMethod() override;
   void CenterWindow(const gfx::Size& size) override;
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* maximized) const override;
@@ -89,7 +85,7 @@ class VIEWS_EXPORT NativeWidgetAura
   void StackAbove(gfx::NativeView native_view) override;
   void StackAtTop() override;
   void StackBelow(gfx::NativeView native_view) override;
-  void SetShape(gfx::NativeRegion shape) override;
+  void SetShape(SkRegion* shape) override;
   void Close() override;
   void CloseNow() override;
   void Show() override;
@@ -138,15 +134,11 @@ class VIEWS_EXPORT NativeWidgetAura
   void OnSizeConstraintsChanged() override;
   void RepostNativeEvent(gfx::NativeEvent native_event) override;
 
-  // Overridden from views::InputMethodDelegate:
-  void DispatchKeyEventPostIME(const ui::KeyEvent& key) override;
-
   // Overridden from aura::WindowDelegate:
   gfx::Size GetMinimumSize() const override;
   gfx::Size GetMaximumSize() const override;
   void OnBoundsChanged(const gfx::Rect& old_bounds,
                        const gfx::Rect& new_bounds) override;
-  ui::TextInputClient* GetFocusedTextInputClient() override;
   gfx::NativeCursor GetCursor(const gfx::Point& point) override;
   int GetNonClientComponent(const gfx::Point& point) const override;
   bool ShouldDescendIntoChildForEventHandling(
@@ -177,8 +169,10 @@ class VIEWS_EXPORT NativeWidgetAura
   bool ShouldActivate() const override;
 
   // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_active,
-                         aura::Window* lost_active) override;
+  void OnWindowActivated(
+      aura::client::ActivationChangeObserver::ActivationReason reason,
+      aura::Window* gained_active,
+      aura::Window* lost_active) override;
 
   // Overridden from aura::client::FocusChangeObserver:
   void OnWindowFocused(aura::Window* gained_focus,
@@ -198,6 +192,7 @@ class VIEWS_EXPORT NativeWidgetAura
  private:
   class ActiveWindowObserver;
 
+  bool IsDocked() const;
   void SetInitialFocus(ui::WindowShowState show_state);
 
   internal::NativeWidgetDelegate* delegate_;

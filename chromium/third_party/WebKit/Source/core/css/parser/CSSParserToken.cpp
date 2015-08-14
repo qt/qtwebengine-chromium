@@ -31,8 +31,8 @@ CSSParserToken::CSSParserToken(CSSParserTokenType type, UChar c)
 CSSParserToken::CSSParserToken(CSSParserTokenType type, CSSParserString value, BlockType blockType)
     : m_type(type)
     , m_blockType(blockType)
-    , m_value(value)
 {
+    initValueFromCSSParserString(value);
 }
 
 CSSParserToken::CSSParserToken(CSSParserTokenType type, double numericValue, NumericValueType numericValueType, NumericSign sign)
@@ -46,10 +46,9 @@ CSSParserToken::CSSParserToken(CSSParserTokenType type, double numericValue, Num
     ASSERT(type == NumberToken);
 }
 
-CSSParserToken::CSSParserToken(CSSParserTokenType type, CSSParserString string, UChar32 start, UChar32 end)
+CSSParserToken::CSSParserToken(CSSParserTokenType type, UChar32 start, UChar32 end)
     : m_type(UnicodeRangeToken)
     , m_blockType(NotBlock)
-    , m_value(string)
 {
     ASSERT_UNUSED(type, type == UnicodeRangeToken);
     m_unicodeRange.start = start;
@@ -59,16 +58,16 @@ CSSParserToken::CSSParserToken(CSSParserTokenType type, CSSParserString string, 
 CSSParserToken::CSSParserToken(HashTokenType type, CSSParserString value)
     : m_type(HashToken)
     , m_blockType(NotBlock)
-    , m_value(value)
     , m_hashTokenType(type)
 {
+    initValueFromCSSParserString(value);
 }
 
 void CSSParserToken::convertToDimensionWithUnit(CSSParserString unit)
 {
     ASSERT(m_type == NumberToken);
     m_type = DimensionToken;
-    m_value = unit;
+    initValueFromCSSParserString(unit);
     m_unit = CSSPrimitiveValue::fromName(unit);
 }
 
@@ -108,7 +107,7 @@ double CSSParserToken::numericValue() const
 CSSPropertyID CSSParserToken::parseAsUnresolvedCSSPropertyID() const
 {
     ASSERT(m_type == IdentToken);
-    return unresolvedCSSPropertyID(m_value);
+    return unresolvedCSSPropertyID(value());
 }
 
 void CSSParserToken::serialize(StringBuilder& builder) const
@@ -148,7 +147,7 @@ void CSSParserToken::serialize(StringBuilder& builder) const
         builder.appendNumber(numericValue());
         return serializeIdentifier(value(), builder);
     case UnicodeRangeToken:
-        return builder.append(value());
+        return builder.append(String::format("U+%X-%X", unicodeRangeStart(), unicodeRangeEnd()));
     case StringToken:
         return serializeString(value(), builder);
 

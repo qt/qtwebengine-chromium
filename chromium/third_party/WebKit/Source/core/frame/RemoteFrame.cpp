@@ -13,7 +13,10 @@
 #include "core/frame/RemoteFrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/layout/LayoutPart.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/paint/DeprecatedPaintLayer.h"
+#include "platform/PluginScriptForbiddenScope.h"
+#include "platform/UserGestureIndicator.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebLayer.h"
@@ -59,22 +62,30 @@ WindowProxy* RemoteFrame::windowProxy(DOMWrapperWorld& world)
     return windowProxy;
 }
 
-void RemoteFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList)
+void RemoteFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList, UserGestureStatus userGestureStatus)
 {
     // The process where this frame actually lives won't have sufficient information to determine
     // correct referrer, since it won't have access to the originDocument. Set it now.
     ResourceRequest request(url);
     request.setHTTPReferrer(SecurityPolicy::generateReferrer(originDocument.referrerPolicy(), url, originDocument.outgoingReferrer()));
+    request.setHasUserGesture(userGestureStatus == UserGestureStatus::Active);
     remoteFrameClient()->navigate(request, lockBackForwardList);
 }
 
-void RemoteFrame::reload(ReloadPolicy reloadPolicy, ClientRedirectPolicy clientRedirectPolicy)
+void RemoteFrame::navigate(const FrameLoadRequest& passedRequest)
 {
-    remoteFrameClient()->reload(reloadPolicy, clientRedirectPolicy);
+    UserGestureStatus gesture = UserGestureIndicator::processingUserGesture() ? UserGestureStatus::Active : UserGestureStatus::None;
+    navigate(*passedRequest.originDocument(), passedRequest.resourceRequest().url(), passedRequest.lockBackForwardList(), gesture);
 }
 
-void RemoteFrame::detach()
+void RemoteFrame::reload(FrameLoadType frameLoadType, ClientRedirectPolicy clientRedirectPolicy)
 {
+    remoteFrameClient()->reload(frameLoadType, clientRedirectPolicy);
+}
+
+void RemoteFrame::detach(FrameDetachType type)
+{
+    PluginScriptForbiddenScope forbidPluginDestructorScripting;
     // Frame::detach() requires the caller to keep a reference to this, since
     // otherwise it may clear the last reference to this, causing it to be
     // deleted, which can cause a use-after-free.
@@ -85,7 +96,13 @@ void RemoteFrame::detach()
     client()->willBeDetached();
     m_windowProxyManager->clearForClose();
     setView(nullptr);
-    Frame::detach();
+    Frame::detach(type);
+}
+
+bool RemoteFrame::prepareForCommit()
+{
+    detachChildren();
+    return !!host();
 }
 
 RemoteSecurityContext* RemoteFrame::securityContext() const
@@ -101,6 +118,13 @@ void RemoteFrame::disconnectOwnerElement()
         setRemotePlatformLayer(nullptr);
 
     Frame::disconnectOwnerElement();
+}
+
+bool RemoteFrame::shouldClose()
+{
+    // TODO(nasko): Implement running the beforeunload handler in the actual
+    // LocalFrame running in a different process and getting back a real result.
+    return true;
 }
 
 void RemoteFrame::forwardInputEvent(Event* event)

@@ -29,6 +29,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebTraceLocation.h"
+#include "wtf/AddressSanitizer.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
@@ -63,44 +64,65 @@ public:
     double repeatInterval() const { return m_repeatInterval; }
 
     void augmentRepeatInterval(double delta) {
-        setNextFireTime(m_nextFireTime + delta);
+        double now = monotonicallyIncreasingTime();
+        setNextFireTime(now, m_nextFireTime - now + delta);
         m_repeatInterval += delta;
     }
 
-    void didChangeAlignmentInterval();
+    void didChangeAlignmentInterval(double now);
+
+    struct PLATFORM_EXPORT Comparator {
+        bool operator()(const TimerBase* a, const TimerBase* b) const;
+    };
 
 private:
     virtual void fired() = 0;
 
+    NO_LAZY_SWEEP_SANITIZE_ADDRESS
+    virtual bool canFire() const { return true; }
+
     virtual double alignedFireTime(double fireTime) const { return fireTime; }
 
-    void checkConsistency() const;
-    void checkHeapIndex() const;
+    void setNextFireTime(double now, double delay);
 
-    void setNextFireTime(double);
+    void runInternal();
 
-    bool inHeap() const { return m_heapIndex != -1; }
+    class CancellableTimerTask final : public WebThread::Task {
+        WTF_MAKE_NONCOPYABLE(CancellableTimerTask);
+    public:
+        explicit CancellableTimerTask(TimerBase* timer) : m_timer(timer) { }
 
-    bool hasValidHeapPosition() const;
-    void updateHeapIfNeeded(double oldTime);
+        ~CancellableTimerTask() override
+        {
+            if (m_timer)
+                m_timer->m_cancellableTimerTask = nullptr;
+        }
 
-    void heapDecreaseKey();
-    void heapDelete();
-    void heapDeleteMin();
-    void heapIncreaseKey();
-    void heapInsert();
-    void heapPop();
-    void heapPopMin();
+        NO_LAZY_SWEEP_SANITIZE_ADDRESS
+        void run() override
+        {
+            if (m_timer) {
+                m_timer->m_cancellableTimerTask = nullptr;
+                m_timer->runInternal();
+                m_timer = nullptr;
+            }
+        }
 
-    Vector<TimerBase*>& timerHeap() const { ASSERT(m_cachedThreadGlobalTimerHeap); return *m_cachedThreadGlobalTimerHeap; }
+        void cancel()
+        {
+            m_timer = nullptr;
+        }
+
+    private:
+        TimerBase* m_timer; // NOT OWNED
+    };
 
     double m_nextFireTime; // 0 if inactive
     double m_unalignedNextFireTime; // m_nextFireTime not considering alignment interval
     double m_repeatInterval; // 0 if not repeating
-    int m_heapIndex; // -1 if not in heap
-    unsigned m_heapInsertionOrder; // Used to keep order among equal-fire-time timers
-    Vector<TimerBase*>* m_cachedThreadGlobalTimerHeap;
     WebTraceLocation m_location;
+    CancellableTimerTask* m_cancellableTimerTask; // NOT OWNED
+    WebScheduler* m_webScheduler; // Not owned.
 
 #if ENABLE(ASSERT)
     ThreadIdentifier m_thread;
@@ -122,9 +144,6 @@ class TimerIsObjectAliveTrait<T, true> {
 public:
     static bool isHeapObjectAlive(T* objectPointer)
     {
-        // Oilpan: if a timer fires while Oilpan heaps are being lazily
-        // swept, it is not safe to proceed if the object is about to
-        // be swept (and this timer will be stopped while doing so.)
         return !Heap::willObjectBeLazilySwept(objectPointer);
     }
 };
@@ -135,18 +154,27 @@ public:
     typedef void (TimerFiredClass::*TimerFiredFunction)(Timer*);
 
     Timer(TimerFiredClass* o, TimerFiredFunction f)
-        : m_object(o), m_function(f) { }
+        : m_object(o), m_function(f)
+    {
+    }
 
 protected:
-    virtual void fired() override
+    void fired() override
     {
-        if (!TimerIsObjectAliveTrait<TimerFiredClass>::isHeapObjectAlive(m_object))
-            return;
         (m_object->*m_function)(this);
     }
 
+    NO_LAZY_SWEEP_SANITIZE_ADDRESS
+    bool canFire() const override
+    {
+        // Oilpan: if a timer fires while Oilpan heaps are being lazily
+        // swept, it is not safe to proceed if the object is about to
+        // be swept (and this timer will be stopped while doing so.)
+        return TimerIsObjectAliveTrait<TimerFiredClass>::isHeapObjectAlive(m_object);
+    }
+
 private:
-    // FIXME: oilpan: TimerBase should be moved to the heap and m_object should be traced.
+    // FIXME: Oilpan: TimerBase should be moved to the heap and m_object should be traced.
     // This raw pointer is safe as long as Timer<X> is held by the X itself (That's the case
     // in the current code base).
     GC_PLUGIN_IGNORE("363031")
@@ -154,12 +182,13 @@ private:
     TimerFiredFunction m_function;
 };
 
+NO_LAZY_SWEEP_SANITIZE_ADDRESS
 inline bool TimerBase::isActive() const
 {
     ASSERT(m_thread == currentThread());
-    return m_nextFireTime;
+    return m_cancellableTimerTask;
 }
 
-}
+} // namespace blink
 
-#endif
+#endif // Timer_h

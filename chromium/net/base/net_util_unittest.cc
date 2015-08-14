@@ -17,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
+#include "net/base/address_list.h"
 #include "net/base/ip_endpoint.h"
 
 #if !defined(OS_NACL) && !defined(OS_WIN)
@@ -42,17 +43,6 @@
 #include "net/base/address_tracker_linux.h"
 #endif  // !OS_MACOSX && !OS_NACL && !OS_WIN
 
-#if defined(OS_WIN)
-#include "net/base/net_util_win.h"
-#else  // OS_WIN
-#include "net/base/net_util_posix.h"
-#if defined(OS_MACOSX)
-#include "net/base/net_util_mac.h"
-#else  // OS_MACOSX
-#include "net/base/net_util_linux.h"
-#endif  // OS_MACOSX
-#endif  // OS_WIN
-
 using base::ASCIIToUTF16;
 using base::WideToUTF16;
 
@@ -65,18 +55,14 @@ struct HeaderCase {
   const char* const expected;
 };
 
-#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_CHROMEOS)
-const char kWiFiSSID[] = "TestWiFi";
-const char kInterfaceWithDifferentSSID[] = "wlan999";
-
-std::string TestGetInterfaceSSID(const std::string& ifname) {
-  return (ifname == kInterfaceWithDifferentSSID) ? "AnotherSSID" : kWiFiSSID;
-}
-#endif
+const unsigned char kLocalhostIPv4[] = {127, 0, 0, 1};
+const unsigned char kLocalhostIPv6[] =
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+const uint16_t kLocalhostLookupPort = 80;
 
 // Fills in sockaddr for the given 32-bit address (IPv4.)
 // |bytes| should be an array of length 4.
-void MakeIPv4Address(const uint8* bytes, int port, SockaddrStorage* storage) {
+void MakeIPv4Address(const uint8_t* bytes, int port, SockaddrStorage* storage) {
   memset(&storage->addr_storage, 0, sizeof(storage->addr_storage));
   storage->addr_len = sizeof(struct sockaddr_in);
   struct sockaddr_in* addr4 = reinterpret_cast<sockaddr_in*>(storage->addr);
@@ -87,7 +73,7 @@ void MakeIPv4Address(const uint8* bytes, int port, SockaddrStorage* storage) {
 
 // Fills in sockaddr for the given 128-bit address (IPv6.)
 // |bytes| should be an array of length 16.
-void MakeIPv6Address(const uint8* bytes, int port, SockaddrStorage* storage) {
+void MakeIPv6Address(const uint8_t* bytes, int port, SockaddrStorage* storage) {
   memset(&storage->addr_storage, 0, sizeof(storage->addr_storage));
   storage->addr_len = sizeof(struct sockaddr_in6);
   struct sockaddr_in6* addr6 = reinterpret_cast<sockaddr_in6*>(storage->addr);
@@ -96,68 +82,42 @@ void MakeIPv6Address(const uint8* bytes, int port, SockaddrStorage* storage) {
   memcpy(&addr6->sin6_addr, bytes, 16);
 }
 
-// Helper to strignize an IP number (used to define expectations).
-std::string DumpIPNumber(const IPAddressNumber& v) {
-  std::string out;
-  for (size_t i = 0; i < v.size(); ++i) {
-    if (i != 0)
-      out.append(",");
-    out.append(base::IntToString(static_cast<int>(v[i])));
+bool HasEndpoint(const IPEndPoint& endpoint, const AddressList& addresses) {
+  for (const auto& address : addresses) {
+    if (endpoint == address)
+      return true;
   }
-  return out;
+  return false;
 }
 
-#if defined(OS_MACOSX)
-class IPAttributesGetterTest : public internal::IPAttributesGetterMac {
- public:
-  IPAttributesGetterTest() : native_attributes_(0) {}
-  bool IsInitialized() const override { return true; }
-  bool GetIPAttributes(const char* ifname,
-                       const sockaddr* sock_addr,
-                       int* native_attributes) override {
-    *native_attributes = native_attributes_;
-    return true;
-  }
-  void set_native_attributes(int native_attributes) {
-    native_attributes_ = native_attributes;
-  }
+void TestBothLoopbackIPs(const std::string& host) {
+  IPEndPoint localhost_ipv4(
+      IPAddressNumber(kLocalhostIPv4,
+                      kLocalhostIPv4 + arraysize(kLocalhostIPv4)),
+      kLocalhostLookupPort);
+  IPEndPoint localhost_ipv6(
+      IPAddressNumber(kLocalhostIPv6,
+                      kLocalhostIPv6 + arraysize(kLocalhostIPv6)),
+      kLocalhostLookupPort);
 
- private:
-  int native_attributes_;
-};
-
-// Helper function to create a single valid ifaddrs
-bool FillIfaddrs(ifaddrs* interfaces,
-                 const char* ifname,
-                 uint flags,
-                 const IPAddressNumber& ip_address,
-                 const IPAddressNumber& ip_netmask,
-                 sockaddr_storage sock_addrs[2]) {
-  interfaces->ifa_next = NULL;
-  interfaces->ifa_name = const_cast<char*>(ifname);
-  interfaces->ifa_flags = flags;
-
-  socklen_t sock_len = sizeof(sockaddr_storage);
-
-  // Convert to sockaddr for next check.
-  if (!IPEndPoint(ip_address, 0)
-           .ToSockAddr(reinterpret_cast<sockaddr*>(&sock_addrs[0]),
-                       &sock_len)) {
-    return false;
-  }
-  interfaces->ifa_addr = reinterpret_cast<sockaddr*>(&sock_addrs[0]);
-
-  sock_len = sizeof(sockaddr_storage);
-  if (!IPEndPoint(ip_netmask, 0)
-           .ToSockAddr(reinterpret_cast<sockaddr*>(&sock_addrs[1]),
-                       &sock_len)) {
-    return false;
-  }
-  interfaces->ifa_netmask = reinterpret_cast<sockaddr*>(&sock_addrs[1]);
-
-  return true;
+  AddressList addresses;
+  EXPECT_TRUE(ResolveLocalHostname(host, kLocalhostLookupPort, &addresses));
+  EXPECT_EQ(2u, addresses.size());
+  EXPECT_TRUE(HasEndpoint(localhost_ipv4, addresses));
+  EXPECT_TRUE(HasEndpoint(localhost_ipv6, addresses));
 }
-#endif  // OS_MACOSX
+
+void TestIPv6LoopbackOnly(const std::string& host) {
+  IPEndPoint localhost_ipv6(
+      IPAddressNumber(kLocalhostIPv6,
+                      kLocalhostIPv6 + arraysize(kLocalhostIPv6)),
+      kLocalhostLookupPort);
+
+  AddressList addresses;
+  EXPECT_TRUE(ResolveLocalHostname(host, kLocalhostLookupPort, &addresses));
+  EXPECT_EQ(1u, addresses.size());
+  EXPECT_TRUE(HasEndpoint(localhost_ipv6, addresses));
+}
 
 }  // anonymous namespace
 
@@ -413,33 +373,9 @@ TEST(NetUtilTest, GetHostAndOptionalPort) {
   }
 }
 
-TEST(NetUtilTest, IPAddressToString) {
-  uint8 addr1[4] = {0, 0, 0, 0};
-  EXPECT_EQ("0.0.0.0", IPAddressToString(addr1, sizeof(addr1)));
-
-  uint8 addr2[4] = {192, 168, 0, 1};
-  EXPECT_EQ("192.168.0.1", IPAddressToString(addr2, sizeof(addr2)));
-
-  uint8 addr3[16] = {0xFE, 0xDC, 0xBA, 0x98};
-  EXPECT_EQ("fedc:ba98::", IPAddressToString(addr3, sizeof(addr3)));
-}
-
-TEST(NetUtilTest, IPAddressToStringWithPort) {
-  uint8 addr1[4] = {0, 0, 0, 0};
-  EXPECT_EQ("0.0.0.0:3", IPAddressToStringWithPort(addr1, sizeof(addr1), 3));
-
-  uint8 addr2[4] = {192, 168, 0, 1};
-  EXPECT_EQ("192.168.0.1:99",
-            IPAddressToStringWithPort(addr2, sizeof(addr2), 99));
-
-  uint8 addr3[16] = {0xFE, 0xDC, 0xBA, 0x98};
-  EXPECT_EQ("[fedc:ba98::]:8080",
-            IPAddressToStringWithPort(addr3, sizeof(addr3), 8080));
-}
-
 TEST(NetUtilTest, NetAddressToString_IPv4) {
   const struct {
-    uint8 addr[4];
+    uint8_t addr[4];
     const char* const result;
   } tests[] = {
     {{0, 0, 0, 0}, "0.0.0.0"},
@@ -457,7 +393,7 @@ TEST(NetUtilTest, NetAddressToString_IPv4) {
 
 TEST(NetUtilTest, NetAddressToString_IPv6) {
   const struct {
-    uint8 addr[16];
+    uint8_t addr[16];
     const char* const result;
   } tests[] = {
     {{0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0xFE, 0xDC, 0xBA,
@@ -474,7 +410,7 @@ TEST(NetUtilTest, NetAddressToString_IPv6) {
 }
 
 TEST(NetUtilTest, NetAddressToStringWithPort_IPv4) {
-  uint8 addr[] = {127, 0, 0, 1};
+  uint8_t addr[] = {127, 0, 0, 1};
   SockaddrStorage storage;
   MakeIPv4Address(addr, 166, &storage);
   std::string result = NetAddressToStringWithPort(storage.addr,
@@ -483,7 +419,7 @@ TEST(NetUtilTest, NetAddressToStringWithPort_IPv4) {
 }
 
 TEST(NetUtilTest, NetAddressToStringWithPort_IPv6) {
-  uint8 addr[] = {
+  uint8_t addr[] = {
       0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0xFE, 0xDC, 0xBA,
       0x98, 0x76, 0x54, 0x32, 0x10
   };
@@ -582,223 +518,18 @@ TEST(NetUtilTest, GetAddressFamily) {
   EXPECT_EQ(ADDRESS_FAMILY_IPV6, GetAddressFamily(number));
 }
 
-// Test that invalid IP literals fail to parse.
-TEST(NetUtilTest, ParseIPLiteralToNumber_FailParse) {
-  IPAddressNumber number;
-
-  EXPECT_FALSE(ParseIPLiteralToNumber("bad value", &number));
-  EXPECT_FALSE(ParseIPLiteralToNumber("bad:value", &number));
-  EXPECT_FALSE(ParseIPLiteralToNumber(std::string(), &number));
-  EXPECT_FALSE(ParseIPLiteralToNumber("192.168.0.1:30", &number));
-  EXPECT_FALSE(ParseIPLiteralToNumber("  192.168.0.1  ", &number));
-  EXPECT_FALSE(ParseIPLiteralToNumber("[::1]", &number));
-}
-
-// Test parsing an IPv4 literal.
-TEST(NetUtilTest, ParseIPLiteralToNumber_IPv4) {
-  IPAddressNumber number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("192.168.0.1", &number));
-  EXPECT_EQ("192,168,0,1", DumpIPNumber(number));
-  EXPECT_EQ("192.168.0.1", IPAddressToString(number));
-}
-
-// Test parsing an IPv6 literal.
-TEST(NetUtilTest, ParseIPLiteralToNumber_IPv6) {
-  IPAddressNumber number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("1:abcd::3:4:ff", &number));
-  EXPECT_EQ("0,1,171,205,0,0,0,0,0,0,0,3,0,4,0,255", DumpIPNumber(number));
-  EXPECT_EQ("1:abcd::3:4:ff", IPAddressToString(number));
-}
-
-// Test mapping an IPv4 address to an IPv6 address.
-TEST(NetUtilTest, ConvertIPv4NumberToIPv6Number) {
-  IPAddressNumber ipv4_number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("192.168.0.1", &ipv4_number));
-
-  IPAddressNumber ipv6_number =
-      ConvertIPv4NumberToIPv6Number(ipv4_number);
-
-  // ::ffff:192.168.0.1
-  EXPECT_EQ("0,0,0,0,0,0,0,0,0,0,255,255,192,168,0,1",
-            DumpIPNumber(ipv6_number));
-  EXPECT_EQ("::ffff:c0a8:1", IPAddressToString(ipv6_number));
-}
-
-TEST(NetUtilTest, ParseURLHostnameToNumber_FailParse) {
-  IPAddressNumber number;
-
-  EXPECT_FALSE(ParseURLHostnameToNumber("bad value", &number));
-  EXPECT_FALSE(ParseURLHostnameToNumber("bad:value", &number));
-  EXPECT_FALSE(ParseURLHostnameToNumber(std::string(), &number));
-  EXPECT_FALSE(ParseURLHostnameToNumber("192.168.0.1:30", &number));
-  EXPECT_FALSE(ParseURLHostnameToNumber("  192.168.0.1  ", &number));
-  EXPECT_FALSE(ParseURLHostnameToNumber("::1", &number));
-}
-
-TEST(NetUtilTest, ParseURLHostnameToNumber_IPv4) {
-  IPAddressNumber number;
-  EXPECT_TRUE(ParseURLHostnameToNumber("192.168.0.1", &number));
-  EXPECT_EQ("192,168,0,1", DumpIPNumber(number));
-  EXPECT_EQ("192.168.0.1", IPAddressToString(number));
-}
-
-TEST(NetUtilTest, ParseURLHostnameToNumber_IPv6) {
-  IPAddressNumber number;
-  EXPECT_TRUE(ParseURLHostnameToNumber("[1:abcd::3:4:ff]", &number));
-  EXPECT_EQ("0,1,171,205,0,0,0,0,0,0,0,3,0,4,0,255", DumpIPNumber(number));
-  EXPECT_EQ("1:abcd::3:4:ff", IPAddressToString(number));
-}
-
-TEST(NetUtilTest, IsIPv4Mapped) {
-  IPAddressNumber ipv4_number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("192.168.0.1", &ipv4_number));
-  EXPECT_FALSE(IsIPv4Mapped(ipv4_number));
-
-  IPAddressNumber ipv6_number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("::1", &ipv4_number));
-  EXPECT_FALSE(IsIPv4Mapped(ipv6_number));
-
-  IPAddressNumber ipv4mapped_number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("::ffff:0101:1", &ipv4mapped_number));
-  EXPECT_TRUE(IsIPv4Mapped(ipv4mapped_number));
-}
-
-TEST(NetUtilTest, ConvertIPv4MappedToIPv4) {
-  IPAddressNumber ipv4mapped_number;
-  EXPECT_TRUE(ParseIPLiteralToNumber("::ffff:0101:1", &ipv4mapped_number));
-  IPAddressNumber expected;
-  EXPECT_TRUE(ParseIPLiteralToNumber("1.1.0.1", &expected));
-  IPAddressNumber result = ConvertIPv4MappedToIPv4(ipv4mapped_number);
-  EXPECT_EQ(expected, result);
-}
-
-// Test parsing invalid CIDR notation literals.
-TEST(NetUtilTest, ParseCIDRBlock_Invalid) {
-  const char* const bad_literals[] = {
-      "foobar",
-      "",
-      "192.168.0.1",
-      "::1",
-      "/",
-      "/1",
-      "1",
-      "192.168.1.1/-1",
-      "192.168.1.1/33",
-      "::1/-3",
-      "a::3/129",
-      "::1/x",
-      "192.168.0.1//11"
-  };
-
-  for (size_t i = 0; i < arraysize(bad_literals); ++i) {
-    IPAddressNumber ip_number;
-    size_t prefix_length_in_bits;
-
-    EXPECT_FALSE(ParseCIDRBlock(bad_literals[i],
-                                     &ip_number,
-                                     &prefix_length_in_bits));
-  }
-}
-
-// Test parsing a valid CIDR notation literal.
-TEST(NetUtilTest, ParseCIDRBlock_Valid) {
-  IPAddressNumber ip_number;
-  size_t prefix_length_in_bits;
-
-  EXPECT_TRUE(ParseCIDRBlock("192.168.0.1/11",
-                                  &ip_number,
-                                  &prefix_length_in_bits));
-
-  EXPECT_EQ("192,168,0,1", DumpIPNumber(ip_number));
-  EXPECT_EQ(11u, prefix_length_in_bits);
-}
-
-TEST(NetUtilTest, IPNumberMatchesPrefix) {
-  struct {
-    const char* const cidr_literal;
-    const char* const ip_literal;
-    bool expected_to_match;
-  } tests[] = {
-    // IPv4 prefix with IPv4 inputs.
-    {
-      "10.10.1.32/27",
-      "10.10.1.44",
-      true
-    },
-    {
-      "10.10.1.32/27",
-      "10.10.1.90",
-      false
-    },
-    {
-      "10.10.1.32/27",
-      "10.10.1.90",
-      false
-    },
-
-    // IPv6 prefix with IPv6 inputs.
-    {
-      "2001:db8::/32",
-      "2001:DB8:3:4::5",
-      true
-    },
-    {
-      "2001:db8::/32",
-      "2001:c8::",
-      false
-    },
-
-    // IPv6 prefix with IPv4 inputs.
-    {
-      "2001:db8::/33",
-      "192.168.0.1",
-      false
-    },
-    {
-      "::ffff:192.168.0.1/112",
-      "192.168.33.77",
-      true
-    },
-
-    // IPv4 prefix with IPv6 inputs.
-    {
-      "10.11.33.44/16",
-      "::ffff:0a0b:89",
-      true
-    },
-    {
-      "10.11.33.44/16",
-      "::ffff:10.12.33.44",
-      false
-    },
-  };
-  for (size_t i = 0; i < arraysize(tests); ++i) {
-    SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s, %s", i,
-                                    tests[i].cidr_literal,
-                                    tests[i].ip_literal));
-
-    IPAddressNumber ip_number;
-    EXPECT_TRUE(ParseIPLiteralToNumber(tests[i].ip_literal, &ip_number));
-
-    IPAddressNumber ip_prefix;
-    size_t prefix_length_in_bits;
-
-    EXPECT_TRUE(ParseCIDRBlock(tests[i].cidr_literal,
-                               &ip_prefix,
-                               &prefix_length_in_bits));
-
-    EXPECT_EQ(tests[i].expected_to_match,
-              IPNumberMatchesPrefix(ip_number,
-                                    ip_prefix,
-                                    prefix_length_in_bits));
-  }
-}
-
 TEST(NetUtilTest, IsLocalhost) {
   EXPECT_TRUE(IsLocalhost("localhost"));
+  EXPECT_TRUE(IsLocalhost("localHosT"));
+  EXPECT_TRUE(IsLocalhost("localhost."));
+  EXPECT_TRUE(IsLocalhost("localHost."));
   EXPECT_TRUE(IsLocalhost("localhost.localdomain"));
+  EXPECT_TRUE(IsLocalhost("localhost.localDOMain"));
+  EXPECT_TRUE(IsLocalhost("localhost.localdomain."));
   EXPECT_TRUE(IsLocalhost("localhost6"));
+  EXPECT_TRUE(IsLocalhost("localhost6."));
   EXPECT_TRUE(IsLocalhost("localhost6.localdomain6"));
+  EXPECT_TRUE(IsLocalhost("localhost6.localdomain6."));
   EXPECT_TRUE(IsLocalhost("127.0.0.1"));
   EXPECT_TRUE(IsLocalhost("127.0.1.0"));
   EXPECT_TRUE(IsLocalhost("127.1.0.0"));
@@ -808,9 +539,12 @@ TEST(NetUtilTest, IsLocalhost) {
   EXPECT_TRUE(IsLocalhost("::1"));
   EXPECT_TRUE(IsLocalhost("0:0:0:0:0:0:0:1"));
   EXPECT_TRUE(IsLocalhost("foo.localhost"));
+  EXPECT_TRUE(IsLocalhost("foo.localhost."));
 
   EXPECT_FALSE(IsLocalhost("localhostx"));
+  EXPECT_FALSE(IsLocalhost("localhost.x"));
   EXPECT_FALSE(IsLocalhost("foo.localdomain"));
+  EXPECT_FALSE(IsLocalhost("foo.localdomain.x"));
   EXPECT_FALSE(IsLocalhost("localhost6x"));
   EXPECT_FALSE(IsLocalhost("localhost.localdomain6"));
   EXPECT_FALSE(IsLocalhost("localhost6.localdomain"));
@@ -825,9 +559,69 @@ TEST(NetUtilTest, IsLocalhost) {
   EXPECT_FALSE(IsLocalhost("foo.localhoste"));
 }
 
+TEST(NetUtilTest, ResolveLocalHostname) {
+  AddressList addresses;
+
+  TestBothLoopbackIPs("localhost");
+  TestBothLoopbackIPs("localhoST");
+  TestBothLoopbackIPs("localhost.");
+  TestBothLoopbackIPs("localhoST.");
+  TestBothLoopbackIPs("localhost.localdomain");
+  TestBothLoopbackIPs("localhost.localdomAIn");
+  TestBothLoopbackIPs("localhost.localdomain.");
+  TestBothLoopbackIPs("localhost.localdomAIn.");
+  TestBothLoopbackIPs("foo.localhost");
+  TestBothLoopbackIPs("foo.localhOSt");
+  TestBothLoopbackIPs("foo.localhost.");
+  TestBothLoopbackIPs("foo.localhOSt.");
+
+  TestIPv6LoopbackOnly("localhost6");
+  TestIPv6LoopbackOnly("localhoST6");
+  TestIPv6LoopbackOnly("localhost6.");
+  TestIPv6LoopbackOnly("localhost6.localdomain6");
+  TestIPv6LoopbackOnly("localhost6.localdomain6.");
+
+  EXPECT_FALSE(
+      ResolveLocalHostname("127.0.0.1", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("::1", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("0:0:0:0:0:0:0:1", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname("localhostx", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname("localhost.x", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("foo.localdomain", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("foo.localdomain.x", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname("localhost6x", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("localhost.localdomain6",
+                                    kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("localhost6.localdomain",
+                                    kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname("127.0.0.1.1", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname(".127.0.0.255", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("::2", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("::1:1", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("0:0:0:0:1:0:0:1", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("::1:1", kLocalhostLookupPort, &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("0:0:0:0:0:0:0:0:1", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(ResolveLocalHostname("foo.localhost.com", kLocalhostLookupPort,
+                                    &addresses));
+  EXPECT_FALSE(
+      ResolveLocalHostname("foo.localhoste", kLocalhostLookupPort, &addresses));
+}
+
 TEST(NetUtilTest, IsLocalhostTLD) {
   EXPECT_TRUE(IsLocalhostTLD("foo.localhost"));
+  EXPECT_TRUE(IsLocalhostTLD("foo.localhoST"));
   EXPECT_TRUE(IsLocalhostTLD("foo.localhost."));
+  EXPECT_TRUE(IsLocalhostTLD("foo.localhoST."));
   EXPECT_FALSE(IsLocalhostTLD("foo.localhos"));
   EXPECT_FALSE(IsLocalhostTLD("foo.localhost.com"));
   EXPECT_FALSE(IsLocalhost("foo.localhoste"));
@@ -868,641 +662,6 @@ TEST(NetUtilTest, GoogleHost) {
     EXPECT_EQ(google_host_cases[i].expected_output,
               HasGoogleHost(google_host_cases[i].url));
   }
-}
-
-// Verify GetNetworkList().
-TEST(NetUtilTest, GetNetworkList) {
-  NetworkInterfaceList list;
-  ASSERT_TRUE(GetNetworkList(&list, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES));
-  for (NetworkInterfaceList::iterator it = list.begin();
-       it != list.end(); ++it) {
-    // Verify that the names are not empty.
-    EXPECT_FALSE(it->name.empty());
-    EXPECT_FALSE(it->friendly_name.empty());
-
-    // Verify that the address is correct.
-    EXPECT_TRUE(it->address.size() == kIPv4AddressSize ||
-                it->address.size() == kIPv6AddressSize)
-        << "Invalid address of size " << it->address.size();
-    bool all_zeroes = true;
-    for (size_t i = 0; i < it->address.size(); ++i) {
-      if (it->address[i] != 0) {
-        all_zeroes = false;
-        break;
-      }
-    }
-    EXPECT_FALSE(all_zeroes);
-    EXPECT_GT(it->prefix_length, 1u);
-    EXPECT_LE(it->prefix_length, it->address.size() * 8);
-
-#if defined(OS_WIN)
-    // On Windows |name| is NET_LUID.
-    base::ScopedNativeLibrary phlpapi_lib(
-        base::FilePath(FILE_PATH_LITERAL("iphlpapi.dll")));
-    ASSERT_TRUE(phlpapi_lib.is_valid());
-    typedef NETIO_STATUS (WINAPI* ConvertInterfaceIndexToLuid)(NET_IFINDEX,
-                                                               PNET_LUID);
-    ConvertInterfaceIndexToLuid interface_to_luid =
-        reinterpret_cast<ConvertInterfaceIndexToLuid>(
-            phlpapi_lib.GetFunctionPointer("ConvertInterfaceIndexToLuid"));
-
-    typedef NETIO_STATUS (WINAPI* ConvertInterfaceLuidToGuid)(NET_LUID*,
-                                                              GUID*);
-    ConvertInterfaceLuidToGuid luid_to_guid =
-        reinterpret_cast<ConvertInterfaceLuidToGuid>(
-            phlpapi_lib.GetFunctionPointer("ConvertInterfaceLuidToGuid"));
-
-    if (interface_to_luid && luid_to_guid) {
-      NET_LUID luid;
-      EXPECT_EQ(interface_to_luid(it->interface_index, &luid), NO_ERROR);
-      GUID guid;
-      EXPECT_EQ(luid_to_guid(&luid, &guid), NO_ERROR);
-      LPOLESTR name;
-      StringFromCLSID(guid, &name);
-      EXPECT_STREQ(base::UTF8ToWide(it->name).c_str(), name);
-      CoTaskMemFree(name);
-      continue;
-    } else {
-      EXPECT_LT(base::win::GetVersion(), base::win::VERSION_VISTA);
-      EXPECT_LT(it->interface_index, 1u << 24u);  // Must fit 0.x.x.x.
-      EXPECT_NE(it->interface_index, 0u);  // 0 means to use default.
-    }
-    if (it->type == NetworkChangeNotifier::CONNECTION_WIFI) {
-      EXPECT_NE(WIFI_PHY_LAYER_PROTOCOL_NONE, GetWifiPHYLayerProtocol());
-    }
-#elif !defined(OS_ANDROID)
-    char name[IF_NAMESIZE];
-    EXPECT_TRUE(if_indextoname(it->interface_index, name));
-    EXPECT_STREQ(it->name.c_str(), name);
-#endif
-  }
-}
-
-static const char ifname_em1[] = "em1";
-#if defined(OS_WIN)
-static const char ifname_vm[] = "VMnet";
-#else
-static const char ifname_vm[] = "vmnet";
-#endif  // OS_WIN
-
-static const unsigned char kIPv6LocalAddr[] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
-
-// The following 3 addresses need to be changed together. IPv6Addr is the IPv6
-// address. IPv6Netmask is the mask address with as many leading bits set to 1
-// as the prefix length. IPv6AddrPrefix needs to match IPv6Addr with the same
-// number of bits as the prefix length.
-static const unsigned char kIPv6Addr[] =
-  {0x24, 0x01, 0xfa, 0x00, 0x00, 0x04, 0x10, 0x00, 0xbe, 0x30, 0x5b, 0xff,
-   0xfe, 0xe5, 0x00, 0xc3};
-#if defined(OS_WIN)
-static const unsigned char kIPv6AddrPrefix[] =
-  {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-   0x00, 0x00, 0x00, 0x00};
-#endif  // OS_WIN
-#if defined(OS_MACOSX)
-static const unsigned char kIPv6Netmask[] =
-  {0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-   0x00, 0x00, 0x00, 0x00};
-#endif  // OS_MACOSX
-
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_NACL)
-
-char* CopyInterfaceName(const char* ifname, int ifname_size, char* output) {
-  EXPECT_LT(ifname_size, IF_NAMESIZE);
-  memcpy(output, ifname, ifname_size);
-  return output;
-}
-
-char* GetInterfaceName(int interface_index, char* ifname) {
-  return CopyInterfaceName(ifname_em1, arraysize(ifname_em1), ifname);
-}
-
-char* GetInterfaceNameVM(int interface_index, char* ifname) {
-  return CopyInterfaceName(ifname_vm, arraysize(ifname_vm), ifname);
-}
-
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
-
-  NetworkInterfaceList results;
-  ::base::hash_set<int> online_links;
-  internal::AddressTrackerLinux::AddressMap address_map;
-
-  // Interface 1 is offline.
-  struct ifaddrmsg msg = {
-      AF_INET6,
-      1,               /* prefix length */
-      IFA_F_TEMPORARY, /* address flags */
-      0,               /* link scope */
-      1                /* link index */
-  };
-
-  // Address of offline links should be ignored.
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceName));
-  EXPECT_EQ(results.size(), 0ul);
-
-  // Mark interface 1 online.
-  online_links.insert(1);
-
-  // Local address should be trimmed out.
-  address_map.clear();
-  ASSERT_TRUE(
-      address_map.insert(std::make_pair(ipv6_local_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceName));
-  EXPECT_EQ(results.size(), 0ul);
-
-  // vmware address should return by default.
-  address_map.clear();
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceNameVM));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_vm);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  results.clear();
-
-  // vmware address should be trimmed out if policy specified so.
-  address_map.clear();
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceNameVM));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-  // Addresses with banned attributes should be ignored.
-  address_map.clear();
-  msg.ifa_flags = IFA_F_TENTATIVE;
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceName));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-  // Addresses with allowed attribute IFA_F_TEMPORARY should be returned and
-  // attributes should be translated correctly.
-  address_map.clear();
-  msg.ifa_flags = IFA_F_TEMPORARY;
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceName));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_TEMPORARY);
-  results.clear();
-
-  // Addresses with allowed attribute IFA_F_DEPRECATED should be returned and
-  // attributes should be translated correctly.
-  address_map.clear();
-  msg.ifa_flags = IFA_F_DEPRECATED;
-  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, online_links,
-      address_map, GetInterfaceName));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_DEPRECATED);
-  results.clear();
-}
-
-#elif defined(OS_MACOSX)
-
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
-  IPAddressNumber ipv6_netmask(kIPv6Netmask,
-                               kIPv6Netmask + arraysize(kIPv6Netmask));
-
-  NetworkInterfaceList results;
-  IPAttributesGetterTest ip_attributes_getter;
-  sockaddr_storage addresses[2];
-  ifaddrs interface;
-
-  // Address of offline links should be ignored.
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_em1, IFF_UP, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 0ul);
-
-  // Local address should be trimmed out.
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_em1, IFF_RUNNING,
-                          ipv6_local_address, ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 0ul);
-
-  // vmware address should return by default.
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_vm, IFF_RUNNING, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_vm);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  results.clear();
-
-  // vmware address should be trimmed out if policy specified so.
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_vm, IFF_RUNNING, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-#if !defined(OS_IOS)
-  // Addresses with banned attributes should be ignored.
-  ip_attributes_getter.set_native_attributes(IN6_IFF_ANYCAST);
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_em1, IFF_RUNNING, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-  // Addresses with allowed attribute IFA_F_TEMPORARY should be returned and
-  // attributes should be translated correctly.
-  ip_attributes_getter.set_native_attributes(IN6_IFF_TEMPORARY);
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_em1, IFF_RUNNING, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_TEMPORARY);
-  results.clear();
-
-  // Addresses with allowed attribute IFA_F_DEPRECATED should be returned and
-  // attributes should be translated correctly.
-  ip_attributes_getter.set_native_attributes(IN6_IFF_DEPRECATED);
-  ASSERT_TRUE(FillIfaddrs(&interface, ifname_em1, IFF_RUNNING, ipv6_address,
-                          ipv6_netmask, addresses));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, &interface,
-      &ip_attributes_getter));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_DEPRECATED);
-  results.clear();
-#endif  // !OS_IOS
-}
-#elif defined(OS_WIN)  // !OS_MACOSX && !OS_WIN && !OS_NACL
-
-// Helper function to create a valid IP_ADAPTER_ADDRESSES with reasonable
-// default value. The output is the |adapter_address|. All the rests are input
-// to fill the |adapter_address|. |sock_addrs| are temporary storage used by
-// |adapter_address| once the function is returned.
-bool FillAdapterAddress(IP_ADAPTER_ADDRESSES* adapter_address,
-                        const char* ifname,
-                        const IPAddressNumber& ip_address,
-                        const IPAddressNumber& ip_netmask,
-                        sockaddr_storage sock_addrs[2]) {
-  adapter_address->AdapterName = const_cast<char*>(ifname);
-  adapter_address->FriendlyName = const_cast<PWCHAR>(L"interface");
-  adapter_address->IfType = IF_TYPE_ETHERNET_CSMACD;
-  adapter_address->OperStatus = IfOperStatusUp;
-  adapter_address->FirstUnicastAddress->DadState = IpDadStatePreferred;
-  adapter_address->FirstUnicastAddress->PrefixOrigin = IpPrefixOriginOther;
-  adapter_address->FirstUnicastAddress->SuffixOrigin = IpSuffixOriginOther;
-  adapter_address->FirstUnicastAddress->PreferredLifetime = 100;
-  adapter_address->FirstUnicastAddress->ValidLifetime = 1000;
-
-  socklen_t sock_len = sizeof(sockaddr_storage);
-
-  // Convert to sockaddr for next check.
-  if (!IPEndPoint(ip_address, 0)
-           .ToSockAddr(reinterpret_cast<sockaddr*>(&sock_addrs[0]),
-                       &sock_len)) {
-    return false;
-  }
-  adapter_address->FirstUnicastAddress->Address.lpSockaddr =
-      reinterpret_cast<sockaddr*>(&sock_addrs[0]);
-  adapter_address->FirstUnicastAddress->Address.iSockaddrLength = sock_len;
-  adapter_address->FirstUnicastAddress->OnLinkPrefixLength = 1;
-
-  sock_len = sizeof(sockaddr_storage);
-  if (!IPEndPoint(ip_netmask, 0)
-           .ToSockAddr(reinterpret_cast<sockaddr*>(&sock_addrs[1]),
-                       &sock_len)) {
-    return false;
-  }
-  adapter_address->FirstPrefix->Address.lpSockaddr =
-      reinterpret_cast<sockaddr*>(&sock_addrs[1]);
-  adapter_address->FirstPrefix->Address.iSockaddrLength = sock_len;
-  adapter_address->FirstPrefix->PrefixLength = 1;
-
-  DCHECK_EQ(sock_addrs[0].ss_family, sock_addrs[1].ss_family);
-  if (sock_addrs[0].ss_family == AF_INET6) {
-    adapter_address->Ipv6IfIndex = 0;
-  } else {
-    DCHECK_EQ(sock_addrs[0].ss_family, AF_INET);
-    adapter_address->IfIndex = 0;
-  }
-
-  return true;
-}
-
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
-  IPAddressNumber ipv6_prefix(kIPv6AddrPrefix,
-                              kIPv6AddrPrefix + arraysize(kIPv6AddrPrefix));
-
-  NetworkInterfaceList results;
-  sockaddr_storage addresses[2];
-  IP_ADAPTER_ADDRESSES adapter_address = {0};
-  IP_ADAPTER_UNICAST_ADDRESS address = {0};
-  IP_ADAPTER_PREFIX adapter_prefix = {0};
-  adapter_address.FirstUnicastAddress = &address;
-  adapter_address.FirstPrefix = &adapter_prefix;
-
-  // Address of offline links should be ignored.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_em1 /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  adapter_address.OperStatus = IfOperStatusDown;
-
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-
-  EXPECT_EQ(results.size(), 0ul);
-
-  // Address on loopback interface should be trimmed out.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_em1 /* ifname */,
-      ipv6_local_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  adapter_address.IfType = IF_TYPE_SOFTWARE_LOOPBACK;
-
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 0ul);
-
-  // vmware address should return by default.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_vm /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_vm);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_NONE);
-  results.clear();
-
-  // vmware address should be trimmed out if policy specified so.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_vm /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-  // Addresses with incompleted DAD should be ignored.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_em1 /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  adapter_address.FirstUnicastAddress->DadState = IpDadStateTentative;
-
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 0ul);
-  results.clear();
-
-  // Addresses with allowed attribute IpSuffixOriginRandom should be returned
-  // and attributes should be translated correctly to
-  // IP_ADDRESS_ATTRIBUTE_TEMPORARY.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_em1 /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  adapter_address.FirstUnicastAddress->PrefixOrigin =
-      IpPrefixOriginRouterAdvertisement;
-  adapter_address.FirstUnicastAddress->SuffixOrigin = IpSuffixOriginRandom;
-
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_TEMPORARY);
-  results.clear();
-
-  // Addresses with preferred lifetime 0 should be returned and
-  // attributes should be translated correctly to
-  // IP_ADDRESS_ATTRIBUTE_DEPRECATED.
-  ASSERT_TRUE(FillAdapterAddress(
-      &adapter_address /* adapter_address */, ifname_em1 /* ifname */,
-      ipv6_address /* ip_address */, ipv6_prefix /* ip_netmask */,
-      addresses /* sock_addrs */));
-  adapter_address.FirstUnicastAddress->PreferredLifetime = 0;
-  adapter_address.FriendlyName = const_cast<PWCHAR>(L"FriendlyInterfaceName");
-  EXPECT_TRUE(internal::GetNetworkListImpl(
-      &results, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES, true, &adapter_address));
-  EXPECT_EQ(results.size(), 1ul);
-  EXPECT_EQ(results[0].friendly_name, "FriendlyInterfaceName");
-  EXPECT_EQ(results[0].name, ifname_em1);
-  EXPECT_EQ(results[0].prefix_length, 1ul);
-  EXPECT_EQ(results[0].address, ipv6_address);
-  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_DEPRECATED);
-  results.clear();
-}
-
-#endif  // !OS_MACOSX && !OS_WIN && !OS_NACL
-
-TEST(NetUtilTest, GetWifiSSID) {
-  // We can't check the result of GetWifiSSID() directly, since the result
-  // will differ across machines. Simply exercise the code path and hope that it
-  // doesn't crash.
-  EXPECT_NE((const char*)NULL, GetWifiSSID().c_str());
-}
-
-#if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_CHROMEOS)
-TEST(NetUtilTest, GetWifiSSIDFromInterfaceList) {
-  NetworkInterfaceList list;
-  EXPECT_EQ(std::string(), internal::GetWifiSSIDFromInterfaceListInternal(
-                               list, TestGetInterfaceSSID));
-
-  NetworkInterface interface1;
-  interface1.name = "wlan0";
-  interface1.type = NetworkChangeNotifier::CONNECTION_WIFI;
-  list.push_back(interface1);
-  ASSERT_EQ(1u, list.size());
-  EXPECT_EQ(std::string(kWiFiSSID),
-            internal::GetWifiSSIDFromInterfaceListInternal(
-                list, TestGetInterfaceSSID));
-
-  NetworkInterface interface2;
-  interface2.name = "wlan1";
-  interface2.type = NetworkChangeNotifier::CONNECTION_WIFI;
-  list.push_back(interface2);
-  ASSERT_EQ(2u, list.size());
-  EXPECT_EQ(std::string(kWiFiSSID),
-            internal::GetWifiSSIDFromInterfaceListInternal(
-                list, TestGetInterfaceSSID));
-
-  NetworkInterface interface3;
-  interface3.name = kInterfaceWithDifferentSSID;
-  interface3.type = NetworkChangeNotifier::CONNECTION_WIFI;
-  list.push_back(interface3);
-  ASSERT_EQ(3u, list.size());
-  EXPECT_EQ(std::string(), internal::GetWifiSSIDFromInterfaceListInternal(
-                               list, TestGetInterfaceSSID));
-
-  list.pop_back();
-  NetworkInterface interface4;
-  interface4.name = "eth0";
-  interface4.type = NetworkChangeNotifier::CONNECTION_ETHERNET;
-  list.push_back(interface4);
-  ASSERT_EQ(3u, list.size());
-  EXPECT_EQ(std::string(), internal::GetWifiSSIDFromInterfaceListInternal(
-                               list, TestGetInterfaceSSID));
-}
-#endif  // OS_LINUX
-
-namespace {
-
-#if defined(OS_WIN)
-bool read_int_or_bool(DWORD data_size,
-                      PVOID data) {
-  switch (data_size) {
-    case 1:
-      return !!*reinterpret_cast<uint8*>(data);
-    case 4:
-      return !!*reinterpret_cast<uint32*>(data);
-    default:
-      LOG(FATAL) << "That is not a type I know!";
-      return false;
-  }
-}
-
-int GetWifiOptions() {
-  const internal::WlanApi& wlanapi = internal::WlanApi::GetInstance();
-  if (!wlanapi.initialized)
-    return -1;
-
-  internal::WlanHandle client;
-  DWORD cur_version = 0;
-  const DWORD kMaxClientVersion = 2;
-  DWORD result = wlanapi.OpenHandle(
-      kMaxClientVersion, &cur_version, &client);
-  if (result != ERROR_SUCCESS)
-    return -1;
-
-  WLAN_INTERFACE_INFO_LIST* interface_list_ptr = NULL;
-  result = wlanapi.enum_interfaces_func(client.Get(), NULL,
-                                        &interface_list_ptr);
-  if (result != ERROR_SUCCESS)
-    return -1;
-  scoped_ptr<WLAN_INTERFACE_INFO_LIST, internal::WlanApiDeleter> interface_list(
-      interface_list_ptr);
-
-  for (unsigned i = 0; i < interface_list->dwNumberOfItems; ++i) {
-    WLAN_INTERFACE_INFO* info = &interface_list->InterfaceInfo[i];
-    DWORD data_size;
-    PVOID data;
-    int options = 0;
-    result = wlanapi.query_interface_func(
-        client.Get(),
-        &info->InterfaceGuid,
-        wlan_intf_opcode_background_scan_enabled,
-        NULL,
-        &data_size,
-        &data,
-        NULL);
-    if (result != ERROR_SUCCESS)
-      continue;
-    if (!read_int_or_bool(data_size, data)) {
-      options |= WIFI_OPTIONS_DISABLE_SCAN;
-    }
-    internal::WlanApi::GetInstance().free_memory_func(data);
-
-    result = wlanapi.query_interface_func(
-        client.Get(),
-        &info->InterfaceGuid,
-        wlan_intf_opcode_media_streaming_mode,
-        NULL,
-        &data_size,
-        &data,
-        NULL);
-    if (result != ERROR_SUCCESS)
-      continue;
-    if (read_int_or_bool(data_size, data)) {
-      options |= WIFI_OPTIONS_MEDIA_STREAMING_MODE;
-    }
-    internal::WlanApi::GetInstance().free_memory_func(data);
-
-    // Just the the options from the first succesful
-    // interface.
-    return options;
-  }
-
-  // No wifi interface found.
-  return -1;
-}
-
-#else  // OS_WIN
-
-int GetWifiOptions() {
-  // Not supported.
-  return -1;
-}
-
-#endif  // OS_WIN
-
-void TryChangeWifiOptions(int options) {
-  int previous_options = GetWifiOptions();
-  scoped_ptr<ScopedWifiOptions> scoped_options = SetWifiOptions(options);
-  EXPECT_EQ(previous_options | options, GetWifiOptions());
-  scoped_options.reset();
-  EXPECT_EQ(previous_options, GetWifiOptions());
-}
-
-};  // namespace
-
-// Test SetWifiOptions().
-TEST(NetUtilTest, SetWifiOptionsTest) {
-  TryChangeWifiOptions(0);
-  TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN);
-  TryChangeWifiOptions(WIFI_OPTIONS_MEDIA_STREAMING_MODE);
-  TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN |
-                       WIFI_OPTIONS_MEDIA_STREAMING_MODE);
 }
 
 struct NonUniqueNameTestData {

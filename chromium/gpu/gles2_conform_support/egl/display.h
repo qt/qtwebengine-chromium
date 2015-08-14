@@ -93,6 +93,7 @@ class Display : private gpu::GpuControl {
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
   void SetLock(base::Lock*) override;
+  bool IsGpuChannelLost() override;
 
  private:
   EGLNativeDisplayType display_id_;
@@ -102,7 +103,7 @@ class Display : private gpu::GpuControl {
   int create_offscreen_width_;
   int create_offscreen_height_;
 
-  scoped_ptr<gpu::TransferBufferManagerInterface> transfer_buffer_manager_;
+  scoped_refptr<gpu::TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
   scoped_ptr<gpu::GpuScheduler> gpu_scheduler_;
   scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;

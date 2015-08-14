@@ -23,12 +23,14 @@
     '<(DEPTH)/build/android/pylib/device/commands/commands.gyp:chromium_commands',
     '<(DEPTH)/build/android/pylib/remote/device/dummy/dummy.gyp:remote_device_dummy_apk',
     '<(DEPTH)/testing/android/appurify_support.gyp:appurify_support_java',
+    '<(DEPTH)/testing/android/on_device_instrumentation.gyp:reporter_java',
     '<(DEPTH)/tools/android/android_tools.gyp:android_tools',
   ],
   'conditions': [
      ['OS == "android"', {
        'variables': {
          # These are used to configure java_apk.gypi included below.
+         'test_type': 'gtest',
          'apk_name': '<(test_suite_name)',
          'intermediate_dir': '<(PRODUCT_DIR)/<(test_suite_name)_apk',
          'final_apk_path': '<(intermediate_dir)/<(test_suite_name)-debug.apk',
@@ -37,7 +39,7 @@
          # TODO(yfriedman, cjhopman): Support managed installs for gtests.
          'gyp_managed_install': 0,
        },
-       'includes': [ 'java_apk.gypi' ],
+       'includes': [ 'java_apk.gypi', 'android/test_runner.gypi' ],
      }],  # 'OS == "android"
   ],  # conditions
 }

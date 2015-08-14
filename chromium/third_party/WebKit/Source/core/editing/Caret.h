@@ -36,7 +36,6 @@ namespace blink {
 
 class LocalFrame;
 class GraphicsContext;
-class PositionWithAffinity;
 class LayoutBlock;
 class LayoutView;
 
@@ -65,7 +64,6 @@ protected:
     bool caretIsVisible() const { return m_caretVisibility == Visible; }
     CaretVisibility caretVisibility() const { return m_caretVisibility; }
 
-protected:
     static LayoutBlock* caretLayoutObject(Node*);
     static void invalidateLocalCaretRect(Node*, const LayoutRect&);
 

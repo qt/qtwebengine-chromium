@@ -321,9 +321,9 @@ bool WebPluginDelegateProxy::Initialize(
       return false;
     }
 
-    channel_host =
-        PluginChannelHost::GetPluginChannelHost(
-            channel_handle, ChildProcess::current()->io_message_loop_proxy());
+    channel_host = PluginChannelHost::GetPluginChannelHost(
+        channel_handle, ChildProcess::current()->io_task_runner(),
+        RenderThreadImpl::current()->GetAttachmentBroker());
     if (!channel_host.get()) {
       LOG(ERROR) << "Couldn't get PluginChannelHost";
       continue;
@@ -499,14 +499,7 @@ static void CopySharedMemoryHandleForMessage(
     base::SharedMemoryHandle* handle_out,
     base::ProcessId peer_pid) {
 #if defined(OS_POSIX)
-  // On POSIX, base::ShardMemoryHandle is typedef'ed to FileDescriptor, and
-  // FileDescriptor message fields needs to remain valid until the message is
-  // sent or else the sendmsg() call will fail.
-  if ((handle_out->fd = HANDLE_EINTR(dup(handle_in.fd))) < 0) {
-    PLOG(ERROR) << "dup()";
-    return;
-  }
-  handle_out->auto_close = true;
+  *handle_out = base::SharedMemory::DuplicateHandle(handle_in);
 #elif defined(OS_WIN)
   // On Windows we need to duplicate the handle for the plugin process.
   *handle_out = NULL;

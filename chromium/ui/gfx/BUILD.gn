@@ -20,6 +20,9 @@ source_set("gfx_export") {
   ]
 }
 
+vector_icons_cc_file = "$target_gen_dir/vector_icons.cc"
+vector_icons_public_h_file = "$target_gen_dir/vector_icons_public.h"
+
 component("gfx") {
   sources = [
     "android/device_display_info.cc",
@@ -96,7 +99,6 @@ component("gfx") {
     "font_render_params_linux.cc",
     "font_render_params_mac.cc",
     "font_render_params_win.cc",
-    "frame_time.h",
     "gdi_util.cc",
     "gdi_util.h",
     "gfx_paths.cc",
@@ -147,7 +149,6 @@ component("gfx") {
     "paint_throbber.h",
     "path.cc",
     "path.h",
-    "path_aura.cc",
     "path_win.cc",
     "path_win.h",
     "path_x11.cc",
@@ -252,9 +253,7 @@ component("gfx") {
   ]
 
   # Text rendering conditions (complicated so separated out).
-  if (is_android || is_ios) {
-    # We don't support RenderText on these platforms.
-  } else {
+  if (use_aura || is_mac) {
     # Mac doesn't use RenderTextHarfBuzz by default yet.
     sources += [
       "harfbuzz_font_skia.cc",
@@ -267,6 +266,18 @@ component("gfx") {
       "render_text_mac.h",
       "text_utils_skia.cc",
     ]
+  } else {
+    # We don't support RenderText on these platforms.
+  }
+
+  if (is_android && use_aura) {
+    sources -= [
+      "platform_font_android.cc",
+      "text_utils_android.cc",
+    ]
+    set_sources_assignment_filter([])
+    sources += [ "platform_font_linux.cc" ]
+    set_sources_assignment_filter(sources_assignment_filter)
   }
 
   # iOS.
@@ -281,16 +292,19 @@ component("gfx") {
 
   # Android.
   if (is_android) {
-    sources -= [
-      "animation/throb_animation.cc",
-      "canvas_skia.cc",
-      "selection_model.cc",
-    ]
-
     if (use_aura) {
-      sources -= [ "screen_android.cc" ]
+      sources -= [
+        "canvas_notimplemented.cc",
+        "screen_android.cc",
+      ]
+      sources += [ "font_fallback_android.cc" ]
     } else {
-      sources -= [ "path.cc" ]
+      sources -= [
+        "animation/throb_animation.cc",
+        "canvas_skia.cc",
+        "path.cc",
+        "selection_model.cc",
+      ]
     }
 
     if (!is_debug) {
@@ -310,6 +324,18 @@ component("gfx") {
     sources -= [ "canvas_notimplemented.cc" ]
   }
 
+  # Desktop only.
+  if (use_aura || (!is_ios && !is_android)) {
+    sources += [
+      "paint_vector_icon.cc",
+      "paint_vector_icon.h",
+      "vector_icons.h",
+      vector_icons_cc_file,
+      vector_icons_public_h_file,
+    ]
+    deps += [ ":aggregate_vector_icons" ]
+  }
+
   # Windows.
   if (is_win) {
     cflags = [ "/wd4324" ]  # Structure was padded due to __declspec(align()), which is
@@ -320,6 +346,8 @@ component("gfx") {
       "gdi_util.h",
       "icon_util.cc",
       "icon_util.h",
+      "sys_color_change_listener.cc",
+      "sys_color_change_listener.h",
     ]
   }
 
@@ -339,10 +367,7 @@ component("gfx") {
   }
 
   if (!use_aura) {
-    sources -= [
-      "path_aura.cc",
-      "screen_aura.cc",
-    ]
+    sources -= [ "screen_aura.cc" ]
     if (!toolkit_views) {
       sources -= [
         "nine_image_painter.cc",
@@ -361,6 +386,24 @@ component("gfx") {
   if (use_cairo) {
     configs += [ "//build/config/linux:pangocairo" ]
   }
+}
+
+# GYP version: ui/gfx/gfx.gyp:aggregate_vector_icons
+action("aggregate_vector_icons") {
+  script = "vector_icons/aggregate_vector_icons.py"
+  sources = [
+    "vector_icons",
+  ]
+  outputs = [
+    vector_icons_cc_file,
+    vector_icons_public_h_file,
+  ]
+
+  args = [
+    "--working_directory=" + rebase_path("vector_icons/"),
+    "--output_cc=" + rebase_path(vector_icons_cc_file, root_build_dir),
+    "--output_h=" + rebase_path(vector_icons_public_h_file, root_build_dir),
+  ]
 }
 
 # Looking for gfx_geometry? It's //ui/gfx/geometry:geometry
@@ -433,7 +476,6 @@ test("gfx_unittests") {
       "codec/jpeg_codec_unittest.cc",
       "codec/png_codec_unittest.cc",
       "color_analysis_unittest.cc",
-      "color_profile_mac_unittest.mm",
       "color_utils_unittest.cc",
       "display_change_notifier_unittest.cc",
       "display_unittest.cc",
@@ -519,7 +561,6 @@ test("gfx_unittests") {
 
   if (is_win) {
     sources += [
-      "color_profile_win_unittest.cc",
       "font_fallback_win_unittest.cc",
       "icon_util_unittest.cc",
       "icon_util_unittests.rc",

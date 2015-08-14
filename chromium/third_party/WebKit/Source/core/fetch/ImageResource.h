@@ -34,6 +34,7 @@
 namespace blink {
 
 class ImageResourceClient;
+class FetchRequest;
 class ResourceFetcher;
 class FloatSize;
 class Length;
@@ -48,13 +49,14 @@ class CORE_EXPORT ImageResource final : public Resource, public ImageObserver {
 public:
     typedef ImageResourceClient ClientType;
 
-    ImageResource(const ResourceRequest&);
+    static ResourcePtr<ImageResource> fetch(FetchRequest&, ResourceFetcher*);
+
     ImageResource(blink::Image*);
     // Exposed for testing
     ImageResource(const ResourceRequest&, blink::Image*);
-    virtual ~ImageResource();
+    ~ImageResource() override;
 
-    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
+    void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
 
     blink::Image* image(); // Returns the nullImage() if the image is not available yet.
     blink::Image* imageForLayoutObject(const LayoutObject*); // Returns the nullImage() if the image is not available yet.
@@ -79,7 +81,8 @@ public:
 
     enum SizeType {
         NormalSize, // Report the size of the image associated with a certain layoutObject
-        IntrinsicSize // Report the intrinsic size, i.e. ignore whatever has been set extrinsically.
+        IntrinsicSize, // Report the intrinsic size, i.e. ignore whatever has been set extrinsically.
+        IntrinsicCorrectedToDPR, // Report the intrinsic size corrected to account for image density.
     };
     // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
     LayoutSize imageSizeForLayoutObject(const LayoutObject*, float multiplier, SizeType = NormalSize); // returns the size of the complete image.
@@ -89,35 +92,49 @@ public:
 
     void updateImageAnimationPolicy();
 
-    virtual void didAddClient(ResourceClient*) override;
-    virtual void didRemoveClient(ResourceClient*) override;
+    void didAddClient(ResourceClient*) override;
+    void didRemoveClient(ResourceClient*) override;
 
-    virtual void allClientsRemoved() override;
+    void allClientsRemoved() override;
 
-    virtual void appendData(const char*, unsigned) override;
-    virtual void error(Resource::Status) override;
-    virtual void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
-    virtual void finishOnePart() override;
+    void appendData(const char*, unsigned) override;
+    void error(Resource::Status) override;
+    void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    void finishOnePart() override;
 
     // For compatibility, images keep loading even if there are HTTP errors.
-    virtual bool shouldIgnoreHTTPStatusCodeErrors() const override { return true; }
+    bool shouldIgnoreHTTPStatusCodeErrors() const override { return true; }
 
-    virtual bool isImage() const override { return true; }
-    virtual bool stillNeedsLoad() const override { return !errorOccurred() && status() == Unknown && !isLoading(); }
+    bool isImage() const override { return true; }
+    bool stillNeedsLoad() const override { return !errorOccurred() && status() == Unknown && !isLoading(); }
 
     // ImageObserver
-    virtual void decodedSizeChanged(const blink::Image*, int delta) override;
-    virtual void didDraw(const blink::Image*) override;
+    void decodedSizeChanged(const blink::Image*, int delta) override;
+    void didDraw(const blink::Image*) override;
 
-    virtual bool shouldPauseAnimation(const blink::Image*) override;
-    virtual void animationAdvanced(const blink::Image*) override;
-    virtual void changedInRect(const blink::Image*, const IntRect&) override;
+    bool shouldPauseAnimation(const blink::Image*) override;
+    void animationAdvanced(const blink::Image*) override;
+    void changedInRect(const blink::Image*, const IntRect&) override;
 
 protected:
-    virtual bool isSafeToUnlock() const override;
-    virtual void destroyDecodedDataIfPossible() override;
+    bool isSafeToUnlock() const override;
+    void destroyDecodedDataIfPossible() override;
 
 private:
+    static void preCacheDataURIImage(const FetchRequest&, ResourceFetcher*);
+
+    class ImageResourceFactory : public ResourceFactory {
+    public:
+        ImageResourceFactory()
+            : ResourceFactory(Resource::Image) { }
+
+        Resource* create(const ResourceRequest& request, const String&) const override
+        {
+            return new ImageResource(request);
+        }
+    };
+    ImageResource(const ResourceRequest&);
+
     void clear();
 
     void setCustomAcceptHeader();
@@ -128,6 +145,7 @@ private:
     void notifyObservers(const IntRect* changeRect = nullptr);
     IntSize svgImageSizeForLayoutObject(const LayoutObject*) const;
     blink::Image* svgImageForLayoutObject(const LayoutObject*);
+    bool loadingMultipartContent() const;
 
     float m_devicePixelRatioHeaderValue;
 
@@ -135,7 +153,6 @@ private:
     OwnPtr<ImageForContainerMap> m_imageForContainerMap;
 
     RefPtr<blink::Image> m_image;
-    bool m_loadingMultipartContent;
     bool m_hasDevicePixelRatioHeaderValue;
 };
 

@@ -28,17 +28,18 @@ bool ValidInternalFormat(unsigned internalformat) {
 
 bool ValidFormat(gfx::GpuMemoryBuffer::Format format) {
   switch (format) {
-    case gfx::GpuMemoryBuffer::BGRA_8888:
-    case gfx::GpuMemoryBuffer::RGBX_8888:
+    case GpuMemoryBuffer::BGRA_8888:
+    case GpuMemoryBuffer::RGBX_8888:
       return true;
-    case gfx::GpuMemoryBuffer::ATC:
-    case gfx::GpuMemoryBuffer::ATCIA:
-    case gfx::GpuMemoryBuffer::DXT1:
-    case gfx::GpuMemoryBuffer::DXT5:
-    case gfx::GpuMemoryBuffer::ETC1:
-    case gfx::GpuMemoryBuffer::R_8:
-    case gfx::GpuMemoryBuffer::RGBA_8888:
-    case gfx::GpuMemoryBuffer::YUV_420:
+    case GpuMemoryBuffer::ATC:
+    case GpuMemoryBuffer::ATCIA:
+    case GpuMemoryBuffer::DXT1:
+    case GpuMemoryBuffer::DXT5:
+    case GpuMemoryBuffer::ETC1:
+    case GpuMemoryBuffer::R_8:
+    case GpuMemoryBuffer::RGBA_4444:
+    case GpuMemoryBuffer::RGBA_8888:
+    case GpuMemoryBuffer::YUV_420:
       return false;
   }
 
@@ -58,6 +59,7 @@ EGLint FourCC(gfx::GpuMemoryBuffer::Format format) {
     case GpuMemoryBuffer::DXT5:
     case GpuMemoryBuffer::ETC1:
     case GpuMemoryBuffer::R_8:
+    case GpuMemoryBuffer::RGBA_4444:
     case GpuMemoryBuffer::RGBA_8888:
     case GpuMemoryBuffer::YUV_420:
       NOTREACHED();
@@ -118,5 +120,7 @@ bool GLImageLinuxDMABuffer::Initialize(const base::FileDescriptor& handle,
   return GLImageEGL::Initialize(
       EGL_LINUX_DMA_BUF_EXT, static_cast<EGLClientBuffer>(NULL), attrs);
 }
+
+unsigned GLImageLinuxDMABuffer::GetInternalFormat() { return internalformat_; }
 
 }  // namespace gfx

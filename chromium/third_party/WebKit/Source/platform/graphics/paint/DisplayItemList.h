@@ -6,16 +6,22 @@
 #define DisplayItemList_h
 
 #include "platform/PlatformExport.h"
+#include "platform/graphics/ListContainer.h"
 #include "platform/graphics/paint/DisplayItem.h"
+#include "platform/graphics/paint/Transform3DDisplayItem.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/Utility.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
 class GraphicsContext;
 
-typedef Vector<OwnPtr<DisplayItem>> DisplayItems;
+using DisplayItems = ListContainer<DisplayItem>;
+
+static const size_t kInitialDisplayItemsCapacity = 64;
+static const size_t kMaximumDisplayItemSize = sizeof(BeginTransform3DDisplayItem);
 
 class PLATFORM_EXPORT DisplayItemList {
     WTF_MAKE_NONCOPYABLE(DisplayItemList);
@@ -31,9 +37,28 @@ public:
     void invalidateAll();
 
     // These methods are called during painting.
-    void add(WTF::PassOwnPtr<DisplayItem>);
+    template <typename DisplayItemClass, typename... Args>
+    DisplayItemClass& createAndAppend(Args&&... args)
+    {
+        static_assert(WTF::IsSubclass<DisplayItemClass, DisplayItem>::value,
+            "Can only createAndAppend subclasses of DisplayItem.");
+        static_assert(sizeof(DisplayItemClass) <= kMaximumDisplayItemSize,
+            "DisplayItem subclass is larger than kMaximumDisplayItemSize.");
+
+        DisplayItemClass* displayItem = m_newDisplayItems.allocateAndConstruct<DisplayItemClass>(WTF::forward<Args>(args)...);
+        processNewItem(displayItem);
+        return *displayItem;
+    }
     void beginScope(DisplayItemClient);
     void endScope(DisplayItemClient);
+
+    // True if the last display item is a begin that doesn't draw content.
+    bool lastDisplayItemIsNoopBegin() const;
+    void removeLastDisplayItem();
+
+    void beginSkippingCache() { ++m_skippingCacheCount; }
+    void endSkippingCache() { ASSERT(m_skippingCacheCount > 0); --m_skippingCacheCount; }
+    bool skippingCache() const { return m_skippingCacheCount; }
 
     // Must be called when a painting is finished.
     void commitNewDisplayItems();
@@ -50,6 +75,8 @@ public:
         replay(context);
     }
 
+    void commitNewDisplayItemsAndAppendToWebDisplayItemList(WebDisplayItemList*);
+
     bool displayItemConstructionIsDisabled() const { return m_constructionDisabled; }
     void setDisplayItemConstructionIsDisabled(const bool disable) { m_constructionDisabled = disable; }
 
@@ -63,13 +90,21 @@ public:
 
 protected:
     DisplayItemList()
-        : m_validlyCachedClientsDirty(false)
-        , m_constructionDisabled(false) { }
+        : m_currentDisplayItems(kMaximumDisplayItemSize, 0)
+        , m_newDisplayItems(kMaximumDisplayItemSize, kInitialDisplayItemsCapacity)
+        , m_validlyCachedClientsDirty(false)
+        , m_constructionDisabled(false)
+        , m_skippingCacheCount(0)
+        , m_numCachedItems(0) { }
 
 private:
     friend class DisplayItemListTest;
     friend class DisplayItemListPaintTest;
     friend class LayoutObjectDrawingRecorderTest;
+
+    // Set new item state (scopes, cache skipping, etc) for a new item.
+    // TODO(pdr): This only passes a pointer to make the patch easier to review. Change to a reference.
+    void processNewItem(DisplayItem*);
 
     void updateValidlyCachedClientsIfNeeded() const;
 
@@ -81,10 +116,10 @@ private:
     // Temporarily used during merge to find out-of-order display items.
     using DisplayItemIndicesByClientMap = HashMap<DisplayItemClient, Vector<size_t>>;
 
-    static size_t findMatchingItemFromIndex(const DisplayItem&, DisplayItem::Type matchingType, const DisplayItemIndicesByClientMap&, const DisplayItems&);
-    static void addItemToIndex(const DisplayItem&, size_t index, DisplayItemIndicesByClientMap&);
-    size_t findOutOfOrderCachedItem(size_t& currentDisplayItemsIndex, const DisplayItem&, DisplayItem::Type, DisplayItemIndicesByClientMap&);
-    size_t findOutOfOrderCachedItemForward(size_t& currentDisplayItemsIndex, const DisplayItem&, DisplayItem::Type, DisplayItemIndicesByClientMap&);
+    static size_t findMatchingItemFromIndex(const DisplayItem::Id&, const DisplayItemIndicesByClientMap&, const DisplayItems&);
+    static void addItemToIndex(DisplayItemClient, DisplayItem::Type, size_t index, DisplayItemIndicesByClientMap&);
+    DisplayItems::Iterator findOutOfOrderCachedItem(DisplayItems::Iterator currentIt, const DisplayItem::Id&, DisplayItemIndicesByClientMap&);
+    DisplayItems::Iterator findOutOfOrderCachedItemForward(DisplayItems::Iterator currentIt, const DisplayItem::Id&, DisplayItemIndicesByClientMap&);
 
 #if ENABLE(ASSERT)
     // The following two methods are for checking under-invalidations
@@ -93,7 +128,7 @@ private:
     void checkNoRemainingCachedDisplayItems();
 #endif
 
-    void replay(GraphicsContext&) const;
+    void replay(GraphicsContext&);
 
     DisplayItems m_currentDisplayItems;
     DisplayItems m_newDisplayItems;
@@ -108,6 +143,10 @@ private:
     // Allow display item construction to be disabled to isolate the costs of construction
     // in performance metrics.
     bool m_constructionDisabled;
+
+    int m_skippingCacheCount;
+
+    int m_numCachedItems;
 
     // Scope ids are allocated per client to ensure that the ids are stable for non-invalidated
     // clients between frames, so that we can use the id to match new display items to cached

@@ -8,11 +8,14 @@
 
 namespace cc {
 
-scoped_refptr<IOSurfaceLayer> IOSurfaceLayer::Create() {
-  return make_scoped_refptr(new IOSurfaceLayer());
+scoped_refptr<IOSurfaceLayer> IOSurfaceLayer::Create(
+    const LayerSettings& settings) {
+  return make_scoped_refptr(new IOSurfaceLayer(settings));
 }
 
-IOSurfaceLayer::IOSurfaceLayer() : Layer(), io_surface_id_(0) {}
+IOSurfaceLayer::IOSurfaceLayer(const LayerSettings& settings)
+    : Layer(settings), io_surface_id_(0) {
+}
 
 IOSurfaceLayer::~IOSurfaceLayer() {}
 
@@ -41,10 +44,8 @@ void IOSurfaceLayer::PushPropertiesTo(LayerImpl* layer) {
   io_surface_layer->SetIOSurfaceProperties(io_surface_id_, io_surface_size_);
 }
 
-bool IOSurfaceLayer::Update(ResourceUpdateQueue* queue,
-                            const OcclusionTracker<Layer>* occlusion) {
-  bool updated = Layer::Update(queue, occlusion);
-
+bool IOSurfaceLayer::Update() {
+  bool updated = Layer::Update();
   // This layer doesn't update any resources from the main thread side,
   // but repaint rects need to be sent to the layer impl via commit.
   return updated || !update_rect_.IsEmpty();

@@ -16,7 +16,7 @@
 #include "media/base/serial_runner.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace chromecast {
@@ -28,10 +28,9 @@ class VideoPipelineProxy;
 
 class MediaPipelineProxy : public MediaPipeline {
  public:
-  MediaPipelineProxy(
-      int render_frame_id,
-      scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
-      LoadType load_type);
+  MediaPipelineProxy(int render_frame_id,
+                     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+                     LoadType load_type);
   ~MediaPipelineProxy() override;
 
   // MediaPipeline implementation.
@@ -44,7 +43,7 @@ class MediaPipelineProxy : public MediaPipeline {
       scoped_ptr<CodedFrameProvider> frame_provider,
       const ::media::PipelineStatusCB& status_cb) override;
   void InitializeVideo(
-      const ::media::VideoDecoderConfig& config,
+      const std::vector<::media::VideoDecoderConfig>& configs,
       scoped_ptr<CodedFrameProvider> frame_provider,
       const ::media::PipelineStatusCB& status_cb) override;
   void StartPlayingFrom(base::TimeDelta time) override;
@@ -58,7 +57,7 @@ class MediaPipelineProxy : public MediaPipeline {
 
   base::ThreadChecker thread_checker_;
 
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   const int render_frame_id_;
 
@@ -71,7 +70,7 @@ class MediaPipelineProxy : public MediaPipeline {
   bool has_video_;
   scoped_ptr<AudioPipelineProxy> audio_pipeline_;
   scoped_ptr<VideoPipelineProxy> video_pipeline_;
-  scoped_ptr< ::media::SerialRunner> pending_callbacks_;
+  scoped_ptr< ::media::SerialRunner> pending_flush_callbacks_;
 
   base::WeakPtr<MediaPipelineProxy> weak_this_;
   base::WeakPtrFactory<MediaPipelineProxy> weak_factory_;

@@ -32,7 +32,6 @@
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/dom/DOMArrayBufferDeallocationObserver.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioContext.h"
 #include "platform/audio/AudioBus.h"
@@ -176,7 +175,9 @@ AudioBuffer::AudioBuffer(AudioBus* bus)
             return;
 
         channelDataArray->setNeuterable(false);
-        channelDataArray->setRange(bus->channel(i)->data(), m_length, 0);
+        const float* src = bus->channel(i)->data();
+        float* dst = channelDataArray->data();
+        memmove(dst, src, m_length * sizeof(*dst));
         m_channels.append(channelDataArray);
     }
 }
@@ -317,26 +318,11 @@ void AudioBuffer::copyToChannel(DOMFloat32Array* source, long channelNumber, uns
 void AudioBuffer::zero()
 {
     for (unsigned i = 0; i < m_channels.size(); ++i) {
-        if (getChannelData(i))
-            getChannelData(i)->zeroRange(0, length());
-    }
-}
-
-v8::Local<v8::Object> AudioBuffer::associateWithWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperType, v8::Local<v8::Object> wrapper)
-{
-    ScriptWrappable::associateWithWrapper(isolate, wrapperType, wrapper);
-
-    if (!wrapper.IsEmpty()) {
-        // We only setDeallocationObservers on array buffers that are held by
-        // some object in the V8 heap, not in the ArrayBuffer constructor
-        // itself. This is because V8 GC only cares about memory it can free on
-        // GC, and until the object is exposed to JavaScript, V8 GC doesn't
-        // affect it.
-        for (unsigned i = 0, n = numberOfChannels(); i < n; ++i) {
-            getChannelData(i)->buffer()->setDeallocationObserver(DOMArrayBufferDeallocationObserver::instance());
+        if (DOMFloat32Array* array = getChannelData(i)) {
+            float* data = array->data();
+            memset(data, 0, length() * sizeof(*data));
         }
     }
-    return wrapper;
 }
 
 } // namespace blink

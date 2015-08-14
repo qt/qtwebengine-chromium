@@ -7,7 +7,6 @@
 
 #include "effects/GrConstColorProcessor.h"
 #include "gl/GrGLProcessor.h"
-#include "gl/GrGLSL.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 class GLConstColorProcessor : public GrGLFragmentProcessor {
@@ -67,7 +66,8 @@ private:
 
 void GrConstColorProcessor::onComputeInvariantOutput(GrInvariantOutput* inout) const {
     if (kIgnore_InputMode == fMode) {
-        inout->setToOther(kRGBA_GrColorComponentFlags, fColor, GrInvariantOutput::kWill_ReadInput);
+        inout->setToOther(kRGBA_GrColorComponentFlags, fColor,
+                          GrInvariantOutput::kWillNot_ReadInput);
     } else {
         GrColor r = GrColorUnpackR(fColor);
         bool colorIsSingleChannel = r == GrColorUnpackG(fColor) && r == GrColorUnpackB(fColor) &&
@@ -105,18 +105,15 @@ bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrConstColorProcessor);
 
-GrFragmentProcessor* GrConstColorProcessor::TestCreate(SkRandom* random,
-                                                       GrContext*,
-                                                       const GrDrawTargetCaps&,
-                                                       GrTexture*[]) {
+GrFragmentProcessor* GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
     GrColor color;
-    int colorPicker = random->nextULessThan(3);
+    int colorPicker = d->fRandom->nextULessThan(3);
     switch (colorPicker) {
         case 0: {
-            uint32_t a = random->nextULessThan(0x100);
-            uint32_t r = random->nextULessThan(a+1);
-            uint32_t g = random->nextULessThan(a+1);
-            uint32_t b = random->nextULessThan(a+1);
+            uint32_t a = d->fRandom->nextULessThan(0x100);
+            uint32_t r = d->fRandom->nextULessThan(a+1);
+            uint32_t g = d->fRandom->nextULessThan(a+1);
+            uint32_t b = d->fRandom->nextULessThan(a+1);
             color = GrColorPackRGBA(r, g, b, a);
             break;
         }
@@ -124,10 +121,10 @@ GrFragmentProcessor* GrConstColorProcessor::TestCreate(SkRandom* random,
             color = 0;
             break;
         case 2:
-            color = random->nextULessThan(0x100);
+            color = d->fRandom->nextULessThan(0x100);
             color = color | (color << 8) | (color << 16) | (color << 24);
             break;
     }
-    InputMode mode = static_cast<InputMode>(random->nextULessThan(kInputModeCnt));
+    InputMode mode = static_cast<InputMode>(d->fRandom->nextULessThan(kInputModeCnt));
     return GrConstColorProcessor::Create(color, mode);
 }

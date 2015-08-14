@@ -5,97 +5,98 @@
 #include "mandoline/services/core_services/core_services_application_delegate.h"
 
 #include "base/bind.h"
+#include "base/single_thread_task_runner.h"
+#include "base/threading/simple_thread.h"
 #include "components/clipboard/clipboard_application_delegate.h"
-#include "components/native_viewport/native_viewport_application_delegate.h"
-#include "components/resource_provider/resource_provider_app.h"
-#include "components/surfaces/surfaces_service_application.h"
-#include "components/view_manager/view_manager_app.h"
-#include "mandoline/ui/browser/browser.h"
+#include "components/filesystem/file_system_app.h"
+#include "components/view_manager/surfaces/surfaces_service_application.h"
+#include "mandoline/ui/browser/browser_manager.h"
 #include "mojo/application/public/cpp/application_connection.h"
 #include "mojo/application/public/cpp/application_impl.h"
+#include "mojo/application/public/cpp/application_runner.h"
 #include "mojo/common/message_pump_mojo.h"
-#include "mojo/services/network/network_service_delegate.h"
 #include "mojo/services/tracing/tracing_app.h"
 #include "url/gurl.h"
 
-#if !defined(OS_ANDROID)
+#if defined(USE_AURA)
 #include "mandoline/ui/omnibox/omnibox_impl.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "components/resource_provider/resource_provider_app.h"
+#include "components/view_manager/view_manager_app.h"
+#include "mojo/services/network/network_service_delegate.h"
 #endif
 
 namespace core_services {
 
-class ApplicationThread;
-
-// A base::Thread which hosts a mojo::ApplicationImpl on its own thread.
-//
-// Why not base::SimpleThread? The comments in SimpleThread discourage its use,
-// and we want most of what base::Thread provides. The hack where we call
-// SetThreadWasQuitProperly() in Run() is already used in the chrome codebase.
-// (By the time we building a base::Thread here, we already have a MessageLoop
-// on our thread, along with a lot of other bookkeeping objects, too. This is
-// why we don't call into ApplicationRunnerChromium; we already have an
-// AtExitManager et all at this point.)
-class ApplicationThread : public base::Thread {
+// A helper class for hosting a mojo::ApplicationImpl on its own thread.
+class ApplicationThread : public base::SimpleThread {
  public:
-  ApplicationThread(const std::string& name,
-                    scoped_ptr<mojo::ApplicationDelegate> delegate,
-                    mojo::InterfaceRequest<mojo::Application> request)
-      : base::Thread(name),
+  ApplicationThread(
+      const base::WeakPtr<CoreServicesApplicationDelegate>
+          core_services_application,
+      const std::string& url,
+      scoped_ptr<mojo::ApplicationDelegate> delegate,
+      mojo::InterfaceRequest<mojo::Application> request)
+      : base::SimpleThread(url),
+        core_services_application_(core_services_application),
+        core_services_application_task_runner_(
+            base::MessageLoop::current()->task_runner()),
+        url_(url),
         delegate_(delegate.Pass()),
         request_(request.Pass()) {
   }
 
   ~ApplicationThread() override {
-    Stop();
+    Join();
   }
 
-  // Overridden from base::Thread:
-  void Run(base::MessageLoop* message_loop) override {
-    {
-      application_impl_.reset(new mojo::ApplicationImpl(
-          delegate_.get(), request_.Pass()));
-      base::Thread::Run(message_loop);
-      application_impl_.reset();
+  // Overridden from base::SimpleThread:
+  void Run() override {
+    scoped_ptr<mojo::ApplicationRunner> runner(
+        new mojo::ApplicationRunner(delegate_.release()));
+    if (url_ == "mojo://network_service/") {
+      runner->set_message_loop_type(base::MessageLoop::TYPE_IO);
+    } else if (url_ == "mojo://view_manager/") {
+      runner->set_message_loop_type(base::MessageLoop::TYPE_UI);
     }
-    delegate_.reset();
+    runner->Run(request_.PassMessagePipe().release().value(), false);
 
-    // TODO(erg): This is a hack.
-    //
-    // Right now, most of our services do not receive
-    // Application::RequestQuit() calls. jam@ is currently working on shutting
-    // down everything cleanly. In the long run, we don't wan this here (we
-    // want this set in ShutdownCleanly()), but until we can rely on
-    // RequestQuit() getting delivered we have to manually do this here.
-    //
-    // Remove this ASAP.
-    Thread::SetThreadWasQuitProperly(true);
-  }
-
-  void RequestQuit() {
-    task_runner()->PostTask(
+    core_services_application_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&ApplicationThread::ShutdownCleanly,
-                   base::Unretained(this)));
-
-  }
-
-  void ShutdownCleanly() {
-    static_cast<mojo::Application*>(application_impl_.get())->RequestQuit();
-    Thread::SetThreadWasQuitProperly(true);
+        base::Bind(&CoreServicesApplicationDelegate::ApplicationThreadDestroyed,
+                   core_services_application_,
+                   this));
   }
 
  private:
-  scoped_ptr<mojo::ApplicationImpl> application_impl_;
+  base::WeakPtr<CoreServicesApplicationDelegate> core_services_application_;
+  scoped_refptr<base::SingleThreadTaskRunner>
+      core_services_application_task_runner_;
+  std::string url_;
   scoped_ptr<mojo::ApplicationDelegate> delegate_;
   mojo::InterfaceRequest<mojo::Application> request_;
 
   DISALLOW_COPY_AND_ASSIGN(ApplicationThread);
 };
 
-CoreServicesApplicationDelegate::CoreServicesApplicationDelegate() {}
+CoreServicesApplicationDelegate::CoreServicesApplicationDelegate()
+    : weak_factory_(this) {
+}
 
 CoreServicesApplicationDelegate::~CoreServicesApplicationDelegate() {
   application_threads_.clear();
+}
+
+void CoreServicesApplicationDelegate::ApplicationThreadDestroyed(
+    ApplicationThread* thread) {
+  ScopedVector<ApplicationThread>::iterator iter =
+      std::find(application_threads_.begin(),
+                application_threads_.end(),
+                thread);
+  DCHECK(iter != application_threads_.end());
+  application_threads_.erase(iter);
 }
 
 bool CoreServicesApplicationDelegate::ConfigureIncomingConnection(
@@ -105,14 +106,10 @@ bool CoreServicesApplicationDelegate::ConfigureIncomingConnection(
 }
 
 void CoreServicesApplicationDelegate::Quit() {
-  // Fire off RequestQuit() messages to all the threads before we try to join
-  // on them.
-  for (ApplicationThread* thread : application_threads_)
-    thread->RequestQuit();
-
   // This will delete all threads. This also performs a blocking join, waiting
   // for the threads to end.
   application_threads_.clear();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void CoreServicesApplicationDelegate::Create(
@@ -127,48 +124,35 @@ void CoreServicesApplicationDelegate::StartApplication(
   std::string url = response->url;
 
   scoped_ptr<mojo::ApplicationDelegate> delegate;
-  if (url == "mojo://clipboard/")
+  if (url == "mojo://browser/")
+    delegate.reset(new mandoline::BrowserManager);
+  else if (url == "mojo://clipboard/")
     delegate.reset(new clipboard::ClipboardApplicationDelegate);
-#if !defined(OS_ANDROID)
-  else if (url == "mojo://native_viewport_service/")
-    delegate.reset(new native_viewport::NativeViewportApplicationDelegate);
-#endif
-  else if (url == "mojo://network_service/")
-    delegate.reset(new NetworkServiceDelegate);
-#if !defined(OS_ANDROID)
-  else if (url == "mojo://omnibox/")
-    delegate.reset(new mandoline::OmniboxImpl);
-#endif
-  else if (url == "mojo://resource_provider/")
-    delegate.reset(new resource_provider::ResourceProviderApp);
+  else if (url == "mojo://filesystem_service/")
+    delegate.reset(new filesystem::FileSystemApp);
   else if (url == "mojo://surfaces_service/")
     delegate.reset(new surfaces::SurfacesServiceApplication);
   else if (url == "mojo://tracing/")
     delegate.reset(new tracing::TracingApp);
+#if defined(USE_AURA)
+  else if (url == "mojo://omnibox/")
+    delegate.reset(new mandoline::OmniboxImpl);
+#endif
+#if !defined(OS_ANDROID)
+  else if (url == "mojo://network_service/")
+    delegate.reset(new NetworkServiceDelegate);
+  else if (url == "mojo://resource_provider/")
+    delegate.reset(new resource_provider::ResourceProviderApp);
   else if (url == "mojo://view_manager/")
     delegate.reset(new view_manager::ViewManagerApp);
-  else if (url == "mojo://window_manager/")
-    delegate.reset(new mandoline::Browser);
+#endif
   else
     NOTREACHED() << "This application package does not support " << url;
 
-  base::Thread::Options thread_options;
-
-  // In the case of mojo:network_service, we must use an IO message loop.
-  if (url == "mojo://network_service/") {
-    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
-  } else if (url == "mojo://native_viewport_service/") {
-    thread_options.message_loop_type = base::MessageLoop::TYPE_UI;
-  } else {
-    // We must use a MessagePumpMojo to awake on mojo messages.
-    thread_options.message_pump_factory =
-        base::Bind(&mojo::common::MessagePumpMojo::Create);
-  }
-
   scoped_ptr<ApplicationThread> thread(
-      new ApplicationThread(url, delegate.Pass(), request.Pass()));
-  thread->StartWithOptions(thread_options);
-
+      new ApplicationThread(weak_factory_.GetWeakPtr(), url, delegate.Pass(),
+                            request.Pass()));
+  thread->Start();
   application_threads_.push_back(thread.Pass());
 }
 

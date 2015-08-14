@@ -357,6 +357,13 @@ void BrowserAccessibilityManager::ScrollToPoint(
   }
 }
 
+void BrowserAccessibilityManager::SetScrollOffset(
+    const BrowserAccessibility& node, gfx::Point offset) {
+  if (delegate_) {
+    delegate_->AccessibilitySetScrollOffset(node.GetId(), offset);
+  }
+}
+
 void BrowserAccessibilityManager::SetValue(
     const BrowserAccessibility& node,
     const base::string16& value) {
@@ -415,7 +422,8 @@ BrowserAccessibility* BrowserAccessibilityManager::PreviousInTreeOrder(
   return node->GetParent();
 }
 
-void BrowserAccessibilityManager::OnNodeWillBeDeleted(ui::AXNode* node) {
+void BrowserAccessibilityManager::OnNodeWillBeDeleted(ui::AXTree* tree,
+                                                      ui::AXNode* node) {
   if (node == focus_ && tree_) {
     if (node != tree_->root())
       SetFocus(tree_->root(), false);
@@ -428,24 +436,28 @@ void BrowserAccessibilityManager::OnNodeWillBeDeleted(ui::AXNode* node) {
   id_wrapper_map_.erase(node->id());
 }
 
-void BrowserAccessibilityManager::OnSubtreeWillBeDeleted(ui::AXNode* node) {
+void BrowserAccessibilityManager::OnSubtreeWillBeDeleted(ui::AXTree* tree,
+                                                         ui::AXNode* node) {
   BrowserAccessibility* obj = GetFromAXNode(node);
   if (obj)
     obj->OnSubtreeWillBeDeleted();
 }
 
-void BrowserAccessibilityManager::OnNodeCreated(ui::AXNode* node) {
+void BrowserAccessibilityManager::OnNodeCreated(ui::AXTree* tree,
+                                                ui::AXNode* node) {
   BrowserAccessibility* wrapper = factory_->Create();
   wrapper->Init(this, node);
   id_wrapper_map_[node->id()] = wrapper;
   wrapper->OnDataChanged();
 }
 
-void BrowserAccessibilityManager::OnNodeChanged(ui::AXNode* node) {
+void BrowserAccessibilityManager::OnNodeChanged(ui::AXTree* tree,
+                                                ui::AXNode* node) {
   GetFromAXNode(node)->OnDataChanged();
 }
 
 void BrowserAccessibilityManager::OnAtomicUpdateFinished(
+    ui::AXTree* tree,
     bool root_changed,
     const std::vector<ui::AXTreeDelegate::Change>& changes) {
 }

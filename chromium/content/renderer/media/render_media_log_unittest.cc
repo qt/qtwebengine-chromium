@@ -27,6 +27,8 @@ class RenderMediaLogTest : public testing::Test {
 
   void AddEvent(media::MediaLogEvent::Type type) {
     log_->AddEvent(log_->CreateEvent(type));
+    // AddEvent() could post. Run the task runner to make sure it's executed.
+    task_runner_->RunUntilIdle();
   }
 
   void Advance(base::TimeDelta delta) {
@@ -44,12 +46,13 @@ class RenderMediaLogTest : public testing::Test {
       return std::vector<media::MediaLogEvent>();
     }
 
-    Tuple<std::vector<media::MediaLogEvent>> events;
+    base::Tuple<std::vector<media::MediaLogEvent>> events;
     ViewHostMsg_MediaLogEvents::Read(msg, &events);
-    return get<0>(events);
+    return base::get<0>(events);
   }
 
  private:
+  base::MessageLoop message_loop_;
   MockRenderThread render_thread_;
   scoped_refptr<RenderMediaLog> log_;
   base::SimpleTestTickClock* tick_clock_;  // Owned by |log_|.

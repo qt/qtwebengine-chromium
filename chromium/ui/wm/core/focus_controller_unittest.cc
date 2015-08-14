@@ -15,8 +15,6 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
-#include "ui/base/ime/dummy_text_input_client.h"
-#include "ui/base/ime/text_input_focus_manager.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_handler.h"
@@ -33,7 +31,8 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
                                   public aura::client::FocusChangeObserver {
  public:
   FocusNotificationObserver()
-      : activation_changed_count_(0),
+      : last_activation_reason_(ActivationReason::ACTIVATION_CLIENT),
+        activation_changed_count_(0),
         focus_changed_count_(0),
         reactivation_count_(0),
         reactivation_requested_window_(NULL),
@@ -43,6 +42,9 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
   void ExpectCounts(int activation_changed_count, int focus_changed_count) {
     EXPECT_EQ(activation_changed_count, activation_changed_count_);
     EXPECT_EQ(focus_changed_count, focus_changed_count_);
+  }
+  ActivationReason last_activation_reason() const {
+    return last_activation_reason_;
   }
   int reactivation_count() const {
     return reactivation_count_;
@@ -56,8 +58,10 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
 
  private:
   // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_active,
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
                          aura::Window* lost_active) override {
+    last_activation_reason_ = reason;
     ++activation_changed_count_;
   }
   void OnAttemptToReactivateWindow(aura::Window* request_active,
@@ -73,6 +77,7 @@ class FocusNotificationObserver : public aura::client::ActivationChangeObserver,
     ++focus_changed_count_;
   }
 
+  ActivationReason last_activation_reason_;
   int activation_changed_count_;
   int focus_changed_count_;
   int reactivation_count_;
@@ -115,7 +120,8 @@ class RecordingActivationAndFocusChangeObserver
   }
 
   // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_active,
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
                          aura::Window* lost_active) override {
     if (lost_active && lost_active == deleter_->GetDeletedWindow())
       was_notified_with_deleted_window_ = true;
@@ -158,7 +164,8 @@ class DeleteOnLoseActivationChangeObserver :
   }
 
   // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_active,
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
                          aura::Window* lost_active) override {
     if (window_ && lost_active == window_) {
       delete lost_active;
@@ -256,25 +263,6 @@ class ScopedTargetFocusNotificationObserver : public FocusNotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(ScopedTargetFocusNotificationObserver);
 };
 
-class ScopedFocusedTextInputClientChanger
-    : public ScopedFocusNotificationObserver {
- public:
-  ScopedFocusedTextInputClientChanger(aura::Window* root_window,
-                                      ui::TextInputClient* text_input_client)
-      : ScopedFocusNotificationObserver(root_window),
-        text_input_client_(text_input_client) {}
-
- private:
-  // Overridden from aura::client::FocusChangeObserver:
-  void OnWindowFocused(aura::Window* gained_focus,
-                       aura::Window* lost_focus) override {
-    ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(
-        text_input_client_);
-  }
-
-  ui::TextInputClient* text_input_client_;
-};
-
 // Used to fake the handling of events in the pre-target phase.
 class SimpleEventHandler : public ui::EventHandler {
  public:
@@ -303,7 +291,8 @@ class FocusShiftingActivationObserver
 
  private:
   // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_active,
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
                          aura::Window* lost_active) override {
     // Shift focus to a child. This should prevent the default focusing from
     // occurring in FocusController::FocusWindow().
@@ -476,7 +465,6 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
   virtual void FocusChangeDuringDrag() {}
   virtual void ChangeFocusWhenNothingFocusedAndCaptured() {}
   virtual void DontPassDeletedWindow() {}
-  virtual void FocusedTextInputClient() {}
 
  private:
   scoped_ptr<FocusController> focus_controller_;
@@ -498,6 +486,11 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
 
   // Input events do not change focus if the window can not be focused.
   virtual bool IsInputEvent() = 0;
+
+  // Returns the expected ActivationReason caused by calling the
+  // ActivatedWindowDirect(...) or DeactivateWindowDirect(...) methods.
+  virtual aura::client::ActivationChangeObserver::ActivationReason
+  GetExpectedActivationReason() const = 0;
 
   void FocusWindowById(int id) {
     aura::Window* window = root_window()->GetChildById(id);
@@ -579,6 +572,8 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
 
     ActivateWindowById(2);
     root_observer.ExpectCounts(1, 1);
+    EXPECT_EQ(GetExpectedActivationReason(),
+              root_observer.last_activation_reason());
     observer1.ExpectCounts(1, 1);
     observer2.ExpectCounts(1, 1);
   }
@@ -841,41 +836,6 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
     }
   }
 
-  // Verifies if the focused text input client is cleared when a window gains
-  // or loses the focus.
-  void FocusedTextInputClient() override {
-    ui::TextInputFocusManager* text_input_focus_manager =
-        ui::TextInputFocusManager::GetInstance();
-    ui::DummyTextInputClient text_input_client;
-    ui::TextInputClient* null_text_input_client = NULL;
-
-    EXPECT_EQ(null_text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-
-    text_input_focus_manager->FocusTextInputClient(&text_input_client);
-    EXPECT_EQ(&text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-    FocusWindowById(1);
-    // The focused text input client gets cleared when a window gets focused
-    // unless any of observers sets the focused text input client.
-    EXPECT_EQ(null_text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-
-    ScopedFocusedTextInputClientChanger text_input_focus_changer(
-        root_window(), &text_input_client);
-    EXPECT_EQ(null_text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-    FocusWindowById(2);
-    // |text_input_focus_changer| sets the focused text input client.
-    EXPECT_EQ(&text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-
-    FocusWindow(NULL);
-    // The focused text input client gets cleared when a window loses the focus.
-    EXPECT_EQ(null_text_input_client,
-              text_input_focus_manager->GetFocusedTextInputClient());
-  }
-
  private:
   DISALLOW_COPY_AND_ASSIGN(FocusControllerDirectTestBase);
 };
@@ -895,6 +855,12 @@ class FocusControllerApiTest : public FocusControllerDirectTestBase {
     DeactivateWindow(window);
   }
   bool IsInputEvent() override { return false; }
+  // Overridden from FocusControllerDirectTestBase:
+  aura::client::ActivationChangeObserver::ActivationReason
+  GetExpectedActivationReason() const override {
+    return aura::client::ActivationChangeObserver::ActivationReason::
+        ACTIVATION_CLIENT;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(FocusControllerApiTest);
 };
@@ -937,7 +903,13 @@ class FocusControllerMouseEventTest : public FocusControllerDirectTestBase {
     ui::test::EventGenerator generator(root_window(), next_activatable);
     generator.ClickLeftButton();
   }
+  // Overridden from FocusControllerDirectTestBase:
   bool IsInputEvent() override { return true; }
+  aura::client::ActivationChangeObserver::ActivationReason
+  GetExpectedActivationReason() const override {
+    return aura::client::ActivationChangeObserver::ActivationReason::
+        INPUT_EVENT;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(FocusControllerMouseEventTest);
 };
@@ -963,6 +935,11 @@ class FocusControllerGestureEventTest : public FocusControllerDirectTestBase {
     generator.GestureTapAt(window->bounds().CenterPoint());
   }
   bool IsInputEvent() override { return true; }
+  aura::client::ActivationChangeObserver::ActivationReason
+  GetExpectedActivationReason() const override {
+    return aura::client::ActivationChangeObserver::ActivationReason::
+        INPUT_EVENT;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(FocusControllerGestureEventTest);
 };
@@ -976,6 +953,14 @@ class FocusControllerImplicitTestBase : public FocusControllerTestBase {
 
   aura::Window* GetDispositionWindow(aura::Window* window) {
     return parent_ ? window->parent() : window;
+  }
+
+  // Returns the expected ActivationReason caused by calling the
+  // ActivatedWindowDirect(...) or DeactivateWindowDirect(...) methods.
+  aura::client::ActivationChangeObserver::ActivationReason
+  GetExpectedActivationReason() const {
+    return aura::client::ActivationChangeObserver::ActivationReason::
+        WINDOW_DISPOSITION_CHANGED;
   }
 
   // Change the disposition of |window| in such a way as it will lose focus.
@@ -1038,6 +1023,8 @@ class FocusControllerImplicitTestBase : public FocusControllerTestBase {
 
     ChangeWindowDisposition(w2);
     root_observer.ExpectCounts(1, 1);
+    EXPECT_EQ(GetExpectedActivationReason(),
+              root_observer.last_activation_reason());
     observer2.ExpectCounts(1, 1);
     observer3.ExpectCounts(1, 1);
   }
@@ -1299,10 +1286,6 @@ FOCUS_CONTROLLER_TEST(FocusControllerApiTest, DontPassDeletedWindow);
 // See description above TransientChildWindowActivationTest() for details.
 FOCUS_CONTROLLER_TEST(FocusControllerParentHideTest,
                       TransientChildWindowActivationTest);
-
-// - Verifies that the focused text input client is cleard when the window focus
-//   changes.
-ALL_FOCUS_TESTS(FocusedTextInputClient);
 
 // If a mouse event was handled, it should not activate a window.
 FOCUS_CONTROLLER_TEST(FocusControllerMouseEventTest, IgnoreHandledEvent);

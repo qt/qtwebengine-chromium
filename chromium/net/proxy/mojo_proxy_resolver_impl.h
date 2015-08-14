@@ -15,14 +15,11 @@
 #include "net/proxy/proxy_resolver.h"
 
 namespace net {
+class ProxyResolverV8Tracing;
 
 class MojoProxyResolverImpl : public interfaces::ProxyResolver {
  public:
-  MojoProxyResolverImpl(
-      scoped_ptr<net::ProxyResolver> resolver,
-      const base::Callback<
-          void(const net::ProxyResolver::LoadStateChangedCallback&)>&
-          load_state_change_callback_setter);
+  explicit MojoProxyResolverImpl(scoped_ptr<ProxyResolverV8Tracing> resolver);
 
   ~MojoProxyResolverImpl() override;
 
@@ -36,11 +33,7 @@ class MojoProxyResolverImpl : public interfaces::ProxyResolver {
 
   void DeleteJob(Job* job);
 
-  // Invoked when the LoadState of a request changes.
-  void LoadStateChanged(net::ProxyResolver::RequestHandle handle,
-                        LoadState load_state);
-
-  scoped_ptr<net::ProxyResolver> resolver_;
+  scoped_ptr<ProxyResolverV8Tracing> resolver_;
   std::set<Job*> resolve_jobs_;
   std::map<net::ProxyResolver::RequestHandle, Job*> request_handle_to_job_;
 

@@ -12,6 +12,7 @@
     'cronet_url_request_context_config_list',
     'cronet_url_request_java',
     'cronet_version',
+    'cronet_version_header',
     'metrics',
   ],
   'sources': [
@@ -29,8 +30,8 @@
     'android/cronet_library_loader.h',
     'android/cronet_upload_data_stream.cc',
     'android/cronet_upload_data_stream.h',
-    'android/cronet_upload_data_stream_delegate.cc',
-    'android/cronet_upload_data_stream_delegate.h',
+    'android/cronet_upload_data_stream_adapter.cc',
+    'android/cronet_upload_data_stream_adapter.h',
     'android/cronet_url_request_adapter.cc',
     'android/cronet_url_request_adapter.h',
     'android/cronet_url_request_context_adapter.cc',

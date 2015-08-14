@@ -50,6 +50,7 @@ class Transform;
 namespace ui {
 struct AXViewState;
 class Compositor;
+class InputMethod;
 class Layer;
 class NativeTheme;
 class PaintContext;
@@ -66,7 +67,6 @@ class ContextMenuController;
 class DragController;
 class FocusManager;
 class FocusTraversable;
-class InputMethod;
 class LayoutManager;
 class NativeViewAccessibility;
 class ScrollView;
@@ -692,15 +692,13 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
     return notify_enter_exit_on_child_;
   }
 
-  // Returns the View's TextInputClient instance or NULL if the View doesn't
-  // support text input.
-  virtual ui::TextInputClient* GetTextInputClient();
-
   // Convenience method to retrieve the InputMethod associated with the
-  // Widget that contains this view. Returns NULL if this view is not part of a
-  // view hierarchy with a Widget.
-  virtual InputMethod* GetInputMethod();
-  virtual const InputMethod* GetInputMethod() const;
+  // Widget that contains this view.
+  ui::InputMethod* GetInputMethod() {
+    return const_cast<ui::InputMethod*>(
+        const_cast<const View*>(this)->GetInputMethod());
+  }
+  const ui::InputMethod* GetInputMethod() const;
 
   // Sets a new ViewTargeter for the view, and returns the previous
   // ViewTargeter.
@@ -865,6 +863,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // On some platforms, we show context menu on mouse press instead of release.
   // This method returns true for those platforms.
   static bool ShouldShowContextMenuOnMousePress();
+
+  // Returns the location, in screen coordinates, to show the context menu at
+  // when the context menu is shown from the keyboard. This implementation
+  // returns the middle of the visible region of this view.
+  //
+  // This method is invoked when the context menu is shown by way of the
+  // keyboard.
+  virtual gfx::Point GetKeyboardContextMenuLocation();
 
   // Drag and drop -------------------------------------------------------------
 
@@ -1165,16 +1171,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Views must invoke this when the tooltip text they are to display changes.
   void TooltipTextChanged();
-
-  // Context menus -------------------------------------------------------------
-
-  // Returns the location, in screen coordinates, to show the context menu at
-  // when the context menu is shown from the keyboard. This implementation
-  // returns the middle of the visible region of this view.
-  //
-  // This method is invoked when the context menu is shown by way of the
-  // keyboard.
-  virtual gfx::Point GetKeyboardContextMenuLocation();
 
   // Drag and drop -------------------------------------------------------------
 

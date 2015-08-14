@@ -35,7 +35,7 @@ function WallpaperManager(dialogDom) {
    * URL of the learn more page for wallpaper picker.
    */
   /** @const */ var LearnMoreURL =
-      'https://support.google.com/chromeos/?p=wallpaper_fileerror&hl=' +
+      'https://support.google.com/chromebook/?p=wallpaper_fileerror&hl=' +
           navigator.language;
 
   /**
@@ -1004,13 +1004,14 @@ function WallpaperManager(dialogDom) {
       };
 
       var self = this;
+      // Need this check for test purpose.
+      var numOnlineWallpaper = (this.enableOnlineWallpaper_ && this.manifest_) ?
+        this.manifest_.wallpaper_list.length : 0;
       var processResults = function(entries) {
         for (var i = 0; i < entries.length; i++) {
           var entry = entries[i];
           var wallpaperInfo = {
-                // Set wallpaperId to null to avoid duplicate thumbnail images,
-                // see crbug.com/506135 for details.
-                wallpaperId: null,
+                wallpaperId: numOnlineWallpaper + i,
                 baseURL: entry.name,
                 // The layout will be replaced by the actual value saved in
                 // local storage when requested later. Layout is not important
@@ -1025,7 +1026,7 @@ function WallpaperManager(dialogDom) {
         }
         if (loadTimeData.getBoolean('isOEMDefaultWallpaper')) {
           var oemDefaultWallpaperElement = {
-              wallpaperId: null,
+              wallpaperId: numOnlineWallpaper + entries.length,
               baseURL: 'OemDefaultWallpaper',
               layout: 'CENTER_CROPPED',
               source: Constants.WallpaperSourceEnum.OEM,

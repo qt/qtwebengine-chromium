@@ -994,6 +994,10 @@ void GLES2InterfaceStub::GetQueryObjectuivEXT(GLuint /* id */,
                                               GLenum /* pname */,
                                               GLuint* /* params */) {
 }
+void GLES2InterfaceStub::GetQueryObjectui64vEXT(GLuint /* id */,
+                                                GLenum /* pname */,
+                                                GLuint64* /* params */) {
+}
 void GLES2InterfaceStub::InsertEventMarkerEXT(GLsizei /* length */,
                                               const GLchar* /* marker */) {
 }
@@ -1127,17 +1131,33 @@ void GLES2InterfaceStub::TexImageIOSurface2DCHROMIUM(GLenum /* target */,
                                                      GLuint /* ioSurfaceId */,
                                                      GLuint /* plane */) {
 }
-void GLES2InterfaceStub::CopyTextureCHROMIUM(GLenum /* target */,
-                                             GLenum /* source_id */,
-                                             GLenum /* dest_id */,
-                                             GLint /* internalformat */,
-                                             GLenum /* dest_type */) {
+void GLES2InterfaceStub::CopyTextureCHROMIUM(
+    GLenum /* target */,
+    GLenum /* source_id */,
+    GLenum /* dest_id */,
+    GLint /* internalformat */,
+    GLenum /* dest_type */,
+    GLboolean /* unpack_flip_y */,
+    GLboolean /* unpack_premultiply_alpha */,
+    GLboolean /* unpack_unmultiply_alpha */) {
 }
-void GLES2InterfaceStub::CopySubTextureCHROMIUM(GLenum /* target */,
-                                                GLenum /* source_id */,
-                                                GLenum /* dest_id */,
-                                                GLint /* xoffset */,
-                                                GLint /* yoffset */) {
+void GLES2InterfaceStub::CopySubTextureCHROMIUM(
+    GLenum /* target */,
+    GLenum /* source_id */,
+    GLenum /* dest_id */,
+    GLint /* xoffset */,
+    GLint /* yoffset */,
+    GLint /* x */,
+    GLint /* y */,
+    GLsizei /* width */,
+    GLsizei /* height */,
+    GLboolean /* unpack_flip_y */,
+    GLboolean /* unpack_premultiply_alpha */,
+    GLboolean /* unpack_unmultiply_alpha */) {
+}
+void GLES2InterfaceStub::CompressedCopyTextureCHROMIUM(GLenum /* target */,
+                                                       GLenum /* source_id */,
+                                                       GLenum /* dest_id */) {
 }
 void GLES2InterfaceStub::DrawArraysInstancedANGLE(GLenum /* mode */,
                                                   GLint /* first */,
@@ -1265,10 +1285,15 @@ void GLES2InterfaceStub::ScheduleOverlayPlaneCHROMIUM(
 }
 void GLES2InterfaceStub::SwapInterval(GLint /* interval */) {
 }
+void GLES2InterfaceStub::FlushDriverCachesCHROMIUM() {
+}
 void GLES2InterfaceStub::MatrixLoadfCHROMIUM(GLenum /* matrixMode */,
                                              const GLfloat* /* m */) {
 }
 void GLES2InterfaceStub::MatrixLoadIdentityCHROMIUM(GLenum /* matrixMode */) {
+}
+GLenum GLES2InterfaceStub::GetGraphicsResetStatusKHR() {
+  return 0;
 }
 void GLES2InterfaceStub::BlendBarrierKHR() {
 }

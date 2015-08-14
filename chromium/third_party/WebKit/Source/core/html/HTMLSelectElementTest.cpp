@@ -16,7 +16,7 @@ namespace blink {
 
 class HTMLSelectElementTest : public::testing::Test {
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
     HTMLDocument& document() const { return *m_document; }
 
 private:
@@ -32,7 +32,6 @@ void HTMLSelectElementTest::SetUp()
 
     m_document = toHTMLDocument(&m_dummyPageHolder->document());
     m_document->setMimeType("text/html");
-    m_document->setCharset("utf-8");
 }
 
 TEST_F(HTMLSelectElementTest, SaveRestoreSelectSingleFormControlState)
@@ -42,7 +41,7 @@ TEST_F(HTMLSelectElementTest, SaveRestoreSelectSingleFormControlState)
         "<option value='222'>222</option>"
         "<option value='111' selected id='2'>!666</option>"
         "<option value='999'>999</option></select>"), ASSERT_NO_EXCEPTION);
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
     Element* element = document().getElementById("sel");
     HTMLFormControlElementWithState* select = toHTMLSelectElement(element);
     HTMLOptionElement* opt0 = toHTMLOptionElement(document().getElementById("0"));
@@ -74,7 +73,7 @@ TEST_F(HTMLSelectElementTest, SaveRestoreSelectMultipleFormControlState)
         "<option value='222'>222</option>"
         "<option value='111' selected id='2'>!666</option>"
         "<option value='999' selected id='3'>999</option></select>"), ASSERT_NO_EXCEPTION);
-    document().view()->updateLayoutAndStyleForPainting();
+    document().view()->updateAllLifecyclePhases();
     HTMLFormControlElementWithState* select = toHTMLSelectElement(document().getElementById("sel"));
 
     HTMLOptionElement* opt0 = toHTMLOptionElement(document().getElementById("0"));

@@ -211,6 +211,7 @@ void SerialIoHandlerWin::WriteImpl() {
                         NULL,
                         &write_context_->overlapped);
   if (!ok && GetLastError() != ERROR_IO_PENDING) {
+    VPLOG(1) << "Write failed";
     QueueWriteCompleted(0, serial::SEND_ERROR_SYSTEM_ERROR);
   }
 }
@@ -301,6 +302,7 @@ void SerialIoHandlerWin::OnIOCompleted(
                            NULL,
                            &read_context_->overlapped);
       if (!ok && GetLastError() != ERROR_IO_PENDING) {
+        VPLOG(1) << "Read failed";
         ReadCompleted(0, serial::RECEIVE_ERROR_SYSTEM_ERROR);
       }
     }
@@ -321,6 +323,18 @@ void SerialIoHandlerWin::OnIOCompleted(
       WriteCompleted(0, write_cancel_reason());
     } else if (error != ERROR_SUCCESS && error != ERROR_OPERATION_ABORTED) {
       WriteCompleted(0, serial::SEND_ERROR_SYSTEM_ERROR);
+      if (error == ERROR_GEN_FAILURE && IsReadPending()) {
+        // For devices using drivers such as FTDI, CP2xxx, when device is
+        // disconnected, the context is comm_context_ and the error is
+        // ERROR_OPERATION_ABORTED.
+        // However, for devices using CDC-ACM driver, when device is
+        // disconnected, the context is write_context_ and the error is
+        // ERROR_GEN_FAILURE. In this situation, in addition to a write error
+        // signal, also need to generate a read error signal
+        // serial::OnReceiveError which will notify the app about the
+        // disconnection.
+        CancelRead(serial::RECEIVE_ERROR_SYSTEM_ERROR);
+      }
     } else {
       WriteCompleted(bytes_transferred,
                      error == ERROR_SUCCESS ? serial::SEND_ERROR_NONE
@@ -387,6 +401,22 @@ serial::ConnectionInfoPtr SerialIoHandlerWin::GetPortInfo() const {
   info->stop_bits = StopBitsConstantToEnum(config.StopBits);
   info->cts_flow_control = config.fOutxCtsFlow != 0;
   return info.Pass();
+}
+
+bool SerialIoHandlerWin::SetBreak() {
+  if (!SetCommBreak(file().GetPlatformFile())) {
+    VPLOG(1) << "Failed to set break";
+    return false;
+  }
+  return true;
+}
+
+bool SerialIoHandlerWin::ClearBreak() {
+  if (!ClearCommBreak(file().GetPlatformFile())) {
+    VPLOG(1) << "Failed to clear break";
+    return false;
+  }
+  return true;
 }
 
 std::string SerialIoHandler::MaybeFixUpPortName(const std::string& port_name) {

@@ -290,7 +290,7 @@ cr.define('wallpapers', function() {
           }, ShowSpinnerDelayMs);
         }
       } else {
-        // Sets dataModel to null should hide spinner immedidately.
+        // Sets dataModel to null should hide spinner immediately.
         $('spinner-container').hidden = true;
       }
 
@@ -349,8 +349,7 @@ cr.define('wallpapers', function() {
         var dataModelId = self.dataModelId_;
         self.pendingItems_++;
         return WallpaperThumbnailsGridItem(value, dataModelId,
-            (value.wallpaperId == null) ?
-                null : self.thumbnailList_[value.wallpaperId],
+            self.thumbnailList_[value.wallpaperId],
             self.pendingItemComplete.bind(self));
       };
       this.selectionModel = new ListSingleSelectionModel();

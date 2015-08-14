@@ -12,6 +12,7 @@
 #include "base/process/process.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
@@ -414,8 +415,7 @@ ObjectType* IndexedDBDispatcherHost::GetOrTerminateProcess(
   if (!return_object) {
     NOTREACHED() << "Uh oh, couldn't find object with id "
                  << ipc_return_object_id;
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_IDBMF"));
-    BadMessageReceived();
+    bad_message::ReceivedBadMessage(this, bad_message::IDBDH_GET_OR_TERMINATE);
   }
   return return_object;
 }
@@ -429,8 +429,7 @@ ObjectType* IndexedDBDispatcherHost::GetOrTerminateProcess(
   if (!return_object) {
     NOTREACHED() << "Uh oh, couldn't find object with id "
                  << ipc_return_object_id;
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_IDBMF"));
-    BadMessageReceived();
+    bad_message::ReceivedBadMessage(this, bad_message::IDBDH_GET_OR_TERMINATE);
   }
   return return_object;
 }
@@ -660,8 +659,8 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnGetAll(
       parent_, params.ipc_thread_id, params.ipc_callbacks_id));
   connection->database()->GetAll(
       parent_->HostTransactionId(params.transaction_id), params.object_store_id,
-      make_scoped_ptr(new IndexedDBKeyRange(params.key_range)),
-      params.max_count, callbacks);
+      params.index_id, make_scoped_ptr(new IndexedDBKeyRange(params.key_range)),
+      params.key_only, params.max_count, callbacks);
 }
 
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPutWrapper(
@@ -710,7 +709,8 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
       if (!info.file_path.empty()) {
         path = base::FilePath::FromUTF16Unsafe(info.file_path);
         if (!policy->CanReadFile(parent_->ipc_process_id_, path)) {
-          parent_->BadMessageReceived();
+          bad_message::ReceivedBadMessage(parent_,
+                                          bad_message::IDBDH_CAN_READ_FILE);
           return;
         }
       }

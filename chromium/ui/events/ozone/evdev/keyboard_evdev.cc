@@ -18,6 +18,15 @@
 
 namespace ui {
 
+// We can't include ui/events/keycodes/dom/dom_code.h here because of
+// conflicts with preprocessor macros in <linux/input.h>, so we use the
+// same underlying data with an additional prefix.
+#define USB_KEYMAP(usb, xkb, win, mac, code, id) DOM_CODE_ ## id = usb
+#define USB_KEYMAP_DECLARATION enum class DomCode
+#include "ui/events/keycodes/dom/keycode_converter_data.inc"
+#undef USB_KEYMAP
+#undef USB_KEYMAP_DECLARATION
+
 namespace {
 
 const int kRepeatDelayMs = 500;
@@ -35,6 +44,8 @@ int EventFlagToEvdevModifier(int flag) {
       return EVDEV_MODIFIER_ALT;
     case EF_ALTGR_DOWN:
       return EVDEV_MODIFIER_ALTGR;
+    case EF_MOD3_DOWN:
+      return EVDEV_MODIFIER_MOD3;
     case EF_LEFT_MOUSE_BUTTON:
       return EVDEV_MODIFIER_LEFT_MOUSE_BUTTON;
     case EF_MIDDLE_MOUSE_BUTTON:
@@ -60,10 +71,6 @@ KeyboardEvdev::KeyboardEvdev(EventModifiersEvdev* modifiers,
     : callback_(callback),
       modifiers_(modifiers),
       keyboard_layout_engine_(keyboard_layout_engine),
-      repeat_enabled_(true),
-      repeat_key_(KEY_RESERVED),
-      repeat_sequence_(0),
-      repeat_device_id_(0),
       weak_ptr_factory_(this) {
   repeat_delay_ = base::TimeDelta::FromMilliseconds(kRepeatDelayMs);
   repeat_interval_ = base::TimeDelta::FromMilliseconds(kRepeatIntervalMs);
@@ -74,22 +81,20 @@ KeyboardEvdev::~KeyboardEvdev() {
 
 void KeyboardEvdev::OnKeyChange(unsigned int key,
                                 bool down,
+                                bool suppress_auto_repeat,
                                 base::TimeDelta timestamp,
                                 int device_id) {
   if (key > KEY_MAX)
     return;
 
-  if (down == key_state_.test(key))
-    return;
+  bool was_down = key_state_.test(key);
+  bool is_repeat = down && was_down;
+  if (!down && !was_down)
+    return;  // Key already released.
 
-  // State transition: !(down) -> (down)
-  if (down)
-    key_state_.set(key);
-  else
-    key_state_.reset(key);
-
-  UpdateKeyRepeat(key, down, device_id);
-  DispatchKey(key, down, false /* repeat */, timestamp, device_id);
+  key_state_.set(key, down);
+  UpdateKeyRepeat(key, down, suppress_auto_repeat, device_id);
+  DispatchKey(key, down, is_repeat, timestamp, device_id);
 }
 
 void KeyboardEvdev::SetCapsLockEnabled(bool enabled) {
@@ -101,11 +106,11 @@ bool KeyboardEvdev::IsCapsLockEnabled() {
 }
 
 bool KeyboardEvdev::IsAutoRepeatEnabled() {
-  return repeat_enabled_;
+  return auto_repeat_enabled_;
 }
 
 void KeyboardEvdev::SetAutoRepeatEnabled(bool enabled) {
-  repeat_enabled_ = enabled;
+  auto_repeat_enabled_ = enabled;
 }
 
 void KeyboardEvdev::SetAutoRepeatRate(const base::TimeDelta& delay,
@@ -143,8 +148,9 @@ void KeyboardEvdev::UpdateModifier(int modifier_flag, bool down) {
 
 void KeyboardEvdev::UpdateKeyRepeat(unsigned int key,
                                     bool down,
+                                    bool suppress_auto_repeat,
                                     int device_id) {
-  if (!repeat_enabled_)
+  if (!auto_repeat_enabled_ || suppress_auto_repeat)
     StopKeyRepeat();
   else if (key != repeat_key_ && down)
     StartKeyRepeat(key, device_id);
@@ -201,9 +207,7 @@ void KeyboardEvdev::DispatchKey(unsigned int key,
                                 int device_id) {
   DomCode dom_code =
       KeycodeConverter::NativeKeycodeToDomCode(EvdevCodeToNativeCode(key));
-  // DomCode constants are not included here because of conflicts with
-  // evdev preprocessor macros.
-  if (!static_cast<int>(dom_code))
+  if (dom_code == DomCode::DOM_CODE_NONE)
     return;
   int flags = modifiers_->GetModifierFlags();
   DomKey dom_key;
@@ -214,8 +218,10 @@ void KeyboardEvdev::DispatchKey(unsigned int key,
                                        &key_code, &platform_keycode)) {
     return;
   }
-  if (!repeat)
-    UpdateModifier(ModifierDomKeyToEventFlag(dom_key), down);
+  if (!repeat) {
+    int flag = ModifierDomKeyToEventFlag(dom_key);
+    UpdateModifier(flag, down);
+  }
 
   KeyEvent event(down ? ET_KEY_PRESSED : ET_KEY_RELEASED, key_code, dom_code,
                  modifiers_->GetModifierFlags(), dom_key, character, timestamp);
@@ -224,5 +230,4 @@ void KeyboardEvdev::DispatchKey(unsigned int key,
     event.set_platform_keycode(platform_keycode);
   callback_.Run(&event);
 }
-
 }  // namespace ui

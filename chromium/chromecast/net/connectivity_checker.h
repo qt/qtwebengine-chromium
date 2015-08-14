@@ -7,33 +7,23 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
-#include "net/base/network_change_notifier.h"
-#include "net/url_request/url_request.h"
+#include "base/observer_list_threadsafe.h"
 
 class GURL;
 
 namespace base {
-class MessageLoopProxy;
-}
-
-namespace net {
-class URLRequestContext;
+class SingleThreadTaskRunner;
 }
 
 namespace chromecast {
 
-// Simple class to check network connectivity by sending a HEAD http request
-// to given url.
+// Checks if internet connectivity is available.
 class ConnectivityChecker
-    : public base::RefCountedThreadSafe<ConnectivityChecker>,
-      public net::URLRequest::Delegate,
-      public net::NetworkChangeNotifier::ConnectionTypeObserver,
-      public net::NetworkChangeNotifier::IPAddressObserver {
+    : public base::RefCountedThreadSafe<ConnectivityChecker> {
  public:
   class ConnectivityObserver {
    public:
-    // Will be called when internet connectivity changes
+    // Will be called when internet connectivity changes.
     virtual void OnConnectivityChanged(bool connected) = 0;
 
    protected:
@@ -44,52 +34,31 @@ class ConnectivityChecker
     DISALLOW_COPY_AND_ASSIGN(ConnectivityObserver);
   };
 
-  explicit ConnectivityChecker(
-      const scoped_refptr<base::MessageLoopProxy>& loop_proxy);
+  static scoped_refptr<ConnectivityChecker> Create(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+
+  ConnectivityChecker();
 
   void AddConnectivityObserver(ConnectivityObserver* observer);
   void RemoveConnectivityObserver(ConnectivityObserver* observer);
 
-  // Returns if there is internet connectivity
-  bool Connected() const;
+  // Returns if there is internet connectivity.
+  virtual bool Connected() const = 0;
 
-  // Checks for connectivity
-  void Check();
+  // Checks for connectivity.
+  virtual void Check() = 0;
 
  protected:
-  ~ConnectivityChecker() override;
+  virtual ~ConnectivityChecker();
+
+  // Notifies observes that connectivity has changed.
+  void Notify(bool connected);
 
  private:
   friend class base::RefCountedThreadSafe<ConnectivityChecker>;
 
-  // UrlRequest::Delegate implementation:
-  void OnResponseStarted(net::URLRequest* request) override;
-  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
-
-  // Initializes ConnectivityChecker
-  void Initialize();
-
-  // NetworkChangeNotifier::ConnectionTypeObserver implementation:
-  void OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::ConnectionType type) override;
-
-  // net::NetworkChangeNotifier::IPAddressObserver implementation:
-  void OnIPAddressChanged() override;
-
-  // Cancels current connectivity checking in progress.
-  void Cancel();
-
-  // Sets connectivity and alerts observers if it has changed
-  void SetConnectivity(bool connected);
-
-  scoped_ptr<GURL> connectivity_check_url_;
-  scoped_ptr<net::URLRequestContext> url_request_context_;
-  scoped_ptr<net::URLRequest> url_request_;
-  const scoped_refptr<ObserverListThreadSafe<ConnectivityObserver> >
+  const scoped_refptr<base::ObserverListThreadSafe<ConnectivityObserver>>
       connectivity_observer_list_;
-  const scoped_refptr<base::MessageLoopProxy> loop_proxy_;
-  bool connected_;
-  unsigned int bad_responses_;
 
   DISALLOW_COPY_AND_ASSIGN(ConnectivityChecker);
 };

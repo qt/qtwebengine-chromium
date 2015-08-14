@@ -5,7 +5,6 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/basictypes.h"
-#include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/heads_up_display_layer.h"
@@ -20,9 +19,7 @@
 #include "cc/output/filter_operations.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/test/failure_output_surface.h"
-#include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
-#include "cc/test/fake_content_layer_impl.h"
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/fake_delegated_renderer_layer_impl.h"
 #include "cc/test/fake_layer_tree_host_client.h"
@@ -31,6 +28,7 @@
 #include "cc/test/fake_painted_scrollbar_layer.h"
 #include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/fake_scoped_ui_resource.h"
 #include "cc/test/fake_scrollbar.h"
 #include "cc/test/fake_video_frame_provider.h"
@@ -70,6 +68,9 @@ class LayerTreeHostContextTest : public LayerTreeTest {
   }
 
   void LoseContext() {
+    // CreateFakeOutputSurface happens on a different thread, so lock context3d_
+    // to make sure we don't set it to null after recreating it there.
+    base::AutoLock lock(context3d_lock_);
     // For sanity-checking tests, they should only call this when the
     // context is not lost.
     CHECK(context3d_);
@@ -90,6 +91,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
     }
 
     scoped_ptr<TestWebGraphicsContext3D> context3d = CreateContext3d();
+    base::AutoLock lock(context3d_lock_);
     context3d_ = context3d.get();
 
     if (context_should_support_io_surface_) {
@@ -107,10 +109,9 @@ class LayerTreeHostContextTest : public LayerTreeTest {
                                    LayerTreeHostImpl::FrameData* frame,
                                    DrawResult draw_result) override {
     if (draw_result == DRAW_ABORTED_MISSING_HIGH_RES_CONTENT) {
-      // Only valid for single-threaded impl-side painting, which activates
+      // Only valid for single-threaded compositing, which activates
       // immediately and will try to draw again when content has finished.
       DCHECK(!host_impl->proxy()->HasImplThread());
-      DCHECK(host_impl->settings().impl_side_painting);
       return draw_result;
     }
     EXPECT_EQ(DRAW_SUCCESS, draw_result);
@@ -148,7 +149,11 @@ class LayerTreeHostContextTest : public LayerTreeTest {
   void ExpectCreateToFail() { ++times_to_expect_create_failed_; }
 
  protected:
+  // Protects use of context3d_ so LoseContext and CreateFakeOutputSurface
+  // can both use it on different threads.
+  base::Lock context3d_lock_;
   TestWebGraphicsContext3D* context3d_;
+
   int times_to_fail_create_;
   int times_to_lose_during_commit_;
   int times_to_lose_during_draw_;
@@ -385,6 +390,8 @@ class MultipleCompositeDoesNotCreateOutputSurface
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -393,8 +400,8 @@ class MultipleCompositeDoesNotCreateOutputSurface
   }
 
   void BeginTest() override {
-    layer_tree_host()->Composite(base::TimeTicks());
-    layer_tree_host()->Composite(base::TimeTicks());
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(1));
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(2));
   }
 
   scoped_ptr<OutputSurface> CreateOutputSurface() override {
@@ -409,7 +416,8 @@ class MultipleCompositeDoesNotCreateOutputSurface
   int request_count_;
 };
 
-SINGLE_THREAD_NOIMPL_TEST_F(MultipleCompositeDoesNotCreateOutputSurface);
+// This test uses Composite() which only exists for single thread.
+SINGLE_THREAD_TEST_F(MultipleCompositeDoesNotCreateOutputSurface);
 
 // This test makes sure that once a SingleThreadProxy issues a
 // DidFailToInitializeOutputSurface, that future Composite calls will not
@@ -422,6 +430,8 @@ class FailedCreateDoesNotCreateExtraOutputSurface
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -439,12 +449,12 @@ class FailedCreateDoesNotCreateExtraOutputSurface
 
   void BeginTest() override {
     // First composite tries to create a surface.
-    layer_tree_host()->Composite(base::TimeTicks());
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(1));
     EXPECT_EQ(num_requests_, 2);
     EXPECT_TRUE(has_failed_);
 
     // Second composite should not request or fail.
-    layer_tree_host()->Composite(base::TimeTicks());
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(2));
     EXPECT_EQ(num_requests_, 2);
     EndTest();
   }
@@ -463,7 +473,8 @@ class FailedCreateDoesNotCreateExtraOutputSurface
   bool has_failed_;
 };
 
-SINGLE_THREAD_NOIMPL_TEST_F(FailedCreateDoesNotCreateExtraOutputSurface);
+// This test uses Composite() which only exists for single thread.
+SINGLE_THREAD_TEST_F(FailedCreateDoesNotCreateExtraOutputSurface);
 
 class LayerTreeHostContextTestCommitAfterDelayedOutputSurface
     : public LayerTreeHostContextTest {
@@ -473,6 +484,8 @@ class LayerTreeHostContextTestCommitAfterDelayedOutputSurface
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -489,7 +502,9 @@ class LayerTreeHostContextTestCommitAfterDelayedOutputSurface
         LayerTreeHostContextTest::CreateOutputSurface());
   }
 
-  void BeginTest() override { layer_tree_host()->Composite(base::TimeTicks()); }
+  void BeginTest() override {
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(1));
+  }
 
   void ScheduleComposite() override {
     if (creating_output_)
@@ -501,8 +516,8 @@ class LayerTreeHostContextTestCommitAfterDelayedOutputSurface
   bool creating_output_;
 };
 
-SINGLE_THREAD_NOIMPL_TEST_F(
-    LayerTreeHostContextTestCommitAfterDelayedOutputSurface);
+// This test uses Composite() which only exists for single thread.
+SINGLE_THREAD_TEST_F(LayerTreeHostContextTestCommitAfterDelayedOutputSurface);
 
 class LayerTreeHostContextTestAvoidUnnecessaryComposite
     : public LayerTreeHostContextTest {
@@ -512,6 +527,8 @@ class LayerTreeHostContextTestAvoidUnnecessaryComposite
 
   void InitializeSettings(LayerTreeSettings* settings) override {
     settings->single_thread_proxy_scheduler = false;
+    settings->use_zero_copy = true;
+    settings->use_one_copy = false;
   }
 
   void RequestNewOutputSurface() override {
@@ -522,7 +539,7 @@ class LayerTreeHostContextTestAvoidUnnecessaryComposite
 
   void BeginTest() override {
     in_composite_ = true;
-    layer_tree_host()->Composite(base::TimeTicks());
+    layer_tree_host()->Composite(base::TimeTicks::FromInternalValue(1));
     in_composite_ = false;
   }
 
@@ -533,13 +550,15 @@ class LayerTreeHostContextTestAvoidUnnecessaryComposite
   bool in_composite_;
 };
 
-SINGLE_THREAD_NOIMPL_TEST_F(LayerTreeHostContextTestAvoidUnnecessaryComposite);
+// This test uses Composite() which only exists for single thread.
+SINGLE_THREAD_TEST_F(LayerTreeHostContextTestAvoidUnnecessaryComposite);
 
+// This test uses PictureLayer to check for a working context.
 class LayerTreeHostContextTestLostContextSucceedsWithContent
     : public LayerTreeHostContextTestLostContextSucceeds {
  public:
   void SetupTree() override {
-    root_ = Layer::Create();
+    root_ = Layer::Create(layer_settings());
     root_->SetBounds(gfx::Size(10, 10));
     root_->SetIsDrawable(true);
 
@@ -548,10 +567,7 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
     paint.setColor(SkColorSetARGB(100, 80, 200, 200));
     client_.add_draw_rect(gfx::Rect(0, 0, 5, 5), paint);
 
-    if (layer_tree_host()->settings().impl_side_painting)
-      layer_ = FakePictureLayer::Create(&client_);
-    else
-      layer_ = FakeContentLayer::Create(&client_);
+    layer_ = FakePictureLayer::Create(layer_settings(), &client_);
     layer_->SetBounds(gfx::Size(10, 10));
     layer_->SetIsDrawable(true);
 
@@ -570,21 +586,12 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
-    if (!host_impl->settings().impl_side_painting) {
-      FakeContentLayerImpl* content_impl = static_cast<FakeContentLayerImpl*>(
-          host_impl->active_tree()->root_layer()->children()[0]);
-      // Even though the context was lost, we should have a resource. The
-      // TestWebGraphicsContext3D ensures that this resource is created with
-      // the active context.
-      EXPECT_TRUE(content_impl->HaveResourceForTileAt(0, 0));
-    } else {
-      FakePictureLayerImpl* picture_impl = static_cast<FakePictureLayerImpl*>(
-          host_impl->active_tree()->root_layer()->children()[0]);
-      EXPECT_TRUE(picture_impl->HighResTiling()
-                      ->TileAt(0, 0)
-                      ->draw_info()
-                      .IsReadyToDraw());
-    }
+    FakePictureLayerImpl* picture_impl = static_cast<FakePictureLayerImpl*>(
+        host_impl->active_tree()->root_layer()->children()[0]);
+    EXPECT_TRUE(picture_impl->HighResTiling()
+                    ->TileAt(0, 0)
+                    ->draw_info()
+                    .IsReadyToDraw());
   }
 
  protected:
@@ -593,7 +600,6 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
   scoped_refptr<Layer> layer_;
 };
 
-// This test uses TiledLayer and PictureLayer to check for a working context.
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostContextTestLostContextSucceedsWithContent);
 
@@ -639,15 +645,10 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
     paint.setColor(SkColorSetARGB(100, 80, 200, 200));
     client_.add_draw_rect(gfx::Rect(0, 0, 5, 5), paint);
 
-    if (layer_tree_host()->settings().impl_side_painting) {
-      picture_layer_ = FakePictureLayer::Create(&client_);
-      picture_layer_->SetBounds(gfx::Size(10, 20));
-      layer_tree_host()->SetRootLayer(picture_layer_);
-    } else {
-      content_layer_ = FakeContentLayer::Create(&client_);
-      content_layer_->SetBounds(gfx::Size(10, 20));
-      layer_tree_host()->SetRootLayer(content_layer_);
-    }
+    scoped_refptr<FakePictureLayer> picture_layer =
+        FakePictureLayer::Create(layer_settings(), &client_);
+    picture_layer->SetBounds(gfx::Size(10, 20));
+    layer_tree_host()->SetRootLayer(picture_layer);
 
     LayerTreeHostContextTest::SetupTree();
   }
@@ -679,9 +680,6 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
   void DidCommitAndDrawFrame() override {
     if (num_commits_ > 1)
       return;
-    if (!layer_tree_host()->settings().impl_side_painting) {
-      EXPECT_TRUE(content_layer_->HaveBackingAt(0, 0));
-    }
     PostEvictTextures();
   }
 
@@ -697,18 +695,12 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->settings().impl_side_painting) {
-      FakePictureLayerImpl* picture_impl =
-          static_cast<FakePictureLayerImpl*>(impl->active_tree()->root_layer());
-      EXPECT_TRUE(picture_impl->HighResTiling()
-                      ->TileAt(0, 0)
-                      ->draw_info()
-                      .IsReadyToDraw());
-    } else {
-      FakeContentLayerImpl* content_impl =
-          static_cast<FakeContentLayerImpl*>(impl->active_tree()->root_layer());
-      EXPECT_TRUE(content_impl->HaveResourceForTileAt(0, 0));
-    }
+    FakePictureLayerImpl* picture_impl =
+        static_cast<FakePictureLayerImpl*>(impl->active_tree()->root_layer());
+    EXPECT_TRUE(picture_impl->HighResTiling()
+                    ->TileAt(0, 0)
+                    ->draw_info()
+                    .IsReadyToDraw());
 
     impl_host_ = impl;
     if (lost_context_)
@@ -722,8 +714,6 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
  protected:
   bool lose_after_evict_;
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> content_layer_;
-  scoped_refptr<FakePictureLayer> picture_layer_;
   LayerTreeHostImpl* impl_host_;
   int num_commits_;
   bool lost_context_;
@@ -732,127 +722,50 @@ class LayerTreeHostContextTestLostContextAndEvictTextures
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
        LoseAfterEvict_SingleThread_DirectRenderer) {
   lose_after_evict_ = true;
-  RunTest(false, false, false);
+  RunTest(false, false);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
        LoseAfterEvict_SingleThread_DelegatingRenderer) {
   lose_after_evict_ = true;
-  RunTest(false, true, false);
+  RunTest(false, true);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseAfterEvict_MultiThread_DirectRenderer_MainThreadPaint) {
+       LoseAfterEvict_MultiThread_DirectRenderer) {
   lose_after_evict_ = true;
-  RunTest(true, false, false);
+  RunTest(true, false);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseAfterEvict_MultiThread_DelegatingRenderer_MainThreadPaint) {
+       LoseAfterEvict_MultiThread_DelegatingRenderer) {
   lose_after_evict_ = true;
-  RunTest(true, true, false);
-}
-
-// Flaky on all platforms, http://crbug.com/310979
-TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       DISABLED_LoseAfterEvict_MultiThread_DelegatingRenderer_ImplSidePaint) {
-  lose_after_evict_ = true;
-  RunTest(true, true, true);
+  RunTest(true, true);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
        LoseBeforeEvict_SingleThread_DirectRenderer) {
   lose_after_evict_ = false;
-  RunTest(false, false, false);
+  RunTest(false, false);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
        LoseBeforeEvict_SingleThread_DelegatingRenderer) {
   lose_after_evict_ = false;
-  RunTest(false, true, false);
+  RunTest(false, true);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseBeforeEvict_MultiThread_DirectRenderer_MainThreadPaint) {
+       LoseBeforeEvict_MultiThread_DirectRenderer) {
   lose_after_evict_ = false;
-  RunTest(true, false, false);
+  RunTest(true, false);
 }
 
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseBeforeEvict_MultiThread_DirectRenderer_ImplSidePaint) {
+       LoseBeforeEvict_MultiThread_DelegatingRenderer) {
   lose_after_evict_ = false;
-  RunTest(true, false, true);
+  RunTest(true, true);
 }
-
-TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseBeforeEvict_MultiThread_DelegatingRenderer_MainThreadPaint) {
-  lose_after_evict_ = false;
-  RunTest(true, true, false);
-}
-
-TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseBeforeEvict_MultiThread_DelegatingRenderer_ImplSidePaint) {
-  lose_after_evict_ = false;
-  RunTest(true, true, true);
-}
-
-class LayerTreeHostContextTestLostContextWhileUpdatingResources
-    : public LayerTreeHostContextTest {
- public:
-  LayerTreeHostContextTestLostContextWhileUpdatingResources()
-      : num_children_(50), times_to_lose_on_end_query_(3) {}
-
-  scoped_ptr<TestWebGraphicsContext3D> CreateContext3d() override {
-    scoped_ptr<TestWebGraphicsContext3D> context =
-        LayerTreeHostContextTest::CreateContext3d();
-    if (times_to_lose_on_end_query_) {
-      --times_to_lose_on_end_query_;
-      context->set_times_end_query_succeeds(5);
-    }
-    return context.Pass();
-  }
-
-  void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting)
-      parent_ = FakePictureLayer::Create(&client_);
-    else
-      parent_ = FakeContentLayer::Create(&client_);
-
-    parent_->SetBounds(gfx::Size(num_children_, 1));
-
-    for (int i = 0; i < num_children_; i++) {
-      scoped_refptr<Layer> child;
-      if (layer_tree_host()->settings().impl_side_painting)
-        child = FakePictureLayer::Create(&client_);
-      else
-        child = FakeContentLayer::Create(&client_);
-      child->SetPosition(gfx::PointF(i, 0.f));
-      child->SetBounds(gfx::Size(1, 1));
-      parent_->AddChild(child);
-    }
-
-    layer_tree_host()->SetRootLayer(parent_);
-    LayerTreeHostContextTest::SetupTree();
-  }
-
-  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
-
-  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
-    EXPECT_EQ(0, times_to_lose_on_end_query_);
-    EndTest();
-  }
-
-  void AfterTest() override { EXPECT_EQ(0, times_to_lose_on_end_query_); }
-
- private:
-  FakeContentLayerClient client_;
-  scoped_refptr<Layer> parent_;
-  int num_children_;
-  int times_to_lose_on_end_query_;
-};
-
-SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
-    LayerTreeHostContextTestLostContextWhileUpdatingResources);
 
 class LayerTreeHostContextTestLayersNotified : public LayerTreeHostContextTest {
  public:
@@ -860,15 +773,9 @@ class LayerTreeHostContextTestLayersNotified : public LayerTreeHostContextTest {
       : LayerTreeHostContextTest(), num_commits_(0) {}
 
   void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting) {
-      root_ = FakePictureLayer::Create(&client_);
-      child_ = FakePictureLayer::Create(&client_);
-      grandchild_ = FakePictureLayer::Create(&client_);
-    } else {
-      root_ = FakeContentLayer::Create(&client_);
-      child_ = FakeContentLayer::Create(&client_);
-      grandchild_ = FakeContentLayer::Create(&client_);
-    }
+    root_ = FakePictureLayer::Create(layer_settings(), &client_);
+    child_ = FakePictureLayer::Create(layer_settings(), &client_);
+    grandchild_ = FakePictureLayer::Create(layer_settings(), &client_);
 
     root_->AddChild(child_);
     child_->AddChild(grandchild_);
@@ -885,54 +792,29 @@ class LayerTreeHostContextTestLayersNotified : public LayerTreeHostContextTest {
     FakePictureLayerImpl* root_picture = NULL;
     FakePictureLayerImpl* child_picture = NULL;
     FakePictureLayerImpl* grandchild_picture = NULL;
-    FakeContentLayerImpl* root_content = NULL;
-    FakeContentLayerImpl* child_content = NULL;
-    FakeContentLayerImpl* grandchild_content = NULL;
 
-    if (host_impl->settings().impl_side_painting) {
-      root_picture = static_cast<FakePictureLayerImpl*>(
-          host_impl->active_tree()->root_layer());
-      child_picture =
-          static_cast<FakePictureLayerImpl*>(root_picture->children()[0]);
-      grandchild_picture =
-          static_cast<FakePictureLayerImpl*>(child_picture->children()[0]);
-
-    } else {
-      root_content = static_cast<FakeContentLayerImpl*>(
-          host_impl->active_tree()->root_layer());
-      child_content =
-          static_cast<FakeContentLayerImpl*>(root_content->children()[0]);
-      grandchild_content =
-          static_cast<FakeContentLayerImpl*>(child_content->children()[0]);
-    }
+    root_picture = static_cast<FakePictureLayerImpl*>(
+        host_impl->active_tree()->root_layer());
+    child_picture =
+        static_cast<FakePictureLayerImpl*>(root_picture->children()[0]);
+    grandchild_picture =
+        static_cast<FakePictureLayerImpl*>(child_picture->children()[0]);
 
     ++num_commits_;
     switch (num_commits_) {
       case 1:
-        if (host_impl->settings().impl_side_painting) {
-          EXPECT_EQ(0u, root_picture->release_resources_count());
-          EXPECT_EQ(0u, child_picture->release_resources_count());
-          EXPECT_EQ(0u, grandchild_picture->release_resources_count());
-        } else {
-          EXPECT_EQ(0u, root_content->lost_output_surface_count());
-          EXPECT_EQ(0u, child_content->lost_output_surface_count());
-          EXPECT_EQ(0u, grandchild_content->lost_output_surface_count());
-        }
+        EXPECT_EQ(0u, root_picture->release_resources_count());
+        EXPECT_EQ(0u, child_picture->release_resources_count());
+        EXPECT_EQ(0u, grandchild_picture->release_resources_count());
 
         // Lose the context and struggle to recreate it.
         LoseContext();
         times_to_fail_create_ = 1;
         break;
       case 2:
-        if (host_impl->settings().impl_side_painting) {
-          EXPECT_TRUE(root_picture->release_resources_count());
-          EXPECT_TRUE(child_picture->release_resources_count());
-          EXPECT_TRUE(grandchild_picture->release_resources_count());
-        } else {
-          EXPECT_TRUE(root_content->lost_output_surface_count());
-          EXPECT_TRUE(child_content->lost_output_surface_count());
-          EXPECT_TRUE(grandchild_content->lost_output_surface_count());
-        }
+        EXPECT_TRUE(root_picture->release_resources_count());
+        EXPECT_TRUE(child_picture->release_resources_count());
+        EXPECT_TRUE(grandchild_picture->release_resources_count());
 
         EndTest();
         break;
@@ -963,14 +845,8 @@ class LayerTreeHostContextTestDontUseLostResources
     child_output_surface_ = FakeOutputSurface::Create3d();
     child_output_surface_->BindToClient(&output_surface_client_);
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    child_resource_provider_ =
-        ResourceProvider::Create(child_output_surface_.get(),
-                                 shared_bitmap_manager_.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 1);
+    child_resource_provider_ = FakeResourceProvider::Create(
+        child_output_surface_.get(), shared_bitmap_manager_.get());
   }
 
   static void EmptyReleaseCallback(unsigned sync_point, bool lost) {}
@@ -1004,10 +880,9 @@ class LayerTreeHostContextTestDontUseLostResources
     delegated_frame_provider_ = new DelegatedFrameProvider(
         delegated_resource_collection_.get(), frame_data.Pass());
 
-    ResourceProvider::ResourceId resource =
-        child_resource_provider_->CreateResource(
-            gfx::Size(4, 4), GL_CLAMP_TO_EDGE,
-            ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
+    ResourceId resource = child_resource_provider_->CreateResource(
+        gfx::Size(4, 4), GL_CLAMP_TO_EDGE,
+        ResourceProvider::TEXTURE_HINT_IMMUTABLE, RGBA_8888);
     ResourceProvider::ScopedWriteLockGL lock(child_resource_provider_.get(),
                                              resource);
 
@@ -1015,26 +890,25 @@ class LayerTreeHostContextTestDontUseLostResources
     gl->GenMailboxCHROMIUM(mailbox.name);
     GLuint sync_point = gl->InsertSyncPointCHROMIUM();
 
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->SetBounds(gfx::Size(10, 10));
     root->SetIsDrawable(true);
 
     scoped_refptr<FakeDelegatedRendererLayer> delegated =
-        FakeDelegatedRendererLayer::Create(delegated_frame_provider_.get());
+        FakeDelegatedRendererLayer::Create(layer_settings(),
+                                           delegated_frame_provider_.get());
     delegated->SetBounds(gfx::Size(10, 10));
     delegated->SetIsDrawable(true);
     root->AddChild(delegated);
 
-    scoped_refptr<Layer> layer;
-    if (layer_tree_host()->settings().impl_side_painting)
-      layer = PictureLayer::Create(&client_);
-    else
-      layer = ContentLayer::Create(&client_);
+    scoped_refptr<PictureLayer> layer =
+        PictureLayer::Create(layer_settings(), &client_);
     layer->SetBounds(gfx::Size(10, 10));
     layer->SetIsDrawable(true);
     root->AddChild(layer);
 
-    scoped_refptr<TextureLayer> texture = TextureLayer::CreateForMailbox(NULL);
+    scoped_refptr<TextureLayer> texture =
+        TextureLayer::CreateForMailbox(layer_settings_, NULL);
     texture->SetBounds(gfx::Size(10, 10));
     texture->SetIsDrawable(true);
     texture->SetTextureMailbox(
@@ -1044,37 +918,31 @@ class LayerTreeHostContextTestDontUseLostResources
                             EmptyReleaseCallback)));
     root->AddChild(texture);
 
-    scoped_refptr<Layer> mask;
-    if (layer_tree_host()->settings().impl_side_painting)
-      mask = PictureLayer::Create(&client_);
-    else
-      mask = ContentLayer::Create(&client_);
+    scoped_refptr<PictureLayer> mask =
+        PictureLayer::Create(layer_settings_, &client_);
     mask->SetBounds(gfx::Size(10, 10));
 
-    scoped_refptr<Layer> layer_with_mask;
-    if (layer_tree_host()->settings().impl_side_painting)
-      layer_with_mask = PictureLayer::Create(&client_);
-    else
-      layer_with_mask = ContentLayer::Create(&client_);
+    scoped_refptr<PictureLayer> layer_with_mask =
+        PictureLayer::Create(layer_settings_, &client_);
     layer_with_mask->SetBounds(gfx::Size(10, 10));
     layer_with_mask->SetIsDrawable(true);
     layer_with_mask->SetMaskLayer(mask.get());
     root->AddChild(layer_with_mask);
 
-    scoped_refptr<VideoLayer> video_color =
-        VideoLayer::Create(&color_frame_provider_, media::VIDEO_ROTATION_0);
+    scoped_refptr<VideoLayer> video_color = VideoLayer::Create(
+        layer_settings_, &color_frame_provider_, media::VIDEO_ROTATION_0);
     video_color->SetBounds(gfx::Size(10, 10));
     video_color->SetIsDrawable(true);
     root->AddChild(video_color);
 
-    scoped_refptr<VideoLayer> video_hw =
-        VideoLayer::Create(&hw_frame_provider_, media::VIDEO_ROTATION_0);
+    scoped_refptr<VideoLayer> video_hw = VideoLayer::Create(
+        layer_settings_, &hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_hw->SetBounds(gfx::Size(10, 10));
     video_hw->SetIsDrawable(true);
     root->AddChild(video_hw);
 
-    scoped_refptr<VideoLayer> video_scaled_hw =
-        VideoLayer::Create(&scaled_hw_frame_provider_, media::VIDEO_ROTATION_0);
+    scoped_refptr<VideoLayer> video_scaled_hw = VideoLayer::Create(
+        layer_settings_, &scaled_hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_scaled_hw->SetBounds(gfx::Size(10, 10));
     video_scaled_hw->SetIsDrawable(true);
     root->AddChild(video_scaled_hw);
@@ -1082,28 +950,26 @@ class LayerTreeHostContextTestDontUseLostResources
     color_video_frame_ = VideoFrame::CreateColorFrame(
         gfx::Size(4, 4), 0x80, 0x80, 0x80, base::TimeDelta());
     hw_video_frame_ = VideoFrame::WrapNativeTexture(
+        media::VideoFrame::ARGB,
         gpu::MailboxHolder(mailbox, GL_TEXTURE_2D, sync_point),
         media::VideoFrame::ReleaseMailboxCB(), gfx::Size(4, 4),
-        gfx::Rect(0, 0, 4, 4), gfx::Size(4, 4), base::TimeDelta(),
-        false /* allow_overlay */, true /* has_alpha */);
+        gfx::Rect(0, 0, 4, 4), gfx::Size(4, 4), base::TimeDelta());
     scaled_hw_video_frame_ = VideoFrame::WrapNativeTexture(
+        media::VideoFrame::ARGB,
         gpu::MailboxHolder(mailbox, GL_TEXTURE_2D, sync_point),
         media::VideoFrame::ReleaseMailboxCB(), gfx::Size(4, 4),
-        gfx::Rect(0, 0, 3, 2), gfx::Size(4, 4), base::TimeDelta(),
-        false /* allow_overlay */, true /* has_alpha */);
+        gfx::Rect(0, 0, 3, 2), gfx::Size(4, 4), base::TimeDelta());
 
     color_frame_provider_.set_frame(color_video_frame_);
     hw_frame_provider_.set_frame(hw_video_frame_);
     scaled_hw_frame_provider_.set_frame(scaled_hw_video_frame_);
 
-    if (!delegating_renderer()) {
-      // TODO(danakj): IOSurface layer can not be transported. crbug.com/239335
-      scoped_refptr<IOSurfaceLayer> io_surface = IOSurfaceLayer::Create();
-      io_surface->SetBounds(gfx::Size(10, 10));
-      io_surface->SetIsDrawable(true);
-      io_surface->SetIOSurfaceProperties(1, gfx::Size(10, 10));
-      root->AddChild(io_surface);
-    }
+    scoped_refptr<IOSurfaceLayer> io_surface =
+        IOSurfaceLayer::Create(layer_settings_);
+    io_surface->SetBounds(gfx::Size(10, 10));
+    io_surface->SetIsDrawable(true);
+    io_surface->SetIOSurfaceProperties(1, gfx::Size(10, 10));
+    root->AddChild(io_surface);
 
     // Enable the hud.
     LayerTreeDebugState debug_state;
@@ -1112,7 +978,8 @@ class LayerTreeHostContextTestDontUseLostResources
 
     scoped_refptr<PaintedScrollbarLayer> scrollbar =
         PaintedScrollbarLayer::Create(
-            scoped_ptr<Scrollbar>(new FakeScrollbar).Pass(), layer->id());
+            layer_settings_, scoped_ptr<Scrollbar>(new FakeScrollbar).Pass(),
+            layer->id());
     scrollbar->SetBounds(gfx::Size(10, 10));
     scrollbar->SetIsDrawable(true);
     root->AddChild(scrollbar);
@@ -1189,27 +1056,22 @@ class LayerTreeHostContextTestDontUseLostResources
   FakeVideoFrameProvider color_frame_provider_;
   FakeVideoFrameProvider hw_frame_provider_;
   FakeVideoFrameProvider scaled_hw_frame_provider_;
+
+  LayerSettings layer_settings_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestDontUseLostResources);
 
-class ImplSidePaintingLayerTreeHostContextTest
+class LayerTreeHostContextTestImplSidePainting
     : public LayerTreeHostContextTest {
  public:
-  void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->impl_side_painting = true;
-  }
-};
-
-class LayerTreeHostContextTestImplSidePainting
-    : public ImplSidePaintingLayerTreeHostContextTest {
- public:
   void SetupTree() override {
-    scoped_refptr<Layer> root = Layer::Create();
+    scoped_refptr<Layer> root = Layer::Create(layer_settings());
     root->SetBounds(gfx::Size(10, 10));
     root->SetIsDrawable(true);
 
-    scoped_refptr<PictureLayer> picture = PictureLayer::Create(&client_);
+    scoped_refptr<PictureLayer> picture =
+        PictureLayer::Create(layer_settings(), &client_);
     picture->SetBounds(gfx::Size(10, 10));
     picture->SetIsDrawable(true);
     root->AddChild(picture);
@@ -1231,16 +1093,16 @@ class LayerTreeHostContextTestImplSidePainting
   FakeContentLayerClient client_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostContextTestImplSidePainting);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestImplSidePainting);
 
 class ScrollbarLayerLostContext : public LayerTreeHostContextTest {
  public:
   ScrollbarLayerLostContext() : commits_(0) {}
 
   void BeginTest() override {
-    scoped_refptr<Layer> scroll_layer = Layer::Create();
-    scrollbar_layer_ =
-        FakePaintedScrollbarLayer::Create(false, true, scroll_layer->id());
+    scoped_refptr<Layer> scroll_layer = Layer::Create(layer_settings());
+    scrollbar_layer_ = FakePaintedScrollbarLayer::Create(
+        layer_settings(), false, true, scroll_layer->id());
     scrollbar_layer_->SetBounds(gfx::Size(10, 100));
     layer_tree_host()->root_layer()->AddChild(scrollbar_layer_);
     layer_tree_host()->root_layer()->AddChild(scroll_layer);
@@ -1328,24 +1190,13 @@ class UIResourceLostTest : public LayerTreeHostContextTest {
 
 class UIResourceLostTestSimple : public UIResourceLostTest {
  public:
-  // This is called when the commit is complete and the new layer tree has been
-  // activated.
+  // This is called when the new layer tree has been activated.
   virtual void StepCompleteOnImplThread(LayerTreeHostImpl* impl) = 0;
 
-  void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
-    if (!impl->settings().impl_side_painting) {
-      StepCompleteOnImplThread(impl);
-      PostStepCompleteToMainThread();
-      ++time_step_;
-    }
-  }
-
   void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->settings().impl_side_painting) {
-      StepCompleteOnImplThread(impl);
-      PostStepCompleteToMainThread();
-      ++time_step_;
-    }
+    StepCompleteOnImplThread(impl);
+    PostStepCompleteToMainThread();
+    ++time_step_;
   }
 };
 
@@ -1585,15 +1436,7 @@ class UIResourceLostBeforeActivateTree : public UIResourceLostTest {
   UIResourceId test_id_;
 };
 
-TEST_F(UIResourceLostBeforeActivateTree,
-       RunMultiThread_DirectRenderer_ImplSidePaint) {
-  RunTest(true, false, true);
-}
-
-TEST_F(UIResourceLostBeforeActivateTree,
-       RunMultiThread_DelegatingRenderer_ImplSidePaint) {
-  RunTest(true, true, true);
-}
+SINGLE_AND_MULTI_THREAD_TEST_F(UIResourceLostBeforeActivateTree);
 
 // Resources evicted explicitly and by visibility changes.
 class UIResourceLostEviction : public UIResourceLostTestSimple {
@@ -1685,15 +1528,9 @@ class LayerTreeHostContextTestSurfaceCreateCallback
       : LayerTreeHostContextTest() {}
 
   void SetupTree() override {
-    if (layer_tree_host()->settings().impl_side_painting) {
-      picture_layer_ = FakePictureLayer::Create(&client_);
-      picture_layer_->SetBounds(gfx::Size(10, 20));
-      layer_tree_host()->SetRootLayer(picture_layer_);
-    } else {
-      content_layer_ = FakeContentLayer::Create(&client_);
-      content_layer_->SetBounds(gfx::Size(10, 20));
-      layer_tree_host()->SetRootLayer(content_layer_);
-    }
+    picture_layer_ = FakePictureLayer::Create(layer_settings(), &client_);
+    picture_layer_->SetBounds(gfx::Size(10, 20));
+    layer_tree_host()->SetRootLayer(picture_layer_);
 
     LayerTreeHostContextTest::SetupTree();
   }
@@ -1703,30 +1540,18 @@ class LayerTreeHostContextTestSurfaceCreateCallback
   void DidCommit() override {
     switch (layer_tree_host()->source_frame_number()) {
       case 1:
-        if (layer_tree_host()->settings().impl_side_painting)
-          EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        else
-          EXPECT_EQ(1u, content_layer_->output_surface_created_count());
+        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
         layer_tree_host()->SetNeedsCommit();
         break;
       case 2:
-        if (layer_tree_host()->settings().impl_side_painting)
-          EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        else
-          EXPECT_EQ(1u, content_layer_->output_surface_created_count());
+        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
         layer_tree_host()->SetNeedsCommit();
         break;
       case 3:
-        if (layer_tree_host()->settings().impl_side_painting)
-          EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
-        else
-          EXPECT_EQ(1u, content_layer_->output_surface_created_count());
+        EXPECT_EQ(1u, picture_layer_->output_surface_created_count());
         break;
       case 4:
-        if (layer_tree_host()->settings().impl_side_painting)
-          EXPECT_EQ(2u, picture_layer_->output_surface_created_count());
-        else
-          EXPECT_EQ(2u, content_layer_->output_surface_created_count());
+        EXPECT_EQ(2u, picture_layer_->output_surface_created_count());
         layer_tree_host()->SetNeedsCommit();
         break;
     }
@@ -1753,7 +1578,6 @@ class LayerTreeHostContextTestSurfaceCreateCallback
  protected:
   FakeContentLayerClient client_;
   scoped_refptr<FakePictureLayer> picture_layer_;
-  scoped_refptr<FakeContentLayer> content_layer_;
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestSurfaceCreateCallback);

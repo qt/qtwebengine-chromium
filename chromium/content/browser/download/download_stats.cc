@@ -358,13 +358,13 @@ void RecordAcceptsRanges(const std::string& accepts_ranges,
   download_len /= 1024;  // In Kilobytes
   static const int kBuckets = 50;
 
-  if (LowerCaseEqualsASCII(accepts_ranges, "none")) {
+  if (base::LowerCaseEqualsASCII(accepts_ranges, "none")) {
     UMA_HISTOGRAM_CUSTOM_COUNTS("Download.AcceptRangesNone.KBytes",
                                 download_len,
                                 1,
                                 max,
                                 kBuckets);
-  } else if (LowerCaseEqualsASCII(accepts_ranges, "bytes")) {
+  } else if (base::LowerCaseEqualsASCII(accepts_ranges, "bytes")) {
     UMA_HISTOGRAM_CUSTOM_COUNTS("Download.AcceptRangesBytes.KBytes",
                                 download_len,
                                 1,
@@ -481,14 +481,14 @@ void RecordDownloadMimeType(const std::string& mime_type_string) {
 
   // Do partial matches.
   if (download_content == DOWNLOAD_CONTENT_UNRECOGNIZED) {
-    if (StartsWithASCII(mime_type_string, "text/", true)) {
+    if (base::StartsWithASCII(mime_type_string, "text/", true)) {
       download_content = DOWNLOAD_CONTENT_TEXT;
-    } else if (StartsWithASCII(mime_type_string, "image/", true)) {
+    } else if (base::StartsWithASCII(mime_type_string, "image/", true)) {
       download_content = DOWNLOAD_CONTENT_IMAGE;
       RecordDownloadImageType(mime_type_string);
-    } else if (StartsWithASCII(mime_type_string, "audio/", true)) {
+    } else if (base::StartsWithASCII(mime_type_string, "audio/", true)) {
       download_content = DOWNLOAD_CONTENT_AUDIO;
-    } else if (StartsWithASCII(mime_type_string, "video/", true)) {
+    } else if (base::StartsWithASCII(mime_type_string, "video/", true)) {
       download_content = DOWNLOAD_CONTENT_VIDEO;
     }
   }

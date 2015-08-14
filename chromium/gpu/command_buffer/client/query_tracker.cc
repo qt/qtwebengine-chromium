@@ -8,6 +8,8 @@
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
 
+#include <limits.h>
+
 #include "base/atomicops.h"
 #include "base/numerics/safe_conversions.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
@@ -17,6 +19,16 @@
 
 namespace gpu {
 namespace gles2 {
+
+QuerySyncManager::Bucket::Bucket(QuerySync* sync_mem,
+                                 int32 shm_id,
+                                 unsigned int shm_offset)
+    : syncs(sync_mem),
+      shm_id(shm_id),
+      base_shm_offset(shm_offset) {
+}
+
+QuerySyncManager::Bucket::~Bucket() = default;
 
 QuerySyncManager::QuerySyncManager(MappedMemoryManager* manager)
     : mapped_memory_(manager) {
@@ -33,7 +45,16 @@ QuerySyncManager::~QuerySyncManager() {
 
 bool QuerySyncManager::Alloc(QuerySyncManager::QueryInfo* info) {
   DCHECK(info);
-  if (free_queries_.empty()) {
+  Bucket* bucket = nullptr;
+  for (Bucket* bucket_candidate : buckets_) {
+    // In C++11 STL this could be replaced with
+    // if (!bucket_candidate->in_use_queries.all()) { ... }
+    if (bucket_candidate->in_use_queries.count() != kSyncsPerBucket) {
+      bucket = bucket_candidate;
+      break;
+    }
+  }
+  if (!bucket) {
     int32 shm_id;
     unsigned int shm_offset;
     void* mem = mapped_memory_->Alloc(
@@ -42,40 +63,39 @@ bool QuerySyncManager::Alloc(QuerySyncManager::QueryInfo* info) {
       return false;
     }
     QuerySync* syncs = static_cast<QuerySync*>(mem);
-    Bucket* bucket = new Bucket(syncs);
+    bucket = new Bucket(syncs, shm_id, shm_offset);
     buckets_.push_back(bucket);
-    for (size_t ii = 0; ii < kSyncsPerBucket; ++ii) {
-      free_queries_.push_back(QueryInfo(bucket, shm_id, shm_offset, syncs));
-      ++syncs;
-      shm_offset += sizeof(*syncs);
+  }
+
+  unsigned short index_in_bucket = 0;
+  for (size_t i = 0; i < kSyncsPerBucket; i++) {
+    if (!bucket->in_use_queries[i]) {
+      index_in_bucket = i;
+      break;
     }
   }
-  *info = free_queries_.front();
-  ++(info->bucket->used_query_count);
+
+  uint32 shm_offset =
+      bucket->base_shm_offset + index_in_bucket * sizeof(QuerySync);
+  QuerySync* sync = bucket->syncs + index_in_bucket;
+  *info = QueryInfo(bucket, bucket->shm_id, shm_offset, sync);
   info->sync->Reset();
-  free_queries_.pop_front();
+  bucket->in_use_queries[index_in_bucket] = true;
   return true;
 }
 
 void QuerySyncManager::Free(const QuerySyncManager::QueryInfo& info) {
-  DCHECK_GT(info.bucket->used_query_count, 0u);
-  --(info.bucket->used_query_count);
-  free_queries_.push_back(info);
+  DCHECK_NE(info.bucket->in_use_queries.count(), 0u);
+  unsigned short index_in_bucket = info.sync - info.bucket->syncs;
+  DCHECK(info.bucket->in_use_queries[index_in_bucket]);
+  info.bucket->in_use_queries[index_in_bucket] = false;
 }
 
 void QuerySyncManager::Shrink() {
-  std::deque<QueryInfo> new_queue;
-  while (!free_queries_.empty()) {
-    if (free_queries_.front().bucket->used_query_count)
-      new_queue.push_back(free_queries_.front());
-    free_queries_.pop_front();
-  }
-  free_queries_.swap(new_queue);
-
   std::deque<Bucket*> new_buckets;
   while (!buckets_.empty()) {
     Bucket* bucket = buckets_.front();
-    if (bucket->used_query_count) {
+    if (bucket->in_use_queries.any()) {
       new_buckets.push_back(bucket);
     } else {
       mapped_memory_->Free(bucket->syncs);
@@ -154,18 +174,17 @@ bool QueryTracker::Query::CheckResultsAvailable(
         helper->IsContextLost()) {
       switch (target()) {
         case GL_COMMANDS_ISSUED_CHROMIUM:
-          result_ = base::saturated_cast<uint32>(info_.sync->result);
+          result_ = info_.sync->result;
           break;
         case GL_LATENCY_QUERY_CHROMIUM:
           // Disabled DCHECK because of http://crbug.com/419236.
           //DCHECK(info_.sync->result >= client_begin_time_us_);
-          result_ = base::saturated_cast<uint32>(
-              info_.sync->result - client_begin_time_us_);
+          result_ = info_.sync->result - client_begin_time_us_;
           break;
         case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
         case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
         default:
-          result_ = static_cast<uint32>(info_.sync->result);
+          result_ = info_.sync->result;
           break;
       }
       state_ = kComplete;
@@ -181,7 +200,7 @@ bool QueryTracker::Query::CheckResultsAvailable(
   return state_ == kComplete;
 }
 
-uint32 QueryTracker::Query::GetResult() const {
+uint64 QueryTracker::Query::GetResult() const {
   DCHECK(state_ == kComplete || state_ == kUninitialized);
   return result_;
 }
@@ -206,25 +225,37 @@ QueryTracker::Query* QueryTracker::CreateQuery(GLuint id, GLenum target) {
   FreeCompletedQueries();
   QuerySyncManager::QueryInfo info;
   if (!query_sync_manager_.Alloc(&info)) {
-    return NULL;
+    return nullptr;
   }
   Query* query = new Query(id, target, info);
-  std::pair<QueryMap::iterator, bool> result =
+  std::pair<QueryIdMap::iterator, bool> result =
       queries_.insert(std::make_pair(id, query));
   DCHECK(result.second);
   return query;
 }
 
-QueryTracker::Query* QueryTracker::GetQuery(
-    GLuint client_id) {
-  QueryMap::iterator it = queries_.find(client_id);
-  return it != queries_.end() ? it->second : NULL;
+QueryTracker::Query* QueryTracker::GetQuery(GLuint client_id) {
+  QueryIdMap::iterator it = queries_.find(client_id);
+  return it != queries_.end() ? it->second : nullptr;
+}
+
+QueryTracker::Query* QueryTracker::GetCurrentQuery(GLenum target) {
+  QueryTargetMap::iterator it = current_queries_.find(target);
+  return it != current_queries_.end() ? it->second : nullptr;
 }
 
 void QueryTracker::RemoveQuery(GLuint client_id) {
-  QueryMap::iterator it = queries_.find(client_id);
+  QueryIdMap::iterator it = queries_.find(client_id);
   if (it != queries_.end()) {
     Query* query = it->second;
+
+    // Erase from current targets map if it is the current target.
+    const GLenum target = query->target();
+    QueryTargetMap::iterator target_it = current_queries_.find(target);
+    if (target_it != current_queries_.end() && target_it->second == query) {
+      current_queries_.erase(target_it);
+    }
+
     // When you delete a query you can't mark its memory as unused until it's
     // completed.
     // Note: If you don't do this you won't mess up the service but you will
@@ -255,6 +286,42 @@ void QueryTracker::FreeCompletedQueries() {
     it = removed_queries_.erase(it);
     delete query;
   }
+}
+
+bool QueryTracker::BeginQuery(GLuint id, GLenum target,
+                              GLES2Implementation* gl) {
+  QueryTracker::Query* query = GetQuery(id);
+  if (!query) {
+    query = CreateQuery(id, target);
+    if (!query) {
+      gl->SetGLError(GL_OUT_OF_MEMORY,
+                     "glBeginQueryEXT",
+                     "transfer buffer allocation failed");
+      return false;
+    }
+  } else if (query->target() != target) {
+    gl->SetGLError(GL_INVALID_OPERATION,
+                   "glBeginQueryEXT",
+                   "target does not match");
+    return false;
+  }
+
+  current_queries_[query->target()] = query;
+  query->Begin(gl);
+  return true;
+}
+
+bool QueryTracker::EndQuery(GLenum target, GLES2Implementation* gl) {
+  QueryTargetMap::iterator target_it = current_queries_.find(target);
+  if (target_it == current_queries_.end()) {
+    gl->SetGLError(GL_INVALID_OPERATION,
+                   "glEndQueryEXT", "no active query");
+    return false;
+  }
+
+  target_it->second->End(gl);
+  current_queries_.erase(target_it);
+  return true;
 }
 
 }  // namespace gles2

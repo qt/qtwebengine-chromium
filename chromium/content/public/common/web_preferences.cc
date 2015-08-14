@@ -33,31 +33,14 @@ STATIC_ASSERT_MATCHING_ENUMS(EDITING_BEHAVIOR_ANDROID,
 
 STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_DEFAULT,
                              WebSettings::V8CacheOptionsDefault);
+STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_NONE,
+                             WebSettings::V8CacheOptionsNone);
 STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_PARSE,
                              WebSettings::V8CacheOptionsParse);
 STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_CODE,
                              WebSettings::V8CacheOptionsCode);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_CODE_COMPRESSED,
-                             WebSettings::V8CacheOptionsCodeCompressed);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_NONE,
-                             WebSettings::V8CacheOptionsNone);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_PARSE_MEMORY,
-                             WebSettings::V8CacheOptionsParseMemory);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_HEURISTICS,
-                             WebSettings::V8CacheOptionsHeuristics);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_HEURISTICS_MOBILE,
-                             WebSettings::V8CacheOptionsHeuristicsMobile);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_HEURISTICS_DEFAULT,
-                             WebSettings::V8CacheOptionsHeuristicsDefault);
-STATIC_ASSERT_MATCHING_ENUMS(
-    V8_CACHE_OPTIONS_HEURISTICS_DEFAULT_MOBILE,
-    WebSettings::V8CacheOptionsHeuristicsDefaultMobile);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_RECENT,
-                             WebSettings::V8CacheOptionsRecent);
-STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_RECENT_SMALL,
-                             WebSettings::V8CacheOptionsRecentSmall);
 STATIC_ASSERT_MATCHING_ENUMS(V8_CACHE_OPTIONS_LAST,
-                             WebSettings::V8CacheOptionsRecentSmall);
+                             WebSettings::V8CacheOptionsCode);
 
 STATIC_ASSERT_MATCHING_ENUMS(IMAGE_ANIMATION_POLICY_ALLOWED,
                              WebSettings::ImageAnimationPolicyAllowed);
@@ -148,7 +131,6 @@ WebPreferences::WebPreferences()
       should_print_backgrounds(false),
       should_clear_document_background(true),
       enable_scroll_animator(false),
-      region_based_columns_enabled(false),
       touch_enabled(false),
       device_supports_touch(false),
       device_supports_mouse(true),
@@ -159,7 +141,6 @@ WebPreferences::WebPreferences()
       available_hover_types(0),
       primary_hover_type(ui::HOVER_TYPE_NONE),
       sync_xhr_in_documents_enabled(true),
-      deferred_image_decoding_enabled(false),
       image_color_profiles_enabled(false),
       should_respect_image_orientation(false),
       number_of_cpu_cores(1),
@@ -185,7 +166,7 @@ WebPreferences::WebPreferences()
       smart_insert_delete_enabled(false),
 #endif
       spatial_navigation_enabled(false),
-      pinch_virtual_viewport_enabled(false),
+      invert_viewport_scroll_order(false),
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       navigate_on_drag_drop(true),

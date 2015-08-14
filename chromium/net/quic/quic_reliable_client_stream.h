@@ -16,7 +16,7 @@
 
 namespace net {
 
-class QuicClientSession;
+class QuicSpdySession;
 
 // A client-initiated ReliableQuicStream.  Instances of this class
 // are owned by the QuicClientSession which created them.
@@ -26,6 +26,9 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public QuicDataStream {
   class NET_EXPORT_PRIVATE Delegate {
    public:
     Delegate() {}
+
+    // Called when headers are available.
+    virtual void OnHeadersAvailable(StringPiece headers) = 0;
 
     // Called when data is received.
     // Returns network error code. OK when it successfully receives data.
@@ -48,12 +51,13 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public QuicDataStream {
   };
 
   QuicReliableClientStream(QuicStreamId id,
-                           QuicSession* session,
+                           QuicSpdySession* session,
                            const BoundNetLog& net_log);
 
   ~QuicReliableClientStream() override;
 
   // QuicDataStream
+  void OnStreamHeadersComplete(bool fin, size_t frame_len) override;
   uint32 ProcessData(const char* data, uint32 data_len) override;
   void OnClose() override;
   void OnCanWrite() override;

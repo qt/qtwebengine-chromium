@@ -68,7 +68,8 @@ TEST_F(ContextGroupTest, Basic) {
 TEST_F(ContextGroupTest, InitializeNoExtensions) {
   TestHelper::SetupContextGroupInitExpectations(
       gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
-  group_->Initialize(decoder_.get(), DisallowedFeatures());
+  group_->Initialize(
+      decoder_.get(), ContextGroup::CONTEXT_TYPE_OTHER, DisallowedFeatures());
   EXPECT_EQ(static_cast<uint32>(TestHelper::kNumVertexAttribs),
             group_->max_vertex_attribs());
   EXPECT_EQ(static_cast<uint32>(TestHelper::kNumTextureUnits),
@@ -103,8 +104,19 @@ TEST_F(ContextGroupTest, MultipleContexts) {
   scoped_ptr<MockGLES2Decoder> decoder2_(new MockGLES2Decoder());
   TestHelper::SetupContextGroupInitExpectations(
       gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
-  group_->Initialize(decoder_.get(), DisallowedFeatures());
-  group_->Initialize(decoder2_.get(), DisallowedFeatures());
+  EXPECT_TRUE(group_->Initialize(
+      decoder_.get(), ContextGroup::CONTEXT_TYPE_OTHER, DisallowedFeatures()));
+  EXPECT_FALSE(group_->Initialize(
+      decoder2_.get(), ContextGroup::CONTEXT_TYPE_WEBGL1,
+      DisallowedFeatures()));
+  EXPECT_FALSE(group_->Initialize(
+      decoder2_.get(), ContextGroup::CONTEXT_TYPE_WEBGL2,
+      DisallowedFeatures()));
+  EXPECT_FALSE(group_->Initialize(
+      decoder2_.get(), ContextGroup::CONTEXT_TYPE_UNDEFINED,
+      DisallowedFeatures()));
+  EXPECT_TRUE(group_->Initialize(
+      decoder2_.get(), ContextGroup::CONTEXT_TYPE_OTHER, DisallowedFeatures()));
 
   EXPECT_TRUE(group_->buffer_manager() != NULL);
   EXPECT_TRUE(group_->framebuffer_manager() != NULL);

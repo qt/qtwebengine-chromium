@@ -9,6 +9,7 @@ include_rules = [
   "+content/public/browser",
   "+device/battery",  # For battery status service.
   "+device/vibration",  # For Vibration API
+  "+gin/v8_initializer.h",
   "+media/audio",  # For audio input for speech input feature.
   "+media/base",  # For Android JNI registration.
   "+media/filters",  # For reporting GPU decoding UMA.
@@ -48,14 +49,15 @@ include_rules = [
   "+third_party/WebKit/public/platform/WebGamepads.h",
   "+third_party/WebKit/public/platform/WebGeofencingEventType.h",
   "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
-  "+third_party/WebKit/public/platform/WebLockOrientationError.h",
+  "+third_party/WebKit/public/platform/modules/screen_orientation/WebLockOrientationError.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
-  "+third_party/WebKit/public/platform/WebScreenOrientationLockType.h",
-  "+third_party/WebKit/public/platform/WebScreenOrientationType.h",
+  "+third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h",
+  "+third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerCacheError.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerError.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerEventResult.h",
+  "+third_party/WebKit/public/platform/WebServiceWorkerResponseError.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerResponseType.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerState.h",
   "+third_party/WebKit/public/platform/WebString.h",
@@ -63,6 +65,7 @@ include_rules = [
   "+third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h",
   "+third_party/WebKit/public/platform/modules/notifications/WebNotificationPermission.h",
   "+third_party/WebKit/public/platform/modules/push_messaging/WebPushPermissionStatus.h",
+  "+third_party/WebKit/public/platform/modules/vr/WebVR.h",
   "+third_party/WebKit/public/web/mac/WebScrollbarTheme.h",
   "+third_party/WebKit/public/web/WebAXEnums.h",
   "+third_party/WebKit/public/web/WebCompositionUnderline.h",
@@ -77,9 +80,11 @@ include_rules = [
   "+third_party/WebKit/public/web/WebPageSerializerClient.h",
   "+third_party/WebKit/public/web/WebPluginAction.h",
   "+third_party/WebKit/public/web/WebPopupType.h",
+  "+third_party/WebKit/public/web/WebSandboxFlags.h",
   "+third_party/WebKit/public/web/WebSerializedScriptValueVersion.h",
   "+third_party/WebKit/public/web/WebTextDirection.h",
   "+third_party/WebKit/public/web/WebTextInputType.h",
+  "+third_party/WebKit/public/web/WebTreeScopeType.h",
 
   # These should be burned down. http://crbug.com/237267
   "!third_party/WebKit/public/web/mac/WebInputEventFactory.h",

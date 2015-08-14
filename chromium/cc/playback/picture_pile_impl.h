@@ -39,7 +39,8 @@ class CC_EXPORT PicturePileImpl : public RasterSource {
   // reported rasterize time (in stats_instrumentation) is the minimum measured
   // value over all runs.
   void PlaybackToCanvas(SkCanvas* canvas,
-                        const gfx::Rect& canvas_rect,
+                        const gfx::Rect& canvas_bitmap_rect,
+                        const gfx::Rect& canvas_playback_rect,
                         float contents_scale) const override;
   void PlaybackToSharedCanvas(SkCanvas* canvas,
                               const gfx::Rect& canvas_rect,
@@ -130,7 +131,7 @@ class CC_EXPORT PicturePileImpl : public RasterSource {
   typedef std::map<const Picture*, Region> PictureRegionMap;
 
   // Called when analyzing a tile. We can use AnalysisCanvas as
-  // SkDrawPictureCallback, which allows us to early out from analysis.
+  // SkPicture::AbortCallback, which allows us to early out from analysis.
   void RasterForAnalysis(skia::AnalysisCanvas* canvas,
                          const gfx::Rect& canvas_rect,
                          float contents_scale) const;
@@ -141,7 +142,7 @@ class CC_EXPORT PicturePileImpl : public RasterSource {
                        PictureRegionMap* result) const;
 
   void RasterCommon(SkCanvas* canvas,
-                    SkDrawPictureCallback* callback,
+                    SkPicture::AbortCallback* callback,
                     const gfx::Rect& canvas_rect,
                     float contents_scale) const;
 

@@ -12,9 +12,7 @@
 #include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 TEST(DragUpdateTest, AffectedByDragUpdate)
 {
@@ -31,11 +29,11 @@ TEST(DragUpdateTest, AffectedByDragUpdate)
         "<span></span>"
         "</div>", ASSERT_NO_EXCEPTION);
 
-    document.view()->updateLayoutAndStyleForPainting();
+    document.view()->updateAllLifecyclePhases();
     unsigned startCount = document.styleEngine().resolverAccessCount();
 
     document.documentElement()->layoutObject()->updateDragState(true);
-    document.view()->updateLayoutAndStyleForPainting();
+    document.view()->updateAllLifecyclePhases();
 
     unsigned accessCount = document.styleEngine().resolverAccessCount() - startCount;
 
@@ -68,4 +66,4 @@ TEST(DragUpdateTest, ChildrenOrSiblingsAffectedByDragUpdate)
     ASSERT_EQ(5U, accessCount);
 }
 
-} // namespace
+} // namespace blink

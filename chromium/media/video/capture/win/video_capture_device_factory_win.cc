@@ -8,7 +8,7 @@
 #include <mferror.h>
 
 #include "base/command_line.h"
-#include "base/lazy_instance.h"
+#include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -17,6 +17,7 @@
 #include "base/win/scoped_variant.h"
 #include "base/win/windows_version.h"
 #include "media/base/media_switches.h"
+#include "media/base/win/mf_initializer.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
 #include "media/video/capture/win/video_capture_device_win.h"
 
@@ -28,26 +29,17 @@ using Names = media::VideoCaptureDevice::Names;
 
 namespace media {
 
-// We would like to avoid enumerating and/or using certain devices due to they
-// provoking crashes or any other reason. This enum is defined for the purposes
-// of UMA collection. Existing entries cannot be removed.
+// Avoid enumerating and/or using certain devices due to they provoking crashes
+// or any other reason (http://crbug.com/378494). This enum is defined for the
+// purposes of UMA collection. Existing entries cannot be removed.
 enum BlacklistedCameraNames {
-  BLACKLISTED_CAMERA_GOOGLE_CAMERA_ADAPTER,
-  BLACKLISTED_CAMERA_IP_CAMERA,
-  BLACKLISTED_CAMERA_CYBERLINK_WEBCAM_SPLITTER,
+  BLACKLISTED_CAMERA_GOOGLE_CAMERA_ADAPTER = 0,
+  BLACKLISTED_CAMERA_IP_CAMERA = 1,
+  BLACKLISTED_CAMERA_CYBERLINK_WEBCAM_SPLITTER = 2,
+  BLACKLISTED_CAMERA_EPOCCAM = 3,
    // This one must be last, and equal to the previous enumerated value.
-  BLACKLISTED_CAMERA_MAX = BLACKLISTED_CAMERA_CYBERLINK_WEBCAM_SPLITTER
+  BLACKLISTED_CAMERA_MAX = BLACKLISTED_CAMERA_EPOCCAM,
 };
-
-// Lazy Instance to initialize the MediaFoundation Library.
-class MFInitializerSingleton {
- public:
-  MFInitializerSingleton() { MFStartup(MF_VERSION, MFSTARTUP_LITE); }
-  ~MFInitializerSingleton() { MFShutdown(); }
-};
-
-static base::LazyInstance<MFInitializerSingleton> g_mf_initialize =
-    LAZY_INSTANCE_INITIALIZER;
 
 // Blacklisted devices are identified by a characteristic prefix of the name.
 // This prefix is used case-insensitively. This list must be kept in sync with
@@ -55,14 +47,13 @@ static base::LazyInstance<MFInitializerSingleton> g_mf_initialize =
 static const char* const kBlacklistedCameraNames[] = {
   // Name of a fake DirectShow filter on computers with GTalk installed.
   "Google Camera Adapter",
-  // The following two software WebCams cause crashes.
+  // The following software WebCams cause crashes.
   "IP Camera [JPEG/MJPEG]",
   "CyberLink Webcam Splitter",
+  "EpocCam",
 };
-
-static void EnsureMediaFoundationInit() {
-  g_mf_initialize.Get();
-}
+static_assert(arraysize(kBlacklistedCameraNames) == BLACKLISTED_CAMERA_MAX + 1,
+  "kBlacklistedCameraNames should be same size as BlacklistedCameraNames enum");
 
 static bool LoadMediaFoundationDlls() {
   static const wchar_t* const kMfDLLs[] = {
@@ -83,7 +74,7 @@ static bool LoadMediaFoundationDlls() {
 static bool PrepareVideoCaptureAttributesMediaFoundation(
     IMFAttributes** attributes,
     int count) {
-  EnsureMediaFoundationInit();
+  InitializeMediaFoundation();
 
   if (FAILED(MFCreateAttributes(attributes, count)))
     return false;
@@ -117,7 +108,7 @@ static bool IsDeviceBlackListed(const std::string& name) {
   DCHECK_EQ(BLACKLISTED_CAMERA_MAX + 1,
             static_cast<int>(arraysize(kBlacklistedCameraNames)));
   for (size_t i = 0; i < arraysize(kBlacklistedCameraNames); ++i) {
-    if (StartsWithASCII(name, kBlacklistedCameraNames[i], false)) {
+    if (base::StartsWithASCII(name, kBlacklistedCameraNames[i], false)) {
       DVLOG(1) << "Enumerated blacklisted device: " << name;
       UMA_HISTOGRAM_ENUMERATION("Media.VideoCapture.BlacklistedDevice",
           i, BLACKLISTED_CAMERA_MAX + 1);
@@ -294,7 +285,7 @@ static void GetDeviceSupportedFormatsDirectShow(const Name& device,
           kSecondsToReferenceTime / static_cast<float>(h->AvgTimePerFrame) :
           0.0f;
       formats->push_back(format);
-      DVLOG(1) << device.name() << " " << format.ToString();
+      DVLOG(1) << device.name() << " " << VideoCaptureFormat::ToString(format);
     }
   }
 }
@@ -356,7 +347,8 @@ static void GetDeviceSupportedFormatsMediaFoundation(
     formats->push_back(capture_format);
     ++stream_index;
 
-    DVLOG(1) << device.name() << " " << capture_format.ToString();
+    DVLOG(1) << device.name() << " "
+             << VideoCaptureFormat::ToString(capture_format);
   }
 }
 

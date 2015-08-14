@@ -8,8 +8,10 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/files/file_path.h"
+#include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -22,6 +24,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/public/browser/browser_thread.h"
+#include "ipc/ipc_message.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
@@ -131,7 +134,7 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
     storage::QuotaManagerProxy* quota_manager_proxy,
     storage::SpecialStoragePolicy* special_storage_policy,
-    ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
+    base::ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
     ServiceWorkerContextWrapper* wrapper)
     : wrapper_(wrapper),
       providers_(new ProcessToProviderMap),
@@ -294,11 +297,9 @@ void ServiceWorkerContextCore::UnregisterServiceWorkers(
     return;
   }
 
-  storage()->GetAllRegistrations(base::Bind(
+  storage()->GetAllRegistrationsInfos(base::Bind(
       &ServiceWorkerContextCore::DidGetAllRegistrationsForUnregisterForOrigin,
-      AsWeakPtr(),
-      callback,
-      origin));
+      AsWeakPtr(), callback, origin));
 }
 
 void ServiceWorkerContextCore::DidGetAllRegistrationsForUnregisterForOrigin(
@@ -346,6 +347,9 @@ void ServiceWorkerContextCore::RegistrationComplete(
 
   DCHECK(registration);
   callback.Run(status, status_message, registration->id());
+  // TODO(falken): At this point the registration promise is resolved, but we
+  // haven't persisted anything to storage yet. So we should either call
+  // OnRegistrationStored somewhere else or change its name.
   if (observer_list_.get()) {
     observer_list_->Notify(FROM_HERE,
                            &ServiceWorkerContextObserver::OnRegistrationStored,
@@ -394,7 +398,9 @@ ServiceWorkerVersion* ServiceWorkerContextCore::GetLiveVersion(
 }
 
 void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
-  DCHECK(!GetLiveVersion(version->version_id()));
+  // TODO(horo): If we will see crashes here, we have to find the root cause of
+  // the version ID conflict. Otherwise change CHECK to DCHECK.
+  CHECK(!GetLiveVersion(version->version_id()));
   live_versions_[version->version_id()] = version;
   version->AddListener(this);
   if (observer_list_.get()) {
@@ -433,6 +439,18 @@ ServiceWorkerContextCore::GetAllLiveVersionInfo() {
   return infos;
 }
 
+void ServiceWorkerContextCore::ProtectVersion(
+    const scoped_refptr<ServiceWorkerVersion>& version) {
+  DCHECK(protected_versions_.find(version->version_id()) ==
+         protected_versions_.end());
+  protected_versions_[version->version_id()] = version;
+}
+
+void ServiceWorkerContextCore::UnprotectVersion(int64 version_id) {
+  DCHECK(protected_versions_.find(version_id) != protected_versions_.end());
+  protected_versions_.erase(version_id);
+}
+
 int ServiceWorkerContextCore::GetNewServiceWorkerHandleId() {
   return next_handle_id_++;
 }
@@ -443,7 +461,7 @@ int ServiceWorkerContextCore::GetNewRegistrationHandleId() {
 
 void ServiceWorkerContextCore::ScheduleDeleteAndStartOver() const {
   storage_->Disable();
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&ServiceWorkerContextWrapper::DeleteAndStartOver, wrapper_));
 }
@@ -488,7 +506,7 @@ void ServiceWorkerContextCore::TransferProviderHostIn(
 
 void ServiceWorkerContextCore::OnRunningStateChanged(
     ServiceWorkerVersion* version) {
-  if (!observer_list_.get())
+  if (!observer_list_)
     return;
   observer_list_->Notify(FROM_HERE,
                          &ServiceWorkerContextObserver::OnRunningStateChanged,
@@ -497,7 +515,7 @@ void ServiceWorkerContextCore::OnRunningStateChanged(
 
 void ServiceWorkerContextCore::OnVersionStateChanged(
     ServiceWorkerVersion* version) {
-  if (!observer_list_.get())
+  if (!observer_list_)
     return;
   observer_list_->Notify(FROM_HERE,
                          &ServiceWorkerContextObserver::OnVersionStateChanged,
@@ -506,7 +524,7 @@ void ServiceWorkerContextCore::OnVersionStateChanged(
 
 void ServiceWorkerContextCore::OnMainScriptHttpResponseInfoSet(
     ServiceWorkerVersion* version) {
-  if (!observer_list_.get())
+  if (!observer_list_)
     return;
   const net::HttpResponseInfo* info = version->GetMainScriptHttpResponseInfo();
   DCHECK(info);
@@ -524,7 +542,7 @@ void ServiceWorkerContextCore::OnErrorReported(
     int line_number,
     int column_number,
     const GURL& source_url) {
-  if (!observer_list_.get())
+  if (!observer_list_)
     return;
   observer_list_->Notify(
       FROM_HERE, &ServiceWorkerContextObserver::OnErrorReported,
@@ -541,7 +559,7 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
     const base::string16& message,
     int line_number,
     const GURL& source_url) {
-  if (!observer_list_.get())
+  if (!observer_list_)
     return;
   observer_list_->Notify(
       FROM_HERE, &ServiceWorkerContextObserver::OnReportConsoleMessage,
@@ -549,6 +567,28 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
       version->embedded_worker()->thread_id(),
       ServiceWorkerContextObserver::ConsoleMessage(
           source_identifier, message_level, message, line_number, source_url));
+}
+
+void ServiceWorkerContextCore::OnControlleeAdded(
+    ServiceWorkerVersion* version,
+    ServiceWorkerProviderHost* provider_host) {
+  if (!observer_list_)
+    return;
+  observer_list_->Notify(FROM_HERE,
+                         &ServiceWorkerContextObserver::OnControlleeAdded,
+                         version->version_id(), provider_host->client_uuid(),
+                         provider_host->process_id(), provider_host->route_id(),
+                         provider_host->provider_type());
+}
+
+void ServiceWorkerContextCore::OnControlleeRemoved(
+    ServiceWorkerVersion* version,
+    ServiceWorkerProviderHost* provider_host) {
+  if (!observer_list_)
+    return;
+  observer_list_->Notify(FROM_HERE,
+                         &ServiceWorkerContextObserver::OnControlleeRemoved,
+                         version->version_id(), provider_host->client_uuid());
 }
 
 ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {

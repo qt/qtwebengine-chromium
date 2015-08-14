@@ -1070,6 +1070,9 @@ void GLES2GetQueryivEXT(GLenum target, GLenum pname, GLint* params) {
 void GLES2GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params) {
   gles2::GetGLContext()->GetQueryObjectuivEXT(id, pname, params);
 }
+void GLES2GetQueryObjectui64vEXT(GLuint id, GLenum pname, GLuint64* params) {
+  gles2::GetGLContext()->GetQueryObjectui64vEXT(id, pname, params);
+}
 void GLES2InsertEventMarkerEXT(GLsizei length, const GLchar* marker) {
   gles2::GetGLContext()->InsertEventMarkerEXT(length, marker);
 }
@@ -1223,17 +1226,35 @@ void GLES2CopyTextureCHROMIUM(GLenum target,
                               GLenum source_id,
                               GLenum dest_id,
                               GLint internalformat,
-                              GLenum dest_type) {
-  gles2::GetGLContext()->CopyTextureCHROMIUM(target, source_id, dest_id,
-                                             internalformat, dest_type);
+                              GLenum dest_type,
+                              GLboolean unpack_flip_y,
+                              GLboolean unpack_premultiply_alpha,
+                              GLboolean unpack_unmultiply_alpha) {
+  gles2::GetGLContext()->CopyTextureCHROMIUM(
+      target, source_id, dest_id, internalformat, dest_type, unpack_flip_y,
+      unpack_premultiply_alpha, unpack_unmultiply_alpha);
 }
 void GLES2CopySubTextureCHROMIUM(GLenum target,
                                  GLenum source_id,
                                  GLenum dest_id,
                                  GLint xoffset,
-                                 GLint yoffset) {
-  gles2::GetGLContext()->CopySubTextureCHROMIUM(target, source_id, dest_id,
-                                                xoffset, yoffset);
+                                 GLint yoffset,
+                                 GLint x,
+                                 GLint y,
+                                 GLsizei width,
+                                 GLsizei height,
+                                 GLboolean unpack_flip_y,
+                                 GLboolean unpack_premultiply_alpha,
+                                 GLboolean unpack_unmultiply_alpha) {
+  gles2::GetGLContext()->CopySubTextureCHROMIUM(
+      target, source_id, dest_id, xoffset, yoffset, x, y, width, height,
+      unpack_flip_y, unpack_premultiply_alpha, unpack_unmultiply_alpha);
+}
+void GLES2CompressedCopyTextureCHROMIUM(GLenum target,
+                                        GLenum source_id,
+                                        GLenum dest_id) {
+  gles2::GetGLContext()->CompressedCopyTextureCHROMIUM(target, source_id,
+                                                       dest_id);
 }
 void GLES2DrawArraysInstancedANGLE(GLenum mode,
                                    GLint first,
@@ -1383,11 +1404,17 @@ void GLES2ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
 void GLES2SwapInterval(GLint interval) {
   gles2::GetGLContext()->SwapInterval(interval);
 }
+void GLES2FlushDriverCachesCHROMIUM() {
+  gles2::GetGLContext()->FlushDriverCachesCHROMIUM();
+}
 void GLES2MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) {
   gles2::GetGLContext()->MatrixLoadfCHROMIUM(matrixMode, m);
 }
 void GLES2MatrixLoadIdentityCHROMIUM(GLenum matrixMode) {
   gles2::GetGLContext()->MatrixLoadIdentityCHROMIUM(matrixMode);
+}
+GLenum GLES2GetGraphicsResetStatusKHR() {
+  return gles2::GetGLContext()->GetGraphicsResetStatusKHR();
 }
 void GLES2BlendBarrierKHR() {
   gles2::GetGLContext()->BlendBarrierKHR();
@@ -2337,6 +2364,10 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetQueryObjectuivEXT),
     },
     {
+     "glGetQueryObjectui64vEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glGetQueryObjectui64vEXT),
+    },
+    {
      "glInsertEventMarkerEXT",
      reinterpret_cast<GLES2FunctionPointer>(glInsertEventMarkerEXT),
     },
@@ -2480,6 +2511,10 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glCopySubTextureCHROMIUM),
     },
     {
+     "glCompressedCopyTextureCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glCompressedCopyTextureCHROMIUM),
+    },
+    {
      "glDrawArraysInstancedANGLE",
      reinterpret_cast<GLES2FunctionPointer>(glDrawArraysInstancedANGLE),
     },
@@ -2608,12 +2643,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glSwapInterval),
     },
     {
+     "glFlushDriverCachesCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glFlushDriverCachesCHROMIUM),
+    },
+    {
      "glMatrixLoadfCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glMatrixLoadfCHROMIUM),
     },
     {
      "glMatrixLoadIdentityCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glMatrixLoadIdentityCHROMIUM),
+    },
+    {
+     "glGetGraphicsResetStatusKHR",
+     reinterpret_cast<GLES2FunctionPointer>(glGetGraphicsResetStatusKHR),
     },
     {
      "glBlendBarrierKHR",

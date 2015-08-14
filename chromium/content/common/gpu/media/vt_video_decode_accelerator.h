@@ -33,7 +33,6 @@ bool InitializeVideoToolbox();
 class VTVideoDecodeAccelerator : public media::VideoDecodeAccelerator {
  public:
   explicit VTVideoDecodeAccelerator(
-      CGLContextObj cgl_context,
       const base::Callback<bool(void)>& make_context_current);
   ~VTVideoDecodeAccelerator() override;
 
@@ -85,7 +84,7 @@ class VTVideoDecodeAccelerator : public media::VideoDecodeAccelerator {
   };
 
   struct Frame {
-    Frame(int32_t bitstream_id);
+    explicit Frame(int32_t bitstream_id);
     ~Frame();
 
     // ID of the bitstream buffer this Frame will be decoded from.
@@ -163,7 +162,6 @@ class VTVideoDecodeAccelerator : public media::VideoDecodeAccelerator {
   //
   // GPU thread state.
   //
-  CGLContextObj cgl_context_;
   base::Callback<bool(void)> make_context_current_;
   media::VideoDecodeAccelerator::Client* client_;
   State state_;

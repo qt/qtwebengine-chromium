@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_GL_RENDERERGL_H_
 #define LIBANGLE_RENDERER_GL_RENDERERGL_H_
 
+#include "libANGLE/Version.h"
 #include "libANGLE/renderer/Renderer.h"
 
 namespace rx
@@ -19,7 +20,7 @@ class StateManagerGL;
 class RendererGL : public Renderer
 {
   public:
-    RendererGL(const FunctionsGL *functions);
+    RendererGL(const FunctionsGL *functions, const egl::AttributeMap &attribMap);
     ~RendererGL() override;
 
     gl::Error flush() override;
@@ -50,7 +51,7 @@ class RendererGL : public Renderer
     BufferImpl *createBuffer() override;
 
     // Vertex Array creation
-    VertexArrayImpl *createVertexArray() override;
+    VertexArrayImpl *createVertexArray(const gl::VertexArray::Data &data) override;
 
     // Query and Fence creation
     QueryImpl *createQuery(GLenum type) override;
@@ -59,6 +60,11 @@ class RendererGL : public Renderer
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback() override;
+
+    // EXT_debug_marker
+    void insertEventMarker(GLsizei length, const char *marker) override;
+    void pushGroupMarker(GLsizei length, const char *marker) override;
+    void popGroupMarker() override;
 
     // lost device
     void notifyDeviceLost() override;
@@ -70,12 +76,19 @@ class RendererGL : public Renderer
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
+    const gl::Version &getMaxSupportedESVersion() const;
+
   private:
     void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps, gl::Extensions *outExtensions) const override;
     Workarounds generateWorkarounds() const override;
 
+    mutable gl::Version mMaxSupportedESVersion;
+
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
+
+    // For performance debugging
+    bool mSkipDrawCalls;
 };
 
 }

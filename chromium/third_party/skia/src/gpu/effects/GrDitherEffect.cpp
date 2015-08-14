@@ -10,7 +10,6 @@
 #include "GrInvariantOutput.h"
 #include "SkRect.h"
 #include "gl/GrGLProcessor.h"
-#include "gl/GrGLSL.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 //////////////////////////////////////////////////////////////////////////////
@@ -54,10 +53,7 @@ void DitherEffect::onComputeInvariantOutput(GrInvariantOutput* inout) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(DitherEffect);
 
-GrFragmentProcessor* DitherEffect::TestCreate(SkRandom*,
-                                              GrContext*,
-                                              const GrDrawTargetCaps&,
-                                              GrTexture*[]) {
+GrFragmentProcessor* DitherEffect::TestCreate(GrProcessorTestData*) {
     return DitherEffect::Create();
 }
 

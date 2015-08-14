@@ -59,20 +59,14 @@ public:
     BLINK_EXPORT void removeAttribute(const WebString&);
     BLINK_EXPORT WebString getAttribute(const WebString&) const;
     BLINK_EXPORT bool setAttribute(const WebString& name, const WebString& value);
-    BLINK_EXPORT WebString textContent();
-    // TODO(dglazkov): Remove once Cr side lands.
-    BLINK_EXPORT WebString innerText();
+    BLINK_EXPORT WebString textContent() const;
     BLINK_EXPORT void requestFullScreen();
     BLINK_EXPORT WebString attributeLocalName(unsigned index) const;
     BLINK_EXPORT WebString attributeValue(unsigned index) const;
     BLINK_EXPORT unsigned attributeCount() const;
-    BLINK_EXPORT WebNode shadowRoot() const;
 
-    // Returns the language code specified for this element. This attribute
-    // is inherited, so the returned value is drawn from the closest parent
-    // element that has the lang attribute set, or from the HTTP
-    // "Content-Language" header as a fallback.
-    BLINK_EXPORT WebString computeInheritedLanguage() const;
+    // If this element takes up space in the layout of the page.
+    BLINK_EXPORT bool hasNonEmptyLayoutSize() const;
 
     // Returns the bounds of the element in viewport space. The bounds
     // have been adjusted to include any transformations. This view is

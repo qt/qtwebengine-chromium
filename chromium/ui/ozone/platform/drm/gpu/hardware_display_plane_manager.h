@@ -65,9 +65,6 @@ struct OZONE_EXPORT HardwareDisplayPlaneList {
 #if defined(USE_DRM_ATOMIC)
   ScopedDrmPropertySetPtr atomic_property_set;
 #endif  // defined(USE_DRM_ATOMIC)
-
-  // Set if the last operation on this list was a Commit().
-  bool committed;
 };
 
 class OZONE_EXPORT HardwareDisplayPlaneManager {
@@ -79,6 +76,10 @@ class OZONE_EXPORT HardwareDisplayPlaneManager {
   // or crtcs found.
   bool Initialize(DrmDevice* drm);
 
+  // Clears old frame state out. Must be called before any AssignOverlayPlanes
+  // calls.
+  void BeginFrame(HardwareDisplayPlaneList* plane_list);
+
   // Assign hardware planes from the |planes_| list to |overlay_list| entries,
   // recording the plane IDs in the |plane_list|. Only planes compatible with
   // |crtc_id| will be used. |overlay_list| must be sorted bottom-to-top.
@@ -88,7 +89,9 @@ class OZONE_EXPORT HardwareDisplayPlaneManager {
                                    CrtcController* crtc);
 
   // Commit the plane states in |plane_list|.
-  virtual bool Commit(HardwareDisplayPlaneList* plane_list, bool is_sync) = 0;
+  virtual bool Commit(HardwareDisplayPlaneList* plane_list,
+                      bool is_sync,
+                      bool test_only) = 0;
 
   // Set all planes in |plane_list| owned by |crtc_id| to free.
   static void ResetPlanes(HardwareDisplayPlaneList* plane_list,

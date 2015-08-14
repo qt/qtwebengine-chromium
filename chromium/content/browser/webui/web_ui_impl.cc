@@ -36,7 +36,7 @@ base::string16 WebUI::GetJavascriptCall(
     if (i > 0)
       parameters += base::char16(',');
 
-    base::JSONWriter::Write(arg_list[i], &json);
+    base::JSONWriter::Write(*arg_list[i], &json);
     parameters += base::UTF8ToUTF16(json);
   }
   return base::ASCIIToUTF16(function_name) +
@@ -83,15 +83,6 @@ void WebUIImpl::OnWebUISend(const GURL& source_url,
 
 void WebUIImpl::RenderViewCreated(RenderViewHost* render_view_host) {
   controller_->RenderViewCreated(render_view_host);
-
-  // Do not attempt to set the toolkit property if WebUI is not enabled, e.g.,
-  // the bookmarks manager page.
-  if (!(bindings_ & BINDINGS_POLICY_WEB_UI))
-    return;
-
-#if defined(TOOLKIT_VIEWS)
-  render_view_host->SetWebUIProperty("toolkit", "views");
-#endif  // defined(TOOLKIT_VIEWS)
 }
 
 WebContents* WebUIImpl::GetWebContents() const {

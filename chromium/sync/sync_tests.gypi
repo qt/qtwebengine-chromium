@@ -138,8 +138,6 @@
         'test/fake_server/bookmark_entity.h',
         'test/fake_server/bookmark_entity_builder.cc',
         'test/fake_server/bookmark_entity_builder.h',
-        'test/fake_server/entity_builder.cc',
-        'test/fake_server/entity_builder.h',
         'test/fake_server/entity_builder_factory.cc',
         'test/fake_server/entity_builder_factory.h',
         'test/fake_server/fake_server.cc',
@@ -336,6 +334,7 @@
         'syncable/model_type_unittest.cc',
         'syncable/nigori_util_unittest.cc',
         'syncable/parent_child_index_unittest.cc',
+        'syncable/proto_value_ptr_unittest.cc',
         'syncable/syncable_enum_conversions_unittest.cc',
         'syncable/syncable_id_unittest.cc',
         'syncable/syncable_unittest.cc',
@@ -419,6 +418,7 @@
           },
           'dependencies': [
             'sync_java',
+            '../base/base.gyp:base_java_test_support',
           ],
           'includes': [ '../build/java.gypi' ],
         },
@@ -499,8 +499,26 @@
           ],
           'variables': {
             'test_suite_name': 'sync_unit_tests',
+            'isolate_file': 'sync_unit_tests.isolate',
           },
           'includes': [ '../build/apk_test.gypi' ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'sync_unit_tests_run',
+          'type': 'none',
+          'dependencies': [
+            'sync_unit_tests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'sync_unit_tests.isolate',
+          ],
         },
       ],
     }],

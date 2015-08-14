@@ -35,11 +35,6 @@
         'use_alsa%': 0,
         'use_pulseaudio%': 0,
       }],
-      ['sysroot!=""', {
-        'pkg-config': '../build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
-      }, {
-        'pkg-config': 'pkg-config'
-      }],
       # low memory buffer is used in non-Android based chromecast build due to hardware limitation.
       ['chromecast==1 and OS!="android"', {
         'use_low_memory_buffer%': 1,
@@ -259,10 +254,13 @@
         'base/byte_queue.h',
         'base/cdm_callback_promise.cc',
         'base/cdm_callback_promise.h',
+        'base/cdm_config.h',
         'base/cdm_context.cc',
         'base/cdm_context.h',
         'base/cdm_factory.cc',
         'base/cdm_factory.h',
+        'base/cdm_initialized_promise.cc',
+        'base/cdm_initialized_promise.h',        
         'base/cdm_key_information.cc',
         'base/cdm_key_information.h',
         'base/cdm_promise.cc',
@@ -328,10 +326,14 @@
         'base/media_permission.h',
         'base/media_switches.cc',
         'base/media_switches.h',
+        'base/mime_util.cc',
+        'base/mime_util.h',
         'base/moving_average.cc',
         'base/moving_average.h',
         'base/multi_channel_resampler.cc',
         'base/multi_channel_resampler.h',
+        'base/null_video_sink.cc',
+        'base/null_video_sink.h',
         'base/pipeline.cc',
         'base/pipeline.h',
         'base/pipeline_status.h',
@@ -399,14 +401,28 @@
         'base/video_util.h',
         'base/wall_clock_time_source.cc',
         'base/wall_clock_time_source.h',
+        'base/win/mf_initializer.cc',
+        'base/win/mf_initializer.h',
         'base/yuv_convert.cc',
         'base/yuv_convert.h',
         'blink/skcanvas_video_renderer.cc',
         'blink/skcanvas_video_renderer.h',
+        'capture/animated_content_sampler.cc',
+        'capture/animated_content_sampler.h',
+        'capture/capture_resolution_chooser.cc',
+        'capture/capture_resolution_chooser.h',
+        'capture/feedback_signal_accumulator.cc',
+        'capture/feedback_signal_accumulator.h',
+        'capture/screen_capture_device_core.cc',
+        'capture/screen_capture_device_core.h',
+        'capture/thread_safe_capture_oracle.cc',
+        'capture/thread_safe_capture_oracle.h',
+        'capture/smooth_event_sampler.cc',
+        'capture/smooth_event_sampler.h',
+        'capture/video_capture_oracle.cc',
+        'capture/video_capture_oracle.h',
         'cdm/aes_decryptor.cc',
         'cdm/aes_decryptor.h',
-        'cdm/cenc_utils.cc',
-        'cdm/cenc_utils.h',
         'cdm/default_cdm_factory.cc',
         'cdm/default_cdm_factory.h',
         'cdm/json_web_key.cc',
@@ -589,6 +605,8 @@
         'video/gpu_memory_buffer_video_frame_pool.h',
         'video/h264_poc.cc',
         'video/h264_poc.h',
+        'video/jpeg_decode_accelerator.cc',
+        'video/jpeg_decode_accelerator.h',
         'video/picture.cc',
         'video/picture.h',
         'video/video_decode_accelerator.cc',
@@ -693,8 +711,6 @@
           'sources!': [
             'filters/opus_audio_decoder.cc',
             'filters/opus_audio_decoder.h',
-            'renderers/default_renderer_factory.cc',
-            'renderers/default_renderer_factory.h',
           ],
           'defines': [
             'DISABLE_USER_INPUT_MONITOR',
@@ -974,6 +990,8 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'cdm/cenc_utils.cc',
+            'cdm/cenc_utils.h',
             'filters/ffmpeg_aac_bitstream_converter.cc',
             'filters/ffmpeg_aac_bitstream_converter.h',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter.cc',
@@ -1037,10 +1055,12 @@
         ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': [
             'media_asm',
-            'media_sse2',
           ],
           'sources': [
+            'base/simd/convert_rgb_to_yuv_sse2.cc',
+            'base/simd/convert_rgb_to_yuv_ssse3.cc',
             'base/simd/convert_yuv_to_rgb_x86.cc',
+            'base/simd/filter_yuv_sse2.cc',
           ],
         }],
         ['OS!="linux" and OS!="win"', {
@@ -1101,9 +1121,14 @@
         '../url/url.gyp:url_lib',
       ],
       'sources': [
+        'base/android/access_unit_queue_unittest.cc',
         'base/android/media_codec_bridge_unittest.cc',
+        'base/android/media_codec_decoder_unittest.cc',
+        'base/android/media_codec_player_unittest.cc',
         'base/android/media_drm_bridge_unittest.cc',
         'base/android/media_source_player_unittest.cc',
+        'base/android/test_data_factory.cc',
+        'base/android/test_data_factory.h',
         'base/audio_block_fifo_unittest.cc',
         'base/audio_buffer_converter_unittest.cc',
         'base/audio_buffer_queue_unittest.cc',
@@ -1137,6 +1162,7 @@
         'base/key_systems_unittest.cc',
         'base/mac/video_frame_mac_unittests.cc',
         'base/media_file_checker_unittest.cc',
+        'base/mime_util_unittest.cc',
         'base/moving_average_unittest.cc',
         'base/multi_channel_resampler_unittest.cc',
         'base/null_video_sink_unittest.cc',
@@ -1159,8 +1185,12 @@
         'base/wall_clock_time_source_unittest.cc',
         'base/yuv_convert_unittest.cc',
         'blink/skcanvas_video_renderer_unittest.cc',
+        'capture/animated_content_sampler_unittest.cc',
+        'capture/capture_resolution_chooser_unittest.cc',
+        'capture/feedback_signal_accumulator_unittest.cc',
+        'capture/smooth_event_sampler_unittest.cc',
+        'capture/video_capture_oracle_unittest.cc',
         'cdm/aes_decryptor_unittest.cc',
-        'cdm/cenc_utils_unittest.cc',
         'cdm/json_web_key_unittest.cc',
         'ffmpeg/ffmpeg_common_unittest.cc',
         'filters/audio_clock_unittest.cc',
@@ -1274,6 +1304,7 @@
         }],
         ['proprietary_codecs==1', {
           'sources': [
+            'cdm/cenc_utils_unittest.cc',
             'filters/ffmpeg_aac_bitstream_converter_unittest.cc',
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
             'filters/h264_to_annex_b_bitstream_converter_unittest.cc',
@@ -1462,6 +1493,7 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../ui/gfx/gfx.gyp:gfx_test_support',
+        '../url/url.gyp:url_lib',
       ],
       'sources': [
         'base/run_all_unittests.cc',
@@ -1504,8 +1536,6 @@
         'base/mock_demuxer_host.h',
         'base/mock_filters.cc',
         'base/mock_filters.h',
-        'base/null_video_sink.cc',
-        'base/null_video_sink.h',
         'base/test_data_util.cc',
         'base/test_data_util.h',
         'base/test_helpers.cc',
@@ -1548,7 +1578,7 @@
     },
   ],
   'conditions': [
-    ['target_arch!="arm"', {
+    ['target_arch=="ia32" or target_arch=="x64"', {
       'targets': [
        {
           'target_name': 'media_asm',
@@ -1635,25 +1665,6 @@
             '../third_party/yasm/yasm_compile.gypi',
           ],
         },
-        {
-          # GN version: //media/base:media_sse2
-          'target_name': 'media_sse2',
-          'type': 'static_library',
-          'cflags': [
-            '-msse2',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/convert_rgb_to_yuv_sse2.cc',
-            'base/simd/convert_rgb_to_yuv_ssse3.cc',
-            'base/simd/filter_yuv_sse2.cc',
-          ],
-        },
       ], # targets
     }],
     ['OS=="android"', {
@@ -1668,6 +1679,7 @@
           ],
           'variables': {
             'test_suite_name': 'media_unittests',
+            'isolate_file': 'media_unittests.isolate',
           },
           'includes': ['../build/apk_test.gypi'],
         },
@@ -1681,6 +1693,7 @@
           ],
           'variables': {
             'test_suite_name': 'media_perftests',
+            'isolate_file': 'media_perftests.isolate',
           },
           'includes': ['../build/apk_test.gypi'],
         },
@@ -1720,6 +1733,8 @@
           'target_name': 'player_android',
           'type': 'static_library',
           'sources': [
+            'base/android/access_unit_queue.cc',
+            'base/android/access_unit_queue.h',
             'base/android/audio_decoder_job.cc',
             'base/android/audio_decoder_job.h',
             'base/android/browser_cdm_factory_android.cc',
@@ -1729,10 +1744,16 @@
             'base/android/demuxer_stream_player_params.h',
             'base/android/media_client_android.cc',
             'base/android/media_client_android.h',
+            'base/android/media_codec_audio_decoder.cc',
+            'base/android/media_codec_audio_decoder.h',
             'base/android/media_codec_bridge.cc',
             'base/android/media_codec_bridge.h',
+            'base/android/media_codec_decoder.cc',
+            'base/android/media_codec_decoder.h',
             'base/android/media_codec_player.cc',
             'base/android/media_codec_player.h',
+            'base/android/media_codec_video_decoder.cc',
+            'base/android/media_codec_video_decoder.h',
             'base/android/media_common_android.h',
             'base/android/media_decoder_job.cc',
             'base/android/media_decoder_job.h',
@@ -1855,6 +1876,7 @@
           'type': '<(component)',
           'dependencies': [
             '../base/base.gyp:base',
+            '../gpu/gpu.gyp:command_buffer_common',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             'shared_memory_support',
           ],
@@ -1955,6 +1977,13 @@
           ],
           'sources': [
             'audio_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11==1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
           ],
         },
       ],

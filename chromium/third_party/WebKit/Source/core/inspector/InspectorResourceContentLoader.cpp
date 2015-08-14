@@ -98,7 +98,8 @@ void InspectorResourceContentLoader::start()
         ResourceRequest resourceRequest;
         HistoryItem* item = document->frame() ? document->frame()->loader().currentItem() : nullptr;
         if (item) {
-            resourceRequest = FrameLoader::requestFromHistoryItem(item, ReturnCacheDataDontLoad);
+            resourceRequest =
+                FrameLoader::resourceRequestFromHistoryItem(item, ReturnCacheDataDontLoad);
         } else {
             resourceRequest = document->url();
             resourceRequest.setCachePolicy(ReturnCacheDataDontLoad);
@@ -108,7 +109,7 @@ void InspectorResourceContentLoader::start()
         if (!resourceRequest.url().string().isEmpty()) {
             urlsToFetch.add(resourceRequest.url().string());
             FetchRequest request(resourceRequest, FetchInitiatorTypeNames::internal);
-            ResourcePtr<Resource> resource = document->fetcher()->fetchRawResource(request);
+            ResourcePtr<Resource> resource = RawResource::fetch(request, document->fetcher());
             if (resource) {
                 // Prevent garbage collection by holding a reference to this resource.
                 m_resources.append(resource.get());
@@ -129,7 +130,7 @@ void InspectorResourceContentLoader::start()
             urlsToFetch.add(url);
             FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::internal);
             request.mutableResourceRequest().setRequestContext(WebURLRequest::RequestContextInternal);
-            ResourcePtr<Resource> resource = document->fetcher()->fetchCSSStyleSheet(request);
+            ResourcePtr<Resource> resource = CSSStyleSheetResource::fetch(request, document->fetcher());
             if (!resource)
                 continue;
             // Prevent garbage collection by holding a reference to this resource.
@@ -163,9 +164,10 @@ DEFINE_TRACE(InspectorResourceContentLoader)
     visitor->trace(m_inspectedFrame);
 }
 
-void InspectorResourceContentLoader::dispose()
+void InspectorResourceContentLoader::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
-    stop();
+    if (frame == m_inspectedFrame)
+        stop();
 }
 
 void InspectorResourceContentLoader::stop()
@@ -177,6 +179,8 @@ void InspectorResourceContentLoader::stop()
     m_resources.clear();
     // Make sure all callbacks are called to prevent infinite waiting time.
     checkDone();
+    m_allRequestsStarted = false;
+    m_started = false;
 }
 
 bool InspectorResourceContentLoader::hasFinished()

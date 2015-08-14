@@ -75,19 +75,29 @@ public:
     // Creates and returns a new wrapper object.
     virtual v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext);
 
-    // Associates the instance with the existing wrapper. Returns |wrapper|.
-    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper);
+    // Associates the instance with the given |wrapper| if this instance is not
+    // yet associated with any wrapper.  Returns the wrapper already associated
+    // or |wrapper| if not yet associated.
+    // The caller should always use the returned value rather than |wrapper|.
+    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) WARN_UNUSED_RETURN;
 
-    void setWrapper(v8::Local<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
+    // Associates this instance with the given |wrapper| if this instance is not
+    // yet associated with any wrapper.  Returns true if the given wrapper is
+    // associated with this instance, or false if this instance is already
+    // associated with a wrapper.  In the latter case, |wrapper| will be updated
+    // to the existing wrapper.
+    bool setWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo, v8::Local<v8::Object>& wrapper) WARN_UNUSED_RETURN
     {
-        RELEASE_ASSERT(!containsWrapper());
-        if (!*wrapper)
-            return;
-        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(toScriptWrappable(wrapper) == this);
+        ASSERT(!wrapper.IsEmpty());
+        if (UNLIKELY(containsWrapper())) {
+            wrapper = newLocalWrapper(isolate);
+            return false;
+        }
         m_wrapper.Reset(isolate, wrapper);
         wrapperTypeInfo->configureWrapper(&m_wrapper);
         m_wrapper.SetWeak(this, &firstWeakCallback, v8::WeakCallbackType::kInternalFields);
         ASSERT(containsWrapper());
+        return true;
     }
 
     v8::Local<v8::Object> newLocalWrapper(v8::Isolate* isolate) const
@@ -196,7 +206,7 @@ private:
 // class has a corresponding .idl file.
 #define DEFINE_WRAPPERTYPEINFO()                \
 public: \
-    virtual const WrapperTypeInfo* wrapperTypeInfo() const override \
+    const WrapperTypeInfo* wrapperTypeInfo() const override \
     { \
         return &s_wrapperTypeInfo; \
     } \
@@ -214,7 +224,7 @@ private: \
 // must not.
 #define DEFINE_WRAPPERTYPEINFO_NOT_REACHED() \
 public: \
-    virtual const WrapperTypeInfo* wrapperTypeInfo() const override \
+    const WrapperTypeInfo* wrapperTypeInfo() const override \
     { \
         ASSERT_NOT_REACHED(); \
         return 0; \
@@ -235,7 +245,7 @@ private: \
 // in X's cpp code, and instantiate X, i.e. "template class X;".
 #define DECLARE_WRAPPERTYPEINFO() \
 public: \
-    virtual const WrapperTypeInfo* wrapperTypeInfo() const override; \
+    const WrapperTypeInfo* wrapperTypeInfo() const override; \
 private: \
     typedef void end_of_define_wrappertypeinfo_not_reached_t
 

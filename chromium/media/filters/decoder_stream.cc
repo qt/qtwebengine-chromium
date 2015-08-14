@@ -12,6 +12,7 @@
 #include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/media_log.h"
 #include "media/base/video_decoder.h"
 #include "media/filters/decrypting_demuxer_stream.h"
 
@@ -23,8 +24,7 @@ template <DemuxerStream::Type StreamType>
 static const char* GetTraceString();
 
 #define FUNCTION_DVLOG(level) \
-  DVLOG(level) << __FUNCTION__ << \
-  "<" << DecoderStreamTraits<StreamType>::ToString() << ">"
+  DVLOG(level) << __FUNCTION__ << "<" << GetStreamTypeString() << ">"
 
 template <>
 const char* GetTraceString<DemuxerStream::VIDEO>() {
@@ -45,8 +45,9 @@ DecoderStream<StreamType>::DecoderStream(
       media_log_(media_log),
       state_(STATE_UNINITIALIZED),
       stream_(NULL),
-      decoder_selector_(
-          new DecoderSelector<StreamType>(task_runner, decoders.Pass())),
+      decoder_selector_(new DecoderSelector<StreamType>(task_runner,
+                                                        decoders.Pass(),
+                                                        media_log)),
       active_splice_(false),
       decoding_eos_(false),
       pending_decode_requests_(0),
@@ -74,6 +75,11 @@ DecoderStream<StreamType>::~DecoderStream() {
   stream_ = NULL;
   decoder_.reset();
   decrypting_demuxer_stream_.reset();
+}
+
+template <DemuxerStream::Type StreamType>
+std::string DecoderStream<StreamType>::GetStreamTypeString() {
+  return DecoderStreamTraits<StreamType>::ToString();
 }
 
 template <DemuxerStream::Type StreamType>
@@ -244,6 +250,8 @@ void DecoderStream<StreamType>::OnDecoderSelected(
   if (!decoder_) {
     if (state_ == STATE_INITIALIZING) {
       state_ = STATE_UNINITIALIZED;
+      MEDIA_LOG(ERROR, media_log_) << GetStreamTypeString()
+                                   << " decoder initialization failed";
       base::ResetAndReturn(&init_cb_).Run(false);
     } else {
       CompleteDecoderReinitialization(false);
@@ -251,10 +259,9 @@ void DecoderStream<StreamType>::OnDecoderSelected(
     return;
   }
 
-  const std::string stream_type = DecoderStreamTraits<StreamType>::ToString();
-  media_log_->SetBooleanProperty(stream_type + "_dds",
+  media_log_->SetBooleanProperty(GetStreamTypeString() + "_dds",
                                  decrypting_demuxer_stream_);
-  media_log_->SetStringProperty(stream_type + "_decoder",
+  media_log_->SetStringProperty(GetStreamTypeString() + "_decoder",
                                 decoder_->GetDisplayName());
 
   if (state_ == STATE_REINITIALIZING_DECODER) {
@@ -288,7 +295,10 @@ void DecoderStream<StreamType>::Decode(
 
   int buffer_size = buffer->end_of_stream() ? 0 : buffer->data_size();
 
-  TRACE_EVENT_ASYNC_BEGIN0("media", GetTraceString<StreamType>(), this);
+  TRACE_EVENT_ASYNC_BEGIN2(
+      "media", GetTraceString<StreamType>(), this, "key frame",
+      !buffer->end_of_stream() && buffer->is_key_frame(), "timestamp (ms)",
+      buffer->timestamp().InMilliseconds());
 
   if (buffer->end_of_stream())
     decoding_eos_ = true;
@@ -337,8 +347,8 @@ void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
 
   switch (status) {
     case Decoder::kDecodeError:
-    case Decoder::kDecryptError:
       state_ = STATE_ERROR;
+      MEDIA_LOG(ERROR, media_log_) << GetStreamTypeString() << " decode error";
       ready_outputs_.clear();
       if (!read_cb_.is_null())
         SatisfyRead(DECODE_ERROR, NULL);
@@ -377,7 +387,6 @@ void DecoderStream<StreamType>::OnDecodeOutputReady(
     const scoped_refptr<Output>& output) {
   FUNCTION_DVLOG(2) << ": " << output->timestamp().InMilliseconds() << " ms";
   DCHECK(output.get());
-  DCHECK(!output->end_of_stream());
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER ||
          state_ == STATE_PENDING_DEMUXER_READ || state_ == STATE_ERROR)
       << state_;
@@ -505,7 +514,7 @@ void DecoderStream<StreamType>::ReinitializeDecoder() {
 }
 
 template <DemuxerStream::Type StreamType>
-void DecoderStream<StreamType>::OnDecoderReinitialized(PipelineStatus status) {
+void DecoderStream<StreamType>::OnDecoderReinitialized(bool success) {
   FUNCTION_DVLOG(2);
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_REINITIALIZING_DECODER);
@@ -516,7 +525,7 @@ void DecoderStream<StreamType>::OnDecoderReinitialized(PipelineStatus status) {
   // Also, Reset() can be called during pending ReinitializeDecoder().
   // This function needs to handle them all!
 
-  if (status != PIPELINE_OK) {
+  if (!success) {
     // Reinitialization failed. Try to fall back to one of the remaining
     // decoders. This will consume at least one decoder so doing it more than
     // once is safe.
@@ -545,6 +554,8 @@ void DecoderStream<StreamType>::CompleteDecoderReinitialization(bool success) {
     return;
 
   if (state_ == STATE_ERROR) {
+    MEDIA_LOG(ERROR, media_log_) << GetStreamTypeString()
+                                 << " decoder reinitialization failed";
     SatisfyRead(DECODE_ERROR, NULL);
     return;
   }

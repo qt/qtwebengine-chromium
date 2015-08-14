@@ -19,12 +19,12 @@ namespace cc {
 class CC_EXPORT DelegatedRendererLayer : public Layer {
  public:
   static scoped_refptr<DelegatedRendererLayer> Create(
+      const LayerSettings& settings,
       const scoped_refptr<DelegatedFrameProvider>& frame_provider);
 
   scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void SetLayerTreeHost(LayerTreeHost* host) override;
-  bool Update(ResourceUpdateQueue* queue,
-              const OcclusionTracker<Layer>* occlusion) override;
+  bool Update() override;
   void PushPropertiesTo(LayerImpl* impl) override;
 
   // Called by the DelegatedFrameProvider when a new frame is available to be
@@ -34,6 +34,7 @@ class CC_EXPORT DelegatedRendererLayer : public Layer {
 
  protected:
   DelegatedRendererLayer(
+      const LayerSettings& settings,
       const scoped_refptr<DelegatedFrameProvider>& frame_provider);
   ~DelegatedRendererLayer() override;
 

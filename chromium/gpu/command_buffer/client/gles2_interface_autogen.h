@@ -597,6 +597,9 @@ virtual void EndQueryEXT(GLenum target) = 0;
 virtual void EndTransformFeedback() = 0;
 virtual void GetQueryivEXT(GLenum target, GLenum pname, GLint* params) = 0;
 virtual void GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params) = 0;
+virtual void GetQueryObjectui64vEXT(GLuint id,
+                                    GLenum pname,
+                                    GLuint64* params) = 0;
 virtual void InsertEventMarkerEXT(GLsizei length, const GLchar* marker) = 0;
 virtual void PushGroupMarkerEXT(GLsizei length, const GLchar* marker) = 0;
 virtual void PopGroupMarkerEXT() = 0;
@@ -681,12 +684,25 @@ virtual void CopyTextureCHROMIUM(GLenum target,
                                  GLenum source_id,
                                  GLenum dest_id,
                                  GLint internalformat,
-                                 GLenum dest_type) = 0;
+                                 GLenum dest_type,
+                                 GLboolean unpack_flip_y,
+                                 GLboolean unpack_premultiply_alpha,
+                                 GLboolean unpack_unmultiply_alpha) = 0;
 virtual void CopySubTextureCHROMIUM(GLenum target,
                                     GLenum source_id,
                                     GLenum dest_id,
                                     GLint xoffset,
-                                    GLint yoffset) = 0;
+                                    GLint yoffset,
+                                    GLint x,
+                                    GLint y,
+                                    GLsizei width,
+                                    GLsizei height,
+                                    GLboolean unpack_flip_y,
+                                    GLboolean unpack_premultiply_alpha,
+                                    GLboolean unpack_unmultiply_alpha) = 0;
+virtual void CompressedCopyTextureCHROMIUM(GLenum target,
+                                           GLenum source_id,
+                                           GLenum dest_id) = 0;
 virtual void DrawArraysInstancedANGLE(GLenum mode,
                                       GLint first,
                                       GLsizei count,
@@ -763,7 +779,9 @@ virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                           GLfloat uv_width,
                                           GLfloat uv_height) = 0;
 virtual void SwapInterval(GLint interval) = 0;
+virtual void FlushDriverCachesCHROMIUM() = 0;
 virtual void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) = 0;
 virtual void MatrixLoadIdentityCHROMIUM(GLenum matrixMode) = 0;
+virtual GLenum GetGraphicsResetStatusKHR() = 0;
 virtual void BlendBarrierKHR() = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_AUTOGEN_H_

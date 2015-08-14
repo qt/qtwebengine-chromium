@@ -175,6 +175,14 @@ bool SkSurface::readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t d
     return this->getCanvas()->readPixels(dstInfo, dstPixels, dstRowBytes, srcX, srcY);
 }
 
+GrBackendObject SkSurface::getTextureHandle(BackendHandleAccess access) {
+    return asSB(this)->onGetTextureHandle(access);
+}
+
+bool SkSurface::getRenderTargetHandle(GrBackendObject* obj, BackendHandleAccess access) {
+    return asSB(this)->onGetRenderTargetHandle(obj, access);
+}
+
 //////////////////////////////////////////////////////////////////////////////////////
 
 #if !SK_SUPPORT_GPU
@@ -188,8 +196,13 @@ SkSurface* SkSurface::NewRenderTarget(GrContext*, Budgeted, const SkImageInfo&, 
     return NULL;
 }
 
-SkSurface* SkSurface::NewWrappedRenderTarget(GrContext*, GrBackendTextureDesc,
+SkSurface* SkSurface::NewFromBackendTexture(GrContext*, const GrBackendTextureDesc&,
                                              const SkSurfaceProps*) {
+    return NULL;
+}
+
+SkSurface* SkSurface::NewFromBackendRenderTarget(GrContext*, const GrBackendRenderTargetDesc&,
+                                                 const SkSurfaceProps*) {
     return NULL;
 }
 

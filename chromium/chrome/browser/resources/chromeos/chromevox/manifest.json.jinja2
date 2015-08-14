@@ -21,7 +21,6 @@
     "experimental",
     "history",
     "storage",
-    "systemPrivate",
     "tabs",
     "tts",
     "virtualKeyboardPrivate",
@@ -55,8 +54,8 @@
   "automation": {
     "desktop": true
   },
-{% if is_chromevox_classic == '0' %}
   "commands": {
+{% if is_chromevox_classic == '0' %}
     "nextElement": {
       "description": "__MSG_CHROMEVOX_NEXT_OBJECT__",
       "suggested_key": {
@@ -278,9 +277,15 @@
       "suggested_key": {
         "chromeos": "Search+Shift+R"
       }
+    },
+    "showContextMenu": {
+      "description": "__MSG_CHROMEVOX_SHOW_CONTEXT_MENU__",
+      "suggested_key": {
+        "chromeos": "Search+Ctrl+Space"
+      }
     }
-  },
 {% endif %}
+  },
   "options_page": "chromevox/background/options.html",
   "default_locale": "en"
 }

@@ -38,17 +38,9 @@ source_set("audio_processing") {
     "aecm/include/echo_control_mobile.h",
     "agc/agc.cc",
     "agc/agc.h",
-    "agc/agc_audio_proc.cc",
-    "agc/agc_audio_proc.h",
-    "agc/agc_audio_proc_internal.h",
     "agc/agc_manager_direct.cc",
     "agc/agc_manager_direct.h",
-    "agc/circular_buffer.cc",
-    "agc/circular_buffer.h",
-    "agc/common.h",
     "agc/gain_map_internal.h",
-    "agc/gmm.cc",
-    "agc/gmm.h",
     "agc/histogram.cc",
     "agc/histogram.h",
     "agc/legacy/analog_agc.c",
@@ -56,18 +48,8 @@ source_set("audio_processing") {
     "agc/legacy/digital_agc.c",
     "agc/legacy/digital_agc.h",
     "agc/legacy/gain_control.h",
-    "agc/noise_gmm_tables.h",
-    "agc/pitch_based_vad.cc",
-    "agc/pitch_based_vad.h",
-    "agc/pitch_internal.cc",
-    "agc/pitch_internal.h",
-    "agc/pole_zero_filter.cc",
-    "agc/pole_zero_filter.h",
-    "agc/standalone_vad.cc",
-    "agc/standalone_vad.h",
     "agc/utility.cc",
     "agc/utility.h",
-    "agc/voice_gmm_tables.h",
     "audio_buffer.cc",
     "audio_buffer.h",
     "audio_processing_impl.cc",
@@ -89,6 +71,10 @@ source_set("audio_processing") {
     "high_pass_filter_impl.cc",
     "high_pass_filter_impl.h",
     "include/audio_processing.h",
+    "intelligibility/intelligibility_enhancer.cc",
+    "intelligibility/intelligibility_enhancer.h",
+    "intelligibility/intelligibility_utils.cc",
+    "intelligibility/intelligibility_utils.h",
     "level_estimator_impl.cc",
     "level_estimator_impl.h",
     "noise_suppression_impl.cc",
@@ -121,6 +107,26 @@ source_set("audio_processing") {
     "utility/delay_estimator_internal.h",
     "utility/delay_estimator_wrapper.c",
     "utility/delay_estimator_wrapper.h",
+    "vad/common.h",
+    "vad/gmm.cc",
+    "vad/gmm.h",
+    "vad/noise_gmm_tables.h",
+    "vad/pitch_based_vad.cc",
+    "vad/pitch_based_vad.h",
+    "vad/pitch_internal.cc",
+    "vad/pitch_internal.h",
+    "vad/pole_zero_filter.cc",
+    "vad/pole_zero_filter.h",
+    "vad/standalone_vad.cc",
+    "vad/standalone_vad.h",
+    "vad/vad_audio_proc.cc",
+    "vad/vad_audio_proc.h",
+    "vad/vad_audio_proc_internal.h",
+    "vad/vad_circular_buffer.cc",
+    "vad/vad_circular_buffer.h",
+    "vad/voice_activity_detector.cc",
+    "vad/voice_activity_detector.h",
+    "vad/voice_gmm_tables.h",
     "voice_detection_impl.cc",
     "voice_detection_impl.h",
   ]
@@ -129,7 +135,9 @@ source_set("audio_processing") {
   public_configs = [ "../..:common_inherited_config" ]
 
   defines = []
-  deps = [ "../..:webrtc_common" ]
+  deps = [
+    "../..:webrtc_common",
+  ]
 
   if (aec_debug_dump) {
     defines += [ "WEBRTC_AEC_DEBUG_DUMP" ]
@@ -174,7 +182,7 @@ source_set("audio_processing") {
     deps += [ ":audio_processing_sse2" ]
   }
 
-  if (rtc_build_armv7_neon || current_cpu == "arm64") {
+  if (rtc_build_with_neon) {
     deps += [ ":audio_processing_neon" ]
   }
 
@@ -212,7 +220,9 @@ source_set("audio_processing") {
 
 if (rtc_enable_protobuf) {
   proto_library("audioproc_debug_proto") {
-    sources = [ "debug.proto" ]
+    sources = [
+      "debug.proto",
+    ]
 
     proto_out_dir = "webrtc/audio_processing"
   }
@@ -234,7 +244,7 @@ if (current_cpu == "x86" || current_cpu == "x64") {
   }
 }
 
-if (rtc_build_armv7_neon || current_cpu == "arm64") {
+if (rtc_build_with_neon) {
   source_set("audio_processing_neon") {
     sources = [
       "aec/aec_core_neon.c",
@@ -243,30 +253,28 @@ if (rtc_build_armv7_neon || current_cpu == "arm64") {
       "ns/nsx_core_neon.c",
     ]
 
-    configs += [ "../..:common_config" ]
-    public_configs = [ "../..:common_inherited_config" ]
-
-    deps = [ "../../common_audio" ]
-
-    # Enable compilation for the ARM v7 Neon instruction set. This is needed
-    # since //build/config/arm.gni only enables Neon for iOS, not Android.
-    # This provides the same functionality as webrtc/build/arm_neon.gypi.
-    # TODO(kjellander): Investigate if this can be moved into webrtc.gni or
-    # //build/config/arm.gni instead, to reduce code duplication.
-    # Remove the -mfpu=vfpv3-d16 cflag.
-    configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-
-    # "-mfpu=neon" is not requried for arm64 in GCC.
     if (current_cpu != "arm64") {
-       cflags = [ "-mfpu=neon" ]
+      # Enable compilation for the NEON instruction set. This is needed
+      # since //build/config/arm.gni only enables NEON for iOS, not Android.
+      # This provides the same functionality as webrtc/build/arm_neon.gypi.
+      configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+      cflags = [ "-mfpu=neon" ]
     }
 
-    # Disable LTO in audio_processing_neon target due to compiler bug.
+    # Disable LTO on NEON targets due to compiler bug.
+    # TODO(fdegans): Enable this. See crbug.com/408997.
     if (rtc_use_lto) {
       cflags -= [
         "-flto",
         "-ffat-lto-objects",
       ]
     }
+
+    configs += [ "../..:common_config" ]
+    public_configs = [ "../..:common_inherited_config" ]
+
+    deps = [
+      "../../common_audio",
+    ]
   }
 }

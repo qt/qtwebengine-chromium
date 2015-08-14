@@ -51,7 +51,7 @@
       'enable_oilpan%': 0,
       'blink_gc_profiling%': 0,
       'blink_logging_always_on%': 0,
-      'link_core_modules_separately%': 0,
+      'link_core_modules_separately%': 1,
     },
     'conditions': [
       ['use_concatenated_impulse_responses==1', {
@@ -86,7 +86,14 @@
       ['enable_oilpan==1', {
         'feature_defines': [
           'ENABLE_OILPAN=1',
-          'ENABLE_INLINED_TRACE=1',
+          'ENABLE_LAZY_SWEEPING=1',
+          'ENABLE_IDLE_GC=1',
+        ],
+      }],
+      ['enable_oilpan==0', {
+        'feature_defines': [
+          'ENABLE_LAZY_SWEEPING=1',
+          'ENABLE_IDLE_GC=1',
         ],
       }],
       ['blink_gc_profiling==1', {
@@ -99,7 +106,7 @@
           'LOG_DISABLED=0',
         ],
       }],
-      ['link_core_modules_separately==1', {
+      ['link_core_modules_separately==1 and component=="shared_library"', {
         'feature_defines': [
           'LINK_CORE_MODULES_SEPARATELY',
         ],

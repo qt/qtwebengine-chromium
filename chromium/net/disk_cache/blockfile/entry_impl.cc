@@ -6,7 +6,6 @@
 
 #include "base/hash.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -786,7 +785,7 @@ std::string EntryImpl::GetKey() const {
   if (!offset && key_file->GetLength() != static_cast<size_t>(key_len))
     return std::string();
 
-  if (!key_file->Read(WriteInto(&key_, key_len), key_len, offset))
+  if (!key_file->Read(base::WriteInto(&key_, key_len), key_len, offset))
     key_.clear();
   return key_;
 }

@@ -38,11 +38,14 @@ class CC_EXPORT ZeroCopyTileTaskWorkerPool : public TileTaskWorkerPool,
   void Shutdown() override;
   void ScheduleTasks(TileTaskQueue* queue) override;
   void CheckForCompletedTasks() override;
-  ResourceFormat GetResourceFormat() override;
+  ResourceFormat GetResourceFormat() const override;
+  bool GetResourceRequiresSwizzle() const override;
 
   // Overridden from TileTaskClient:
   scoped_ptr<RasterBuffer> AcquireBufferForRaster(
-      const Resource* resource) override;
+      const Resource* resource,
+      uint64_t resource_content_id,
+      uint64_t previous_content_id) override;
   void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) override;
 
  protected:

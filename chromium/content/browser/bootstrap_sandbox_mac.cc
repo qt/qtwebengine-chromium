@@ -11,7 +11,7 @@
 #include "content/common/sandbox_init_mac.h"
 #include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/child_process_data.h"
-#include "content/public/common/sandbox_type_mac.h"
+#include "content/public/common/sandbox_type.h"
 #include "sandbox/mac/bootstrap_sandbox.h"
 
 namespace content {
@@ -77,8 +77,8 @@ void BootstrapSandboxPolicy::RegisterSandboxPolicies() {
 }  // namespace
 
 bool ShouldEnableBootstrapSandbox() {
-  return base::mac::IsOSMountainLionOrEarlier() ||
-         base::mac::IsOSMavericks();
+  // TODO(rsesek): Re-enable when crbug.com/501128 is fixed.
+  return false;
 }
 
 sandbox::BootstrapSandbox* GetBootstrapSandbox() {

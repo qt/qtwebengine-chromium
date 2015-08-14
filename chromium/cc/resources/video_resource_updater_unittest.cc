@@ -8,6 +8,7 @@
 #include "cc/resources/resource_provider.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
+#include "cc/test/fake_resource_provider.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/blocking_task_runner.h"
@@ -71,18 +72,11 @@ class VideoResourceUpdaterTest : public testing::Test {
     CHECK(output_surface_software_->BindToClient(&client_));
 
     shared_bitmap_manager_.reset(new SharedBitmapManagerAllocationCounter());
-    resource_provider3d_ =
-        ResourceProvider::Create(output_surface3d_.get(),
-                                 shared_bitmap_manager_.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 1);
+    resource_provider3d_ = FakeResourceProvider::Create(
+        output_surface3d_.get(), shared_bitmap_manager_.get());
 
-    resource_provider_software_ = ResourceProvider::Create(
-        output_surface_software_.get(), shared_bitmap_manager_.get(), NULL,
-        NULL, 0, false, 1);
+    resource_provider_software_ = FakeResourceProvider::Create(
+        output_surface_software_.get(), shared_bitmap_manager_.get());
   }
 
   scoped_refptr<media::VideoFrame> CreateTestYUVVideoFrame() {
@@ -103,8 +97,7 @@ class VideoResourceUpdaterTest : public testing::Test {
         y_data,                   // y_data
         u_data,                   // u_data
         v_data,                   // v_data
-        base::TimeDelta(),        // timestamp,
-        base::Closure());         // no_longer_needed_cb
+        base::TimeDelta());       // timestamp
   }
 
   static void ReleaseMailboxCB(unsigned sync_point) {}
@@ -119,14 +112,13 @@ class VideoResourceUpdaterTest : public testing::Test {
     const unsigned sync_point = 7;
     const unsigned target = GL_TEXTURE_2D;
     return media::VideoFrame::WrapNativeTexture(
+        media::VideoFrame::ARGB,
         gpu::MailboxHolder(mailbox, target, sync_point),
         base::Bind(&ReleaseMailboxCB),
-        size,               // coded_size
-        gfx::Rect(size),    // visible_rect
-        size,               // natural_size
-        base::TimeDelta(),  // timestamp
-        false,              // allow_overlay
-        true);              // has_alpha
+        size,                // coded_size
+        gfx::Rect(size),     // visible_rect
+        size,                // natural_size
+        base::TimeDelta());  // timestamp
   }
 
   scoped_refptr<media::VideoFrame> CreateTestYUVHardareVideoFrame() {
@@ -148,11 +140,10 @@ class VideoResourceUpdaterTest : public testing::Test {
         gpu::MailboxHolder(mailbox[media::VideoFrame::kVPlane], target,
                            sync_point),
         base::Bind(&ReleaseMailboxCB),
-        size,               // coded_size
-        gfx::Rect(size),    // visible_rect
-        size,               // natural_size
-        base::TimeDelta(),  // timestamp
-        false);             // allow_overlay
+        size,                // coded_size
+        gfx::Rect(size),     // visible_rect
+        size,                // natural_size
+        base::TimeDelta());  // timestamp
   }
 
   WebGraphicsContext3DUploadCounter* context3d_;
@@ -318,6 +309,7 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes) {
 
   resources = updater.CreateExternalResourcesFromVideoFrame(video_frame);
   EXPECT_EQ(VideoFrameExternalResources::YUV_RESOURCE, resources.type);
+  EXPECT_TRUE(resources.read_lock_fences_enabled);
   EXPECT_EQ(3u, resources.mailboxes.size());
   EXPECT_EQ(3u, resources.release_callbacks.size());
   EXPECT_EQ(0u, resources.software_resources.size());

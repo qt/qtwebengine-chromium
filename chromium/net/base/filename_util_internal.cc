@@ -41,8 +41,10 @@ void SanitizeGeneratedFileName(base::FilePath::StringType* filename,
   if (filename->empty())
     return;
   // Replace any path information by changing path separators.
-  ReplaceSubstringsAfterOffset(filename, 0, FILE_PATH_LITERAL("/"), kReplace);
-  ReplaceSubstringsAfterOffset(filename, 0, FILE_PATH_LITERAL("\\"), kReplace);
+  base::ReplaceSubstringsAfterOffset(
+      filename, 0, FILE_PATH_LITERAL("/"), kReplace);
+  base::ReplaceSubstringsAfterOffset(
+      filename, 0, FILE_PATH_LITERAL("\\"), kReplace);
 }
 
 // Returns the filename determined from the last component of the path portion
@@ -103,48 +105,6 @@ bool IsShellIntegratedExtension(const base::FilePath::StringType& extension) {
       (extension_lower[0] == FILE_PATH_LITERAL('{')) &&
       (extension_lower[extension_lower.length() - 1] == FILE_PATH_LITERAL('}')))
     return true;
-  return false;
-}
-
-// Returns whether the specified file name is a reserved name on windows.
-// This includes names like "com2.zip" (which correspond to devices) and
-// desktop.ini and thumbs.db which have special meaning to the windows shell.
-bool IsReservedName(const base::FilePath::StringType& filename) {
-  // This list is taken from the MSDN article "Naming a file"
-  // http://msdn2.microsoft.com/en-us/library/aa365247(VS.85).aspx
-  // I also added clock$ because GetSaveFileName seems to consider it as a
-  // reserved name too.
-  static const char* const known_devices[] = {
-      "con",  "prn",  "aux",  "nul",  "com1", "com2", "com3",  "com4",
-      "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2",  "lpt3",
-      "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "clock$"};
-#if defined(OS_WIN)
-  std::string filename_lower =
-      base::StringToLowerASCII(base::WideToUTF8(filename));
-#elif defined(OS_POSIX)
-  std::string filename_lower = base::StringToLowerASCII(filename);
-#endif
-
-  for (size_t i = 0; i < arraysize(known_devices); ++i) {
-    // Exact match.
-    if (filename_lower == known_devices[i])
-      return true;
-    // Starts with "DEVICE.".
-    if (filename_lower.find(std::string(known_devices[i]) + ".") == 0)
-      return true;
-  }
-
-  static const char* const magic_names[] = {
-    // These file names are used by the "Customize folder" feature of the shell.
-    "desktop.ini",
-    "thumbs.db",
-  };
-
-  for (size_t i = 0; i < arraysize(magic_names); ++i) {
-    if (filename_lower == magic_names[i])
-      return true;
-  }
-
   return false;
 }
 

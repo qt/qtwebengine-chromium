@@ -7,11 +7,11 @@
 #include <windows.h>
 
 #include "base/files/file_path.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -36,10 +36,10 @@ void IncrementOffset(OVERLAPPED* overlapped, DWORD count) {
 }  // namespace
 
 FileStream::Context::Context(const scoped_refptr<base::TaskRunner>& task_runner)
-    : io_context_(),
-      async_in_progress_(false),
+    : async_in_progress_(false),
       orphaned_(false),
       task_runner_(task_runner),
+      io_context_(),
       async_read_initiated_(false),
       async_read_completed_(false),
       io_complete_for_read_received_(false),
@@ -50,11 +50,11 @@ FileStream::Context::Context(const scoped_refptr<base::TaskRunner>& task_runner)
 
 FileStream::Context::Context(base::File file,
                              const scoped_refptr<base::TaskRunner>& task_runner)
-    : io_context_(),
-      file_(file.Pass()),
+    : file_(file.Pass()),
       async_in_progress_(false),
       orphaned_(false),
       task_runner_(task_runner),
+      io_context_(),
       async_read_initiated_(false),
       async_read_completed_(false),
       io_complete_for_read_received_(false),
@@ -62,7 +62,7 @@ FileStream::Context::Context(base::File file,
   io_context_.handler = this;
   memset(&io_context_.overlapped, 0, sizeof(io_context_.overlapped));
   if (file_.IsValid()) {
-    // TODO(hashimoto): Check that file_ is async.
+    DCHECK(file_.async());
     OnFileOpened();
   }
 }
@@ -87,8 +87,7 @@ int FileStream::Context::Read(IOBuffer* buf,
       FROM_HERE,
       base::Bind(&FileStream::Context::ReadAsync, base::Unretained(this),
                  file_.GetPlatformFile(), make_scoped_refptr(buf), buf_len,
-                 &io_context_.overlapped,
-                 base::MessageLoop::current()->message_loop_proxy()));
+                 &io_context_.overlapped, base::ThreadTaskRunnerHandle::Get()));
   return ERR_IO_PENDING;
 }
 
@@ -115,16 +114,11 @@ int FileStream::Context::Write(IOBuffer* buf,
 }
 
 FileStream::Context::IOResult FileStream::Context::SeekFileImpl(
-    base::File::Whence whence,
-    int64 offset) {
+    int64_t offset) {
   LARGE_INTEGER result;
-  result.QuadPart = file_.Seek(whence, offset);
-  if (result.QuadPart >= 0) {
-    SetOffset(&io_context_.overlapped, result);
-    return IOResult(result.QuadPart, 0);
-  }
-
-  return IOResult::FromOSError(GetLastError());
+  result.QuadPart = offset;
+  SetOffset(&io_context_.overlapped, result);
+  return IOResult(result.QuadPart, 0);
 }
 
 void FileStream::Context::OnFileOpened() {
@@ -213,10 +207,10 @@ void FileStream::Context::ReadAsync(
     scoped_refptr<IOBuffer> buf,
     int buf_len,
     OVERLAPPED* overlapped,
-    scoped_refptr<base::MessageLoopProxy> origin_thread_loop) {
+    scoped_refptr<base::SingleThreadTaskRunner> origin_thread_task_runner) {
   DWORD bytes_read = 0;
   BOOL ret = ::ReadFile(file, buf->data(), buf_len, &bytes_read, overlapped);
-  origin_thread_loop->PostTask(
+  origin_thread_task_runner->PostTask(
       FROM_HERE,
       base::Bind(&FileStream::Context::ReadAsyncResult,
                  base::Unretained(context), ret, bytes_read, ::GetLastError()));

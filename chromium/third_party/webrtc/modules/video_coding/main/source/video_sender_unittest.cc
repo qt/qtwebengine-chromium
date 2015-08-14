@@ -71,8 +71,8 @@ MATCHER_P(MatchesVp8StreamInfo, expected, "") {
 class EmptyFrameGenerator : public FrameGenerator {
  public:
   EmptyFrameGenerator(int width, int height) : width_(width), height_(height) {}
-  I420VideoFrame* NextFrame() override {
-    frame_.reset(new I420VideoFrame());
+  VideoFrame* NextFrame() override {
+    frame_.reset(new VideoFrame());
     frame_->CreateEmptyFrame(width_, height_, width_, (width_ + 1) / 2,
                              (width_ + 1) / 2);
     return frame_.get();
@@ -81,7 +81,7 @@ class EmptyFrameGenerator : public FrameGenerator {
  private:
   const int width_;
   const int height_;
-  rtc::scoped_ptr<I420VideoFrame> frame_;
+  rtc::scoped_ptr<VideoFrame> frame_;
 };
 
 class PacketizationCallback : public VCMPacketizationCallback {
@@ -314,6 +314,20 @@ TEST_F(TestVideoSenderWithMockEncoder, TestIntraRequestsInternalCapture) {
   EXPECT_EQ(-1, sender_->IntraFrameRequest(-1));
 }
 
+TEST_F(TestVideoSenderWithMockEncoder, EncoderFramerateUpdatedViaProcess) {
+  sender_->SetChannelParameters(settings_.startBitrate, 0, 200);
+  const int64_t kRateStatsWindowMs = 2000;
+  const uint32_t kInputFps = 20;
+  int64_t start_time = clock_.TimeInMilliseconds();
+  while (clock_.TimeInMilliseconds() < start_time + kRateStatsWindowMs) {
+    AddFrame();
+    clock_.AdvanceTimeMilliseconds(1000 / kInputFps);
+  }
+  EXPECT_CALL(encoder_, SetRates(_, kInputFps)).Times(1).WillOnce(Return(0));
+  sender_->Process();
+  AddFrame();
+}
+
 class TestVideoSenderWithVp8 : public TestVideoSender {
  public:
   TestVideoSenderWithVp8()
@@ -354,15 +368,13 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
       EXPECT_CALL(post_encode_callback_, Encoded(_, NULL, NULL))
           .WillOnce(Return(0));
       AddFrame();
-
       // SetChannelParameters needs to be called frequently to propagate
       // framerate from the media optimization into the encoder.
       // Note: SetChannelParameters fails if less than 2 frames are in the
       // buffer since it will fail to calculate the framerate.
       if (i != 0) {
-        EXPECT_EQ(VCM_OK,
-                  sender_->SetChannelParameters(
-                      available_bitrate_kbps_ * 1000, 0, 200));
+        EXPECT_EQ(VCM_OK, sender_->SetChannelParameters(
+                              available_bitrate_kbps_ * 1000, 0, 200));
       }
     }
   }
@@ -386,7 +398,7 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
 };
 
 TEST_F(TestVideoSenderWithVp8,
-       DISABLED_ON_ANDROID(FixedTemporalLayersStrategy)) {
+       DISABLED_ON_IOS(DISABLED_ON_ANDROID(FixedTemporalLayersStrategy))) {
   const int low_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][0];
   const int mid_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][1];
   const int high_b = codec_bitrate_kbps_ * kVp8LayerRateAlloction[2][2];
@@ -401,7 +413,7 @@ TEST_F(TestVideoSenderWithVp8,
 }
 
 TEST_F(TestVideoSenderWithVp8,
-       DISABLED_ON_ANDROID(RealTimeTemporalLayersStrategy)) {
+       DISABLED_ON_IOS(DISABLED_ON_ANDROID(RealTimeTemporalLayersStrategy))) {
   Config extra_options;
   extra_options.Set<TemporalLayers::Factory>(
       new RealTimeTemporalLayersFactory());

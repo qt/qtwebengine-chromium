@@ -14,9 +14,15 @@
 #include "base/memory/discardable_memory.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/thread_task_runner_handle.h"
+#include "base/trace_event/memory_allocator_dump.h"
+#include "base/trace_event/memory_dump_manager.h"
+#include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
+#include "content/common/discardable_shared_memory_heap.h"
+#include "content/public/common/child_process_host.h"
 
 namespace content {
 namespace {
@@ -106,9 +112,13 @@ HostDiscardableSharedMemoryManager::HostDiscardableSharedMemoryManager()
       enforce_memory_policy_pending_(false),
       weak_ptr_factory_(this) {
   DCHECK_NE(memory_limit_, 0u);
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      this);
 }
 
 HostDiscardableSharedMemoryManager::~HostDiscardableSharedMemoryManager() {
+  base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
+      this);
 }
 
 HostDiscardableSharedMemoryManager*
@@ -126,8 +136,9 @@ HostDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
   // Note: Use DiscardableSharedMemoryHeap for in-process allocation
   // of discardable memory if the cost of each allocation is too high.
   base::SharedMemoryHandle handle;
-  AllocateLockedDiscardableSharedMemory(current_process_handle, size, new_id,
-                                        &handle);
+  AllocateLockedDiscardableSharedMemory(current_process_handle,
+                                        ChildProcessHost::kInvalidUniqueID,
+                                        size, new_id, &handle);
   CHECK(base::SharedMemory::IsHandleValid(handle));
   scoped_ptr<base::DiscardableSharedMemory> memory(
       new base::DiscardableSharedMemory(handle));
@@ -138,30 +149,63 @@ HostDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
       memory.Pass(),
       base::Bind(
           &HostDiscardableSharedMemoryManager::DeletedDiscardableSharedMemory,
-          base::Unretained(this), new_id, current_process_handle)));
+          base::Unretained(this), new_id, ChildProcessHost::kInvalidUniqueID)));
+}
+
+bool HostDiscardableSharedMemoryManager::OnMemoryDump(
+    base::trace_event::ProcessMemoryDump* pmd) {
+  base::AutoLock lock(lock_);
+  for (const auto& process_entry : processes_) {
+    const int child_process_id = process_entry.first;
+    const MemorySegmentMap& process_segments = process_entry.second;
+    for (const auto& segment_entry : process_segments) {
+      const int segment_id = segment_entry.first;
+      const MemorySegment* segment = segment_entry.second.get();
+      std::string dump_name = base::StringPrintf(
+          "discardable/process_%x/segment_%d", child_process_id, segment_id);
+      base::trace_event::MemoryAllocatorDump* dump =
+          pmd->CreateAllocatorDump(dump_name);
+      dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                      base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                      segment->memory()->mapped_size());
+
+      // Create the cross-process ownership edge. If the child creates a
+      // corresponding dump for the same segment, this will avoid to
+      // double-count them in tracing. If, instead, no other process will emit a
+      // dump with the same guid, the segment will be accounted to the browser.
+      const uint64 child_tracing_process_id = base::trace_event::
+          MemoryDumpManager::ChildProcessIdToTracingProcessId(child_process_id);
+      base::trace_event::MemoryAllocatorDumpGuid shared_segment_guid =
+          DiscardableSharedMemoryHeap::GetSegmentGUIDForTracing(
+              child_tracing_process_id, segment_id);
+      pmd->CreateSharedGlobalAllocatorDump(shared_segment_guid);
+      pmd->AddOwnershipEdge(dump->guid(), shared_segment_guid);
+    }
+  }
+  return true;
 }
 
 void HostDiscardableSharedMemoryManager::
     AllocateLockedDiscardableSharedMemoryForChild(
         base::ProcessHandle process_handle,
+        int child_process_id,
         size_t size,
         DiscardableSharedMemoryId id,
         base::SharedMemoryHandle* shared_memory_handle) {
-  AllocateLockedDiscardableSharedMemory(process_handle, size, id,
-                                        shared_memory_handle);
+  AllocateLockedDiscardableSharedMemory(process_handle, child_process_id, size,
+                                        id, shared_memory_handle);
 }
 
 void HostDiscardableSharedMemoryManager::ChildDeletedDiscardableSharedMemory(
     DiscardableSharedMemoryId id,
-    base::ProcessHandle process_handle) {
-  DeletedDiscardableSharedMemory(id, process_handle);
+    int child_process_id) {
+  DeletedDiscardableSharedMemory(id, child_process_id);
 }
 
-void HostDiscardableSharedMemoryManager::ProcessRemoved(
-    base::ProcessHandle process_handle) {
+void HostDiscardableSharedMemoryManager::ProcessRemoved(int child_process_id) {
   base::AutoLock lock(lock_);
 
-  ProcessMap::iterator process_it = processes_.find(process_handle);
+  ProcessMap::iterator process_it = processes_.find(child_process_id);
   if (process_it == processes_.end())
     return;
 
@@ -198,13 +242,14 @@ size_t HostDiscardableSharedMemoryManager::GetBytesAllocated() {
 
 void HostDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
     base::ProcessHandle process_handle,
+    int client_process_id,
     size_t size,
     DiscardableSharedMemoryId id,
     base::SharedMemoryHandle* shared_memory_handle) {
   base::AutoLock lock(lock_);
 
   // Make sure |id| is not already in use.
-  MemorySegmentMap& process_segments = processes_[process_handle];
+  MemorySegmentMap& process_segments = processes_[client_process_id];
   if (process_segments.find(id) != process_segments.end()) {
     LOG(ERROR) << "Invalid discardable shared memory ID";
     *shared_memory_handle = base::SharedMemory::NULLHandle();
@@ -264,10 +309,10 @@ void HostDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
 
 void HostDiscardableSharedMemoryManager::DeletedDiscardableSharedMemory(
     DiscardableSharedMemoryId id,
-    base::ProcessHandle process_handle) {
+    int client_process_id) {
   base::AutoLock lock(lock_);
 
-  MemorySegmentMap& process_segments = processes_[process_handle];
+  MemorySegmentMap& process_segments = processes_[client_process_id];
 
   MemorySegmentMap::iterator segment_it = process_segments.find(id);
   if (segment_it == process_segments.end()) {

@@ -30,35 +30,6 @@ typedef std::map<int32, int> FrameIDMap;
 
 #define IPC_MESSAGE_START AccessibilityMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXEvent, ui::AX_EVENT_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXRole, ui::AX_ROLE_LAST)
-
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXBoolAttribute, ui::AX_BOOL_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXFloatAttribute, ui::AX_FLOAT_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntAttribute, ui::AX_INT_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntListAttribute,
-                          ui::AX_INT_LIST_ATTRIBUTE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(ui::AXStringAttribute, ui::AX_STRING_ATTRIBUTE_LAST)
-
-IPC_STRUCT_TRAITS_BEGIN(ui::AXNodeData)
-  IPC_STRUCT_TRAITS_MEMBER(id)
-  IPC_STRUCT_TRAITS_MEMBER(role)
-  IPC_STRUCT_TRAITS_MEMBER(state)
-  IPC_STRUCT_TRAITS_MEMBER(location)
-  IPC_STRUCT_TRAITS_MEMBER(string_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(int_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(float_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(bool_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(intlist_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(html_attributes)
-  IPC_STRUCT_TRAITS_MEMBER(child_ids)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(ui::AXTreeUpdate)
-  IPC_STRUCT_TRAITS_MEMBER(node_id_to_clear)
-  IPC_STRUCT_TRAITS_MEMBER(nodes)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
   // The tree update.
   IPC_STRUCT_MEMBER(ui::AXTreeUpdate, update)
@@ -128,12 +99,23 @@ IPC_MESSAGE_ROUTED2(AccessibilityMsg_ScrollToMakeVisible,
                     int /* object id */,
                     gfx::Rect /* subfocus */)
 
+// Relay a request from assistive technology to show the context menu for a
+// given object.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_ShowContextMenu, int /* object id */)
+
 // Relay a request from assistive technology to move a given object
 // to a specific location, in the WebContents area coordinate space, i.e.
 // (0, 0) is the top-left corner of the WebContents.
 IPC_MESSAGE_ROUTED2(AccessibilityMsg_ScrollToPoint,
                     int /* object id */,
                     gfx::Point /* new location */)
+
+// Relay a request from assistive technology to set the scroll offset
+// of an accessibility object that's a scroll container, to a specific
+// offset.
+IPC_MESSAGE_ROUTED2(AccessibilityMsg_SetScrollOffset,
+                    int /* object id */,
+                    gfx::Point /* new offset */)
 
 // Relay a request from assistive technology to set the cursor or
 // selection within an editable text element.

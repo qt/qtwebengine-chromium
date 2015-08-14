@@ -8,7 +8,8 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "media/base/cdm_config.h"
 #include "media/base/cdm_promise.h"
 #include "media/base/key_systems.h"
@@ -23,21 +24,19 @@
 
 namespace content {
 
+#if defined(ENABLE_PEPPER_CDMS)
 RenderCdmFactory::RenderCdmFactory(
-#if defined(ENABLE_PEPPER_CDMS)
-    const CreatePepperCdmCB& create_pepper_cdm_cb,
-#elif defined(ENABLE_BROWSER_CDMS)
-    RendererCdmManager* manager,
-#endif  // defined(ENABLE_PEPPER_CDMS)
-    RenderFrame* render_frame)
-    : RenderFrameObserver(render_frame)
-#if defined(ENABLE_PEPPER_CDMS)
-    , create_pepper_cdm_cb_(create_pepper_cdm_cb)
-#elif defined(ENABLE_BROWSER_CDMS)
-    , manager_(manager)
-#endif  // defined(ENABLE_PEPPER_CDMS)
-{
+    const CreatePepperCdmCB& create_pepper_cdm_cb)
+    : create_pepper_cdm_cb_(create_pepper_cdm_cb) {
 }
+#elif defined(ENABLE_BROWSER_CDMS)
+RenderCdmFactory::RenderCdmFactory(RendererCdmManager* manager)
+    : manager_(manager) {
+}
+#else
+RenderCdmFactory::RenderCdmFactory() {
+}
+#endif  // defined(ENABLE_PEPPER_CDMS)
 
 RenderCdmFactory::~RenderCdmFactory() {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -56,7 +55,7 @@ void RenderCdmFactory::Create(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   if (!security_origin.is_valid()) {
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(cdm_created_cb, nullptr, "Invalid origin."));
     return;
   }
@@ -69,7 +68,7 @@ void RenderCdmFactory::Create(
     scoped_ptr<media::MediaKeys> cdm(
         new media::AesDecryptor(security_origin, session_message_cb,
                                 session_closed_cb, session_keys_change_cb));
-    base::MessageLoopProxy::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::Bind(cdm_created_cb, base::Passed(&cdm), ""));
     return;
   }
@@ -90,7 +89,7 @@ void RenderCdmFactory::Create(
       session_keys_change_cb, session_expiration_update_cb, cdm_created_cb);
 #else
   // No possible CDM to create, so fail the request.
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(cdm_created_cb, nullptr, "Key system not supported."));
 #endif  // defined(ENABLE_PEPPER_CDMS)

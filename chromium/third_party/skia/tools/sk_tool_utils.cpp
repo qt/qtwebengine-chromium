@@ -34,6 +34,12 @@ const char* colortype_name(SkColorType ct) {
     }
 }
 
+SkColor color_to_565(SkColor color) {
+    SkPMColor pmColor = SkPreMultiplyColor(color);
+    U16CPU color16 = SkPixel32ToPixel16(pmColor);
+    return SkPixel16ToColor(color16);
+}
+
 SkTypeface* create_portable_typeface(const char* name, SkTypeface::Style style) {
     SkTypeface* face;
     if (FLAGS_portableFonts) {
@@ -46,11 +52,20 @@ SkTypeface* create_portable_typeface(const char* name, SkTypeface::Style style) 
     return face;
 }
 
+SkTypeface* create_portable_typeface_always(const char* name, SkTypeface::Style style) {
+    return create_font(name, style);
+}
+
 void set_portable_typeface(SkPaint* paint, const char* name, SkTypeface::Style style) {
     SkTypeface* face = create_portable_typeface(name, style);
     SkSafeUnref(paint->setTypeface(face));
 }
 
+void set_portable_typeface_always(SkPaint* paint, const char* name, SkTypeface::Style style) {
+    SkTypeface* face = create_font(name, style);
+    SkSafeUnref(paint->setTypeface(face));
+}
+    
 void write_pixels(SkCanvas* canvas, const SkBitmap& bitmap, int x, int y,
                   SkColorType colorType, SkAlphaType alphaType) {
     SkBitmap tmp(bitmap);

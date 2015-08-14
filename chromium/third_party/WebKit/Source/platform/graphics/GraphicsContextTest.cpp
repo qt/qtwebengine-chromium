@@ -23,9 +23,9 @@
  */
 
 #include "config.h"
-
 #include "platform/graphics/GraphicsContext.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -35,12 +35,9 @@
 #include "third_party/skia/include/effects/SkBlurDrawLooper.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "third_party/skia/include/effects/SkBlurMaskFilter.h"
-
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 #define EXPECT_EQ_RECT(a, b) \
     EXPECT_EQ(a.x(), b.x()); \
@@ -92,75 +89,6 @@ TEST(GraphicsContextTest, trackDisplayListRecording)
     EXPECT_OPAQUE_PIXELS_ONLY_IN_RECT(bitmap, IntRect(0, 0, 50, 50))
 }
 
-TEST(GraphicsContextTest, trackImageMask)
-{
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(400, 400);
-    bitmap.eraseColor(0);
-    SkCanvas canvas(bitmap);
-
-    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(&canvas);
-
-    Color opaque(1.0f, 0.0f, 0.0f, 1.0f);
-    Color alpha(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // Image masks are done by drawing a bitmap into a transparency layer that uses DstIn to mask
-    // out a transparency layer below that is filled with the mask color. In the end this should
-    // not be marked opaque.
-
-    context->beginLayer();
-    context->fillRect(FloatRect(10, 10, 10, 10), opaque, SkXfermode::kSrcOver_Mode);
-
-    context->beginLayer(1, SkXfermode::kDstIn_Mode);
-
-    OwnPtr<ImageBuffer> alphaImage = ImageBuffer::create(IntSize(100, 100));
-    EXPECT_FALSE(!alphaImage);
-    alphaImage->context()->fillRect(IntRect(0, 0, 100, 100), alpha);
-
-    context->drawImageBuffer(alphaImage.get(), FloatRect(10, 10, 10, 10));
-
-    context->endLayer();
-    context->endLayer();
-
-    EXPECT_OPAQUE_PIXELS_ONLY_IN_RECT(bitmap, IntRect());
-}
-
-TEST(GraphicsContextTest, trackImageMaskWithOpaqueRect)
-{
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(400, 400);
-    bitmap.eraseColor(0);
-    SkCanvas canvas(bitmap);
-
-    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(&canvas);
-
-    Color opaque(1.0f, 0.0f, 0.0f, 1.0f);
-    Color alpha(0.0f, 0.0f, 0.0f, 0.0f);
-
-    // Image masks are done by drawing a bitmap into a transparency layer that uses DstIn to mask
-    // out a transparency layer below that is filled with the mask color. In the end this should
-    // not be marked opaque.
-
-    context->beginLayer();
-    context->fillRect(FloatRect(10, 10, 10, 10), opaque, SkXfermode::kSrcOver_Mode);
-
-    context->beginLayer(1, SkXfermode::kDstIn_Mode);
-
-    OwnPtr<ImageBuffer> alphaImage = ImageBuffer::create(IntSize(100, 100));
-    EXPECT_FALSE(!alphaImage);
-    alphaImage->context()->fillRect(IntRect(0, 0, 100, 100), alpha);
-
-    context->drawImageBuffer(alphaImage.get(), FloatRect(10, 10, 10, 10));
-
-    // We can't have an opaque mask actually, but we can pretend here like it would look if we did.
-    context->fillRect(FloatRect(12, 12, 3, 3), opaque, SkXfermode::kSrcOver_Mode);
-
-    context->endLayer();
-    context->endLayer();
-
-    EXPECT_OPAQUE_PIXELS_ONLY_IN_RECT(bitmap, IntRect(12, 12, 3, 3));
-}
-
 TEST(GraphicsContextTest, UnboundedDrawsAreClipped)
 {
     SkBitmap bitmap;
@@ -209,6 +137,11 @@ TEST(GraphicsContextTest, UnboundedDrawsAreClipped)
 
 TEST(GraphicsContextTest, RecordingTotalMatrix)
 {
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        // GraphicsContext::getCTM() won't do the right thing in Slimming Paint, so just skip this test.
+        return;
+    }
+
     SkBitmap bitmap;
     bitmap.allocN32Pixels(400, 400);
     bitmap.eraseColor(0);
@@ -243,6 +176,12 @@ TEST(GraphicsContextTest, RecordingTotalMatrix)
 
 TEST(GraphicsContextTest, RecordingCanvas)
 {
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        // This test doesn't make any sense in slimming paint as you can't begin recording within an existing recording,
+        // so just bail out.
+        return;
+    }
+
     SkBitmap bitmap;
     bitmap.allocN32Pixels(1, 1);
     bitmap.eraseColor(0);
@@ -271,4 +210,4 @@ TEST(GraphicsContextTest, RecordingCanvas)
     context->endRecording();
 }
 
-} // namespace
+} // namespace blink

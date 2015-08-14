@@ -30,6 +30,7 @@
 #ifndef InspectorDOMAgent_h
 #define InspectorDOMAgent_h
 
+#include "core/CoreExport.h"
 #include "core/InspectorFrontend.h"
 #include "core/events/EventListenerMap.h"
 #include "core/inspector/InjectedScript.h"
@@ -74,10 +75,10 @@ struct InspectorHighlightConfig;
 
 typedef String ErrorString;
 
-class InspectorDOMAgent final : public InspectorBaseAgent<InspectorDOMAgent, InspectorFrontend::DOM>, public InspectorBackendDispatcher::DOMCommandHandler {
+class CORE_EXPORT InspectorDOMAgent final : public InspectorBaseAgent<InspectorDOMAgent, InspectorFrontend::DOM>, public InspectorBackendDispatcher::DOMCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMAgent);
 public:
-    struct DOMListener : public WillBeGarbageCollectedMixin {
+    struct CORE_EXPORT DOMListener : public WillBeGarbageCollectedMixin {
         virtual ~DOMListener()
         {
         }
@@ -117,7 +118,6 @@ public:
     virtual void getOuterHTML(ErrorString*, int nodeId, WTF::String* outerHTML) override;
     virtual void setOuterHTML(ErrorString*, int nodeId, const String& outerHTML) override;
     virtual void setNodeValue(ErrorString*, int nodeId, const String& value) override;
-    virtual void getEventListenersForNode(ErrorString*, int nodeId, const WTF::String* objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray) override;
     virtual void performSearch(ErrorString*, const String& whitespaceTrimmedQuery, const bool* includeUserAgentShadowDOM, String* searchId, int* resultCount) override;
     virtual void getSearchResults(ErrorString*, const String& searchId, int fromIndex, int toIndex, RefPtr<TypeBuilder::Array<int> >&) override;
     virtual void discardSearchResults(ErrorString*, const String& searchId) override;
@@ -146,7 +146,7 @@ public:
     virtual void getRelayoutBoundary(ErrorString*, int nodeId, int* relayoutBoundaryNodeId) override;
     virtual void getHighlightObjectForTest(ErrorString*, int nodeId, RefPtr<JSONObject>&) override;
 
-    class Listener : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT Listener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~Listener() { }
         virtual void domAgentWasEnabled() = 0;
@@ -232,7 +232,6 @@ private:
     PassRefPtr<TypeBuilder::DOM::Node> buildObjectForNode(Node*, int depth, NodeToIdMap*);
     PassRefPtr<TypeBuilder::Array<String> > buildArrayForElementAttributes(Element*);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > buildArrayForContainerChildren(Node* container, int depth, NodeToIdMap* nodesMap);
-    PassRefPtr<TypeBuilder::DOM::EventListener> buildObjectForEventListener(const RegisteredEventListener&, const AtomicString& eventType, Node*, const String* objectGroupId);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > buildArrayForPseudoElements(Element*, NodeToIdMap* nodesMap);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::BackendNode>> buildArrayForDistributedNodes(InsertionPoint*);
 

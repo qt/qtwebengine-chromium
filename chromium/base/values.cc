@@ -20,46 +20,49 @@ namespace base {
 
 namespace {
 
+scoped_ptr<Value> CopyWithoutEmptyChildren(const Value& node);
+
 // Make a deep copy of |node|, but don't include empty lists or dictionaries
 // in the copy. It's possible for this function to return NULL and it
 // expects |node| to always be non-NULL.
-Value* CopyWithoutEmptyChildren(const Value* node) {
-  DCHECK(node);
-  switch (node->GetType()) {
-    case Value::TYPE_LIST: {
-      const ListValue* list = static_cast<const ListValue*>(node);
-      ListValue* copy = new ListValue;
-      for (ListValue::const_iterator it = list->begin(); it != list->end();
-           ++it) {
-        Value* child_copy = CopyWithoutEmptyChildren(*it);
-        if (child_copy)
-          copy->Append(child_copy);
-      }
-      if (!copy->empty())
-        return copy;
-
-      delete copy;
-      return NULL;
+scoped_ptr<ListValue> CopyListWithoutEmptyChildren(const ListValue& list) {
+  scoped_ptr<ListValue> copy;
+  for (ListValue::const_iterator it = list.begin(); it != list.end(); ++it) {
+    scoped_ptr<Value> child_copy = CopyWithoutEmptyChildren(**it);
+    if (child_copy) {
+      if (!copy)
+        copy.reset(new ListValue);
+      copy->Append(child_copy.Pass());
     }
+  }
+  return copy;
+}
 
-    case Value::TYPE_DICTIONARY: {
-      const DictionaryValue* dict = static_cast<const DictionaryValue*>(node);
-      DictionaryValue* copy = new DictionaryValue;
-      for (DictionaryValue::Iterator it(*dict); !it.IsAtEnd(); it.Advance()) {
-        Value* child_copy = CopyWithoutEmptyChildren(&it.value());
-        if (child_copy)
-          copy->SetWithoutPathExpansion(it.key(), child_copy);
-      }
-      if (!copy->empty())
-        return copy;
-
-      delete copy;
-      return NULL;
+scoped_ptr<DictionaryValue> CopyDictionaryWithoutEmptyChildren(
+    const DictionaryValue& dict) {
+  scoped_ptr<DictionaryValue> copy;
+  for (DictionaryValue::Iterator it(dict); !it.IsAtEnd(); it.Advance()) {
+    scoped_ptr<Value> child_copy = CopyWithoutEmptyChildren(it.value());
+    if (child_copy) {
+      if (!copy)
+        copy.reset(new DictionaryValue);
+      copy->SetWithoutPathExpansion(it.key(), child_copy.Pass());
     }
+  }
+  return copy;
+}
+
+scoped_ptr<Value> CopyWithoutEmptyChildren(const Value& node) {
+  switch (node.GetType()) {
+    case Value::TYPE_LIST:
+      return CopyListWithoutEmptyChildren(static_cast<const ListValue&>(node));
+
+    case Value::TYPE_DICTIONARY:
+      return CopyDictionaryWithoutEmptyChildren(
+          static_cast<const DictionaryValue&>(node));
 
     default:
-      // For everything else, just make a copy.
-      return node->DeepCopy();
+      return node.CreateDeepCopy();
   }
 }
 
@@ -479,27 +482,29 @@ void DictionaryValue::SetStringWithoutPathExpansion(
   SetWithoutPathExpansion(path, new StringValue(in_value));
 }
 
-bool DictionaryValue::Get(const std::string& path,
+bool DictionaryValue::Get(StringPiece path,
                           const Value** out_value) const {
   DCHECK(IsStringUTF8(path));
-  std::string current_path(path);
+  StringPiece current_path(path);
   const DictionaryValue* current_dictionary = this;
   for (size_t delimiter_position = current_path.find('.');
        delimiter_position != std::string::npos;
        delimiter_position = current_path.find('.')) {
     const DictionaryValue* child_dictionary = NULL;
     if (!current_dictionary->GetDictionary(
-            current_path.substr(0, delimiter_position), &child_dictionary))
+            current_path.substr(0, delimiter_position), &child_dictionary)) {
       return false;
+    }
 
     current_dictionary = child_dictionary;
-    current_path.erase(0, delimiter_position + 1);
+    current_path = current_path.substr(delimiter_position + 1);
   }
 
-  return current_dictionary->GetWithoutPathExpansion(current_path, out_value);
+  return current_dictionary->GetWithoutPathExpansion(current_path.as_string(),
+                                                     out_value);
 }
 
-bool DictionaryValue::Get(const std::string& path, Value** out_value)  {
+bool DictionaryValue::Get(StringPiece path, Value** out_value)  {
   return static_cast<const DictionaryValue&>(*this).Get(
       path,
       const_cast<const Value**>(out_value));
@@ -585,7 +590,7 @@ bool DictionaryValue::GetBinary(const std::string& path,
       const_cast<const BinaryValue**>(out_value));
 }
 
-bool DictionaryValue::GetDictionary(const std::string& path,
+bool DictionaryValue::GetDictionary(StringPiece path,
                                     const DictionaryValue** out_value) const {
   const Value* value;
   bool result = Get(path, &value);
@@ -598,7 +603,7 @@ bool DictionaryValue::GetDictionary(const std::string& path,
   return true;
 }
 
-bool DictionaryValue::GetDictionary(const std::string& path,
+bool DictionaryValue::GetDictionary(StringPiece path,
                                     DictionaryValue** out_value) {
   return static_cast<const DictionaryValue&>(*this).GetDictionary(
       path,
@@ -789,9 +794,12 @@ bool DictionaryValue::RemovePath(const std::string& path,
   return result;
 }
 
-DictionaryValue* DictionaryValue::DeepCopyWithoutEmptyChildren() const {
-  Value* copy = CopyWithoutEmptyChildren(this);
-  return copy ? static_cast<DictionaryValue*>(copy) : new DictionaryValue;
+scoped_ptr<DictionaryValue> DictionaryValue::DeepCopyWithoutEmptyChildren()
+    const {
+  scoped_ptr<DictionaryValue> copy = CopyDictionaryWithoutEmptyChildren(*this);
+  if (!copy)
+    copy.reset(new DictionaryValue);
+  return copy;
 }
 
 void DictionaryValue::MergeDictionary(const DictionaryValue* dictionary) {
@@ -1168,9 +1176,7 @@ ValueDeserializer::~ValueDeserializer() {
 
 std::ostream& operator<<(std::ostream& out, const Value& value) {
   std::string json;
-  JSONWriter::WriteWithOptions(&value,
-                               JSONWriter::OPTIONS_PRETTY_PRINT,
-                               &json);
+  JSONWriter::WriteWithOptions(value, JSONWriter::OPTIONS_PRETTY_PRINT, &json);
   return out << json;
 }
 

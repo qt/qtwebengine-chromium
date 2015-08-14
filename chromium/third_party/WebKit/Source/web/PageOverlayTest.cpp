@@ -105,10 +105,11 @@ public:
     void paintPageOverlay(WebGraphicsContext* context, const WebSize& size) override
     {
         GraphicsContext& graphicsContext = toWebGraphicsContextImpl(context)->graphicsContext();
+        if (DrawingRecorder::useCachedDrawingIfPossible(graphicsContext, *this, DisplayItem::PageOverlay))
+            return;
         FloatRect rect(0, 0, size.width, size.height);
         DrawingRecorder drawingRecorder(graphicsContext, *this, DisplayItem::PageOverlay, rect);
-        if (!drawingRecorder.canUseCachedDrawing())
-            graphicsContext.fillRect(rect, m_color);
+        graphicsContext.fillRect(rect, m_color);
     }
 
     DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
@@ -194,19 +195,21 @@ void PageOverlayTest::runPageOverlayTestWithAcceleratedCompositing()
     EXPECT_CALL(canvas, onDrawRect(SkRect::MakeWH(viewportWidth, viewportHeight), Property(&SkPaint::getColor, SK_ColorYELLOW)));
 
     GraphicsLayer* graphicsLayer = webViewImpl()->pageOverlays()->graphicsLayerForTesting();
+    WebRect rect(0, 0, viewportWidth, viewportHeight);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         // If slimming paint is on, we paint the layer with a null canvas to get
         // a display list, and then replay that onto the mock canvas for
         // examination. This is about as close to the real path as we can easily
         // get.
         GraphicsContext graphicsContext(graphicsLayer->displayItemList());
-        graphicsLayer->paint(graphicsContext, WebRect(0, 0, viewportWidth, viewportHeight));
+        graphicsLayer->paint(graphicsContext, rect);
 
-        OwnPtr<GraphicsContext> replayContext = GraphicsContext::deprecatedCreateWithCanvas(&canvas);
-        graphicsLayer->displayItemList()->commitNewDisplayItemsAndReplay(*replayContext);
+        graphicsContext.beginRecording(IntRect(rect));
+        graphicsLayer->displayItemList()->commitNewDisplayItemsAndReplay(graphicsContext);
+        graphicsContext.endRecording()->playback(&canvas);
     } else {
         OwnPtr<GraphicsContext> graphicsContext = GraphicsContext::deprecatedCreateWithCanvas(&canvas);
-        graphicsLayer->paint(*graphicsContext, WebRect(0, 0, viewportWidth, viewportHeight));
+        graphicsLayer->paint(*graphicsContext, rect);
     }
 }
 

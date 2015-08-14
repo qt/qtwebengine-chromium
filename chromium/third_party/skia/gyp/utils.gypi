@@ -11,11 +11,6 @@
 #
 {
     'sources': [
-        # Classes for a threadpool.
-        '<(skia_src_path)/utils/SkCondVar.h',
-        '<(skia_src_path)/utils/SkRunnable.h',
-        '<(skia_src_path)/utils/SkCondVar.cpp',
-
         '<(skia_include_path)/utils/SkBoundaryPatch.h',
         '<(skia_include_path)/utils/SkFrontBufferedStream.h',
         '<(skia_include_path)/utils/SkCamera.h',
@@ -79,7 +74,6 @@
         '<(skia_src_path)/utils/SkParse.cpp',
         '<(skia_src_path)/utils/SkParseColor.cpp',
         '<(skia_src_path)/utils/SkParsePath.cpp',
-        '<(skia_src_path)/utils/SkPictureUtils.cpp',
         '<(skia_src_path)/utils/SkPatchGrid.cpp',
         '<(skia_src_path)/utils/SkPatchGrid.h',
         '<(skia_src_path)/utils/SkPatchUtils.cpp',
@@ -133,6 +127,8 @@
         #testing
         '<(skia_src_path)/fonts/SkGScalerContext.cpp',
         '<(skia_src_path)/fonts/SkGScalerContext.h',
+        '<(skia_src_path)/fonts/SkRandomScalerContext.cpp',
+        '<(skia_src_path)/fonts/SkRandomScalerContext.cpp',
         '<(skia_src_path)/fonts/SkTestScalerContext.cpp',
         '<(skia_src_path)/fonts/SkTestScalerContext.h',
     ],

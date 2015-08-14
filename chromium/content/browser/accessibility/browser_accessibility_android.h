@@ -19,8 +19,6 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
 
   bool PlatformIsLeaf() const override;
 
-  bool CanScrollForward() const;
-  bool CanScrollBackward() const;
   bool IsCheckable() const;
   bool IsChecked() const;
   bool IsClickable() const;
@@ -53,10 +51,19 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
   int GetItemIndex() const;
   int GetItemCount() const;
 
+  bool CanScrollForward() const;
+  bool CanScrollBackward() const;
+  bool CanScrollUp() const;
+  bool CanScrollDown() const;
+  bool CanScrollLeft() const;
+  bool CanScrollRight() const;
   int GetScrollX() const;
   int GetScrollY() const;
+  int GetMinScrollX() const;
+  int GetMinScrollY() const;
   int GetMaxScrollX() const;
   int GetMaxScrollY() const;
+  bool Scroll(int direction) const;
 
   int GetTextChangeFromIndex() const;
   int GetTextChangeAddedCount() const;
@@ -116,6 +123,13 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
   void NotifyLiveRegionUpdate(base::string16& aria_live);
 
   int CountChildrenWithRole(ui::AXRole role) const;
+
+  static size_t CommonPrefixLength(const base::string16 a,
+                                   const base::string16 b);
+  static size_t CommonSuffixLength(const base::string16 a,
+                                   const base::string16 b);
+  static size_t CommonEndLengths(const base::string16 a,
+                                 const base::string16 b);
 
   base::string16 cached_text_;
   bool first_time_;

@@ -28,7 +28,7 @@ class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
 
-  ChunkDemuxerStream(Type type, Liveness liveness, bool splice_frames_enabled);
+  ChunkDemuxerStream(Type type, bool splice_frames_enabled);
   ~ChunkDemuxerStream() override;
 
   // ChunkDemuxerStream control methods.
@@ -163,6 +163,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   ~ChunkDemuxer() override;
 
   // Demuxer implementation.
+  std::string GetDisplayName() const override;
   void Initialize(DemuxerHost* host,
                   const PipelineStatusCB& cb,
                   bool enable_text_tracks) override;

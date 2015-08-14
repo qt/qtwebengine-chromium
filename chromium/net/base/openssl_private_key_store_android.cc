@@ -32,14 +32,13 @@ bool OpenSSLPrivateKeyStore::StoreKeyPair(const GURL& url,
   unsigned char* private_key = NULL;
   int private_len = 0;
   ScopedPKCS8_PRIV_KEY_INFO pkcs8(EVP_PKEY2PKCS8(pkey));
-  if (!pkcs8) {
+  if (pkcs8)
     private_len = i2d_PKCS8_PRIV_KEY_INFO(pkcs8.get(), &private_key);
-  }
   bool ret = false;
   if (public_len > 0 && private_len > 0) {
     ret = android::StoreKeyPair(
-        static_cast<const uint8*>(public_key), public_len,
-        static_cast<const uint8*>(private_key), private_len);
+        static_cast<const uint8_t*>(public_key), public_len,
+        static_cast<const uint8_t*>(private_key), private_len);
   }
   LOG_IF(ERROR, !ret) << "StoreKeyPair failed. pub len = " << public_len
                       << " priv len = " << private_len;

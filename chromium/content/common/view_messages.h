@@ -15,6 +15,7 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/date_time_suggestion.h"
 #include "content/common/frame_replication_state.h"
+#include "content/common/media/media_param_traits.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
@@ -42,7 +43,7 @@
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
+#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
@@ -110,13 +111,14 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::StopFindAction,
                           content::STOP_FIND_ACTION_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::ThreeDAPIType,
                           content::THREE_D_API_TYPE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(media::ChannelLayout, media::CHANNEL_LAYOUT_MAX - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(media::MediaLogEvent::Type,
                           media::MediaLogEvent::TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputType, ui::TEXT_INPUT_TYPE_MAX)
 
 #if defined(OS_MACOSX)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
+
 IPC_STRUCT_TRAITS_BEGIN(FontDescriptor)
   IPC_STRUCT_TRAITS_MEMBER(font_name)
   IPC_STRUCT_TRAITS_MEMBER(font_point_size)
@@ -158,6 +160,8 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebDeviceEmulationParams)
   IPC_STRUCT_TRAITS_MEMBER(screenPosition)
+  IPC_STRUCT_TRAITS_MEMBER(screenSize)
+  IPC_STRUCT_TRAITS_MEMBER(viewPosition)
   IPC_STRUCT_TRAITS_MEMBER(deviceScaleFactor)
   IPC_STRUCT_TRAITS_MEMBER(viewSize)
   IPC_STRUCT_TRAITS_MEMBER(fitToView)
@@ -311,8 +315,8 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   IPC_STRUCT_MEMBER(int64, session_storage_namespace_id)
 
   // The name of the resulting frame that should be created (empty if none
-  // has been specified).
-  IPC_STRUCT_MEMBER(base::string16, frame_name)
+  // has been specified). UTF8 encoded string.
+  IPC_STRUCT_MEMBER(std::string, frame_name)
 
   // The routing id of the frame initiating the open.
   IPC_STRUCT_MEMBER(int, opener_render_frame_id)
@@ -497,19 +501,17 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   // The session storage namespace ID this view should use.
   IPC_STRUCT_MEMBER(int64, session_storage_namespace_id)
 
-  // The name of the frame associated with this view (or empty if none).
-  IPC_STRUCT_MEMBER(base::string16, frame_name)
-
-  // The route ID of the opener RenderView if we need to set one
-  // (MSG_ROUTING_NONE otherwise).
-  IPC_STRUCT_MEMBER(int, opener_route_id)
+  // The route ID of the opener RenderFrame or RenderFrameProxy, if we need to
+  // set one (MSG_ROUTING_NONE otherwise).
+  IPC_STRUCT_MEMBER(int, opener_frame_route_id)
 
   // Whether the RenderView should initially be swapped out.
   IPC_STRUCT_MEMBER(bool, swapped_out)
 
-  // In --site-per-process mode, if this view is |swapped_out|, its main frame
-  // will become a RenderFrameProxy.  |replicated_frame_state| is used to
-  // replicate information such as security origin to that RenderFrameProxy.
+  // Carries replicated information, such as frame name and sandbox flags, for
+  // this view's main frame, which will be a proxy in |swapped_out|
+  // views when in --site-per-process mode, or a RenderFrame in all other
+  // cases.
   IPC_STRUCT_MEMBER(content::FrameReplicationState, replicated_frame_state)
 
   // The ID of the proxy object for the main frame in this view. It is only
@@ -542,6 +544,16 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   // The maximum size to layout the page if auto-resize is enabled.
   IPC_STRUCT_MEMBER(gfx::Size, max_size)
 IPC_STRUCT_END()
+
+#if defined(OS_MACOSX)
+IPC_STRUCT_BEGIN(ViewMsg_UpdateScrollbarTheme_Params)
+  IPC_STRUCT_MEMBER(float, initial_button_delay)
+  IPC_STRUCT_MEMBER(float, autoscroll_button_delay)
+  IPC_STRUCT_MEMBER(bool, jump_on_track_click)
+  IPC_STRUCT_MEMBER(blink::ScrollerStyle, preferred_scroller_style)
+  IPC_STRUCT_MEMBER(bool, redraw)
+IPC_STRUCT_END()
+#endif
 
 // Messages sent from the browser to the renderer.
 
@@ -759,11 +771,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetWebUIProperty,
 IPC_MESSAGE_ROUTED1(ViewMsg_SetInputMethodActive,
                     bool /* is_active */)
 
-// IME API oncandidatewindow* events for InputMethodContext.
-IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowShown)
-IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowUpdated)
-IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowHidden)
-
 // Used to notify the render-view that we have received a target URL. Used
 // to prevent target URLs spamming the browser.
 IPC_MESSAGE_ROUTED0(ViewMsg_UpdateTargetURL_ACK)
@@ -895,10 +902,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SavePageAsMHTML,
                     int /* job_id */,
                     IPC::PlatformFileForTransit /* file handle */)
 
-// Temporary message to diagnose an unexpected condition in WebContentsImpl.
-IPC_MESSAGE_CONTROL1(ViewMsg_TempCrashWithData,
-                     GURL /* data */)
-
 // An acknowledge to ViewHostMsg_MultipleTargetsTouched to notify the renderer
 // process to release the magnified image.
 IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupBitmap,
@@ -908,15 +911,9 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupBitmap,
 IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
 
 #if defined(OS_MACOSX)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
-
 // Notification of a change in scrollbar appearance and/or behavior.
-IPC_MESSAGE_CONTROL5(ViewMsg_UpdateScrollbarTheme,
-                     float /* initial_button_delay */,
-                     float /* autoscroll_button_delay */,
-                     bool /* jump_on_track_click */,
-                     blink::ScrollerStyle /* preferred_scroller_style */,
-                     bool /* redraw */)
+IPC_MESSAGE_CONTROL1(ViewMsg_UpdateScrollbarTheme,
+                     ViewMsg_UpdateScrollbarTheme_Params /* params */)
 #endif
 
 #if defined(OS_ANDROID)
@@ -1441,19 +1438,6 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidGenerateCacheableMetadata,
                      GURL /* url */,
                      base::Time /* expected_response_time */,
                      std::vector<char> /* data */)
-
-// Register a new handler for URL requests with the given scheme.
-IPC_MESSAGE_ROUTED4(ViewHostMsg_RegisterProtocolHandler,
-                    std::string /* scheme */,
-                    GURL /* url */,
-                    base::string16 /* title */,
-                    bool /* user_gesture */)
-
-// Unregister the registered handler for URL requests with the given scheme.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
-                    std::string /* scheme */,
-                    GURL /* url */,
-                    bool /* user_gesture */)
 
 // Send back a string to be recorded by UserMetrics.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_UserMetricsRecordAction,

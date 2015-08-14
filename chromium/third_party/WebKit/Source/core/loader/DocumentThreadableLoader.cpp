@@ -86,8 +86,9 @@ DocumentThreadableLoader::DocumentThreadableLoader(Document& document, Threadabl
     , m_resourceLoaderOptions(resourceLoaderOptions)
     , m_forceDoNotAllowStoredCredentials(false)
     , m_securityOrigin(m_resourceLoaderOptions.securityOrigin)
-    , m_sameOriginRequest(securityOrigin()->canRequest(request.url()))
+    , m_sameOriginRequest(securityOrigin()->canRequestNoSuborigin(request.url()))
     , m_crossOriginNonSimpleRequest(false)
+    , m_isUsingDataConsumerHandle(false)
     , m_async(blockingBehavior == LoadAsynchronously)
     , m_requestContext(request.requestContext())
     , m_timeoutTimer(this, &DocumentThreadableLoader::didTimeout)
@@ -368,10 +369,22 @@ void DocumentThreadableLoader::dataDownloaded(Resource* resource, int dataLength
     m_client->didDownloadData(dataLength);
 }
 
+void DocumentThreadableLoader::didReceiveResourceTiming(Resource* resource, const ResourceTimingInfo& info)
+{
+    ASSERT(m_client);
+    ASSERT_UNUSED(resource, resource == this->resource());
+    ASSERT(m_async);
+
+    m_client->didReceiveResourceTiming(info);
+}
+
 void DocumentThreadableLoader::responseReceived(Resource* resource, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
     ASSERT_UNUSED(resource, resource == this->resource());
     ASSERT(m_async);
+
+    if (handle)
+        m_isUsingDataConsumerHandle = true;
 
     handleResponse(resource->identifier(), response, handle);
 }
@@ -404,7 +417,7 @@ void DocumentThreadableLoader::handlePreflightResponse(const ResourceResponse& r
 void DocumentThreadableLoader::reportResponseReceived(unsigned long identifier, const ResourceResponse& response)
 {
     DocumentLoader* loader = m_document.frame()->loader().documentLoader();
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, m_document.frame(), response));
+    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, m_document.frame(), response));
     LocalFrame* frame = m_document.frame();
     InspectorInstrumentation::didReceiveResourceResponse(frame, identifier, loader, response, resource() ? resource()->loader() : 0);
     frame->console().reportResourceResponseReceived(loader, identifier, response);
@@ -464,6 +477,9 @@ void DocumentThreadableLoader::dataReceived(Resource* resource, const char* data
 {
     ASSERT_UNUSED(resource, resource == this->resource());
     ASSERT(m_async);
+
+    if (m_isUsingDataConsumerHandle)
+        return;
 
     handleReceivedData(data, dataLength);
 }
@@ -578,9 +594,9 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Resou
             newRequest.setOriginRestriction(FetchRequest::NoOriginRestriction);
         ASSERT(!resource());
         if (request.requestContext() == WebURLRequest::RequestContextVideo || request.requestContext() == WebURLRequest::RequestContextAudio)
-            setResource(m_document.fetcher()->fetchMedia(newRequest));
+            setResource(RawResource::fetchMedia(newRequest, m_document.fetcher()));
         else
-            setResource(m_document.fetcher()->fetchRawResource(newRequest));
+            setResource(RawResource::fetch(newRequest, m_document.fetcher()));
         if (resource() && resource()->loader()) {
             unsigned long identifier = resource()->identifier();
             InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(&m_document, identifier, m_client);
@@ -591,7 +607,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Resou
     FetchRequest fetchRequest(request, m_options.initiator, resourceLoaderOptions);
     if (m_options.crossOriginRequestPolicy == AllowCrossOriginRequests)
         fetchRequest.setOriginRestriction(FetchRequest::NoOriginRestriction);
-    ResourcePtr<Resource> resource = m_document.fetcher()->fetchSynchronously(fetchRequest);
+    ResourcePtr<Resource> resource = RawResource::fetchSynchronously(fetchRequest, m_document.fetcher());
     ResourceResponse response = resource ? resource->response() : ResourceResponse();
     unsigned long identifier = resource ? resource->identifier() : std::numeric_limits<unsigned long>::max();
     ResourceError error = resource ? resource->resourceError() : ResourceError();

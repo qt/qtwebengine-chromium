@@ -3,29 +3,6 @@
  * found in the LICENSE file.
  */
 
-:host {
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  height: 24px;
-  margin: 0;
-  outline: none;
+#iconButton {
   padding: 0;
-  width: 24px;
 }
-
-:host(:hover) {
-  cursor: pointer;
-}
-
-:host(:focus) {
-  background: rgba(0, 0, 0, .16);
-  border-color: transparent;
-  opacity: 0.75;
-}
-
-:host(:active) {
-  background: rgba(0, 0, 0, .12);
-  opacity: 1.0;
-}
-

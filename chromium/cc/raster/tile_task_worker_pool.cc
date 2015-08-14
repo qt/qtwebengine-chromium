@@ -52,14 +52,14 @@ class TaskSetFinishedTaskImpl : public TileTask {
 
 // This allows a micro benchmark system to run tasks with highest priority,
 // since it should finish as quickly as possible.
-unsigned TileTaskWorkerPool::kBenchmarkTaskPriority = 0u;
+size_t TileTaskWorkerPool::kBenchmarkTaskPriority = 0u;
 // Task priorities that make sure task set finished tasks run before any
 // other remaining tasks. This is combined with the task set type to ensure
 // proper prioritization ordering between task set types.
-unsigned TileTaskWorkerPool::kTaskSetFinishedTaskPriorityBase = 1u;
+size_t TileTaskWorkerPool::kTaskSetFinishedTaskPriorityBase = 1u;
 // For correctness, |kTileTaskPriorityBase| must be greater than
 // |kTaskSetFinishedTaskPriorityBase + kNumberOfTaskSets|.
-unsigned TileTaskWorkerPool::kTileTaskPriorityBase = 10u;
+size_t TileTaskWorkerPool::kTileTaskPriorityBase = 10u;
 
 TileTaskWorkerPool::TileTaskWorkerPool() {
 }
@@ -96,7 +96,7 @@ void TileTaskWorkerPool::ScheduleTasksOnOriginThread(TileTaskClient* client,
 // static
 void TileTaskWorkerPool::InsertNodeForTask(TaskGraph* graph,
                                            TileTask* task,
-                                           unsigned priority,
+                                           size_t priority,
                                            size_t dependencies) {
   DCHECK(std::find_if(graph->nodes.begin(), graph->nodes.end(),
                       TaskGraph::Node::TaskComparator(task)) ==
@@ -109,7 +109,7 @@ void TileTaskWorkerPool::InsertNodesForRasterTask(
     TaskGraph* graph,
     RasterTask* raster_task,
     const ImageDecodeTask::Vector& decode_tasks,
-    unsigned priority) {
+    size_t priority) {
   size_t dependencies = 0u;
 
   // Insert image decode tasks.
@@ -157,9 +157,10 @@ static bool IsSupportedPlaybackToMemoryFormat(ResourceFormat format) {
 void TileTaskWorkerPool::PlaybackToMemory(void* memory,
                                           ResourceFormat format,
                                           const gfx::Size& size,
-                                          int stride,
+                                          size_t stride,
                                           const RasterSource* raster_source,
-                                          const gfx::Rect& rect,
+                                          const gfx::Rect& canvas_bitmap_rect,
+                                          const gfx::Rect& canvas_playback_rect,
                                           float scale) {
   DCHECK(IsSupportedPlaybackToMemoryFormat(format)) << format;
 
@@ -178,23 +179,26 @@ void TileTaskWorkerPool::PlaybackToMemory(void* memory,
 
   if (!stride)
     stride = info.minRowBytes();
-  DCHECK_GT(stride, 0);
+  DCHECK_GT(stride, 0u);
 
   if (!needs_copy) {
     skia::RefPtr<SkSurface> surface = skia::AdoptRef(
         SkSurface::NewRasterDirect(info, memory, stride, &surface_props));
     skia::RefPtr<SkCanvas> canvas = skia::SharePtr(surface->getCanvas());
-    raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
+    raster_source->PlaybackToCanvas(canvas.get(), canvas_bitmap_rect,
+                                    canvas_playback_rect, scale);
     return;
   }
 
   skia::RefPtr<SkSurface> surface =
       skia::AdoptRef(SkSurface::NewRaster(info, &surface_props));
   skia::RefPtr<SkCanvas> canvas = skia::SharePtr(surface->getCanvas());
-  raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
+  raster_source->PlaybackToCanvas(canvas.get(), canvas_bitmap_rect,
+                                  canvas_playback_rect, scale);
 
-  SkImageInfo dst_info = info;
-  dst_info.fColorType = buffer_color_type;
+  SkImageInfo dst_info =
+      SkImageInfo::Make(info.width(), info.height(), buffer_color_type,
+                        info.alphaType(), info.profileType());
   // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
   // bitmap data. There will be no need to call SkAlign4 once crbug.com/293728
   // is fixed.

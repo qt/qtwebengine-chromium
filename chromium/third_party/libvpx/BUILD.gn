@@ -89,7 +89,7 @@ static_library("libvpx_intrinsics_sse2") {
   configs += [ ":libvpx_config" ]
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
-  if (!is_win) {
+  if (!is_win || is_clang) {
     cflags = [ "-msse2" ]
   }
   if (current_cpu == "x86") {
@@ -103,7 +103,7 @@ static_library("libvpx_intrinsics_ssse3") {
   configs += [ ":libvpx_config" ]
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
-  if (!is_win) {
+  if (!is_win || is_clang) {
     cflags = [ "-mssse3" ]
   }
   if (current_cpu == "x86") {
@@ -117,7 +117,7 @@ static_library("libvpx_intrinsics_sse4_1") {
   configs += [ ":libvpx_config" ]
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
-  if (!is_win) {
+  if (!is_win || is_clang) {
     cflags = [ "-msse4.1" ]
   }
   if (current_cpu == "x86") {

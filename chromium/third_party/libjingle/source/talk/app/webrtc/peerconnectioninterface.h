@@ -79,6 +79,7 @@
 #include "talk/app/webrtc/umametrics.h"
 #include "webrtc/base/fileutils.h"
 #include "webrtc/base/network.h"
+#include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/socketaddress.h"
 
 namespace rtc {
@@ -126,6 +127,9 @@ class MetricsObserverInterface : public rtc::RefCountInterface {
   virtual void IncrementCounter(PeerConnectionMetricsCounter type) = 0;
   virtual void AddHistogramSample(PeerConnectionMetricsName type,
                                   int value) = 0;
+  // TODO(jbauch): Make method abstract when it is implemented by Chromium.
+  virtual void AddHistogramSample(PeerConnectionMetricsName type,
+                                  const std::string& value) {}
 
  protected:
   virtual ~MetricsObserverInterface() {}
@@ -175,7 +179,9 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   };
 
   struct IceServer {
+    // TODO(jbauch): Remove uri when all code using it has switched to urls.
     std::string uri;
+    std::vector<std::string> urls;
     std::string username;
     std::string password;
   };
@@ -197,6 +203,12 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     kBundlePolicyMaxCompat
   };
 
+  // https://tools.ietf.org/html/draft-ietf-rtcweb-jsep-09#section-4.1.1
+  enum RtcpMuxPolicy {
+    kRtcpMuxPolicyNegotiate,
+    kRtcpMuxPolicyRequire,
+  };
+
   enum TcpCandidatePolicy {
     kTcpCandidatePolicyEnabled,
     kTcpCandidatePolicyDisabled
@@ -210,14 +222,18 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // at the same time.
     IceServers servers;
     BundlePolicy bundle_policy;
+    RtcpMuxPolicy rtcp_mux_policy;
     TcpCandidatePolicy tcp_candidate_policy;
     int audio_jitter_buffer_max_packets;
+    bool audio_jitter_buffer_fast_accelerate;
 
     RTCConfiguration()
         : type(kAll),
           bundle_policy(kBundlePolicyBalanced),
+          rtcp_mux_policy(kRtcpMuxPolicyNegotiate),
           tcp_candidate_policy(kTcpCandidatePolicyEnabled),
-          audio_jitter_buffer_max_packets(50) {}
+          audio_jitter_buffer_max_packets(50),
+          audio_jitter_buffer_fast_accelerate(false) {}
   };
 
   struct RTCOfferAnswerOptions {
@@ -395,6 +411,9 @@ class PeerConnectionObserver {
   // All Ice candidates have been found.
   virtual void OnIceComplete() {}
 
+  // Called when the ICE connection receiving status changes.
+  virtual void OnIceConnectionReceivingChange(bool receiving) {}
+
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface.
   ~PeerConnectionObserver() {}
@@ -508,7 +527,8 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
     Options() :
       disable_encryption(false),
       disable_sctp_data_channels(false),
-      network_ignore_mask(rtc::kDefaultNetworkIgnoreMask) {
+      network_ignore_mask(rtc::kDefaultNetworkIgnoreMask),
+      ssl_max_version(rtc::SSL_PROTOCOL_DTLS_10) {
     }
     bool disable_encryption;
     bool disable_sctp_data_channels;
@@ -517,6 +537,11 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
     // loopback interfaces.
     int network_ignore_mask;
+
+    // Sets the maximum supported protocol version. The highest version
+    // supported by both ends will be used for the connection, i.e. if one
+    // party supports DTLS 1.0 and the other DTLS 1.2, DTLS 1.0 will be used.
+    rtc::SSLProtocolVersion ssl_max_version;
   };
 
   virtual void SetOptions(const Options& options) = 0;

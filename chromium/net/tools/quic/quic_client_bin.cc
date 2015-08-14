@@ -192,7 +192,7 @@ int main(int argc, char *argv[]) {
   // Build the client, and try to connect.
   bool is_https = (FLAGS_port == 443);
   net::EpollServer epoll_server;
-  net::QuicServerId server_id(host, FLAGS_port, is_https,
+  net::QuicServerId server_id(url.host(), FLAGS_port, is_https,
                               net::PRIVACY_MODE_DISABLED);
   net::QuicVersionVector versions = net::QuicSupportedVersions();
   if (FLAGS_quic_version != -1) {
@@ -207,7 +207,6 @@ int main(int argc, char *argv[]) {
     // For secure QUIC we need to verify the cert chain.a
     cert_verifier.reset(CertVerifier::CreateDefault());
     transport_security_state.reset(new TransportSecurityState);
-    // TODO(rtenneti): Fix "Proof invalid: Missing context" error.
     client.SetProofVerifier(new ProofVerifierChromium(
         cert_verifier.get(), transport_security_state.get()));
   }
@@ -218,7 +217,7 @@ int main(int argc, char *argv[]) {
   if (!client.Connect()) {
     net::QuicErrorCode error = client.session()->error();
     if (FLAGS_version_mismatch_ok && error == net::QUIC_INVALID_VERSION) {
-      cout << "Server talks QUIC, but none of the versions supoorted by "
+      cout << "Server talks QUIC, but none of the versions supported by "
            << "this client: " << QuicVersionVectorToString(versions) << endl;
       // Version mismatch is not deemed a failure.
       return 0;
@@ -235,16 +234,16 @@ int main(int argc, char *argv[]) {
       FLAGS_body.empty() ? "GET" : "POST", url.spec(), "HTTP/1.1");
 
   // Append any additional headers supplied on the command line.
-  vector<string> headers_tokenized;
-  Tokenize(FLAGS_headers, ";", &headers_tokenized);
-  for (size_t i = 0; i < headers_tokenized.size(); ++i) {
+  for (const std::string& header :
+       base::SplitString(FLAGS_headers, ";", base::KEEP_WHITESPACE,
+                         base::SPLIT_WANT_NONEMPTY)) {
     string sp;
-    base::TrimWhitespaceASCII(headers_tokenized[i], base::TRIM_ALL, &sp);
+    base::TrimWhitespaceASCII(header, base::TRIM_ALL, &sp);
     if (sp.empty()) {
       continue;
     }
-    vector<string> kv;
-    base::SplitString(sp, ':', &kv);
+    vector<string> kv =
+        base::SplitString(sp, ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     CHECK_EQ(2u, kv.size());
     string key;
     base::TrimWhitespaceASCII(kv[0], base::TRIM_ALL, &key);

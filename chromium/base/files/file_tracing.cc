@@ -13,6 +13,11 @@ FileTracing::Provider* g_provider = nullptr;
 }
 
 // static
+bool FileTracing::IsCategoryEnabled() {
+  return g_provider && g_provider->FileTracingCategoryIsEnabled();
+}
+
+// static
 void FileTracing::SetProvider(FileTracing::Provider* provider) {
   g_provider = provider;
 }
@@ -27,30 +32,18 @@ FileTracing::ScopedEnabler::~ScopedEnabler() {
     g_provider->FileTracingDisable(this);
 }
 
-FileTracing::ScopedTrace::ScopedTrace() : initialized_(false) {}
+FileTracing::ScopedTrace::ScopedTrace() : id_(nullptr) {}
 
 FileTracing::ScopedTrace::~ScopedTrace() {
-  if (initialized_ && g_provider) {
-    g_provider->FileTracingEventEnd(
-        name_, &file_->trace_enabler_, file_->path_, size_);
-  }
-}
-
-bool FileTracing::ScopedTrace::ShouldInitialize() const {
-  return g_provider && g_provider->FileTracingCategoryIsEnabled();
+  if (id_ && g_provider)
+    g_provider->FileTracingEventEnd(name_, id_);
 }
 
 void FileTracing::ScopedTrace::Initialize(
     const char* name, File* file, int64 size) {
-  file_ = file;
+  id_ = &file->trace_enabler_;
   name_ = name;
-  size_ = size;
-  initialized_ = true;
-
-  if (g_provider) {
-    g_provider->FileTracingEventBegin(
-        name_, &file_->trace_enabler_, file_->path_, size_);
-  }
+  g_provider->FileTracingEventBegin(name_, id_, file->tracing_path_, size);
 }
 
 }  // namespace base

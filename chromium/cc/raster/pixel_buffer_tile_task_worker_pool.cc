@@ -12,6 +12,7 @@
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/debug/traced_value.h"
 #include "cc/raster/raster_buffer.h"
+#include "cc/resources/platform_color.h"
 #include "cc/resources/resource.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 
@@ -36,14 +37,19 @@ class RasterBufferImpl : public RasterBuffer {
 
   // Overridden from RasterBuffer:
   void Playback(const RasterSource* raster_source,
-                const gfx::Rect& rect,
+                const gfx::Rect& raster_full_rect,
+                const gfx::Rect& raster_dirty_rect,
+                uint64_t new_content_id,
                 float scale) override {
     if (!memory_)
       return;
 
-    TileTaskWorkerPool::PlaybackToMemory(memory_, resource_->format(),
-                                         resource_->size(), stride_,
-                                         raster_source, rect, scale);
+    // TileTaskWorkerPool::PlaybackToMemory only supports unsigned strides.
+    DCHECK_GE(stride_, 0);
+    TileTaskWorkerPool::PlaybackToMemory(
+        memory_, resource_->format(), resource_->size(),
+        static_cast<size_t>(stride_), raster_source, raster_full_rect,
+        raster_full_rect, scale);
   }
 
  private:
@@ -307,12 +313,18 @@ void PixelBufferTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_raster_tasks_.clear();
 }
 
-ResourceFormat PixelBufferTileTaskWorkerPool::GetResourceFormat() {
+ResourceFormat PixelBufferTileTaskWorkerPool::GetResourceFormat() const {
   return resource_provider_->memory_efficient_texture_format();
 }
 
+bool PixelBufferTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
+  return !PlatformColor::SameComponentOrder(GetResourceFormat());
+}
+
 scoped_ptr<RasterBuffer> PixelBufferTileTaskWorkerPool::AcquireBufferForRaster(
-    const Resource* resource) {
+    const Resource* resource,
+    uint64_t resource_content_id,
+    uint64_t previous_content_id) {
   return make_scoped_ptr<RasterBuffer>(
       new RasterBufferImpl(resource_provider_, resource));
 }
@@ -424,7 +436,10 @@ void PixelBufferTileTaskWorkerPool::CheckForCompletedUploads() {
     DCHECK(state_it != raster_task_states_.end());
     RasterTaskState& state = *state_it;
 
-    bytes_pending_upload_ -= task->resource()->bytes();
+    // We can use UncheckedMemorySizeBytes here, since these tasks come from
+    // tiles, the size of which is controlled by the compositor.
+    bytes_pending_upload_ -= Resource::UncheckedMemorySizeBytes(
+        task->resource()->size(), task->resource()->format());
 
     task->WillComplete();
     task->CompleteOnOriginThread(this);
@@ -493,7 +508,7 @@ void PixelBufferTileTaskWorkerPool::ScheduleMoreTasks() {
 
   RasterTaskVector tasks[kNumberOfTaskSets];
 
-  unsigned priority = kTileTaskPriorityBase;
+  size_t priority = kTileTaskPriorityBase;
 
   graph_.Reset();
 
@@ -530,7 +545,10 @@ void PixelBufferTileTaskWorkerPool::ScheduleMoreTasks() {
     // but if it's the only task allow it to complete no matter what its size,
     // to prevent starvation of the task queue.
     size_t new_bytes_pending_upload = bytes_pending_upload;
-    new_bytes_pending_upload += task->resource()->bytes();
+    // We can use UncheckedMemorySizeBytes here, since these tasks come from
+    // tiles, the size of which is controlled by the compositor.
+    new_bytes_pending_upload += Resource::UncheckedMemorySizeBytes(
+        task->resource()->size(), task->resource()->format());
     if (new_bytes_pending_upload > max_bytes_pending_upload_ &&
         bytes_pending_upload) {
       did_throttle_raster_tasks |= item.task_sets;
@@ -611,8 +629,8 @@ void PixelBufferTileTaskWorkerPool::ScheduleMoreTasks() {
             task_set_finished_tasks_);
 }
 
-unsigned PixelBufferTileTaskWorkerPool::PendingRasterTaskCount() const {
-  unsigned num_completed_raster_tasks =
+size_t PixelBufferTileTaskWorkerPool::PendingRasterTaskCount() const {
+  size_t num_completed_raster_tasks =
       raster_tasks_with_pending_upload_.size() + completed_raster_tasks_.size();
   DCHECK_GE(raster_task_states_.size(), num_completed_raster_tasks);
   return raster_task_states_.size() - num_completed_raster_tasks;
@@ -694,7 +712,10 @@ void PixelBufferTileTaskWorkerPool::CheckForCompletedRasterizerTasks() {
     resource_provider_->BeginSetPixels(raster_task->resource()->id());
     has_performed_uploads_since_last_flush_ = true;
 
-    bytes_pending_upload_ += raster_task->resource()->bytes();
+    // We can use UncheckedMemorySizeBytes here, since these tasks come from
+    // tiles, the size of which is controlled by the compositor.
+    bytes_pending_upload_ += Resource::UncheckedMemorySizeBytes(
+        raster_task->resource()->size(), raster_task->resource()->format());
     raster_tasks_with_pending_upload_.push_back(raster_task);
     state.type = RasterTaskState::UPLOADING;
   }
@@ -705,13 +726,14 @@ scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 PixelBufferTileTaskWorkerPool::StateAsValue() const {
   scoped_refptr<base::trace_event::TracedValue> state =
       new base::trace_event::TracedValue();
-  state->SetInteger("completed_count", completed_raster_tasks_.size());
+  state->SetInteger("completed_count",
+                    static_cast<int>(completed_raster_tasks_.size()));
   state->BeginArray("pending_count");
   for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set)
-    state->AppendInteger(task_counts_[task_set]);
+    state->AppendInteger(static_cast<int>(task_counts_[task_set]));
   state->EndArray();
   state->SetInteger("pending_upload_count",
-                    raster_tasks_with_pending_upload_.size());
+                    static_cast<int>(raster_tasks_with_pending_upload_.size()));
   state->BeginDictionary("throttle_state");
   ThrottleStateAsValueInto(state.get());
   state->EndDictionary();
@@ -720,11 +742,13 @@ PixelBufferTileTaskWorkerPool::StateAsValue() const {
 
 void PixelBufferTileTaskWorkerPool::ThrottleStateAsValueInto(
     base::trace_event::TracedValue* throttle_state) const {
-  throttle_state->SetInteger("bytes_available_for_upload",
-                             max_bytes_pending_upload_ - bytes_pending_upload_);
-  throttle_state->SetInteger("bytes_pending_upload", bytes_pending_upload_);
+  throttle_state->SetInteger(
+      "bytes_available_for_upload",
+      static_cast<int>(max_bytes_pending_upload_ - bytes_pending_upload_));
+  throttle_state->SetInteger("bytes_pending_upload",
+                             static_cast<int>(bytes_pending_upload_));
   throttle_state->SetInteger("scheduled_raster_task_count",
-                             scheduled_raster_task_count_);
+                             static_cast<int>(scheduled_raster_task_count_));
 }
 
 }  // namespace cc

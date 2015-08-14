@@ -54,6 +54,7 @@ _exact_matches = {
     "WebKit Mac10.8": {"port_name": "mac-mountainlion", "specifiers": ['MountainLion', 'Release']},
     "WebKit Mac10.9 (retina)": {"port_name": "mac-retina", "specifiers": ['Retina', 'Release']},
     "WebKit Mac10.9": {"port_name": "mac-mavericks", "specifiers": ['Mavericks', 'Release']},
+    "WebKit Mac10.10": {"port_name": "mac-yosemite", "specifiers": ['Yosemite', 'Release']},
     "WebKit Android (Nexus4)": {"port_name": "android", "specifiers": ['Android', 'Release']},
 }
 
@@ -71,6 +72,7 @@ _deps_builders = {
     "mac-mountainlion": "WebKit Mac10.6 (deps)",
     "mac-mavericks": "WebKit Mac10.6 (deps)",
     "mac-retina": "WebKit Mac10.6 (deps)",
+    "mac-yosemite": "WebKit Mac10.6 (deps)",
 }
 
 

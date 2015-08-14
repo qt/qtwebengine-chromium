@@ -73,7 +73,7 @@ private:
 
 SVGTextMetricsCalculator::SVGTextMetricsCalculator(LayoutSVGInlineText* text)
     : m_text(text)
-    , m_bidiRun(0)
+    , m_bidiRun(nullptr)
     , m_run(SVGTextMetrics::constructTextRun(text, 0, text->textLength(), text->styleRef().direction()))
     , m_isComplexText(false)
     , m_totalWidth(0)
@@ -123,7 +123,7 @@ SVGTextMetrics SVGTextMetricsCalculator::computeMetricsForCharacterSimple(unsign
     float currentWidth = m_simpleShaper->runWidthSoFar() - m_totalWidth;
     m_totalWidth = m_simpleShaper->runWidthSoFar();
 
-    return SVGTextMetrics(m_text, textPosition, metricsLength, currentWidth);
+    return SVGTextMetrics(m_text, metricsLength, currentWidth);
 }
 
 SVGTextMetrics SVGTextMetricsCalculator::computeMetricsForCharacterComplex(unsigned textPosition)

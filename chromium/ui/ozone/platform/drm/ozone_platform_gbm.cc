@@ -16,7 +16,6 @@
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
-#include "ui/ozone/platform/drm/gbm_surface_factory.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_generator.h"
 #include "ui/ozone/platform/drm/gpu/drm_device_manager.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_display_manager.h"
@@ -24,12 +23,14 @@
 #include "ui/ozone/platform/drm/gpu/gbm_buffer.h"
 #include "ui/ozone/platform/drm/gpu/gbm_device.h"
 #include "ui/ozone/platform/drm/gpu/gbm_surface.h"
+#include "ui/ozone/platform/drm/gpu/gbm_surface_factory.h"
 #include "ui/ozone/platform/drm/gpu/scanout_buffer.h"
 #include "ui/ozone/platform/drm/gpu/screen_manager.h"
 #include "ui/ozone/platform/drm/host/drm_cursor.h"
 #include "ui/ozone/platform/drm/host/drm_display_host_manager.h"
 #include "ui/ozone/platform/drm/host/drm_gpu_platform_support_host.h"
 #include "ui/ozone/platform/drm/host/drm_native_display_delegate.h"
+#include "ui/ozone/platform/drm/host/drm_overlay_manager.h"
 #include "ui/ozone/platform/drm/host/drm_window_host.h"
 #include "ui/ozone/platform/drm/host/drm_window_host_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
@@ -88,20 +89,22 @@ class GbmBufferGenerator : public ScanoutBufferGenerator {
 
 class GbmDeviceGenerator : public DrmDeviceGenerator {
  public:
-  GbmDeviceGenerator() {}
+  GbmDeviceGenerator(bool use_atomic) : use_atomic_(use_atomic) {}
   ~GbmDeviceGenerator() override {}
 
   // DrmDeviceGenerator:
   scoped_refptr<DrmDevice> CreateDevice(const base::FilePath& path,
                                         base::File file) override {
     scoped_refptr<DrmDevice> drm = new GbmDevice(path, file.Pass());
-    if (drm->Initialize())
+    if (drm->Initialize(use_atomic_))
       return drm;
 
     return nullptr;
   }
 
  private:
+  bool use_atomic_;
+
   DISALLOW_COPY_AND_ASSIGN(GbmDeviceGenerator);
 };
 
@@ -113,6 +116,9 @@ class OzonePlatformGbm : public OzonePlatform {
   // OzonePlatform:
   ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
     return surface_factory_ozone_.get();
+  }
+  OverlayManagerOzone* GetOverlayManager() override {
+    return overlay_manager_.get();
   }
   CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
@@ -144,18 +150,9 @@ class OzonePlatformGbm : public OzonePlatform {
         new DrmNativeDisplayDelegate(display_manager_.get()));
   }
   void InitializeUI() override {
-    // Needed since the browser process creates the accelerated widgets and that
-    // happens through SFO.
-    if (!surface_factory_ozone_)
-      surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
     device_manager_ = CreateDeviceManager();
     window_manager_.reset(new DrmWindowHostManager());
     cursor_.reset(new DrmCursor(window_manager_.get()));
-    gpu_platform_support_host_.reset(
-        new DrmGpuPlatformSupportHost(cursor_.get()));
-    display_manager_.reset(new DrmDisplayHostManager(
-        gpu_platform_support_host_.get(), device_manager_.get()));
-    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
 #if defined(USE_XKBCOMMON)
     KeyboardLayoutEngineManager::SetKeyboardLayoutEngine(make_scoped_ptr(
         new XkbKeyboardLayoutEngine(xkb_evdev_code_converter_)));
@@ -166,31 +163,39 @@ class OzonePlatformGbm : public OzonePlatform {
     event_factory_ozone_.reset(new EventFactoryEvdev(
         cursor_.get(), device_manager_.get(),
         KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()));
+    gpu_platform_support_host_.reset(
+        new DrmGpuPlatformSupportHost(cursor_.get()));
+    display_manager_.reset(new DrmDisplayHostManager(
+        gpu_platform_support_host_.get(), device_manager_.get(),
+        event_factory_ozone_->input_controller()));
+    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
+    overlay_manager_.reset(new DrmOverlayManager(
+        use_surfaceless_, gpu_platform_support_host_.get()));
   }
 
   void InitializeGPU() override {
+    bool use_atomic = false;
     gl_api_loader_.reset(new GlApiLoader());
     drm_device_manager_.reset(new DrmDeviceManager(
-        scoped_ptr<DrmDeviceGenerator>(new GbmDeviceGenerator())));
+        scoped_ptr<DrmDeviceGenerator>(new GbmDeviceGenerator(use_atomic))));
     buffer_generator_.reset(new GbmBufferGenerator());
     screen_manager_.reset(new ScreenManager(buffer_generator_.get()));
-    if (!surface_factory_ozone_)
-      surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
-
+    surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
     surface_factory_ozone_->InitializeGpu(drm_device_manager_.get(),
                                           screen_manager_.get());
-    scoped_ptr<DrmGpuDisplayManager> ndd(new DrmGpuDisplayManager(
+    scoped_ptr<DrmGpuDisplayManager> display_manager(new DrmGpuDisplayManager(
         screen_manager_.get(), drm_device_manager_.get()));
     gpu_platform_support_.reset(new DrmGpuPlatformSupport(
-        drm_device_manager_.get(), screen_manager_.get(), ndd.Pass()));
+        drm_device_manager_.get(), screen_manager_.get(),
+        buffer_generator_.get(), display_manager.Pass()));
   }
 
  private:
   // Objects in both processes.
   bool use_surfaceless_;
-  scoped_ptr<GbmSurfaceFactory> surface_factory_ozone_;
 
   // Objects in the GPU process.
+  scoped_ptr<GbmSurfaceFactory> surface_factory_ozone_;
   scoped_ptr<GlApiLoader> gl_api_loader_;
   scoped_ptr<DrmDeviceManager> drm_device_manager_;
   scoped_ptr<GbmBufferGenerator> buffer_generator_;
@@ -205,6 +210,7 @@ class OzonePlatformGbm : public OzonePlatform {
   scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
   scoped_ptr<DrmGpuPlatformSupportHost> gpu_platform_support_host_;
   scoped_ptr<DrmDisplayHostManager> display_manager_;
+  scoped_ptr<DrmOverlayManager> overlay_manager_;
 
 #if defined(USE_XKBCOMMON)
   XkbEvdevCodes xkb_evdev_code_converter_;

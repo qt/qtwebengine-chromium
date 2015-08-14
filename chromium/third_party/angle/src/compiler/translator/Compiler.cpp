@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 //
 
+#include "compiler/translator/Cache.h"
 #include "compiler/translator/Compiler.h"
 #include "compiler/translator/CallDAG.h"
 #include "compiler/translator/ForLoopUnroll.h"
@@ -13,6 +14,7 @@
 #include "compiler/translator/ParseContext.h"
 #include "compiler/translator/PruneEmptyDeclarations.h"
 #include "compiler/translator/RegenerateStructNames.h"
+#include "compiler/translator/RemovePow.h"
 #include "compiler/translator/RenameFunction.h"
 #include "compiler/translator/ScalarizeVecAndMatConstructorArgs.h"
 #include "compiler/translator/UnfoldShortCircuitAST.h"
@@ -37,8 +39,15 @@ bool IsWebGLBasedSpec(ShShaderSpec spec)
 bool IsGLSL130OrNewer(ShShaderOutput output)
 {
     return (output == SH_GLSL_130_OUTPUT ||
+            output == SH_GLSL_140_OUTPUT ||
+            output == SH_GLSL_150_CORE_OUTPUT ||
+            output == SH_GLSL_330_CORE_OUTPUT ||
+            output == SH_GLSL_400_CORE_OUTPUT ||
             output == SH_GLSL_410_CORE_OUTPUT ||
-            output == SH_GLSL_420_CORE_OUTPUT);
+            output == SH_GLSL_420_CORE_OUTPUT ||
+            output == SH_GLSL_430_CORE_OUTPUT ||
+            output == SH_GLSL_440_CORE_OUTPUT ||
+            output == SH_GLSL_450_CORE_OUTPUT);
 }
 
 size_t GetGlobalMaxTokenSize(ShShaderSpec spec)
@@ -202,7 +211,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
                                shaderType, shaderSpec, compileOptions, true,
                                infoSink, debugShaderPrecision);
 
-    parseContext.fragmentPrecisionHigh = fragmentPrecisionHigh;
+    parseContext.setFragmentPrecisionHigh(fragmentPrecisionHigh);
     SetGlobalParseContext(&parseContext);
 
     // We preserve symbols at the built-in level from compile-to-compile.
@@ -211,8 +220,8 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
 
     // Parse shader.
     bool success =
-        (PaParseStrings(numStrings - firstSource, &shaderStrings[firstSource], NULL, &parseContext) == 0) &&
-        (parseContext.treeRoot != NULL);
+        (PaParseStrings(numStrings - firstSource, &shaderStrings[firstSource], nullptr, &parseContext) == 0) &&
+        (parseContext.getTreeRoot() != nullptr);
 
     shaderVersion = parseContext.getShaderVersion();
     if (success && MapSpecToShaderVersion(shaderSpec) < shaderVersion)
@@ -222,7 +231,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
         success = false;
     }
 
-    TIntermNode *root = NULL;
+    TIntermNode *root = nullptr;
 
     if (success)
     {
@@ -232,7 +241,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
             symbolTable.setGlobalInvariant();
         }
 
-        root = parseContext.treeRoot;
+        root = parseContext.getTreeRoot();
         success = intermediate.postProcess(root);
 
         // Disallow expressions deemed too complex.
@@ -310,6 +319,11 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
             UnfoldShortCircuitAST unfoldShortCircuit;
             root->traverse(&unfoldShortCircuit);
             unfoldShortCircuit.updateTree();
+        }
+
+        if (success && (compileOptions & SH_REMOVE_POW_WITH_CONSTANT_EXPONENT))
+        {
+            RemovePow(root);
         }
 
         if (success && (compileOptions & SH_VARIABLES))

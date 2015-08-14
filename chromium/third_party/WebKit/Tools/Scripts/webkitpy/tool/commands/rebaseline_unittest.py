@@ -450,7 +450,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Mavericks MountainLion Retina SnowLeopard ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Mavericks MountainLion Retina SnowLeopard Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\nbug(z) [ Linux ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_updates_expectations_file_all_platforms(self):
         options = MockOptions(optimize=False, verbose=True, results_directory=None)
@@ -462,7 +462,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Android Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_handles_platform_skips(self):
         # This test is just like test_rebaseline_updates_expectations_file_all_platforms(),
@@ -478,7 +478,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
     def test_rebaseline_handles_skips_in_file(self):
         # This test is like test_Rebaseline_handles_platform_skips, except that the
@@ -497,8 +497,9 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations,
-            ("Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
+        self.assertMultiLineEqual(
+            new_expectations,
+            ("Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n"
              "Bug(y) [ Android ] userscripts/first-test.html [ Skip ]\n"))
 
     def test_rebaseline_handles_smoke_tests(self):
@@ -516,7 +517,7 @@ class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
         self.command._rebaseline(options,  {"userscripts/first-test.html": {"WebKit Mac10.7": ["txt", "png"]}})
 
         new_expectations = self._read(self.lion_expectations_path)
-        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
+        self.assertMultiLineEqual(new_expectations, "Bug(x) [ Linux Mavericks MountainLion Retina SnowLeopard Win Yosemite ] userscripts/first-test.html [ ImageOnlyFailure ]\n")
 
 
 class TestRebaseline(_BaseTestCase):
@@ -875,6 +876,7 @@ class TestAnalyzeBaselines(_BaseTestCase):
 
 
 class TestAutoRebaseline(_BaseTestCase):
+    SVN_REMOTE_CMD = ['git', 'config', '--local', '--get-regexp', '^svn-remote\\.']
     command_constructor = AutoRebaseline
 
     def _write_test_file(self, port, path, contents):
@@ -982,7 +984,7 @@ TBR=foo@chromium.org
 """
         self.tool.scm().blame = blame
 
-        self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
+        self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
         self.assertEqual(self.tool.executive.calls, [])
 
     def test_execute(self):
@@ -1044,7 +1046,8 @@ crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
         self._write_test_file(test_port, 'fast/dom/prototype-strawberry.html', "Dummy test contents")
         self._write_test_file(test_port, 'fast/dom/prototype-chocolate.html', "Dummy test contents")
 
-        self.tool.executive = MockLineRemovingExecutive()
+        self.tool.executive = MockLineRemovingExecutive(
+            should_return_zero_when_run=set(self.SVN_REMOTE_CMD))
 
         old_exact_matches = builders._exact_matches
         try:
@@ -1054,14 +1057,16 @@ crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
             }
 
             self.command.tree_status = lambda: 'closed'
-            self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [])
 
             self.command.tree_status = lambda: 'open'
             self.tool.executive.calls = []
-            self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
 
             self.assertEqual(self.tool.executive.calls, [
+                self.SVN_REMOTE_CMD,
+                ['git', 'rev-parse', '--symbolic-full-name', 'HEAD'],
                 [
                     ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-chocolate.html'],
                     ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-strawberry.html'],
@@ -1141,10 +1146,14 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
             self.command.SECONDS_BEFORE_GIVING_UP = 0
             self.command.tree_status = lambda: 'open'
+            self.tool.executive = MockExecutive(
+                should_return_zero_when_run=set(self.SVN_REMOTE_CMD))
             self.tool.executive.calls = []
-            self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
 
             self.assertEqual(self.tool.executive.calls, [
+                self.SVN_REMOTE_CMD,
+                ['git', 'rev-parse', '--symbolic-full-name', 'HEAD'],
                 [
                     ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
                 ],
@@ -1192,7 +1201,8 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
         self._write_test_file(test_port, 'fast/dom/prototype-taco.html', "Dummy test contents")
 
-        self.tool.executive = MockLineRemovingExecutive()
+        self.tool.executive = MockLineRemovingExecutive(
+            should_return_zero_when_run=set(self.SVN_REMOTE_CMD))
 
         old_exact_matches = builders._exact_matches
         try:
@@ -1202,8 +1212,10 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
             }
 
             self.command.tree_status = lambda: 'open'
-            self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [
+                self.SVN_REMOTE_CMD,
+                ['git', 'rev-parse', '--symbolic-full-name', 'HEAD'],
                 [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
                 ['git', 'pull'],
@@ -1214,6 +1226,68 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
             # The mac ports should both be removed since they're the only ones in builders._exact_matches.
             self.assertEqual(self.tool.filesystem.read_text_file(test_port.path_to_generic_test_expectations_file()), """
 Bug(foo) [ Linux Win ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
+""")
+        finally:
+            builders._exact_matches = old_exact_matches
+
+    def test_execute_setup_git_svn(self):
+        def blame(path):
+            return """
+6469e754a1 path/to/TestExpectations                   (foobarbaz1@chromium.org 2013-04-28 04:52:41 +0000   13) Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+"""
+        self.tool.scm().blame = blame
+
+        test_port = self._setup_test_port()
+
+        old_builder_data = self.command.builder_data
+
+        def builder_data():
+            self.command._builder_data['MOCK Win'] = LayoutTestResults.results_from_string("""ADD_RESULTS({
+    "tests": {
+        "fast": {
+            "dom": {
+                "prototype-taco.html": {
+                    "expected": "FAIL",
+                    "actual": "PASS",
+                    "is_unexpected": true
+                }
+            }
+        }
+    }
+});""")
+            return self.command._builder_data
+
+        self.command.builder_data = builder_data
+
+        self.tool.filesystem.write_text_file(test_port.path_to_generic_test_expectations_file(), """
+Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
+""")
+
+        self._write_test_file(test_port, 'fast/dom/prototype-taco.html', "Dummy test contents")
+
+        self.tool.executive = MockLineRemovingExecutive()
+
+        old_exact_matches = builders._exact_matches
+        try:
+            builders._exact_matches = {
+                "MOCK Win": {"port_name": "test-win-win7", "specifiers": set(["mock-specifier"])},
+            }
+
+            self.command.tree_status = lambda: 'open'
+            self.command.execute(MockOptions(optimize=True, verbose=False, results_directory=False), [], self.tool)
+            self.assertEqual(self.tool.executive.calls, [
+                self.SVN_REMOTE_CMD,
+                ['git', 'auto-svn'],
+                ['git', 'rev-parse', '--symbolic-full-name', 'HEAD'],
+                [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
+                ['git', 'cl', 'upload', '-f'],
+                ['git', 'pull'],
+                ['git', 'cl', 'dcommit', '-f'],
+                ['git', 'cl', 'set_close'],
+            ])
+
+            self.assertEqual(self.tool.filesystem.read_text_file(test_port.path_to_generic_test_expectations_file()), """
+Bug(foo) [ Linux Mac XP ] fast/dom/prototype-taco.html [ NeedsRebaseline ]
 """)
         finally:
             builders._exact_matches = old_exact_matches

@@ -29,6 +29,7 @@
 #include "config.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/KnownPorts.h"
 #include "platform/weborigin/SchemeRegistry.h"
@@ -37,6 +38,7 @@
 #include "url/url_canon_ip.h"
 #include "wtf/HexNumber.h"
 #include "wtf/MainThread.h"
+#include "wtf/NotFound.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -126,6 +128,11 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
     , m_enforceFilePathSeparation(false)
     , m_needsDatabaseIdentifierQuirkForFiles(false)
 {
+    // Suborigins are serialized into the host, so extract it if necessary.
+    String suboriginName;
+    if (deserializeSuboriginAndHost(m_host, suboriginName, m_host))
+        addSuborigin(suboriginName);
+
     // document.domain starts as m_host, but can be set by the DOM.
     m_domain = m_host;
 
@@ -134,15 +141,13 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
 
     // By default, only local SecurityOrigins can load local resources.
     m_canLoadLocalResources = isLocal();
-
-    if (m_canLoadLocalResources)
-        m_filePath = url.path(); // In case enforceFilePathSeparation() is called.
 }
 
 SecurityOrigin::SecurityOrigin()
     : m_protocol("")
     , m_host("")
     , m_domain("")
+    , m_suboriginName(WTF::String())
     , m_port(InvalidPort)
     , m_isUnique(true)
     , m_universalAccess(false)
@@ -157,7 +162,7 @@ SecurityOrigin::SecurityOrigin(const SecurityOrigin* other)
     : m_protocol(other->m_protocol.isolatedCopy())
     , m_host(other->m_host.isolatedCopy())
     , m_domain(other->m_domain.isolatedCopy())
-    , m_filePath(other->m_filePath.isolatedCopy())
+    , m_suboriginName(other->m_suboriginName)
     , m_port(other->m_port)
     , m_isUnique(other->m_isUnique)
     , m_universalAccess(other->m_universalAccess)
@@ -200,6 +205,16 @@ PassRefPtr<SecurityOrigin> SecurityOrigin::createUnique()
     return origin.release();
 }
 
+void SecurityOrigin::addSuborigin(const String& suborigin)
+{
+    ASSERT(RuntimeEnabledFeatures::suboriginsEnabled());
+    // Changing suborigins midstream is bad. Very bad. It should not happen.
+    // This is, in fact, one of the very basic invariants that makes suborigins
+    // an effective security tool.
+    RELEASE_ASSERT(m_suboriginName.isNull() || m_suboriginName == suborigin);
+    m_suboriginName = suborigin;
+}
+
 PassRefPtr<SecurityOrigin> SecurityOrigin::isolatedCopy() const
 {
     return adoptRef(new SecurityOrigin(this));
@@ -234,26 +249,14 @@ bool SecurityOrigin::canAccess(const SecurityOrigin* other) const
     if (isUnique() || other->isUnique())
         return false;
 
-    // Here are two cases where we should permit access:
+    // document.domain handling, as per https://html.spec.whatwg.org/multipage/browsers.html#dom-document-domain:
     //
     // 1) Neither document has set document.domain. In this case, we insist
     //    that the scheme, host, and port of the URLs match.
     //
     // 2) Both documents have set document.domain. In this case, we insist
     //    that the documents have set document.domain to the same value and
-    //    that the scheme of the URLs match.
-    //
-    // This matches the behavior of Firefox 2 and Internet Explorer 6.
-    //
-    // Internet Explorer 7 and Opera 9 are more strict in that they require
-    // the port numbers to match when both pages have document.domain set.
-    //
-    // FIXME: Evaluate whether we can tighten this policy to require matched
-    //        port numbers.
-    //
-    // Opera 9 allows access when only one page has set document.domain, but
-    // this is a security vulnerability.
-
+    //    that the scheme of the URLs match. Ports do not need to match.
     bool canAccess = false;
     if (m_protocol == other->m_protocol) {
         if (!m_domainWasSetInDOM && !other->m_domainWasSetInDOM) {
@@ -271,14 +274,22 @@ bool SecurityOrigin::canAccess(const SecurityOrigin* other) const
     return canAccess;
 }
 
+bool SecurityOrigin::canAccessCheckSuborigins(const SecurityOrigin* other) const
+{
+    if (hasSuborigin() != other->hasSuborigin())
+        return false;
+
+    if (hasSuborigin() && suboriginName() != other->suboriginName())
+        return false;
+
+    return canAccess(other);
+}
+
 bool SecurityOrigin::passesFileCheck(const SecurityOrigin* other) const
 {
     ASSERT(isLocal() && other->isLocal());
 
-    if (!m_enforceFilePathSeparation && !other->m_enforceFilePathSeparation)
-        return true;
-
-    return (m_filePath == other->m_filePath);
+    return !m_enforceFilePathSeparation && !other->m_enforceFilePathSeparation;
 }
 
 bool SecurityOrigin::canRequest(const KURL& url) const
@@ -308,6 +319,11 @@ bool SecurityOrigin::canRequest(const KURL& url) const
     return false;
 }
 
+bool SecurityOrigin::canRequestNoSuborigin(const KURL& url) const
+{
+    return !hasSuborigin() && canRequest(url);
+}
+
 bool SecurityOrigin::taintsCanvas(const KURL& url) const
 {
     if (canRequest(url))
@@ -325,43 +341,12 @@ bool SecurityOrigin::taintsCanvas(const KURL& url) const
     return true;
 }
 
-bool SecurityOrigin::canReceiveDragData(const SecurityOrigin* dragInitiator) const
-{
-    if (this == dragInitiator)
-        return true;
-
-    return canAccess(dragInitiator);
-}
-
-// This is a hack to allow keep navigation to http/https feeds working. To remove this
-// we need to introduce new API akin to registerURLSchemeAsLocal, that registers a
-// protocols navigation policy.
-// feed(|s|search): is considered a 'nesting' scheme by embedders that support it, so it can be
-// local or remote depending on what is nested. Currently we just check if we are nesting
-// http or https, otherwise we ignore the nesting for the purpose of a security check. We need
-// a facility for registering nesting schemes, and some generalized logic for them.
-// This function should be removed as an outcome of https://bugs.webkit.org/show_bug.cgi?id=69196
-static bool isFeedWithNestedProtocolInHTTPFamily(const KURL& url)
-{
-    const String& urlString = url.string();
-    if (!urlString.startsWith("feed", TextCaseInsensitive))
-        return false;
-
-    return urlString.startsWith("feed://", TextCaseInsensitive)
-        || urlString.startsWith("feed:http:", TextCaseInsensitive) || urlString.startsWith("feed:https:", TextCaseInsensitive)
-        || urlString.startsWith("feeds:http:", TextCaseInsensitive) || urlString.startsWith("feeds:https:", TextCaseInsensitive)
-        || urlString.startsWith("feedsearch:http:", TextCaseInsensitive) || urlString.startsWith("feedsearch:https:", TextCaseInsensitive);
-}
-
 bool SecurityOrigin::canDisplay(const KURL& url) const
 {
     if (m_universalAccess)
         return true;
 
     String protocol = url.protocol().lower();
-
-    if (isFeedWithNestedProtocolInHTTPFamily(url))
-        return true;
 
     if (SchemeRegistry::canDisplayOnlyIfCanRequest(protocol))
         return canRequest(url);
@@ -386,15 +371,6 @@ bool SecurityOrigin::isPotentiallyTrustworthy(String& errorMessage) const
 
     errorMessage = "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).";
     return false;
-}
-
-SecurityOrigin::Policy SecurityOrigin::canShowNotifications() const
-{
-    if (m_universalAccess)
-        return AlwaysAllow;
-    if (isUnique())
-        return AlwaysDeny;
-    return Ask;
 }
 
 void SecurityOrigin::grantLoadLocalResources()
@@ -473,6 +449,25 @@ String SecurityOrigin::toRawString() const
     return result.toString();
 }
 
+// Returns true if and only if a suborigin component was found. If false, no
+// guarantees about the return value |suboriginName| are made.
+bool SecurityOrigin::deserializeSuboriginAndHost(const String& oldHost, String& suboriginName, String& newHost)
+{
+    if (!RuntimeEnabledFeatures::suboriginsEnabled())
+        return false;
+
+    size_t suboriginEnd = oldHost.find('_');
+    // Suborigins cannot be empty
+    if (suboriginEnd == 0 || suboriginEnd == WTF::kNotFound)
+        return false;
+
+    suboriginName = oldHost.substring(0, suboriginEnd);
+    newHost = oldHost.substring(suboriginEnd + 1);
+
+    return true;
+}
+
+
 AtomicString SecurityOrigin::toRawAtomicString() const
 {
     if (m_protocol == "file")
@@ -483,11 +478,14 @@ AtomicString SecurityOrigin::toRawAtomicString() const
     return result.toAtomicString();
 }
 
-inline void SecurityOrigin::buildRawString(StringBuilder& builder) const
+void SecurityOrigin::buildRawString(StringBuilder& builder) const
 {
-    builder.reserveCapacity(m_protocol.length() + m_host.length() + 10);
     builder.append(m_protocol);
     builder.appendLiteral("://");
+    if (hasSuborigin()) {
+        builder.append(m_suboriginName);
+        builder.appendLiteral("_");
+    }
     builder.append(m_host);
 
     if (m_port) {
@@ -524,6 +522,11 @@ bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const
         return false;
 
     return true;
+}
+
+bool SecurityOrigin::isSameSchemeHostPortAndSuborigin(const SecurityOrigin* other) const
+{
+    return isSameSchemeHostPort(other) && (!hasSuborigin() || suboriginName() == other->suboriginName());
 }
 
 const KURL& SecurityOrigin::urlWithUniqueSecurityOrigin()

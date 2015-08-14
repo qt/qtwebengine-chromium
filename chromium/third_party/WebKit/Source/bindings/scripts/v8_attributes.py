@@ -124,8 +124,6 @@ def attribute_context(interface, attribute):
             'RaisesException' in extended_attributes and
             extended_attributes['RaisesException'] in (None, 'Getter'),
         'is_implemented_in_private_script': is_implemented_in_private_script,
-        'is_initialized_by_event_constructor':
-            'InitializedByEventConstructor' in extended_attributes,
         'is_keep_alive_for_gc': keep_alive_for_gc,
         'is_lenient_this': 'LenientThis' in extended_attributes,
         'is_nullable': idl_type.is_nullable,
@@ -140,6 +138,9 @@ def attribute_context(interface, attribute):
         'is_static': attribute.is_static,
         'is_url': 'URL' in extended_attributes,
         'is_unforgeable': is_unforgeable(interface, attribute),
+        'on_instance': v8_utilities.on_instance(interface, attribute),
+        'on_interface': v8_utilities.on_interface(interface, attribute),
+        'on_prototype': v8_utilities.on_prototype(interface, attribute),
         'use_output_parameter_for_result': idl_type.use_output_parameter_for_result,
         'measure_as': v8_utilities.measure_as(attribute, interface),  # [MeasureAs]
         'name': attribute.name,
@@ -326,7 +327,7 @@ def setter_context(interface, attribute, context):
 
     if ('Replaceable' in attribute.extended_attributes or
             is_constructor_attribute(attribute)):
-        context['cpp_setter'] = '%sForceSetAttributeOnThis(propertyName, v8Value, info)' % cpp_name(interface)
+        context['cpp_setter'] = '%sCreateDataProperty(propertyName, v8Value, info)' % cpp_name(interface)
         return
 
     extended_attributes = attribute.extended_attributes
@@ -518,11 +519,8 @@ def is_expose_js_accessors(interface, attribute):
             'OverrideBuiltins' in interface.extended_attributes):
         return False
 
-    # FIXME: We should move all of the following DOM attributes to prototype
-    # chains.
-    if (has_custom_getter(attribute) or
-            has_custom_setter(attribute) or
-            interface.name == 'Window'):
+    # The members of Window interface must be placed on the instance object.
+    if interface.name == 'Window':
         return False
 
     return is_accessor

@@ -16,21 +16,25 @@
 
 namespace cc {
 
-scoped_refptr<PictureLayer> PictureLayer::Create(ContentLayerClient* client) {
-  return make_scoped_refptr(new PictureLayer(client));
+scoped_refptr<PictureLayer> PictureLayer::Create(const LayerSettings& settings,
+                                                 ContentLayerClient* client) {
+  return make_scoped_refptr(new PictureLayer(settings, client));
 }
 
-PictureLayer::PictureLayer(ContentLayerClient* client)
-    : client_(client),
+PictureLayer::PictureLayer(const LayerSettings& settings,
+                           ContentLayerClient* client)
+    : Layer(settings),
+      client_(client),
       instrumentation_object_tracker_(id()),
       update_source_frame_number_(-1),
       is_mask_(false),
       nearest_neighbor_(false) {
 }
 
-PictureLayer::PictureLayer(ContentLayerClient* client,
+PictureLayer::PictureLayer(const LayerSettings& settings,
+                           ContentLayerClient* client,
                            scoped_ptr<RecordingSource> source)
-    : PictureLayer(client) {
+    : PictureLayer(settings, client) {
   recording_source_ = source.Pass();
 }
 
@@ -88,9 +92,8 @@ void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
   const LayerTreeSettings& settings = layer_tree_host()->settings();
   if (!recording_source_) {
     if (settings.use_display_lists) {
-      recording_source_.reset(new DisplayListRecordingSource(
-          settings.default_tile_grid_size,
-          settings.use_cached_picture_in_display_list));
+      recording_source_.reset(
+          new DisplayListRecordingSource(settings.default_tile_grid_size));
     } else {
       recording_source_.reset(new PicturePile(settings.minimum_contents_scale,
                                               settings.default_tile_grid_size));
@@ -99,8 +102,6 @@ void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
   recording_source_->SetSlowdownRasterScaleFactor(
       host->debug_state().slow_down_raster_scale_factor);
   recording_source_->SetGatherPixelRefs(settings.gather_pixel_refs);
-
-  DCHECK(settings.raster_enabled);
 }
 
 void PictureLayer::SetNeedsDisplayRect(const gfx::Rect& layer_rect) {
@@ -112,16 +113,14 @@ void PictureLayer::SetNeedsDisplayRect(const gfx::Rect& layer_rect) {
   Layer::SetNeedsDisplayRect(layer_rect);
 }
 
-bool PictureLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker<Layer>* occlusion) {
+bool PictureLayer::Update() {
   update_source_frame_number_ = layer_tree_host()->source_frame_number();
-  bool updated = Layer::Update(queue, occlusion);
+  bool updated = Layer::Update();
 
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_content_rect(), 1.f / contents_scale_x());
+  gfx::Rect update_rect = visible_layer_rect();
   gfx::Size layer_size = paint_properties().bounds;
 
-  if (last_updated_visible_content_rect_ == visible_content_rect() &&
+  if (last_updated_visible_layer_rect_ == update_rect &&
       recording_source_->GetSize() == layer_size &&
       pending_invalidation_.IsEmpty()) {
     // Only early out if the visible content rect of this layer hasn't changed.
@@ -146,7 +145,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   if (layer_tree_host()->settings().record_full_layer) {
     // Workaround for http://crbug.com/235910 - to retain backwards compat
     // the full page content must always be provided in the picture layer.
-    visible_layer_rect = gfx::Rect(layer_size);
+    update_rect = gfx::Rect(layer_size);
   }
 
   // UpdateAndExpandInvalidation will give us an invalidation that covers
@@ -155,9 +154,9 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   // for them.
   DCHECK(client_);
   updated |= recording_source_->UpdateAndExpandInvalidation(
-      client_, &recording_invalidation_, layer_size, visible_layer_rect,
+      client_, &recording_invalidation_, layer_size, update_rect,
       update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
-  last_updated_visible_content_rect_ = visible_content_rect();
+  last_updated_visible_layer_rect_ = visible_layer_rect();
 
   if (updated) {
     SetNeedsPushProperties();
@@ -186,9 +185,8 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
 
   if (settings.use_display_lists) {
     scoped_ptr<RecordingSource> recording_source;
-    recording_source.reset(new DisplayListRecordingSource(
-        settings.default_tile_grid_size,
-        settings.use_cached_picture_in_display_list));
+    recording_source.reset(
+        new DisplayListRecordingSource(settings.default_tile_grid_size));
     Region recording_invalidation;
     recording_source->UpdateAndExpandInvalidation(
         client_, &recording_invalidation, layer_size, gfx::Rect(layer_size),

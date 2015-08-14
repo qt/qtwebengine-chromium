@@ -5,11 +5,13 @@
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 
 #include <vector>
+#include "base/command_line.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/overscroll_configuration.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
@@ -23,7 +25,6 @@
 #include "ui/events/gesture_detection/gesture_configuration.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/frame_time.h"
 
 namespace content {
 
@@ -40,7 +41,6 @@ class OverscrollTestWebContents : public TestWebContents {
     OverscrollTestWebContents* web_contents = new OverscrollTestWebContents(
         browser_context, fake_native_view.Pass(), fake_contents_window.Pass());
     web_contents->Init(WebContents::CreateParams(browser_context, instance));
-    web_contents->RenderFrameCreated(web_contents->GetMainFrame());
     return web_contents;
   }
 
@@ -105,7 +105,7 @@ class OverscrollNavigationOverlayTest : public RenderViewHostImplTestHarness {
 
   void PerformBackNavigationViaSliderCallbacks() {
     // Sets slide direction to BACK, sets screenshot from NavEntry at
-    // offset -1  on layer_delegate_.
+    // offset -1 on layer_delegate_.
     scoped_ptr<aura::Window> window(
         GetOverlay()->CreateBackWindow(GetBackSlideWindowBounds()));
     bool window_created = window;
@@ -118,7 +118,12 @@ class OverscrollNavigationOverlayTest : public RenderViewHostImplTestHarness {
       EXPECT_EQ(GetOverlay()->direction_, OverscrollNavigationOverlay::NONE);
     window->SetBounds(gfx::Rect(root_window()->bounds().size()));
     GetOverlay()->OnOverscrollCompleted(window.Pass());
-    main_test_rfh()->PrepareForCommit();
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableBrowserSideNavigation)) {
+      main_test_rfh()->PrepareForCommit();
+    } else {
+      contents()->GetPendingMainFrame()->PrepareForCommit();
+    }
     if (window_created)
       EXPECT_TRUE(contents()->CrossProcessNavigationPending());
     else
@@ -266,8 +271,8 @@ TEST_F(OverscrollNavigationOverlayTest, CancelAfterSuccessfulNavigation) {
 
   EXPECT_TRUE(contents()->CrossProcessNavigationPending());
   NavigationEntry* pending = contents()->GetController().GetPendingEntry();
-  main_test_rfh()->SendNavigate(
-      0, pending->GetUniqueID(), false, pending->GetURL());
+  contents()->GetPendingMainFrame()->SendNavigate(
+      pending->GetPageID(), pending->GetUniqueID(), false, pending->GetURL());
   EXPECT_EQ(contents()->GetURL(), third());
 }
 
@@ -282,8 +287,8 @@ TEST_F(OverscrollNavigationOverlayTest, Navigation_PaintUpdate) {
   EXPECT_TRUE(GetOverlay()->web_contents());
 
   NavigationEntry* pending = contents()->GetController().GetPendingEntry();
-  main_test_rfh()->SendNavigate(
-      0, pending->GetUniqueID(), false, pending->GetURL());
+  contents()->GetPendingMainFrame()->SendNavigate(
+      pending->GetPageID(), pending->GetUniqueID(), false, pending->GetURL());
   ReceivePaintUpdate();
 
   // Navigation was committed and the paint update was received - we should no
@@ -306,8 +311,8 @@ TEST_F(OverscrollNavigationOverlayTest, Navigation_LoadingUpdate) {
   contents()->TestSetIsLoading(false);
   EXPECT_FALSE(GetOverlay()->web_contents());
   NavigationEntry* pending = contents()->GetController().GetPendingEntry();
-  main_test_rfh()->SendNavigate(
-      0, pending->GetUniqueID(), false, pending->GetURL());
+  contents()->GetPendingMainFrame()->SendNavigate(
+      pending->GetPageID(), pending->GetUniqueID(), false, pending->GetURL());
   EXPECT_EQ(contents()->GetURL(), third());
 }
 

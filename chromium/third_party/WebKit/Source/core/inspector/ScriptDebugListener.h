@@ -31,6 +31,7 @@
 #define ScriptDebugListener_h
 
 #include "bindings/core/v8/ScriptState.h"
+#include "core/CoreExport.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -42,7 +43,7 @@ class ScriptValue;
 
 enum CompileResult { CompileSuccess, CompileError };
 
-class ScriptDebugListener {
+class CORE_EXPORT ScriptDebugListener {
 public:
     class Script {
     public:
@@ -98,9 +99,15 @@ public:
         StepFrame
     };
 
+    struct ParsedScript {
+        String scriptId;
+        Script script;
+        CompileResult compileResult;
+    };
+
     virtual ~ScriptDebugListener() { }
 
-    virtual void didParseSource(const String& scriptId, const Script&, CompileResult) = 0;
+    virtual void didParseSource(const ParsedScript&) = 0;
     virtual SkipPauseRequest didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception, const Vector<String>& hitBreakpoints, bool isPromiseRejection) = 0;
     virtual void didContinue() = 0;
     virtual bool v8AsyncTaskEventsEnabled() const = 0;

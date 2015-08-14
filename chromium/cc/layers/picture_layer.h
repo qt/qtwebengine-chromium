@@ -9,7 +9,6 @@
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/layers/layer.h"
-#include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
@@ -19,7 +18,8 @@ class ResourceUpdateQueue;
 
 class CC_EXPORT PictureLayer : public Layer {
  public:
-  static scoped_refptr<PictureLayer> Create(ContentLayerClient* client);
+  static scoped_refptr<PictureLayer> Create(const LayerSettings& settings,
+                                            ContentLayerClient* client);
 
   void ClearClient();
 
@@ -30,8 +30,7 @@ class CC_EXPORT PictureLayer : public Layer {
   void SetLayerTreeHost(LayerTreeHost* host) override;
   void PushPropertiesTo(LayerImpl* layer) override;
   void SetNeedsDisplayRect(const gfx::Rect& layer_rect) override;
-  bool Update(ResourceUpdateQueue* queue,
-              const OcclusionTracker<Layer>* occlusion) override;
+  bool Update() override;
   void SetIsMask(bool is_mask) override;
   skia::RefPtr<SkPicture> GetPicture() const override;
   bool IsSuitableForGpuRasterization() const override;
@@ -45,9 +44,11 @@ class CC_EXPORT PictureLayer : public Layer {
   }
 
  protected:
-  explicit PictureLayer(ContentLayerClient* client);
+  PictureLayer(const LayerSettings& settings, ContentLayerClient* client);
   // Allow tests to inject a recording source.
-  PictureLayer(ContentLayerClient* client, scoped_ptr<RecordingSource> source);
+  PictureLayer(const LayerSettings& settings,
+               ContentLayerClient* client,
+               scoped_ptr<RecordingSource> source);
   ~PictureLayer() override;
 
   bool HasDrawableContent() const override;
@@ -63,7 +64,7 @@ class CC_EXPORT PictureLayer : public Layer {
   InvalidationRegion pending_invalidation_;
   // Invalidation from the last time update was called.
   Region recording_invalidation_;
-  gfx::Rect last_updated_visible_content_rect_;
+  gfx::Rect last_updated_visible_layer_rect_;
 
   int update_source_frame_number_;
   bool is_mask_;

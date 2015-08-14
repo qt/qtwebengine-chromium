@@ -20,8 +20,6 @@
          count_all_in_varyings_packing)                      \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
-  GPU_OP(DISABLE_ARB_SYNC,                                   \
-         disable_arb_sync)                                   \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
   GPU_OP(DISABLE_BLEND_EQUATION_ADVANCED,                    \
@@ -32,26 +30,24 @@
          disable_d3d11)                                      \
   GPU_OP(DISABLE_DEPTH_TEXTURE,                              \
          disable_depth_texture)                              \
-  GPU_OP(DISABLE_EGL_KHR_FENCE_SYNC,                         \
-         disable_egl_khr_fence_sync)                         \
-  GPU_OP(DISABLE_EGL_KHR_WAIT_SYNC,                          \
-         disable_egl_khr_wait_sync)                          \
   GPU_OP(DISABLE_DISCARD_FRAMEBUFFER,                        \
          disable_discard_framebuffer)                        \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
-  GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
-         disable_ext_occlusion_query)                        \
+  GPU_OP(DISABLE_GL_RGB_FORMAT,                              \
+         disable_gl_rgb_format)                              \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
   GPU_OP(DISABLE_MULTISAMPLED_RENDER_TO_TEXTURE,             \
          disable_multisampled_render_to_texture)             \
-  GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
-         disable_oes_standard_derivatives)                   \
+  GPU_OP(DISABLE_NS_CGL_SURFACE_API,                         \
+         disable_ns_cgl_surface_api)                         \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
          disable_post_sub_buffers_for_onscreen_surfaces)     \
   GPU_OP(DISABLE_PROGRAM_CACHE,                              \
          disable_program_cache)                              \
+  GPU_OP(DISABLE_TIMESTAMP_QUERIES,                          \
+         disable_timestamp_queries)                          \
   GPU_OP(ETC1_POWER_OF_TWO_ONLY,                             \
          etc1_power_of_two_only)                             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
@@ -76,6 +72,8 @@
          init_varyings_without_static_use)                   \
   GPU_OP(INIT_VERTEX_ATTRIBUTES,                             \
          init_vertex_attributes)                             \
+  GPU_OP(MAX_COPY_TEXTURE_CHROMIUM_SIZE_262144,              \
+         max_copy_texture_chromium_size_262144)              \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \
@@ -96,6 +94,8 @@
          needs_offscreen_buffer_workaround)                  \
   GPU_OP(REGENERATE_STRUCT_NAMES,                            \
          regenerate_struct_names)                            \
+  GPU_OP(REMOVE_POW_WITH_CONSTANT_EXPONENT,                  \
+         remove_pow_with_constant_exponent)                  \
   GPU_OP(RESTORE_SCISSOR_ON_FBO_CHANGE,                      \
          restore_scissor_on_fbo_change)                      \
   GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
@@ -108,8 +108,8 @@
          simulate_out_of_memory_on_large_textures)           \
   GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \
          swizzle_rgba_for_async_readpixels)                  \
-  GPU_OP(TEXSUBIMAGE2D_FASTER_THAN_TEXIMAGE2D,               \
-         texsubimage2d_faster_than_teximage2d)               \
+  GPU_OP(TEXSUBIMAGE_FASTER_THAN_TEXIMAGE,                   \
+         texsubimage_faster_than_teximage)                   \
   GPU_OP(UNBIND_ATTACHMENTS_ON_BOUND_RENDER_FBO_DELETE,      \
          unbind_attachments_on_bound_render_fbo_delete)      \
   GPU_OP(UNBIND_FBO_ON_CONTEXT_SWITCH,                       \
@@ -130,13 +130,13 @@
          validate_multisample_buffer_allocation)             \
   GPU_OP(WAKE_UP_GPU_BEFORE_DRAWING,                         \
          wake_up_gpu_before_drawing)                         \
-  GPU_OP(DISABLE_GL_RGB_FORMAT,                              \
-         disable_gl_rgb_format)                              \
+  GPU_OP(UNBIND_EGL_CONTEXT_TO_FLUSH_DRIVER_CACHES,          \
+         unbind_egl_context_to_flush_driver_caches)          \
 
 namespace gpu {
 
 // Provides all types of GPU driver bug workarounds.
-enum GPU_EXPORT GpuDriverBugWorkaroundType {
+enum GpuDriverBugWorkaroundType {
 #define GPU_OP(type, name) type,
   GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
 #undef GPU_OP

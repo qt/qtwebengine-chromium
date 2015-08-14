@@ -31,7 +31,8 @@
 {
   'variables': {
     'platform_heap_files': [
-      'AddressSanitizer.h',
+      'BlinkGCMemoryDumpProvider.cpp',
+      'BlinkGCMemoryDumpProvider.h',
       'CallbackStack.cpp',
       'CallbackStack.h',
       'GCInfo.cpp',
@@ -45,6 +46,11 @@
       'InlinedGlobalMarkingVisitor.h',
       'MarkingVisitor.h',
       'MarkingVisitorImpl.h',
+      'PageMemory.h',
+      'PagePool.cpp',
+      'PagePool.h',
+      'PersistentNode.cpp',
+      'PersistentNode.h',
       'SafePoint.cpp',
       'SafePoint.h',
       'StackFrameDepth.cpp',
@@ -57,6 +63,7 @@
     ],
     'platform_heap_test_files': [
       'HeapTest.cpp',
+      'BlinkGCMemoryDumpProviderTest.cpp',
     ],
     'conditions': [
       ['target_arch == "arm"', {

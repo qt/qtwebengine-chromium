@@ -41,31 +41,26 @@ namespace blink {
 template<typename Strategy>
 class StyledMarkupSerializer final {
     STACK_ALLOCATED();
-    using PositionType = typename Strategy::PositionType;
 public:
-    StyledMarkupSerializer(EAbsoluteURLs, EAnnotateForInterchange, const PositionType& start, const PositionType& end, Node* highestNodeToBeSerialized = nullptr);
+    StyledMarkupSerializer(EAbsoluteURLs, EAnnotateForInterchange, const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, Node* highestNodeToBeSerialized, ConvertBlocksToInlines);
 
-    String createMarkup(bool convertBlocksToInlines, Node*);
-
-    Node* serializeNodes(Node* startNode, Node* pastEnd);
-    String takeResults();
+    String createMarkup();
 
 private:
-    enum NodeTraversalMode { EmitString, DoNotEmitString };
+    bool shouldAnnotate() const { return m_shouldAnnotate == AnnotateForInterchange; }
 
-    Node* traverseNodesForSerialization(Node* startNode, Node* pastEnd, NodeTraversalMode);
-
-    // TODO(hajimehoshi): These functions should be at the accumulator.
-    void wrapWithNode(ContainerNode&, bool convertBlocksToInlines = false, StyledMarkupAccumulator::RangeFullySelectsNode = StyledMarkupAccumulator::DoesFullySelectNode);
-    void wrapWithStyleNode(StylePropertySet*, bool isBlock = false);
-
-    StyledMarkupAccumulator m_markupAccumulator;
-    const PositionType m_start;
-    const PositionType m_end;
-    Vector<String> m_reversedPrecedingMarkup;
+    const PositionAlgorithm<Strategy> m_start;
+    const PositionAlgorithm<Strategy> m_end;
+    const EAbsoluteURLs m_shouldResolveURLs;
+    const EAnnotateForInterchange m_shouldAnnotate;
+    const RefPtrWillBeMember<Node> m_highestNodeToBeSerialized;
+    const ConvertBlocksToInlines m_convertBlocksToInlines;
+    RawPtrWillBeMember<Node> m_lastClosed;
+    RefPtrWillBeMember<EditingStyle> m_wrappingStyle;
 };
 
 extern template class StyledMarkupSerializer<EditingStrategy>;
+extern template class StyledMarkupSerializer<EditingInComposedTreeStrategy>;
 
 } // namespace blink
 

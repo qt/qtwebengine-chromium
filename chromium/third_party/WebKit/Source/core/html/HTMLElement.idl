@@ -26,13 +26,14 @@ interface HTMLElement : Element {
     [Reflect] attribute DOMString lang;
     attribute boolean translate;
     attribute DOMString dir;
-    // FIXME: dataset is on Element.
+    [SameObject, PerWorldBindings] readonly attribute DOMStringMap dataset;
 
     // user interaction
     [Reflect] attribute boolean hidden;
     void click();
     [CustomElementCallbacks] attribute long tabIndex;
-    // FIXME: focus() and blur() are on Element.
+    void focus();
+    void blur();
     [Reflect] attribute DOMString accessKey;
     [CustomElementCallbacks] attribute boolean draggable;
     [RuntimeEnabled=ContextMenu] attribute HTMLMenuElement? contextMenu;
@@ -51,9 +52,10 @@ interface HTMLElement : Element {
     readonly attribute long offsetWidth;
     readonly attribute long offsetHeight;
 
-    // Input Method Editor API
-    // https://dvcs.w3.org/hg/ime-api/raw-file/default/Overview.html#the-inputmethodcontext-property
-    [RuntimeEnabled=IMEAPI] readonly attribute InputMethodContext? inputMethodContext;
+    // CSS Object Model (CSSOM)
+    // http://dev.w3.org/csswg/cssom/#the-elementcssinlinestyle-interface
+    // FIXME: style should have [PutForwards=cssText].
+    [SameObject, PerWorldBindings] readonly attribute CSSStyleDeclaration style;
 
     // Non-standard APIs
     [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, MeasureAs=HTMLElementInnerText] attribute DOMString innerText;

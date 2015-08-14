@@ -39,6 +39,9 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerState,
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerResponseType,
                           blink::WebServiceWorkerResponseTypeLast)
 
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerResponseError,
+                          blink::WebServiceWorkerResponseErrorLast)
+
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerClientType,
                           blink::WebServiceWorkerClientTypeLast)
 
@@ -71,6 +74,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
   IPC_STRUCT_TRAITS_MEMBER(blob_uuid)
   IPC_STRUCT_TRAITS_MEMBER(blob_size)
   IPC_STRUCT_TRAITS_MEMBER(stream_url)
+  IPC_STRUCT_TRAITS_MEMBER(error)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
@@ -106,8 +110,23 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerClientQueryOptions)
   IPC_STRUCT_TRAITS_MEMBER(include_uncontrolled)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_BEGIN(ServiceWorkerMsg_MessageToDocument_Params)
+  IPC_STRUCT_MEMBER(int, thread_id)
+  IPC_STRUCT_MEMBER(int, provider_id)
+  IPC_STRUCT_MEMBER(content::ServiceWorkerObjectInfo, service_worker_info)
+  IPC_STRUCT_MEMBER(base::string16, message)
+  IPC_STRUCT_MEMBER(std::vector<content::TransferredMessagePort>, message_ports)
+  IPC_STRUCT_MEMBER(std::vector<int>, new_routing_ids)
+IPC_STRUCT_END()
+
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebGeofencingEventType,
                           blink::WebGeofencingEventTypeLast)
+
+IPC_STRUCT_TRAITS_BEGIN(content::NavigatorConnectClient)
+  IPC_STRUCT_TRAITS_MEMBER(target_url)
+  IPC_STRUCT_TRAITS_MEMBER(origin)
+  IPC_STRUCT_TRAITS_MEMBER(message_port_id)
+IPC_STRUCT_TRAITS_END()
 
 //---------------------------------------------------------------------------
 // Messages sent from the child process to the browser.
@@ -119,17 +138,26 @@ IPC_MESSAGE_CONTROL5(ServiceWorkerHostMsg_RegisterServiceWorker,
                      GURL /* scope */,
                      GURL /* script_url */)
 
+IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_UpdateServiceWorker,
+                     int /* provider_id */,
+                     int64 /* registration_id */)
+
 IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_UnregisterServiceWorker,
                      int /* thread_id */,
                      int /* request_id */,
                      int /* provider_id */,
-                     GURL /* scope (url pattern) */)
+                     int64 /* registration_id */)
 
 IPC_MESSAGE_CONTROL4(ServiceWorkerHostMsg_GetRegistration,
                      int /* thread_id */,
                      int /* request_id */,
                      int /* provider_id */,
                      GURL /* document_url */)
+
+IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_GetRegistrations,
+                     int /* thread_id */,
+                     int /* request_id */,
+                     int /* provider_id */)
 
 IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_GetRegistrationForReady,
                      int /* thread_id */,
@@ -144,15 +172,16 @@ IPC_MESSAGE_CONTROL3(
     std::vector<content::TransferredMessagePort> /* sent_message_ports */)
 
 // Informs the browser of a new ServiceWorkerProvider in the child process,
-// |provider_id| is unique within its child process.
-// |render_frame_id| identifies the frame associated with the provider, it will
-// it will be MSG_ROUTING_NONE if the context is a worker instead of a document.
-// |provider_type| identifies whether this provider is for ServiceWorker
-// controllees (documents and SharedWorkers) or for controllers
-// (ServiceWorkers).
+// |provider_id| is unique within its child process. When this provider is
+// created for a document, |route_id| is the frame ID of it. When this provider
+// is created for a Shared Worker, |route_id| is the Shared Worker route ID.
+// When this provider is created for a Service Worker, |route_id| is
+// MSG_ROUTING_NONE. |provider_type| identifies whether this provider is for
+// Service Worker controllees (documents and Shared Workers) or for controllers
+// (Service Workers).
 IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_ProviderCreated,
                      int /* provider_id */,
-                     int /* render_frame_id */,
+                     int /* route_id */,
                      content::ServiceWorkerProviderType /* provider_type */)
 
 // Informs the browser of a ServiceWorkerProvider being destroyed.
@@ -199,8 +228,9 @@ IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_FetchEventFinished,
                     int /* request_id */,
                     content::ServiceWorkerFetchEventResult,
                     content::ServiceWorkerResponse)
-IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SyncEventFinished,
-                    int /* request_id */)
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_SyncEventFinished,
+                    int /* request_id */,
+                    blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_NotificationClickEventFinished,
                     int /* request_id */)
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_PushEventFinished,
@@ -257,6 +287,11 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SkipWaiting,
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_ClaimClients,
                     int /* request_id */)
 
+// Asks the browser to stash a message port, giving it a name.
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_StashMessagePort,
+                    int /* message_port_id */,
+                    base::string16 /* name */)
+
 //---------------------------------------------------------------------------
 // Messages sent from the browser to the child process.
 //
@@ -304,6 +339,13 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_DidGetRegistration,
                      content::ServiceWorkerRegistrationObjectInfo,
                      content::ServiceWorkerVersionAttributes)
 
+// Response to ServiceWorkerHostMsg_GetRegistrations.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_DidGetRegistrations,
+                     int /* thread_id */,
+                     int /* request_id */,
+                     std::vector<content::ServiceWorkerRegistrationObjectInfo>,
+                     std::vector<content::ServiceWorkerVersionAttributes>)
+
 // Response to ServiceWorkerHostMsg_GetRegistrationForReady.
 IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_DidGetRegistrationForReady,
                      int /* thread_id */,
@@ -330,6 +372,14 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerUnregistrationError,
 // Sent when any kind of registration error occurs during a
 // GetRegistration handler above.
 IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerGetRegistrationError,
+                     int /* thread_id */,
+                     int /* request_id */,
+                     blink::WebServiceWorkerError::ErrorType /* code */,
+                     base::string16 /* message */)
+
+// Sent when any kind of registration error occurs during a
+// GetRegistrations handler above.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_ServiceWorkerGetRegistrationsError,
                      int /* thread_id */,
                      int /* request_id */,
                      blink::WebServiceWorkerError::ErrorType /* code */,
@@ -364,13 +414,8 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_SetControllerServiceWorker,
                      bool /* should_notify_controllerchange */)
 
 // Sends a 'message' event to a client document (browser->renderer).
-IPC_MESSAGE_CONTROL5(
-    ServiceWorkerMsg_MessageToDocument,
-    int /* thread_id */,
-    int /* provider_id */,
-    base::string16 /* message */,
-    std::vector<content::TransferredMessagePort> /* sent_message_ports */,
-    std::vector<int> /* new_routing_ids */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_MessageToDocument,
+                     ServiceWorkerMsg_MessageToDocument_Params)
 
 // Sent via EmbeddedWorker to dispatch events.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_InstallEvent,
@@ -439,3 +484,10 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_OpenWindowError,
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_FocusClientResponse,
                      int /* request_id */,
                      content::ServiceWorkerClientInfo /* client */)
+
+// Sent via EmbeddedWorker to transfer a stashed message port to the worker.
+IPC_MESSAGE_CONTROL3(
+    ServiceWorkerMsg_SendStashedMessagePorts,
+    std::vector<content::TransferredMessagePort> /* stashed_message_ports */,
+    std::vector<int> /* new_routing_ids */,
+    std::vector<base::string16> /* port_names */)

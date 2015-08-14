@@ -346,10 +346,6 @@ class NativeMenuWin::MenuHostWindow {
                                              UINT message,
                                              WPARAM w_param,
                                              LPARAM l_param) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 MenuHostWindowProc"));
-
     MenuHostWindow* host =
         reinterpret_cast<MenuHostWindow*>(gfx::GetWindowUserData(window));
     // host is null during initial construction.
@@ -696,7 +692,7 @@ void NativeMenuWin::UpdateMenuItemInfoForString(MENUITEMINFO* mii,
   ui::MenuModel::ItemType type = model_->GetTypeAt(model_index);
   // Strip out any tabs, otherwise they get interpreted as accelerators and can
   // lead to weird behavior.
-  ReplaceSubstringsAfterOffset(&formatted, 0, L"\t", L" ");
+  base::ReplaceSubstringsAfterOffset(&formatted, 0, L"\t", L" ");
   if (type != ui::MenuModel::TYPE_SUBMENU) {
     // Add accelerator details to the label if provided.
     ui::Accelerator accelerator(ui::VKEY_UNKNOWN, ui::EF_NONE);

@@ -37,6 +37,7 @@
           },
           'dependencies': [
             'remoting_base',
+            'remoting_host_credits',
             'remoting_protocol',
             'remoting_resources',
             '../base/base.gyp:base_i18n',
@@ -79,6 +80,7 @@
             ['chromeos==1', {
               'dependencies' : [
                 '../cc/cc.gyp:cc',
+                '../gpu/gpu.gyp:command_buffer_common',
                 '../ppapi/ppapi_internal.gyp:ppapi_host',
                 '../skia/skia.gyp:skia',
                 '../ui/aura/aura.gyp:aura',
@@ -189,6 +191,33 @@
         },  # end of target 'remoting_host'
 
         {
+          # GN version: //remoting/host:credits
+          'target_name': 'remoting_host_credits',
+          'type': 'none',
+          'actions': [
+            {
+              'action_name': 'Build remoting host credits',
+              'inputs': [
+                '../tools/licenses.py',
+                'host/installer/credits.tmpl',
+                'host/installer/credits_entry.tmpl',
+              ],
+              'outputs': [
+                '<(SHARED_INTERMEDIATE_DIR)/remoting/CREDITS.txt',
+              ],
+              'hard_dependency': 1,
+              'action': ['python',
+                         '../tools/licenses.py',
+                         'credits',
+                         '<(SHARED_INTERMEDIATE_DIR)/remoting/CREDITS.txt',
+                         '--file-template', 'host/installer/credits.tmpl',
+                         '--entry-template', 'host/installer/credits_entry.tmpl',
+              ],
+            },
+          ],
+        },
+
+        {
           # GN version: //remoting/host/native_messaging
           'target_name': 'remoting_native_messaging_base',
           'type': 'static_library',
@@ -220,7 +249,6 @@
           'conditions': [
             ['OS=="win"', {
               'dependencies': [
-                '../google_update/google_update.gyp:google_update',
                 'remoting_lib_idl',
               ],
               # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -463,6 +491,7 @@
               },
               'mac_bundle_resources': [
                 '<(PRODUCT_DIR)/icudtl.dat',
+                '<(SHARED_INTERMEDIATE_DIR)/remoting/CREDITS.txt',
                 'host/disconnect_window.xib',
                 'host/remoting_me2me_host.icns',
                 'host/remoting_me2me_host-Info.plist',

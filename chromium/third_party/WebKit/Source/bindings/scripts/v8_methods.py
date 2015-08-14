@@ -117,7 +117,13 @@ def method_context(interface, method, is_visible=True):
         not is_do_not_check_security)
 
     is_raises_exception = 'RaisesException' in extended_attributes
+    is_custom_call_prologue = has_extended_attribute_value(method, 'Custom', 'CallPrologue')
     is_custom_call_epilogue = has_extended_attribute_value(method, 'Custom', 'CallEpilogue')
+    is_post_message = 'PostMessage' in extended_attributes
+    if is_post_message:
+        includes.add('bindings/core/v8/SerializedScriptValueFactory.h')
+        includes.add('core/dom/DOMArrayBuffer.h')
+        includes.add('core/dom/MessagePort.h')
 
     if 'LenientThis' in extended_attributes:
         raise Exception('[LenientThis] is not supported for operations.')
@@ -159,7 +165,9 @@ def method_context(interface, method, is_visible=True):
         'is_check_security_for_frame': is_check_security_for_frame,
         'is_check_security_for_node': is_check_security_for_node,
         'is_check_security_for_window': is_check_security_for_window,
-        'is_custom': 'Custom' in extended_attributes and not is_custom_call_epilogue,
+        'is_custom': 'Custom' in extended_attributes and
+            not (is_custom_call_prologue or is_custom_call_epilogue),
+        'is_custom_call_prologue': is_custom_call_prologue,
         'is_custom_call_epilogue': is_custom_call_epilogue,
         'is_custom_element_callbacks': is_custom_element_callbacks,
         'is_do_not_check_security': is_do_not_check_security,
@@ -169,6 +177,7 @@ def method_context(interface, method, is_visible=True):
         'is_partial_interface_member':
             'PartialInterfaceImplementedAs' in extended_attributes,
         'is_per_world_bindings': 'PerWorldBindings' in extended_attributes,
+        'is_post_message': is_post_message,
         'is_raises_exception': is_raises_exception,
         'is_read_only': is_unforgeable(interface, method),
         'is_static': is_static,
@@ -182,6 +191,9 @@ def method_context(interface, method, is_visible=True):
         'number_of_required_or_variadic_arguments': len([
             argument for argument in arguments
             if not argument.is_optional]),
+        'on_instance': v8_utilities.on_instance(interface, method),
+        'on_interface': v8_utilities.on_interface(interface, method),
+        'on_prototype': v8_utilities.on_prototype(interface, method),
         'only_exposed_to_private_script': is_only_exposed_to_private_script,
         'private_script_v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
             extended_attributes, 'v8Value', 'cppValue', isolate='scriptState->isolate()', bailout_return_value='false'),
@@ -370,8 +382,13 @@ def v8_value_to_local_cpp_variadic_value(method, argument, index, return_promise
     else:
         check_expression = 'exceptionState.throwIfNeeded()'
 
+    if idl_type.is_dictionary or idl_type.is_union_type:
+        vector_type = 'HeapVector'
+    else:
+        vector_type = 'Vector'
+
     return {
-        'assign_expression': 'toImplArguments<%s>(info, %s, exceptionState)' % (this_cpp_type, index),
+        'assign_expression': 'toImplArguments<%s<%s>>(info, %s, exceptionState)' % (vector_type, this_cpp_type, index),
         'check_expression': check_expression,
         'cpp_type': this_cpp_type,
         'cpp_name': argument.name,

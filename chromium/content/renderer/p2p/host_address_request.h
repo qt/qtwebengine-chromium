@@ -10,12 +10,12 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
-#include "net/base/net_util.h"
+#include "net/base/ip_address_number.h"
 #include "third_party/webrtc/base/asyncresolverinterface.h"
 
 namespace base {
 class MessageLoop;
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace content {
@@ -56,8 +56,8 @@ class P2PAsyncAddressResolver
   void DeliverResponse(const net::IPAddressList& address);
 
   P2PSocketDispatcher* dispatcher_;
-  scoped_refptr<base::MessageLoopProxy> ipc_message_loop_;
-  scoped_refptr<base::MessageLoopProxy> delegate_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> delegate_task_runner_;
 
   // State must be accessed from delegate thread only.
   State state_;

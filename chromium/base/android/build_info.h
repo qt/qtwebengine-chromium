@@ -23,7 +23,8 @@ enum SdkVersion {
   SDK_VERSION_JELLY_BEAN_MR2 = 18,
   SDK_VERSION_KITKAT = 19,
   SDK_VERSION_KITKAT_WEAR = 20,
-  SDK_VERSION_LOLLIPOP = 21
+  SDK_VERSION_LOLLIPOP = 21,
+  SDK_VERSION_LOLLIPOP_MR1 = 22
 };
 
 // BuildInfo is a singleton class that stores android build and device
@@ -95,6 +96,10 @@ class BASE_EXPORT BuildInfo {
     return sdk_int_;
   }
 
+  int has_language_apk_splits() const {
+    return has_language_apk_splits_;
+  }
+
   const char* java_exception_info() const {
     return java_exception_info_;
   }
@@ -126,6 +131,7 @@ class BASE_EXPORT BuildInfo {
   const char* const package_name_;
   const char* const build_type_;
   const int sdk_int_;
+  const bool has_language_apk_splits_;
   // This is set via set_java_exception_info, not at constructor time.
   const char* java_exception_info_;
 

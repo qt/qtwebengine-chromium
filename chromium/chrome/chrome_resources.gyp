@@ -437,6 +437,12 @@
         {
           'includes': ['chrome_repack_chrome_200_percent.gypi']
         },
+        {
+          'includes': ['chrome_repack_chrome_material_100_percent.gypi']
+        },
+        {
+          'includes': ['chrome_repack_chrome_material_200_percent.gypi']
+        },
       ],
       'conditions': [
         ['OS != "ios"', {
@@ -459,6 +465,11 @@
           'dependencies': [
              '<(DEPTH)/ash/ash_resources.gyp:ash_resources',
              '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
+          ],
+        }],
+        ['toolkit_views==1', {
+          'dependencies': [
+             '<(DEPTH)/ui/views/resources/views_resources.gyp:views_resources',
           ],
         }],
         ['chromeos==1', {
@@ -529,6 +540,26 @@
                   'destination': '<(PRODUCT_DIR)',
                   'files': [
                     '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
+                  ],
+                },
+              ],
+            }],
+            ['enable_topchrome_md == 1', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)',
+                  'files': [
+                    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_material_100_percent.pak',
+                  ],
+                },
+              ],
+            }],
+            ['enable_hidpi == 1 and enable_topchrome_md == 1', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)',
+                  'files': [
+                    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_material_200_percent.pak',
                   ],
                 },
               ],

@@ -61,13 +61,12 @@ TEST(VideoFrameMac, CheckBasicAttributes) {
 }
 
 TEST(VideoFrameMac, CheckFormats) {
+  // CreateFrame() does not support non planar YUV, e.g. NV12.
   const FormatPair format_pairs[] = {
       {VideoFrame::I420, kCVPixelFormatType_420YpCbCr8Planar},
-
       {VideoFrame::YV12, 0},
       {VideoFrame::YV16, 0},
       {VideoFrame::YV12A, 0},
-      {VideoFrame::YV12J, 0},
       {VideoFrame::YV24, 0},
   };
 
@@ -93,7 +92,8 @@ TEST(VideoFrameMac, CheckLifetime) {
 
   int instances_destroyed = 0;
   auto wrapper_frame = VideoFrame::WrapVideoFrame(
-      frame, frame->visible_rect(), frame->natural_size(),
+      frame, frame->visible_rect(), frame->natural_size());
+  wrapper_frame->AddDestructionObserver(
       base::Bind(&Increment, &instances_destroyed));
   ASSERT_TRUE(wrapper_frame.get());
 

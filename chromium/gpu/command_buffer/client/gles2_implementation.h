@@ -5,8 +5,6 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_H_
 #define GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_H_
 
-#include <GLES2/gl2.h>
-
 #include <list>
 #include <map>
 #include <queue>
@@ -15,24 +13,22 @@
 #include <utility>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "gpu/command_buffer/client/buffer_tracker.h"
 #include "gpu/command_buffer/client/client_context_state.h"
 #include "gpu/command_buffer/client/context_support.h"
-#include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_impl_export.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/mapped_memory.h"
-#include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/ref_counted.h"
-#include "gpu/command_buffer/client/ring_buffer.h"
 #include "gpu/command_buffer/client/share_group.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
   #if defined(GLES2_INLINE_OPTIMIZATION)
@@ -99,18 +95,18 @@
     GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(!ptr || \
         (ptr[0] == static_cast<type>(0) || ptr[0] == static_cast<type>(-1)));
 
-struct GLUniformDefinitionCHROMIUM;
-
 namespace gpu {
 
 class GpuControl;
+class IdAllocator;
 class ScopedTransferBufferPtr;
 class TransferBufferInterface;
 
 namespace gles2 {
 
-class ImageFactory;
+class GLES2CmdHelper;
 class VertexArrayObjectManager;
+class QueryTracker;
 
 class GLES2ImplementationErrorMessageCallback {
  public:
@@ -245,6 +241,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool GetSyncivHelper(
       GLsync sync, GLenum pname, GLsizei bufsize, GLsizei* length,
       GLint* values);
+  bool GetQueryObjectValueHelper(
+      const char* function_name, GLuint id, GLenum pname, GLuint64* params);
 
   void FreeUnusedSharedMemory();
   void FreeEverything();
@@ -254,6 +252,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
                        const base::Closure& callback) override;
   void SignalQuery(uint32 query, const base::Closure& callback) override;
   void SetSurfaceVisible(bool visible) override;
+  void SetAggressivelyFreeResources(bool aggressively_free_resources) override;
 
   void SetErrorMessageCallback(
       GLES2ImplementationErrorMessageCallback* callback) {
@@ -279,6 +278,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
  private:
   friend class GLES2ImplementationTest;
   friend class VertexArrayObjectManager;
+  friend class QueryTracker;
 
   // Used to track whether an extension is available
   enum ExtensionStatus {
@@ -543,6 +543,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   GLuint GetMaxValueInBufferCHROMIUMHelper(
       GLuint buffer_id, GLsizei count, GLenum type, GLuint offset);
 
+  void WaitAllAsyncTexImage2DCHROMIUMHelper();
+
   void RestoreElementAndArrayBuffers(bool restore);
   void RestoreArrayBuffer(bool restrore);
 
@@ -599,6 +601,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   IdAllocator* GetIdAllocator(int id_namespace) const;
 
   void FinishHelper();
+  void FlushHelper();
 
   void RunIfContextNotLost(const base::Closure& callback);
 
@@ -694,9 +697,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // unpack alignment as last set by glPixelStorei
   GLint unpack_alignment_;
 
-  // unpack yflip as last set by glPixelstorei
-  bool unpack_flip_y_;
-
   // unpack row length as last set by glPixelStorei
   GLint unpack_row_length_;
 
@@ -728,8 +728,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // The program in use by glUseProgram
   GLuint current_program_;
 
-  // The currently bound array buffer.
-  GLuint bound_array_buffer_id_;
+  GLuint bound_array_buffer_;
+  GLuint bound_copy_read_buffer_;
+  GLuint bound_copy_write_buffer_;
+  GLuint bound_pixel_pack_buffer_;
+  GLuint bound_pixel_unpack_buffer_;
+  GLuint bound_transform_feedback_buffer_;
+  GLuint bound_uniform_buffer_;
 
   // The currently bound pixel transfer buffers.
   GLuint bound_pixel_pack_transfer_buffer_id_;
@@ -793,8 +798,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   ShareGroupContextData share_group_context_data_;
 
   scoped_ptr<QueryTracker> query_tracker_;
-  typedef std::map<GLuint, QueryTracker::Query*> QueryMap;
-  QueryMap current_queries_;
   scoped_ptr<IdAllocator> query_id_allocator_;
 
   scoped_ptr<BufferTracker> buffer_tracker_;
@@ -806,6 +809,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   GpuControl* gpu_control_;
 
   Capabilities capabilities_;
+
+  // Flag to indicate whether the implementation can retain resources, or
+  // whether it should aggressively free them.
+  bool aggressively_free_resources_;
 
   base::WeakPtrFactory<GLES2Implementation> weak_ptr_factory_;
 

@@ -26,7 +26,7 @@
 #include "core/CoreExport.h"
 #include "core/dom/Text.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/line/FloatToLayoutUnit.h"
+#include "core/layout/TextRunConstructor.h"
 #include "platform/LengthFunctions.h"
 #include "platform/text/TextPath.h"
 #include "wtf/Forward.h"
@@ -67,13 +67,13 @@ public:
     void dirtyLineBoxes();
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override final;
-    void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
+    void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = nullptr);
 
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
-    void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
+    void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = nullptr);
 
     enum ClippingOption { NoClipping, ClipToEllipsis };
-    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = 0, ClippingOption = NoClipping) const;
+    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = nullptr, ClippingOption = NoClipping) const;
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
@@ -87,18 +87,18 @@ public:
     unsigned textLength() const { return m_text.length(); } // non virtual implementation of length()
     void positionLineBox(InlineBox*);
 
-    virtual float width(unsigned from, unsigned len, const Font&, float xPos, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
-    virtual float width(unsigned from, unsigned len, float xPos, TextDirection, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
+    virtual float width(unsigned from, unsigned len, const Font&, LayoutUnit xPos, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts = nullptr, FloatRect* glyphBounds = nullptr) const;
+    virtual float width(unsigned from, unsigned len, LayoutUnit xPos, TextDirection, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = nullptr, FloatRect* glyphBounds = nullptr) const;
 
     float minLogicalWidth() const;
     float maxLogicalWidth() const;
 
-    void trimmedPrefWidths(FloatWillBeLayoutUnit leadWidth,
-        FloatWillBeLayoutUnit& firstLineMinWidth, bool& hasBreakableStart,
-        FloatWillBeLayoutUnit& lastLineMinWidth, bool& hasBreakableEnd,
+    void trimmedPrefWidths(LayoutUnit leadWidth,
+        LayoutUnit& firstLineMinWidth, bool& hasBreakableStart,
+        LayoutUnit& lastLineMinWidth, bool& hasBreakableEnd,
         bool& hasBreakableChar, bool& hasBreak,
-        FloatWillBeLayoutUnit& firstLineMaxWidth, FloatWillBeLayoutUnit& lastLineMaxWidth,
-        FloatWillBeLayoutUnit& minWidth, FloatWillBeLayoutUnit& maxWidth, bool& stripFrontSpaces,
+        LayoutUnit& firstLineMaxWidth, LayoutUnit& lastLineMaxWidth,
+        LayoutUnit& minWidth, LayoutUnit& maxWidth, bool& stripFrontSpaces,
         TextDirection);
 
     virtual IntRect linesBoundingBox() const;
@@ -116,7 +116,7 @@ public:
     virtual bool canBeSelectionLeaf() const override { return true; }
     virtual void setSelectionState(SelectionState) override final;
     virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override;
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
@@ -142,6 +142,8 @@ public:
 
     PassRefPtr<AbstractInlineTextBox> firstAbstractInlineTextBox();
 
+    float hyphenWidth(const Font&, TextDirection);
+
 protected:
     virtual void willBeDestroyed() override;
 
@@ -159,7 +161,7 @@ protected:
 
 private:
     void computePreferredLogicalWidths(float leadWidth);
-    void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
+    void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, FloatRect& glyphBounds);
 
     bool computeCanUseSimpleFontCodePath() const;
 
@@ -174,13 +176,13 @@ private:
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
-    float widthFromCache(const Font&, int start, int len, float xPos, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
+    float widthFromFont(const Font&, int start, int len, float leadWidth, float textWidthSoFar, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts, FloatRect* glyphBoundsAccumulation) const;
 
     void secureText(UChar mask);
 
     bool isText() const = delete; // This will catch anyone doing an unnecessary check.
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
 
     void checkConsistency() const;
 
@@ -223,6 +225,12 @@ inline UChar LayoutText::characterAt(unsigned i) const
         return 0;
 
     return uncheckedCharacterAt(i);
+}
+
+inline float LayoutText::hyphenWidth(const Font& font, TextDirection direction)
+{
+    const ComputedStyle& style = styleRef();
+    return font.width(constructTextRun(this, font, style.hyphenString().string(), style, direction));
 }
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutText, isText());

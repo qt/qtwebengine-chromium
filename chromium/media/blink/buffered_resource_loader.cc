@@ -363,6 +363,9 @@ void BufferedResourceLoader::didReceiveResponse(
                "Unknown")
            << " " << response.httpStatusCode();
   DCHECK(active_loader_.get());
+  response_original_url_ = response.wasFetchedViaServiceWorker()
+                               ? response.originalURLViaServiceWorker()
+                               : response.url();
 
   // The loader may have been stopped and |start_cb| is destroyed.
   // In this case we shouldn't do anything.
@@ -416,6 +419,10 @@ void BufferedResourceLoader::didReceiveResponse(
         // to return.
         instance_size_ = content_length_;
       } else {
+        MEDIA_LOG(ERROR, media_log_)
+            << "Failed loading buffered resource using range request due to "
+               "invalid server response. HTTP status code="
+            << response.httpStatusCode();
         DoneStart(kFailed);
         return;
       }
@@ -423,6 +430,9 @@ void BufferedResourceLoader::didReceiveResponse(
       instance_size_ = content_length_;
       if (response.httpStatusCode() != kHttpOK) {
         // We didn't request a range but server didn't reply with "200 OK".
+        MEDIA_LOG(ERROR, media_log_)
+            << "Failed loading buffered resource due to invalid server "
+               "response. HTTP status code=" << response.httpStatusCode();
         DoneStart(kFailed);
         return;
       }
@@ -530,6 +540,8 @@ void BufferedResourceLoader::didFail(
            << ", localizedDescription="
            << error.localizedDescription.utf8().data();
   DCHECK(active_loader_.get());
+  MEDIA_LOG(ERROR, media_log_)
+      << "Failed loading buffered resource. Error code=" << error.reason;
 
   // We don't need to continue loading after failure.
   //

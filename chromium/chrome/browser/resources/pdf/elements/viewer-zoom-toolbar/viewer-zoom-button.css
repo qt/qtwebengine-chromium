@@ -2,8 +2,9 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-:host {
-  background-color: #fff;
-  color: rgb(158, 158, 158);
+paper-fab {
+  background-color: rgb(242, 242, 242);
+  color: rgb(96, 96, 96);
+  margin: 0 48px;
   overflow: visible;
 }

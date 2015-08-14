@@ -40,9 +40,7 @@ class StreamObserver : public newapi::Transport, public RemoteBitrateObserver {
   typedef std::map<uint32_t, uint32_t> SsrcMap;
   StreamObserver(const SsrcMap& rtx_media_ssrcs,
                  newapi::Transport* feedback_transport,
-                 Clock* clock,
-                 RemoteBitrateEstimatorFactory* rbe_factory,
-                 RateControlType control_type);
+                 Clock* clock);
 
   void set_expected_bitrate_bps(unsigned int expected_bitrate_bps);
 
@@ -56,6 +54,8 @@ class StreamObserver : public newapi::Transport, public RemoteBitrateObserver {
   bool SendRtcp(const uint8_t* packet, size_t length) override;
 
   EventTypeWrapper Wait();
+
+  void SetRemoteBitrateEstimator(RemoteBitrateEstimator* rbe);
 
  private:
   void ReportResult(const std::string& measurement,
@@ -128,6 +128,7 @@ class LowRateStreamObserver : public test::DirectTransport,
   const bool rtx_used_;
   const rtc::scoped_ptr<EventWrapper> test_done_;
   const rtc::scoped_ptr<RtpHeaderParser> rtp_parser_;
+  const rtc::scoped_ptr<RTPPayloadRegistry> payload_registry_;
   rtc::scoped_ptr<RtpRtcp> rtp_rtcp_;
   internal::TransportAdapter feedback_transport_;
   const rtc::scoped_ptr<ReceiveStatistics> receive_stats_;

@@ -79,6 +79,8 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
     // Takes ownership of |packet.packet| and |packet.retransmittable_frames|.
     virtual void OnSerializedPacket(const SerializedPacket& packet) = 0;
     virtual void CloseConnection(QuicErrorCode error, bool from_peer) = 0;
+    // Called when a FEC Group is reset (closed).
+    virtual void OnResetFecGroup() = 0;
   };
 
   // Interface which gets callbacks from the QuicPacketGenerator at interesting
@@ -120,11 +122,15 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // |delegate| (if not nullptr) will be informed once all packets sent as a
   // result of this call are ACKed by the peer.
   QuicConsumedData ConsumeData(QuicStreamId id,
-                               const IOVector& data,
+                               const QuicIOVector& iov,
                                QuicStreamOffset offset,
                                bool fin,
                                FecProtection fec_protection,
                                QuicAckNotifier::DelegateInterface* delegate);
+
+  // Generates an MTU discovery packet of specified size.
+  void GenerateMtuDiscoveryPacket(QuicByteCount target_mtu,
+                                  QuicAckNotifier::DelegateInterface* delegate);
 
   // Indicates whether batch mode is currently enabled.
   bool InBatchMode();
@@ -188,12 +194,26 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // created.
   QuicPacketSequenceNumber sequence_number() const;
 
-  QuicByteCount max_packet_length() const;
+  // Returns the maximum packet length.  Note that this is the long-term maximum
+  // packet length, and it may not be the maximum length of the current packet,
+  // if the generator is in the middle of the packet (in batch mode) or FEC
+  // group.
+  QuicByteCount GetMaxPacketLength() const;
+  // Returns the maximum length current packet can actually have.
+  QuicByteCount GetCurrentMaxPacketLength() const;
 
-  void set_max_packet_length(QuicByteCount length);
+  // Set maximum packet length sent.  If |force| is set to true, all pending
+  // unfinished packets and FEC groups are closed, and the change is enacted
+  // immediately.  Otherwise, it is enacted at the next opportunity.
+  void SetMaxPacketLength(QuicByteCount length, bool force);
 
   void set_debug_delegate(DebugDelegate* debug_delegate) {
     debug_delegate_ = debug_delegate;
+  }
+
+  FecSendPolicy fec_send_policy() { return fec_send_policy_; }
+  void set_fec_send_policy(FecSendPolicy fec_send_policy) {
+    fec_send_policy_ = fec_send_policy;
   }
 
  private:
@@ -211,13 +231,19 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // creator being ready to send an FEC packet, otherwise FEC packet is sent
   // as long as one is under construction in the creator. Also tries to turn
   // off FEC protection in the creator if it's off in the generator.
-  void MaybeSendFecPacketAndCloseGroup(bool force);
+  // When |fec_send_policy_| is FEC_SEND_QUIESCENCE, then send FEC
+  // packet if |is_fec_timeout| is true otherwise close the FEC group.
+  void MaybeSendFecPacketAndCloseGroup(bool force, bool is_fec_timeout);
 
   // Returns true if an FEC packet should be generated based on |force| and
   // current state of the generator and the creator.
   bool ShouldSendFecPacket(bool force);
 
-  void SendQueuedFrames(bool flush);
+  // Resets (closes) the FEC group and calls the Delegate's OnResetFecGroup.
+  // Asserts that FEC group is open.
+  void ResetFecGroup();
+
+  void SendQueuedFrames(bool flush, bool is_fec_timeout);
 
   // Test to see if we have pending ack, or control frames.
   bool HasPendingFrames() const;
@@ -226,8 +252,9 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   bool CanSendWithNextPendingFrameAddition() const;
   // Add exactly one pending frame, preferring ack frames over control frames.
   bool AddNextPendingFrame();
-
-  bool AddFrame(const QuicFrame& frame);
+  // Adds a frame and takes ownership of the underlying buffer if the addition
+  // was successful.
+  bool AddFrame(const QuicFrame& frame, char* buffer, bool needs_padding);
 
   void SerializeAndSendPacket();
 
@@ -248,13 +275,16 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // if this variable is false.
   bool should_fec_protect_;
 
+  // FEC policy that specifies when to send FEC packet.
+  FecSendPolicy fec_send_policy_;
+
   // Flags to indicate the need for just-in-time construction of a frame.
   bool should_send_ack_;
   bool should_send_stop_waiting_;
-  // If we put a non-retransmittable frame (ack frame) in this packet, then we
-  // have to hold a reference to it until we flush (and serialize it).
-  // Retransmittable frames are referenced elsewhere so that they
-  // can later be (optionally) retransmitted.
+  // If we put a non-retransmittable frame in this packet, then we have to hold
+  // a reference to it until we flush (and serialize it). Retransmittable frames
+  // are referenced elsewhere so that they can later be (optionally)
+  // retransmitted.
   QuicAckFrame pending_ack_frame_;
   QuicStopWaitingFrame pending_stop_waiting_frame_;
   // True if an ack or stop waiting frame is already queued, and should not be
@@ -264,6 +294,11 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
 
   // Stores notifiers that should be attached to the next serialized packet.
   std::list<QuicAckNotifier*> ack_notifiers_;
+
+  // Stores the maximum packet size we are allowed to send.  This might not be
+  // the maximum size we are actually using now, if we are in the middle of the
+  // packet.
+  QuicByteCount max_packet_length_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicPacketGenerator);
 };

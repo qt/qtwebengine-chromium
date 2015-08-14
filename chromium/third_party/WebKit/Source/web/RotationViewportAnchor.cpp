@@ -9,11 +9,11 @@
 #include "core/dom/Node.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/PageScaleConstraintsSet.h"
 #include "core/frame/PinchViewport.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
-#include "core/page/EventHandler.h"
 #include "platform/geometry/DoubleRect.h"
-#include "web/PageScaleConstraintsSet.h"
 
 namespace blink {
 
@@ -101,7 +101,7 @@ void RotationViewportAnchor::setAnchor()
 {
     // FIXME: Scroll offsets are now fractional (DoublePoint and FloatPoint for the FrameView and PinchViewport
     //        respectively. This path should be rewritten without pixel snapping.
-    IntRect outerViewRect = m_rootFrameView->visibleContentRect();
+    IntRect outerViewRect = m_rootFrameView->layoutViewportScrollableArea()->visibleContentRect();
     IntRect innerViewRect = enclosedIntRect(m_rootFrameView->scrollableArea()->visibleContentRectDouble());
 
     m_oldPageScaleFactor = m_pinchViewport->scale();
@@ -160,7 +160,7 @@ void RotationViewportAnchor::restoreToAnchor()
 
     computeOrigins(pinchViewportSize, mainFrameOrigin, pinchViewportOrigin);
 
-    m_rootFrameView->setScrollOffset(mainFrameOrigin);
+    m_rootFrameView->layoutViewportScrollableArea()->setScrollPosition(mainFrameOrigin, ProgrammaticScroll);
 
     // Set scale before location, since location can be clamped on setting scale.
     m_pinchViewport->setScale(newPageScaleFactor);
@@ -169,7 +169,7 @@ void RotationViewportAnchor::restoreToAnchor()
 
 void RotationViewportAnchor::computeOrigins(const FloatSize& innerSize, IntPoint& mainFrameOffset, FloatPoint& pinchViewportOffset) const
 {
-    IntSize outerSize = m_rootFrameView->visibleContentRect().size();
+    IntSize outerSize = m_rootFrameView->layoutViewportScrollableArea()->visibleContentRect().size();
 
     // Compute the viewport origins in CSS pixels relative to the document.
     FloatSize absPinchViewportOffset = m_normalizedPinchViewportOffset;
@@ -183,7 +183,7 @@ void RotationViewportAnchor::computeOrigins(const FloatSize& innerSize, IntPoint
 
     moveToEncloseRect(outerRect, innerRect);
 
-    outerRect.setLocation(m_rootFrameView->adjustScrollPositionWithinRange(outerRect.location()));
+    outerRect.setLocation(m_rootFrameView->layoutViewportScrollableArea()->clampScrollPosition(outerRect.location()));
 
     moveIntoRect(innerRect, outerRect);
 

@@ -37,6 +37,7 @@ class EncodedImageCallback {
 class VideoEncoder {
  public:
   enum EncoderType {
+    kH264,
     kVp8,
     kVp9,
     kUnsupportedCodec,
@@ -95,7 +96,7 @@ class VideoEncoder {
   //                                  WEBRTC_VIDEO_CODEC_MEMORY
   //                                  WEBRTC_VIDEO_CODEC_ERROR
   //                                  WEBRTC_VIDEO_CODEC_TIMEOUT
-  virtual int32_t Encode(const I420VideoFrame& frame,
+  virtual int32_t Encode(const VideoFrame& frame,
                          const CodecSpecificInfo* codec_specific_info,
                          const std::vector<VideoFrameType>* frame_types) = 0;
 
@@ -123,7 +124,8 @@ class VideoEncoder {
   virtual int32_t CodecConfigParameters(uint8_t* /*buffer*/, int32_t /*size*/) {
     return -1;
   }
-  virtual void OnDroppedFrame() {};
+  virtual void OnDroppedFrame() {}
+  virtual bool SupportsNativeHandle() const { return false; }
 };
 
 // Class used to wrap external VideoEncoders to provide a fallback option on
@@ -142,13 +144,14 @@ class VideoEncoderSoftwareFallbackWrapper : public VideoEncoder {
       EncodedImageCallback* callback) override;
 
   int32_t Release() override;
-  int32_t Encode(const I420VideoFrame& frame,
+  int32_t Encode(const VideoFrame& frame,
                  const CodecSpecificInfo* codec_specific_info,
                  const std::vector<VideoFrameType>* frame_types) override;
   int32_t SetChannelParameters(uint32_t packet_loss, int64_t rtt) override;
 
   int32_t SetRates(uint32_t bitrate, uint32_t framerate) override;
   void OnDroppedFrame() override;
+  bool SupportsNativeHandle() const override;
 
  private:
   const EncoderType encoder_type_;

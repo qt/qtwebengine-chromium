@@ -58,7 +58,7 @@ class MODULES_EXPORT ServiceWorkerContainer final
     , public ContextLifecycleObserver
     , public WebServiceWorkerProviderClient {
     DEFINE_WRAPPERTYPEINFO();
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<ServiceWorkerContainer>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(ServiceWorkerContainer);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerContainer);
 public:
     static ServiceWorkerContainer* create(ExecutionContext*);
@@ -74,16 +74,18 @@ public:
 
     ScriptPromise registerServiceWorker(ScriptState*, const String& pattern, const RegistrationOptions&);
     ScriptPromise getRegistration(ScriptState*, const String& documentURL);
+    ScriptPromise getRegistrations(ScriptState*);
 
     // WebServiceWorkerProviderClient overrides.
-    virtual void setController(WebServiceWorker*, bool shouldNotifyControllerChange) override;
-    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
+    void setController(WebServiceWorker*, bool shouldNotifyControllerChange) override;
+    void dispatchMessageEvent(WebServiceWorker*, const WebString& message, const WebMessagePortChannelArray&) override;
 
     // EventTarget overrides.
-    virtual ExecutionContext* executionContext() const override { return ContextLifecycleObserver::executionContext(); }
-    virtual const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override { return ContextLifecycleObserver::executionContext(); }
+    const AtomicString& interfaceName() const override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(controllerchange);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
 private:
     explicit ServiceWorkerContainer(ExecutionContext*);

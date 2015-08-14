@@ -7,15 +7,19 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/location.h"
+#include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/test/embedded_test_server/embedded_test_server_connection_listener.h"
 #include "net/test/embedded_test_server/http_connection.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -122,8 +126,7 @@ void HttpListenSocket::DetachFromThread() {
 }
 
 EmbeddedTestServer::EmbeddedTestServer()
-    : port_(0),
-      weak_factory_(this) {
+    : connection_listener_(nullptr), port_(0), weak_factory_(this) {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
@@ -133,6 +136,12 @@ EmbeddedTestServer::~EmbeddedTestServer() {
   if (Started() && !ShutdownAndWaitUntilComplete()) {
     LOG(ERROR) << "EmbeddedTestServer failed to shut down.";
   }
+}
+
+void EmbeddedTestServer::SetConnectionListener(
+    EmbeddedTestServerConnectionListener* listener) {
+  DCHECK(!Started());
+  connection_listener_ = listener;
 }
 
 bool EmbeddedTestServer::InitializeAndWaitUntilReady() {
@@ -190,10 +199,11 @@ void EmbeddedTestServer::StartThread() {
   thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
   io_thread_.reset(new base::Thread("EmbeddedTestServer io thread"));
   CHECK(io_thread_->StartWithOptions(thread_options));
+  CHECK(io_thread_->WaitUntilThreadStarted());
 }
 
 void EmbeddedTestServer::InitializeOnIOThread() {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
   DCHECK(!Started());
 
   SocketDescriptor socket_descriptor =
@@ -214,13 +224,13 @@ void EmbeddedTestServer::InitializeOnIOThread() {
 }
 
 void EmbeddedTestServer::ListenOnIOThread() {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
   DCHECK(Started());
   listen_socket_->ListenOnIOThread();
 }
 
 void EmbeddedTestServer::ShutdownOnIOThread() {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
 
   listen_socket_.reset();
   STLDeleteContainerPairSecondPointers(connections_.begin(),
@@ -230,7 +240,7 @@ void EmbeddedTestServer::ShutdownOnIOThread() {
 
 void EmbeddedTestServer::HandleRequest(HttpConnection* connection,
                                scoped_ptr<HttpRequest> request) {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
 
   bool request_handled = false;
 
@@ -260,7 +270,7 @@ void EmbeddedTestServer::HandleRequest(HttpConnection* connection,
 
 GURL EmbeddedTestServer::GetURL(const std::string& relative_url) const {
   DCHECK(Started()) << "You must start the server first.";
-  DCHECK(StartsWithASCII(relative_url, "/", true /* case_sensitive */))
+  DCHECK(base::StartsWith(relative_url, "/", base::CompareCase::SENSITIVE))
       << relative_url;
   return base_url_.Resolve(relative_url);
 }
@@ -274,6 +284,18 @@ GURL EmbeddedTestServer::GetURL(
   return local_url.ReplaceComponents(replace_host);
 }
 
+bool EmbeddedTestServer::GetAddressList(net::AddressList* address_list) const {
+  if (!listen_socket_)
+    return false;
+  IPEndPoint endpoint;
+  int result = listen_socket_->GetLocalAddress(&endpoint);
+  if (result != OK)
+    return false;
+
+  *address_list = net::AddressList(endpoint);
+  return true;
+}
+
 void EmbeddedTestServer::ServeFilesFromDirectory(
     const base::FilePath& directory) {
   RegisterRequestHandler(base::Bind(&HandleFileRequest, directory));
@@ -284,23 +306,25 @@ void EmbeddedTestServer::RegisterRequestHandler(
   request_handlers_.push_back(callback);
 }
 
-void EmbeddedTestServer::DidAccept(
-    StreamListenSocket* server,
-    scoped_ptr<StreamListenSocket> connection) {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+void EmbeddedTestServer::DidAccept(StreamListenSocket* server,
+                                   scoped_ptr<StreamListenSocket> connection) {
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
+  if (connection_listener_)
+    connection_listener_->AcceptedSocket(*connection);
 
   HttpConnection* http_connection = new HttpConnection(
-      connection.Pass(),
-      base::Bind(&EmbeddedTestServer::HandleRequest,
-                 weak_factory_.GetWeakPtr()));
+      connection.Pass(), base::Bind(&EmbeddedTestServer::HandleRequest,
+                                    weak_factory_.GetWeakPtr()));
   // TODO(szym): Make HttpConnection the StreamListenSocket delegate.
   connections_[http_connection->socket_.get()] = http_connection;
 }
 
 void EmbeddedTestServer::DidRead(StreamListenSocket* connection,
-                         const char* data,
-                         int length) {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+                                 const char* data,
+                                 int length) {
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
+  if (connection_listener_)
+    connection_listener_->ReadFromSocket(*connection);
 
   HttpConnection* http_connection = FindConnection(connection);
   if (http_connection == NULL) {
@@ -311,7 +335,7 @@ void EmbeddedTestServer::DidRead(StreamListenSocket* connection,
 }
 
 void EmbeddedTestServer::DidClose(StreamListenSocket* connection) {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
 
   HttpConnection* http_connection = FindConnection(connection);
   if (http_connection == NULL) {
@@ -324,7 +348,7 @@ void EmbeddedTestServer::DidClose(StreamListenSocket* connection) {
 
 HttpConnection* EmbeddedTestServer::FindConnection(
     StreamListenSocket* socket) {
-  DCHECK(io_thread_->message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
 
   std::map<StreamListenSocket*, HttpConnection*>::iterator it =
       connections_.find(socket);
@@ -336,11 +360,12 @@ HttpConnection* EmbeddedTestServer::FindConnection(
 
 bool EmbeddedTestServer::PostTaskToIOThreadAndWait(
     const base::Closure& closure) {
-  // Note that PostTaskAndReply below requires base::MessageLoopProxy::current()
-  // to return a loop for posting the reply task. However, in order to make
-  // EmbeddedTestServer universally usable, it needs to cope with the situation
-  // where it's running on a thread on which a message loop is not (yet)
-  // available or as has been destroyed already.
+  // Note that PostTaskAndReply below requires
+  // base::ThreadTaskRunnerHandle::Get() to return a task runner for posting
+  // the reply task. However, in order to make EmbeddedTestServer universally
+  // usable, it needs to cope with the situation where it's running on a thread
+  // on which a message loop is not (yet) available or as has been destroyed
+  // already.
   //
   // To handle this situation, create temporary message loop to support the
   // PostTaskAndReply operation if the current thread as no message loop.
@@ -349,8 +374,8 @@ bool EmbeddedTestServer::PostTaskToIOThreadAndWait(
     temporary_loop.reset(new base::MessageLoop());
 
   base::RunLoop run_loop;
-  if (!io_thread_->message_loop_proxy()->PostTaskAndReply(
-          FROM_HERE, closure, run_loop.QuitClosure())) {
+  if (!io_thread_->task_runner()->PostTaskAndReply(FROM_HERE, closure,
+                                                   run_loop.QuitClosure())) {
     return false;
   }
   run_loop.Run();

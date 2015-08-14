@@ -8,7 +8,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/thread_task_runner_handle.h"
-#include "base/timer/timer.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/display/types/native_display_delegate.h"
 #include "ui/display/types/native_display_observer.h"
@@ -32,8 +31,6 @@
 const int kTestWindowWidth = 800;
 const int kTestWindowHeight = 600;
 
-const int kFrameDelayMilliseconds = 16;
-
 const char kDisableGpu[] = "disable-gpu";
 
 const char kWindowSize[] = "window-size";
@@ -56,7 +53,7 @@ class RendererFactory {
                                           const gfx::Size& size);
 
  private:
-  RendererType type_;
+  RendererType type_ = SOFTWARE;
 
   // Helper for applications that do GL on main thread.
   ui::OzoneGpuTestHelper gpu_helper_;
@@ -93,12 +90,12 @@ class WindowManager : public ui::NativeDisplayObserver {
   //
   // True if configuring the displays. In this case a new display configuration
   // isn't started.
-  bool is_configuring_;
+  bool is_configuring_ = false;
 
   // If |is_configuring_| is true and another display configuration event
   // happens, the event is deferred. This is set to true and a display
   // configuration will be scheduled after the current one finishes.
-  bool should_configure_;
+  bool should_configure_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(WindowManager);
 };
@@ -110,7 +107,6 @@ class DemoWindow : public ui::PlatformWindowDelegate {
              const gfx::Rect& bounds)
       : window_manager_(window_manager),
         renderer_factory_(renderer_factory),
-        widget_(gfx::kNullAcceleratedWidget),
         weak_ptr_factory_(this) {
     platform_window_ =
         ui::OzonePlatform::GetInstance()->CreatePlatformWindow(this, bounds);
@@ -133,7 +129,6 @@ class DemoWindow : public ui::PlatformWindowDelegate {
   }
 
   void Quit() {
-    StopAnimation();
     window_manager_->Quit();
   }
 
@@ -149,7 +144,8 @@ class DemoWindow : public ui::PlatformWindowDelegate {
   void OnClosed() override {}
   void OnWindowStateChanged(ui::PlatformWindowState new_state) override {}
   void OnLostCapture() override {}
-  void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget) override {
+  void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget,
+                                    float device_pixel_ratio) override {
     DCHECK_NE(widget, gfx::kNullAcceleratedWidget);
     widget_ = widget;
   }
@@ -161,26 +157,17 @@ class DemoWindow : public ui::PlatformWindowDelegate {
   void StartOnGpu() {
     renderer_ =
         renderer_factory_->CreateRenderer(GetAcceleratedWidget(), GetSize());
-    if (renderer_->Initialize()) {
-      timer_.Start(FROM_HERE,
-                   base::TimeDelta::FromMilliseconds(kFrameDelayMilliseconds),
-                   renderer_.get(), &ui::Renderer::RenderFrame);
-    }
+    renderer_->Initialize();
   }
-
-  void StopAnimation() { timer_.Stop(); }
 
   WindowManager* window_manager_;      // Not owned.
   RendererFactory* renderer_factory_;  // Not owned.
 
   scoped_ptr<ui::Renderer> renderer_;
 
-  // Timer for animation.
-  base::RepeatingTimer<ui::Renderer> timer_;
-
   // Window-related state.
   scoped_ptr<ui::PlatformWindow> platform_window_;
-  gfx::AcceleratedWidget widget_;
+  gfx::AcceleratedWidget widget_ = gfx::kNullAcceleratedWidget;
 
   base::WeakPtrFactory<DemoWindow> weak_ptr_factory_;
 
@@ -190,7 +177,7 @@ class DemoWindow : public ui::PlatformWindowDelegate {
 ///////////////////////////////////////////////////////////////////////////////
 // RendererFactory implementation:
 
-RendererFactory::RendererFactory() : type_(SOFTWARE) {
+RendererFactory::RendererFactory() {
 }
 
 RendererFactory::~RendererFactory() {
@@ -236,9 +223,7 @@ scoped_ptr<ui::Renderer> RendererFactory::CreateRenderer(
 WindowManager::WindowManager(const base::Closure& quit_closure)
     : delegate_(
           ui::OzonePlatform::GetInstance()->CreateNativeDisplayDelegate()),
-      quit_closure_(quit_closure),
-      is_configuring_(false),
-      should_configure_(false) {
+      quit_closure_(quit_closure) {
   if (!renderer_factory_.Initialize())
     LOG(FATAL) << "Failed to initialize renderer factory";
 
@@ -316,7 +301,7 @@ void WindowManager::OnDisplayConfigured(const gfx::Rect& bounds, bool success) {
     scoped_ptr<DemoWindow> window(
         new DemoWindow(this, &renderer_factory_, bounds));
     window->Start();
-    windows_.push_back(window.release());
+    windows_.push_back(window.Pass());
   } else {
     LOG(ERROR) << "Failed to configure display at " << bounds.ToString();
   }

@@ -26,6 +26,7 @@
  */
 
 #include "talk/app/webrtc/audiotrack.h"
+#include "talk/app/webrtc/fakemetricsobserver.h"
 #include "talk/app/webrtc/jsepicecandidate.h"
 #include "talk/app/webrtc/jsepsessiondescription.h"
 #include "talk/app/webrtc/mediastreamsignaling.h"
@@ -81,6 +82,7 @@ using webrtc::CreateSessionDescriptionRequest;
 using webrtc::DTLSIdentityRequestObserver;
 using webrtc::DTLSIdentityServiceInterface;
 using webrtc::FakeConstraints;
+using webrtc::FakeMetricsObserver;
 using webrtc::IceCandidateCollection;
 using webrtc::JsepIceCandidate;
 using webrtc::JsepSessionDescription;
@@ -156,8 +158,6 @@ static const char kSdpWithRtx[] =
     "a=rtpmap:96 rtx/90000\r\n"
     "a=fmtp:96 apt=0\r\n";
 
-static const int kAudioJitterBufferMaxPackets = 50;
-
 // Add some extra |newlines| to the |message| after |line|.
 static void InjectAfter(const std::string& line,
                         const std::string& newlines,
@@ -166,33 +166,6 @@ static void InjectAfter(const std::string& line,
   rtc::replace_substrs(line.c_str(), line.length(),
                              tmp.c_str(), tmp.length(), message);
 }
-
-class FakeMetricsObserver : public webrtc::MetricsObserverInterface {
- public:
-  FakeMetricsObserver() { Reset(); }
-  void Reset() {
-    memset(peer_connection_metrics_counters_, 0,
-           sizeof(peer_connection_metrics_counters_));
-    memset(peer_connection_metrics_name_, 0,
-           sizeof(peer_connection_metrics_name_));
-  }
-
-  void IncrementCounter(webrtc::PeerConnectionMetricsCounter type) override {
-    peer_connection_metrics_counters_[type]++;
-  }
-  void AddHistogramSample(webrtc::PeerConnectionMetricsName type,
-                          int value) override {
-    ASSERT(peer_connection_metrics_name_[type] == 0);
-    peer_connection_metrics_name_[type] = value;
-  }
-
-  int peer_connection_metrics_counters_
-      [webrtc::kPeerConnectionMetricsCounter_Max];
-  int peer_connection_metrics_name_[webrtc::kPeerConnectionMetricsCounter_Max];
-
-  int AddRef() override { return 1; }
-  int Release() override { return 1; }
-};
 
 class MockIceObserver : public webrtc::IceObserver {
  public:
@@ -362,7 +335,8 @@ class WebRtcSessionTest : public testing::Test {
       stun_server_(cricket::TestStunServer::Create(Thread::Current(),
                                                    stun_socket_addr_)),
       turn_server_(Thread::Current(), kTurnUdpIntAddr, kTurnUdpExtAddr),
-      mediastream_signaling_(channel_manager_.get()) {
+      mediastream_signaling_(channel_manager_.get()),
+      metrics_observer_(new rtc::RefCountedObject<FakeMetricsObserver>()) {
     tdesc_factory_->set_protocol(cricket::ICEPROTO_HYBRID);
 
     cricket::ServerAddresses stun_servers;
@@ -400,16 +374,11 @@ class WebRtcSessionTest : public testing::Test {
 
     EXPECT_TRUE(session_->Initialize(options_, constraints_.get(),
                                      identity_service, rtc_configuration));
-    session_->set_metrics_observer(&metrics_observer_);
+    session_->set_metrics_observer(metrics_observer_);
   }
 
   void Init() {
     PeerConnectionInterface::RTCConfiguration configuration;
-    configuration.type = PeerConnectionInterface::kAll;
-    configuration.bundle_policy =
-        PeerConnectionInterface::kBundlePolicyBalanced;
-    configuration.audio_jitter_buffer_max_packets =
-        kAudioJitterBufferMaxPackets;
     Init(NULL, configuration);
   }
 
@@ -417,20 +386,20 @@ class WebRtcSessionTest : public testing::Test {
       PeerConnectionInterface::IceTransportsType ice_transport_type) {
     PeerConnectionInterface::RTCConfiguration configuration;
     configuration.type = ice_transport_type;
-    configuration.bundle_policy =
-        PeerConnectionInterface::kBundlePolicyBalanced;
-    configuration.audio_jitter_buffer_max_packets =
-        kAudioJitterBufferMaxPackets;
     Init(NULL, configuration);
   }
 
   void InitWithBundlePolicy(
       PeerConnectionInterface::BundlePolicy bundle_policy) {
     PeerConnectionInterface::RTCConfiguration configuration;
-    configuration.type = PeerConnectionInterface::kAll;
     configuration.bundle_policy = bundle_policy;
-    configuration.audio_jitter_buffer_max_packets =
-        kAudioJitterBufferMaxPackets;
+    Init(NULL, configuration);
+  }
+
+  void InitWithRtcpMuxPolicy(
+      PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy) {
+    PeerConnectionInterface::RTCConfiguration configuration;
+    configuration.rtcp_mux_policy = rtcp_mux_policy;
     Init(NULL, configuration);
   }
 
@@ -438,11 +407,6 @@ class WebRtcSessionTest : public testing::Test {
     FakeIdentityService* identity_service = new FakeIdentityService();
     identity_service->set_should_fail(identity_request_should_fail);
     PeerConnectionInterface::RTCConfiguration configuration;
-    configuration.type = PeerConnectionInterface::kAll;
-    configuration.bundle_policy =
-        PeerConnectionInterface::kBundlePolicyBalanced;
-    configuration.audio_jitter_buffer_max_packets =
-        kAudioJitterBufferMaxPackets;
     Init(identity_service, configuration);
   }
 
@@ -1034,20 +998,18 @@ class WebRtcSessionTest : public testing::Test {
     ExpectedBestConnection best_connection_after_initial_ice_converged_;
 
     void VerifyBestConnectionAfterIceConverge(
-        const FakeMetricsObserver& metrics_observer) const {
+        const rtc::scoped_refptr<FakeMetricsObserver> metrics_observer) const {
       Verify(metrics_observer, best_connection_after_initial_ice_converged_);
     }
 
    private:
-    void Verify(const FakeMetricsObserver& metrics_observer,
+    void Verify(const rtc::scoped_refptr<FakeMetricsObserver> metrics_observer,
                 const ExpectedBestConnection& expected) const {
       EXPECT_EQ(
-          metrics_observer
-              .peer_connection_metrics_counters_[webrtc::kBestConnections_IPv4],
+          metrics_observer->GetCounter(webrtc::kBestConnections_IPv4),
           expected.ipv4_count_);
       EXPECT_EQ(
-          metrics_observer
-              .peer_connection_metrics_counters_[webrtc::kBestConnections_IPv6],
+          metrics_observer->GetCounter(webrtc::kBestConnections_IPv6),
           expected.ipv6_count_);
     }
   };
@@ -1147,7 +1109,7 @@ class WebRtcSessionTest : public testing::Test {
                    observer_.ice_connection_state_,
                    kIceCandidatesTimeout);
 
-    metrics_observer_.Reset();
+    metrics_observer_->Reset();
 
     // Clearing the rules, session should move back to completed state.
     loopback_network_manager.ClearRules(fss_.get());
@@ -1292,7 +1254,7 @@ class WebRtcSessionTest : public testing::Test {
   MockIceObserver observer_;
   cricket::FakeVideoMediaChannel* video_channel_;
   cricket::FakeVoiceMediaChannel* voice_channel_;
-  FakeMetricsObserver metrics_observer_;
+  rtc::scoped_refptr<FakeMetricsObserver> metrics_observer_;
 };
 
 TEST_F(WebRtcSessionTest, TestInitializeWithDtls) {
@@ -2614,6 +2576,89 @@ TEST_F(WebRtcSessionTest, TestSetRemoteDescriptionInvalidIceCredentials) {
   EXPECT_FALSE(session_->SetRemoteDescription(modified_offer, &error));
 }
 
+// Test that candidates sent to the "video" transport do not get pushed down to
+// the "audio" transport channel when bundling using TransportProxy.
+TEST_F(WebRtcSessionTest, TestIgnoreCandidatesForUnusedTransportWhenBundling) {
+  AddInterface(rtc::SocketAddress(kClientAddrHost1, kClientAddrPort));
+
+  InitWithBundlePolicy(PeerConnectionInterface::kBundlePolicyBalanced);
+  mediastream_signaling_.SendAudioVideoStream1();
+
+  PeerConnectionInterface::RTCOfferAnswerOptions options;
+  options.use_rtp_mux = true;
+
+  SessionDescriptionInterface* offer = CreateRemoteOffer();
+  SetRemoteDescriptionWithoutError(offer);
+
+  SessionDescriptionInterface* answer = CreateAnswer(NULL);
+  SetLocalDescriptionWithoutError(answer);
+
+  EXPECT_EQ(session_->GetTransportProxy("audio")->impl(),
+            session_->GetTransportProxy("video")->impl());
+
+  cricket::Transport* t = session_->GetTransport("audio");
+
+  // Checks if one of the transport channels contains a connection using a given
+  // port.
+  auto connection_with_remote_port = [t](int port) {
+    cricket::TransportStats stats;
+    t->GetStats(&stats);
+    for (auto& chan_stat : stats.channel_stats) {
+      for (auto& conn_info : chan_stat.connection_infos) {
+        if (conn_info.remote_candidate.address().port() == port) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  EXPECT_FALSE(connection_with_remote_port(5000));
+  EXPECT_FALSE(connection_with_remote_port(5001));
+  EXPECT_FALSE(connection_with_remote_port(6000));
+
+  // The way the *_WAIT checks work is they only wait if the condition fails,
+  // which does not help in the case where state is not changing. This is
+  // problematic in this test since we want to verify that adding a video
+  // candidate does _not_ change state. So we interleave candidates and assume
+  // that messages are executed in the order they were posted.
+
+  // First audio candidate.
+  cricket::Candidate candidate0;
+  candidate0.set_address(rtc::SocketAddress("1.1.1.1", 5000));
+  candidate0.set_component(1);
+  candidate0.set_protocol("udp");
+  JsepIceCandidate ice_candidate0(kMediaContentName0, kMediaContentIndex0,
+                                  candidate0);
+  EXPECT_TRUE(session_->ProcessIceMessage(&ice_candidate0));
+
+  // Video candidate.
+  cricket::Candidate candidate1;
+  candidate1.set_address(rtc::SocketAddress("1.1.1.1", 6000));
+  candidate1.set_component(1);
+  candidate1.set_protocol("udp");
+  JsepIceCandidate ice_candidate1(kMediaContentName1, kMediaContentIndex1,
+                                  candidate1);
+  EXPECT_TRUE(session_->ProcessIceMessage(&ice_candidate1));
+
+  // Second audio candidate.
+  cricket::Candidate candidate2;
+  candidate2.set_address(rtc::SocketAddress("1.1.1.1", 5001));
+  candidate2.set_component(1);
+  candidate2.set_protocol("udp");
+  JsepIceCandidate ice_candidate2(kMediaContentName0, kMediaContentIndex0,
+                                  candidate2);
+  EXPECT_TRUE(session_->ProcessIceMessage(&ice_candidate2));
+
+  EXPECT_TRUE_WAIT(connection_with_remote_port(5000), 1000);
+  EXPECT_TRUE_WAIT(connection_with_remote_port(5001), 1000);
+
+  // No need here for a _WAIT check since we are checking that state hasn't
+  // changed: if this is false we would be doing waits for nothing and if this
+  // is true then there will be no messages processed anyways.
+  EXPECT_FALSE(connection_with_remote_port(6000));
+}
+
 // kBundlePolicyBalanced bundle policy and answer contains BUNDLE.
 TEST_F(WebRtcSessionTest, TestBalancedBundleInAnswer) {
   InitWithBundlePolicy(PeerConnectionInterface::kBundlePolicyBalanced);
@@ -2787,6 +2832,46 @@ TEST_F(WebRtcSessionTest, TestMaxBundleWithSetRemoteDescriptionFirst) {
 
   EXPECT_EQ(session_->GetTransportProxy("audio")->impl(),
             session_->GetTransportProxy("video")->impl());
+}
+
+TEST_F(WebRtcSessionTest, TestRequireRtcpMux) {
+  InitWithRtcpMuxPolicy(PeerConnectionInterface::kRtcpMuxPolicyRequire);
+  mediastream_signaling_.SendAudioVideoStream1();
+
+  PeerConnectionInterface::RTCOfferAnswerOptions options;
+  SessionDescriptionInterface* offer = CreateOffer(options);
+  SetLocalDescriptionWithoutError(offer);
+
+  EXPECT_FALSE(session_->GetTransportProxy("audio")->impl()->HasChannel(2));
+  EXPECT_FALSE(session_->GetTransportProxy("video")->impl()->HasChannel(2));
+
+  mediastream_signaling_.SendAudioVideoStream2();
+  SessionDescriptionInterface* answer =
+      CreateRemoteAnswer(session_->local_description());
+  SetRemoteDescriptionWithoutError(answer);
+
+  EXPECT_FALSE(session_->GetTransportProxy("audio")->impl()->HasChannel(2));
+  EXPECT_FALSE(session_->GetTransportProxy("video")->impl()->HasChannel(2));
+}
+
+TEST_F(WebRtcSessionTest, TestNegotiateRtcpMux) {
+  InitWithRtcpMuxPolicy(PeerConnectionInterface::kRtcpMuxPolicyNegotiate);
+  mediastream_signaling_.SendAudioVideoStream1();
+
+  PeerConnectionInterface::RTCOfferAnswerOptions options;
+  SessionDescriptionInterface* offer = CreateOffer(options);
+  SetLocalDescriptionWithoutError(offer);
+
+  EXPECT_TRUE(session_->GetTransportProxy("audio")->impl()->HasChannel(2));
+  EXPECT_TRUE(session_->GetTransportProxy("video")->impl()->HasChannel(2));
+
+  mediastream_signaling_.SendAudioVideoStream2();
+  SessionDescriptionInterface* answer =
+      CreateRemoteAnswer(session_->local_description());
+  SetRemoteDescriptionWithoutError(answer);
+
+  EXPECT_FALSE(session_->GetTransportProxy("audio")->impl()->HasChannel(2));
+  EXPECT_FALSE(session_->GetTransportProxy("video")->impl()->HasChannel(2));
 }
 
 // This test verifies that SetLocalDescription and SetRemoteDescription fails
@@ -3431,7 +3516,7 @@ TEST_F(WebRtcSessionTest, TestSctpDataChannelSendPortParsing) {
   ASSERT_TRUE(ch != NULL);
   ASSERT_EQ(1UL, ch->send_codecs().size());
   EXPECT_EQ(cricket::kGoogleSctpDataCodecId, ch->send_codecs()[0].id);
-  EXPECT_TRUE(!strcmp(cricket::kGoogleSctpDataCodecName,
+  EXPECT_EQ(0, strcmp(cricket::kGoogleSctpDataCodecName,
                       ch->send_codecs()[0].name.c_str()));
   EXPECT_TRUE(ch->send_codecs()[0].GetParam(cricket::kCodecParamPort,
                                             &portnum));
@@ -3439,7 +3524,7 @@ TEST_F(WebRtcSessionTest, TestSctpDataChannelSendPortParsing) {
 
   ASSERT_EQ(1UL, ch->recv_codecs().size());
   EXPECT_EQ(cricket::kGoogleSctpDataCodecId, ch->recv_codecs()[0].id);
-  EXPECT_TRUE(!strcmp(cricket::kGoogleSctpDataCodecName,
+  EXPECT_EQ(0, strcmp(cricket::kGoogleSctpDataCodecName,
                       ch->recv_codecs()[0].name.c_str()));
   EXPECT_TRUE(ch->recv_codecs()[0].GetParam(cricket::kCodecParamPort,
                                             &portnum));
@@ -3765,6 +3850,38 @@ TEST_F(WebRtcSessionTest, TestSetSocketOptionBeforeBundle) {
   EXPECT_TRUE(session_->voice_channel()->transport_channel()->GetOption(
       rtc::Socket::Option::OPT_RCVBUF, &option_val));
   EXPECT_EQ(8000, option_val);
+}
+
+// Test creating a session, request multiple offers, destroy the session
+// and make sure we got success/failure callbacks for all of the requests.
+// Background: crbug.com/507307
+TEST_F(WebRtcSessionTest, CreateOffersAndShutdown) {
+  Init();
+
+  rtc::scoped_refptr<WebRtcSessionCreateSDPObserverForTest> observers[100];
+  PeerConnectionInterface::RTCOfferAnswerOptions options;
+  options.offer_to_receive_audio =
+      RTCOfferAnswerOptions::kOfferToReceiveMediaTrue;
+
+  for (auto& o : observers) {
+    o = new WebRtcSessionCreateSDPObserverForTest();
+    session_->CreateOffer(o, options);
+  }
+
+  session_.reset();
+
+  // Make sure we process pending messages on the current (signaling) thread
+  // before checking we we got our callbacks.  Quit() will do this and then
+  // immediately exit.  We won't need the queue after this point anyway.
+  rtc::Thread::Current()->Quit();
+
+  for (auto& o : observers) {
+    // We expect to have received a notification now even if the session was
+    // terminated.  The offer creation may or may not have succeeded, but we
+    // must have received a notification which, so the only invalid state
+    // is kInit.
+    EXPECT_NE(WebRtcSessionCreateSDPObserverForTest::kInit, o->state());
+  }
 }
 
 // TODO(bemasc): Add a TestIceStatesBundle with BUNDLE enabled.  That test

@@ -9,7 +9,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/events/event_source.h"
 #include "ui/platform_window/platform_window.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
@@ -17,7 +16,6 @@ namespace aura {
 
 class AURA_EXPORT WindowTreeHostWin
     : public WindowTreeHost,
-      public ui::EventSource,
       public NON_EXPORTED_BASE(ui::PlatformWindowDelegate) {
  public:
   explicit WindowTreeHostWin(const gfx::Rect& bounds);
@@ -26,8 +24,8 @@ class AURA_EXPORT WindowTreeHostWin
   // WindowTreeHost:
   ui::EventSource* GetEventSource() override;
   gfx::AcceleratedWidget GetAcceleratedWidget() override;
-  void Show() override;
-  void Hide() override;
+  void ShowImpl() override;
+  void HideImpl() override;
   gfx::Rect GetBounds() const override;
   void SetBounds(const gfx::Rect& bounds) override;
   gfx::Point GetLocationOnNativeScreen() const override;
@@ -36,9 +34,6 @@ class AURA_EXPORT WindowTreeHostWin
   void SetCursorNative(gfx::NativeCursor cursor) override;
   void MoveCursorToNative(const gfx::Point& location) override;
   void OnCursorVisibilityChangedNative(bool show) override;
-
-  // ui::EventSource:
-  ui::EventProcessor* GetEventProcessor() override;
 
  protected:
   gfx::AcceleratedWidget hwnd() const { return widget_; }
@@ -52,7 +47,8 @@ class AURA_EXPORT WindowTreeHostWin
   void OnClosed() override;
   void OnWindowStateChanged(ui::PlatformWindowState new_state) override;
   void OnLostCapture() override;
-  void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget) override;
+  void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget,
+                                    float device_pixel_ratio) override;
   void OnActivationChanged(bool active) override;
 
   bool has_capture_;

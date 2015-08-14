@@ -5,8 +5,11 @@
 #include "net/url_request/url_request_test_util.h"
 
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "net/base/host_port_pair.h"
@@ -162,6 +165,7 @@ TestDelegate::TestDelegate()
       cancel_in_rd_pending_(false),
       quit_on_complete_(true),
       quit_on_redirect_(false),
+      quit_on_auth_required_(false),
       quit_on_before_network_start_(false),
       allow_certificate_errors_(false),
       response_started_count_(0),
@@ -195,8 +199,8 @@ void TestDelegate::OnReceivedRedirect(URLRequest* request,
   received_redirect_count_++;
   if (quit_on_redirect_) {
     *defer_redirect = true;
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitClosure());
   } else if (cancel_in_rr_) {
     request->Cancel();
   }
@@ -206,14 +210,19 @@ void TestDelegate::OnBeforeNetworkStart(URLRequest* request, bool* defer) {
   received_before_network_start_count_++;
   if (quit_on_before_network_start_) {
     *defer = true;
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitClosure());
   }
 }
 
 void TestDelegate::OnAuthRequired(URLRequest* request,
                                   AuthChallengeInfo* auth_info) {
   auth_required_ = true;
+  if (quit_on_auth_required_) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitClosure());
+    return;
+  }
   if (!credentials_.Empty()) {
     request->SetAuth(credentials_);
   } else {
@@ -300,8 +309,8 @@ void TestDelegate::OnReadCompleted(URLRequest* request, int bytes_read) {
 
 void TestDelegate::OnResponseCompleted(URLRequest* request) {
   if (quit_on_complete_)
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 TestNetworkDelegate::TestNetworkDelegate()
@@ -321,7 +330,6 @@ TestNetworkDelegate::TestNetworkDelegate()
       has_load_timing_info_before_redirect_(false),
       has_load_timing_info_before_auth_(false),
       can_access_files_(true),
-      can_throttle_requests_(true),
       first_party_only_cookies_enabled_(false),
       cancel_request_with_policy_violating_referrer_(false),
       will_be_intercepted_on_next_error_(false) {
@@ -597,11 +605,6 @@ bool TestNetworkDelegate::OnCanSetCookie(const URLRequest& request,
 bool TestNetworkDelegate::OnCanAccessFile(const URLRequest& request,
                                           const base::FilePath& path) const {
   return can_access_files_;
-}
-
-bool TestNetworkDelegate::OnCanThrottleRequest(
-    const URLRequest& request) const {
-  return can_throttle_requests_;
 }
 
 bool TestNetworkDelegate::OnFirstPartyOnlyCookieExperimentEnabled() const {

@@ -39,7 +39,6 @@
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
-#include "core/inspector/BindingVisitors.h"
 #include "wtf/ThreadSpecific.h"
 
 #include <v8-profiler.h>
@@ -144,7 +143,7 @@ class ActivityControlAdapter final : public v8::ActivityControl {
 public:
     ActivityControlAdapter(ScriptProfiler::HeapSnapshotProgress* progress)
         : m_progress(progress), m_firstReport(true) { }
-    virtual ControlOption ReportProgressValue(int done, int total) override
+    ControlOption ReportProgressValue(int done, int total) override
     {
         ControlOption result = m_progress->isCanceled() ? kAbort : kContinue;
         if (m_firstReport) {
@@ -164,7 +163,7 @@ private:
 
 class GlobalObjectNameResolver final : public v8::HeapProfiler::ObjectNameResolver {
 public:
-    virtual const char* GetName(v8::Local<v8::Object> object) override
+    const char* GetName(v8::Local<v8::Object> object) override
     {
         DOMWindow* window = toDOMWindow(v8::Isolate::GetCurrent(), object);
         if (!window)
@@ -190,15 +189,15 @@ namespace {
 class HeapStatsStream : public v8::OutputStream {
 public:
     HeapStatsStream(ScriptProfiler::OutputStream* stream) : m_stream(stream) { }
-    virtual void EndOfStream() override { }
+    void EndOfStream() override { }
 
-    virtual WriteResult WriteAsciiChunk(char* data, int size) override
+    WriteResult WriteAsciiChunk(char* data, int size) override
     {
         ASSERT(false);
         return kAbort;
     }
 
-    virtual WriteResult WriteHeapStatsChunk(v8::HeapStatsUpdate* updateData, int count) override
+    WriteResult WriteHeapStatsChunk(v8::HeapStatsUpdate* updateData, int count) override
     {
         Vector<uint32_t> rawData(count * 3);
         for (int i = 0; i < count; ++i) {
@@ -258,49 +257,6 @@ void ScriptProfiler::initialize()
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
     if (profiler)
         profiler->SetWrapperClassInfoProvider(WrapperTypeInfo::NodeClassId, &retainedDOMInfo);
-}
-
-void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
-{
-    // visitNodeWrappers() should receive a ScriptState and retrieve an Isolate
-    // from the ScriptState.
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-
-    class DOMNodeWrapperVisitor : public v8::PersistentHandleVisitor {
-    public:
-        DOMNodeWrapperVisitor(WrappedNodeVisitor* visitor, v8::Isolate* isolate)
-            : m_visitor(visitor)
-#if ENABLE(ASSERT)
-            , m_isolate(isolate)
-#endif
-        {
-        }
-
-        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
-        {
-            if (classId != WrapperTypeInfo::NodeClassId)
-                return;
-
-#if ENABLE(ASSERT)
-            {
-                v8::HandleScope scope(m_isolate);
-                v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
-                ASSERT(V8Node::hasInstance(wrapper, m_isolate));
-                ASSERT(wrapper->IsObject());
-            }
-#endif
-            m_visitor->visitNode(toScriptWrappable(v8::Persistent<v8::Object>::Cast(*value))->toImpl<Node>());
-        }
-
-    private:
-        WrappedNodeVisitor* m_visitor;
-#if ENABLE(ASSERT)
-        v8::Isolate* m_isolate;
-#endif
-    } wrapperVisitor(visitor, isolate);
-
-    v8::V8::VisitHandlesWithClassIds(isolate, &wrapperVisitor);
 }
 
 ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()

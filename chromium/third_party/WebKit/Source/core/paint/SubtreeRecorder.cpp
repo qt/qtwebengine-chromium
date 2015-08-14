@@ -30,8 +30,12 @@ SubtreeRecorder::~SubtreeRecorder()
     if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
         return;
 
-    if (m_begun)
-        m_displayItemList->add(EndSubtreeDisplayItem::create(m_subtreeRoot, DisplayItem::paintPhaseToEndSubtreeType(m_paintPhase)));
+    if (m_begun) {
+        if (m_displayItemList->lastDisplayItemIsNoopBegin())
+            m_displayItemList->removeLastDisplayItem();
+        else
+            m_displayItemList->createAndAppend<EndSubtreeDisplayItem>(m_subtreeRoot, DisplayItem::paintPhaseToEndSubtreeType(m_paintPhase));
+    }
 }
 
 void SubtreeRecorder::begin()
@@ -40,7 +44,7 @@ void SubtreeRecorder::begin()
         return;
     if (m_displayItemList->displayItemConstructionIsDisabled())
         return;
-    m_displayItemList->add(BeginSubtreeDisplayItem::create(m_subtreeRoot, DisplayItem::paintPhaseToBeginSubtreeType(m_paintPhase)));
+    m_displayItemList->createAndAppend<BeginSubtreeDisplayItem>(m_subtreeRoot, DisplayItem::paintPhaseToBeginSubtreeType(m_paintPhase));
     m_begun = true;
 }
 

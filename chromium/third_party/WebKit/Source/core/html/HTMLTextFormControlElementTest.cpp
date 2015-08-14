@@ -24,13 +24,11 @@
 #include "wtf/OwnPtr.h"
 #include <gtest/gtest.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class HTMLTextFormControlElementTest : public ::testing::Test {
 protected:
-    virtual void SetUp() override;
+    void SetUp() override;
 
     DummyPageHolder& page() const { return *m_dummyPageHolder; }
     HTMLDocument& document() const { return *m_document; }
@@ -53,17 +51,17 @@ class DummyTextCheckerClient : public EmptyTextCheckerClient {
 public:
     ~DummyTextCheckerClient() { }
 
-    virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const override { return false; }
+    bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const override { return false; }
 };
 
 class DummySpellCheckerClient : public EmptySpellCheckerClient {
 public:
     virtual ~DummySpellCheckerClient() { }
 
-    virtual bool isContinuousSpellCheckingEnabled() override { return true; }
-    virtual bool isGrammarCheckingEnabled() override { return true; }
+    bool isContinuousSpellCheckingEnabled() override { return true; }
+    bool isGrammarCheckingEnabled() override { return true; }
 
-    virtual TextCheckerClient& textChecker() override { return m_dummyTextCheckerClient; }
+    TextCheckerClient& textChecker() override { return m_dummyTextCheckerClient; }
 
 private:
     DummyTextCheckerClient m_dummyTextCheckerClient;
@@ -79,7 +77,7 @@ void HTMLTextFormControlElementTest::SetUp()
 
     m_document = toHTMLDocument(&m_dummyPageHolder->document());
     m_document->documentElement()->setInnerHTML("<body><textarea id=textarea></textarea><input id=input /></body>", ASSERT_NO_EXCEPTION);
-    m_document->view()->updateLayoutAndStyleForPainting();
+    m_document->view()->updateAllLifecyclePhases();
     m_textControl = toHTMLTextFormControlElement(m_document->getElementById("textarea"));
     m_textControl->focus();
     m_input = toHTMLInputElement(m_document->getElementById("input"));
@@ -213,7 +211,7 @@ TEST_F(HTMLTextFormControlElementTest, SpellCheckDoesNotCauseUpdateLayout)
     input->setValue("Hello, input field");
     VisibleSelection oldSelection = document().frame()->selection().selection();
 
-    Position newPosition(input->innerEditorElement()->firstChild(), 3, Position::PositionIsOffsetInAnchor);
+    Position newPosition(input->innerEditorElement()->firstChild(), 3);
     VisibleSelection newSelection(newPosition, DOWNSTREAM);
     document().frame()->selection().setSelection(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle | FrameSelection::DoNotUpdateAppearance);
     ASSERT_EQ(3, input->selectionStart());
@@ -225,4 +223,4 @@ TEST_F(HTMLTextFormControlElementTest, SpellCheckDoesNotCauseUpdateLayout)
     EXPECT_EQ(startCount, layoutCount());
 }
 
-}
+} // namespace blink

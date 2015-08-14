@@ -242,10 +242,9 @@ tmpl_field = string.Template("""\
 
 template_cc = string.Template(header + """\
 
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
-
 #include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 ${includes}\
 
 namespace content {
@@ -273,8 +272,8 @@ namespace devtools {
 const char kProtocolVersion[] = "${major}.${minor}";
 
 bool IsSupportedProtocolVersion(const std::string& version) {
-  std::vector<std::string> tokens;
-  Tokenize(version, ".", &tokens);
+  std::vector<base::StringPiece> tokens = base::SplitStringPiece(
+      version, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   int major, minor;
   return tokens.size() == 2 &&
       base::StringToInt(tokens[0], &major) && major == ${major} &&

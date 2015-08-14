@@ -9,6 +9,7 @@
 #include "base/atomic_sequence_num.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_math.h"
@@ -30,7 +31,13 @@
 #include "base/linux_util.h"
 #elif defined(OS_WIN)
 #include "content/common/font_cache_dispatcher_win.h"
+#include "ipc/attachment_broker_win.h"
 #endif  // OS_LINUX
+
+#if defined(OS_WIN)
+base::LazyInstance<IPC::AttachmentBrokerWin>::Leaky g_attachment_broker =
+    LAZY_INSTANCE_INITIALIZER;
+#endif  // defined(OS_WIN)
 
 namespace {
 
@@ -137,6 +144,15 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
   return child_path;
 }
 
+// static
+IPC::AttachmentBroker* ChildProcessHost::GetAttachmentBroker() {
+#if defined(OS_WIN)
+  return &g_attachment_broker.Get();
+#else
+  return nullptr;
+#endif  // defined(OS_WIN)
+}
+
 ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
     : delegate_(delegate),
       opening_channel_(false) {
@@ -165,7 +181,8 @@ void ChildProcessHostImpl::ForceShutdown() {
 
 std::string ChildProcessHostImpl::CreateChannel() {
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_ = IPC::Channel::CreateServer(channel_id_, this);
+  channel_ =
+      IPC::Channel::CreateServer(channel_id_, this, GetAttachmentBroker());
   if (!channel_->Connect())
     return std::string();
 
@@ -323,11 +340,9 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
   // and handle failure in a controlled way when not. We just need to make
   // sure |format| and |usage| are supported here.
   if (GpuMemoryBufferImplSharedMemory::IsFormatSupported(format) &&
-      usage == gfx::GpuMemoryBuffer::MAP) {
+      GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
     *handle = GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
-        g_next_gpu_memory_buffer_id.GetNext(),
-        gfx::Size(width, height),
-        format,
+        g_next_gpu_memory_buffer_id.GetNext(), gfx::Size(width, height), format,
         peer_process_.Handle());
   }
 }

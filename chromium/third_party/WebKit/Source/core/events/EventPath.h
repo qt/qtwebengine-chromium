@@ -27,6 +27,7 @@
 #ifndef EventPath_h
 #define EventPath_h
 
+#include "core/CoreExport.h"
 #include "core/events/NodeEventContext.h"
 #include "core/events/TreeScopeEventContext.h"
 #include "core/events/WindowEventContext.h"
@@ -43,7 +44,7 @@ class TouchEvent;
 class TouchList;
 class TreeScope;
 
-class EventPath final : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
+class CORE_EXPORT EventPath final : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
 public:
     explicit EventPath(Node&, Event* = nullptr);
 
@@ -75,8 +76,6 @@ public:
 private:
     EventPath();
 
-    void addNodeEventContext(Node&);
-
     void initialize();
     void calculatePath();
     void calculateAdjustedTargets();
@@ -101,7 +100,7 @@ private:
 
     const NodeEventContext& topNodeEventContext();
 
-    WillBeHeapVector<NodeEventContext, 64> m_nodeEventContexts;
+    WillBeHeapVector<NodeEventContext> m_nodeEventContexts;
     RawPtrWillBeMember<Node> m_node;
     RawPtrWillBeMember<Event> m_event;
     WillBeHeapVector<RefPtrWillBeMember<TreeScopeEventContext>> m_treeScopeEventContexts;

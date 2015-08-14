@@ -32,9 +32,7 @@ var Dir = AutomationUtil.Dir;
  * The format of these rules is as follows.
  *
  * $ prefix: used to substitute either an attribute or a specialized value from
- *     an AutomationNode. Specialized values include role and state. Attributes
- *     available for substitution are AutomationNode.prototype.attributes and
- *     AutomationNode.prototype.state.
+ *     an AutomationNode. Specialized values include role and state.
  *     For example, $value $role $enabled
  * @ prefix: used to substitute a message. Note the ability to specify params to
  *     the message.  For example, '@tag_html' '@selected_index($text_sel_start,
@@ -63,7 +61,7 @@ Output = function() {
 
   /**
    * Speech properties to apply to the entire output.
-   * @type {!Object<string, *>}
+   * @type {!Object<*>}
    */
   this.speechProperties_ = {};
 };
@@ -76,9 +74,9 @@ Output.SPACE = ' ';
 
 /**
  * Metadata about supported automation roles.
- * @const {Object<string, {msgId: string,
- *                         earconId: (string|undefined),
- *                         inherits: (string|undefined)}>}
+ * @const {Object<{msgId: string,
+ *                 earconId: (string|undefined),
+ *                 inherits: (string|undefined)}>}
  * msgId: the message id of the role.
  * earconId: an optional earcon to play when encountering the role.
  * inherits: inherits rules from this role.
@@ -105,6 +103,10 @@ Output.ROLE_INFO_ = {
     inherits: 'abstractContainer'
   },
   button: {
+    msgId: 'tag_button',
+    earconId: 'BUTTON'
+  },
+  buttonDropDown: {
     msgId: 'tag_button',
     earconId: 'BUTTON'
   },
@@ -223,10 +225,6 @@ Output.ROLE_INFO_ = {
     msgId: 'aria_role_note',
     inherits: 'abstractContainer'
   },
-  region: {
-    msgId: 'aria_role_region',
-    inherits: 'abstractContainer'
-  },
   popUpButton: {
     msgId: 'tag_button',
     earcon: 'LISTBOX'
@@ -236,6 +234,10 @@ Output.ROLE_INFO_ = {
   },
   radioGroup: {
     msgId: 'aria_role_radiogroup',
+  },
+  region: {
+    msgId: 'aria_role_region',
+    inherits: 'abstractContainer'
   },
   rowHeader: {
     msgId: 'aria_role_rowheader',
@@ -296,10 +298,9 @@ Output.ROLE_INFO_ = {
 
 /**
  * Metadata about supported automation states.
- * @const {!Object<string,
- *           {on: {msgId: string, earconId: string},
- *            off: {msgId: string, earconId: string},
- *            omitted: {msgId: string, earconId: string}}>}
+ * @const {!Object<{on: {msgId: string, earconId: string},
+ *                  off: {msgId: string, earconId: string},
+ *                  omitted: {msgId: string, earconId: string}}>}
  *     on: info used to describe a state that is set to true.
  *     off: info used to describe a state that is set to false.
  *     omitted: info used to describe a state that is undefined.
@@ -345,7 +346,7 @@ Output.STATE_INFO_ = {
 
 /**
  * Rules specifying format of AutomationNodes for output.
- * @type {!Object<string, Object<string, Object<string, string>>>}
+ * @type {!Object<Object<Object<string>>>}
  */
 Output.RULES = {
   navigate: {
@@ -362,6 +363,9 @@ Output.RULES = {
     },
     alertDialog: {
       enter: '$name $role $descendants'
+    },
+    cell: {
+      enter: '@column_granularity $tableCellColumnIndex'
     },
     checkBox: {
       speak: '$name $role $checked'
@@ -422,6 +426,9 @@ Output.RULES = {
     radioGroup: {
       enter: '$name $role'
     },
+    row: {
+      enter: '@row_granularity $tableRowIndex'
+    },
     slider: {
       speak: '@describe_slider($value, $name) $help'
     },
@@ -433,7 +440,7 @@ Output.RULES = {
     },
     textField: {
       speak: '$name $value $if(' +
-          '$textInputType, @input_type_+$textInputType, @input_type_text)',
+          '$type, @input_type_+$type, @input_type_text)',
       braille: ''
     },
     toolbar: {
@@ -759,12 +766,12 @@ Output.prototype = {
       // All possible tokens based on prefix.
       if (prefix == '$') {
         if (token == 'value') {
-          var text = node.attributes.value;
+          var text = node.value;
           if (text !== undefined) {
-            if (node.attributes.textSelStart !== undefined) {
+            if (node.textSelStart !== undefined) {
               options.annotation.push(new Output.SelectionSpan(
-                  node.attributes.textSelStart,
-                  node.attributes.textSelEnd));
+                  node.textSelStart,
+                  node.textSelEnd));
             }
           }
           // Annotate this as a name so we don't duplicate names from ancestors.
@@ -784,7 +791,12 @@ Output.prototype = {
             }
             earconFinder = earconFinder.parent;
           }
-          this.append_(buff, node.attributes.name, options);
+
+          // Pending finalization of name calculation; we must use the
+          // attributes property to access aria-label. See crbug.com/473220.
+          node.attributes = node.attributes || {};
+          var resolvedName = node.name || node.attributes['aria-label'];
+          this.append_(buff, resolvedName, options);
         } else if (token == 'nameOrDescendants') {
           options.annotation.push(token);
           if (node.name)
@@ -845,9 +857,17 @@ Output.prototype = {
             console.error('Missing role info for ' + node.role);
           }
           this.append_(buff, msg, options);
-        } else if (node.attributes[token] !== undefined) {
+        } else if (token == 'tableRowIndex' ||
+            token == 'tableCellColumnIndex') {
+          var value = node[token];
+          if (!value)
+            return;
+          value = String(value + 1);
           options.annotation.push(token);
-          var value = node.attributes[token];
+          this.append_(buff, value, options);
+        } else if (node[token] !== undefined) {
+          options.annotation.push(token);
+          var value = node[token];
           if (typeof value == 'number')
             value = String(value);
           this.append_(buff, value, options);
@@ -875,7 +895,7 @@ Output.prototype = {
           if (token == 'if') {
             var cond = tree.firstChild;
             var attrib = cond.value.slice(1);
-            if (node.attributes[attrib] || node.state[attrib])
+            if (node[attrib] || node.state[attrib])
               this.format_(node, cond.nextSibling, buff);
             else
               this.format_(node, cond.nextSibling.nextSibling, buff);
@@ -901,7 +921,7 @@ Output.prototype = {
         token = pieces.reduce(function(prev, cur) {
           var lookup = cur;
           if (cur[0] == '$')
-            lookup = node.attributes[cur.slice(1)];
+            lookup = node[cur.slice(1)];
           return prev + lookup;
         }.bind(this), '');
         var msgId = token;
@@ -964,6 +984,10 @@ Output.prototype = {
       cursor = cursor.move(cursors.Unit.NODE,
                            cursors.Movement.DIRECTIONAL,
                            Dir.FORWARD);
+
+      // Reached a boundary.
+      if (cursor.getNode() == prevNode)
+        break;
     }
     var lastNode = range.getEnd().getNode();
     rangeBuff.push.apply(rangeBuff, formatNodeAndAncestors(lastNode, prevNode));

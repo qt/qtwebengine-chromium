@@ -86,17 +86,8 @@ class CONTENT_EXPORT VideoCaptureHost
                          int buffer_id) override;
   void OnBufferReady(VideoCaptureControllerID id,
                      int buffer_id,
-                     const gfx::Size& coded_size,
-                     const gfx::Rect& visible_rect,
-                     const base::TimeTicks& timestamp,
-                     scoped_ptr<base::DictionaryValue> metadata) override;
-  void OnMailboxBufferReady(
-      VideoCaptureControllerID id,
-      int buffer_id,
-      const gpu::MailboxHolder& mailbox_holder,
-      const gfx::Size& packed_frame_size,
-      const base::TimeTicks& timestamp,
-      scoped_ptr<base::DictionaryValue> metadata) override;
+                     const scoped_refptr<media::VideoFrame>& frame,
+                     const base::TimeTicks& timestamp) override;
   void OnEnded(VideoCaptureControllerID id) override;
 
  private:
@@ -131,9 +122,12 @@ class CONTENT_EXPORT VideoCaptureHost
                        media::VideoCaptureSessionId session_id,
                        const media::VideoCaptureParams& params);
 
-  // IPC message: Receive an empty buffer from renderer. Send it to device
-  // referenced by |device_id|.
-  void OnReceiveEmptyBuffer(int device_id, int buffer_id, uint32 sync_point);
+  // IPC message: Called when a renderer is finished using a buffer. Notifies
+  // the controller.
+  void OnRendererFinishedWithBuffer(int device_id,
+                                    int buffer_id,
+                                    uint32 sync_point,
+                                    double consumer_resource_utilization);
 
   // IPC message: Get supported formats referenced by |capture_session_id|.
   // |device_id| is needed for message back-routing purposes.

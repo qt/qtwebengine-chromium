@@ -100,15 +100,6 @@ PassRefPtr<JSONArray> arrayForSkPoints(size_t count, const SkPoint points[])
     return pointsArrayItem.release();
 }
 
-PassRefPtr<JSONObject> objectForSkPicture(const SkPicture& picture)
-{
-    const SkIRect bounds = picture.cullRect().roundOut();
-    RefPtr<JSONObject> pictureItem = JSONObject::create();
-    pictureItem->setNumber("width", bounds.width());
-    pictureItem->setNumber("height", bounds.height());
-    return pictureItem.release();
-}
-
 PassRefPtr<JSONObject> objectForRadius(const SkRRect& rrect, SkRRect::Corner corner)
 {
     RefPtr<JSONObject> radiusItem = JSONObject::create();
@@ -679,30 +670,6 @@ void LoggingCanvas::onDrawVertices(VertexMode vmode, int vertexCount, const SkPo
     this->SkCanvas::onDrawVertices(vmode, vertexCount, vertices, texs, colors, xmode, indices, indexCount, paint);
 }
 
-void LoggingCanvas::beginCommentGroup(const char* description)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("beginCommentGroup");
-    params->setString("description", description);
-    this->SkCanvas::beginCommentGroup(description);
-}
-
-void LoggingCanvas::addComment(const char* keyword, const char* value)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("addComment");
-    params->setString("key", keyword);
-    params->setString("value", value);
-    this->SkCanvas::addComment(keyword, value);
-}
-
-void LoggingCanvas::endCommentGroup()
-{
-    AutoLogger logger(this);
-    logger.logItem("endCommentGroup");
-    this->SkCanvas::endCommentGroup();
-}
-
 void LoggingCanvas::onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint& paint)
 {
     AutoLogger logger(this);
@@ -809,9 +776,7 @@ void LoggingCanvas::onClipRegion(const SkRegion& region, SkRegion::Op op)
 
 void LoggingCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint)
 {
-    AutoLogger logger(this);
-    logger.logItemWithParams("drawPicture")->setObject("picture", objectForSkPicture(*picture));
-    this->SkCanvas::onDrawPicture(picture, matrix, paint);
+    this->unrollDrawPicture(picture, matrix, paint, nullptr);
 }
 
 void LoggingCanvas::didSetMatrix(const SkMatrix& matrix)

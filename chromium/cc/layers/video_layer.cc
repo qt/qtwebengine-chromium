@@ -9,14 +9,16 @@
 namespace cc {
 
 scoped_refptr<VideoLayer> VideoLayer::Create(
+    const LayerSettings& settings,
     VideoFrameProvider* provider,
     media::VideoRotation video_rotation) {
-  return make_scoped_refptr(new VideoLayer(provider, video_rotation));
+  return make_scoped_refptr(new VideoLayer(settings, provider, video_rotation));
 }
 
-VideoLayer::VideoLayer(VideoFrameProvider* provider,
+VideoLayer::VideoLayer(const LayerSettings& settings,
+                       VideoFrameProvider* provider,
                        media::VideoRotation video_rotation)
-    : provider_(provider), video_rotation_(video_rotation) {
+    : Layer(settings), provider_(provider), video_rotation_(video_rotation) {
   DCHECK(provider_);
 }
 
@@ -28,9 +30,8 @@ scoped_ptr<LayerImpl> VideoLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
   return impl.Pass();
 }
 
-bool VideoLayer::Update(ResourceUpdateQueue* queue,
-                        const OcclusionTracker<Layer>* occlusion) {
-  bool updated = Layer::Update(queue, occlusion);
+bool VideoLayer::Update() {
+  bool updated = Layer::Update();
 
   // Video layer doesn't update any resources from the main thread side,
   // but repaint rects need to be sent to the VideoLayerImpl via commit.

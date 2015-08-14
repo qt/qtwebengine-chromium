@@ -31,6 +31,7 @@
 #include "config.h"
 #include "WTF.h"
 
+#include "wtf/ArrayBufferContents.h"
 #include "wtf/Assertions.h"
 #include "wtf/FastMalloc.h"
 #include "wtf/Partitions.h"
@@ -42,7 +43,7 @@ extern void initializeThreading();
 bool s_initialized;
 bool s_shutdown;
 
-void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction, TimeFunction systemTraceTimeFunction, HistogramEnumerationFunction histogramEnumerationFunction)
+void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction, TimeFunction systemTraceTimeFunction, HistogramEnumerationFunction histogramEnumerationFunction, AdjustAmountOfExternalAllocatedMemoryFunction adjustAmountOfExternalAllocatedMemoryFunction)
 {
     // WTF, and Blink in general, cannot handle being re-initialized, even if shutdown first.
     // Make that explicit here.
@@ -52,7 +53,9 @@ void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncr
     setCurrentTimeFunction(currentTimeFunction);
     setMonotonicallyIncreasingTimeFunction(monotonicallyIncreasingTimeFunction);
     setSystemTraceTimeFunction(systemTraceTimeFunction);
-    Partitions::initialize(histogramEnumerationFunction);
+    Partitions::initialize();
+    Partitions::setHistogramEnumeration(histogramEnumerationFunction);
+    ArrayBufferContents::setAdjustAmoutOfExternalAllocatedMemoryFunction(adjustAmountOfExternalAllocatedMemoryFunction);
     initializeThreading();
 }
 

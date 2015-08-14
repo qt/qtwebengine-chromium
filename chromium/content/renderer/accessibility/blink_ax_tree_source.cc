@@ -398,19 +398,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
           line_breaks.push_back(src_line_breaks[i]);
         dst->AddIntListAttribute(ui::AX_ATTR_LINE_BREAKS, line_breaks);
       }
-
-      if (dst->role == ui::AX_ROLE_TEXT_FIELD &&
-          src.textInputType().length()) {
-        dst->AddStringAttribute(ui::AX_ATTR_TEXT_INPUT_TYPE,
-                                UTF16ToUTF8(src.textInputType()));
-      }
     }
-
-    blink::WebAXOptionalBool optionalBool = src.isAriaGrabbed();
-    if (optionalBool == blink::WebAXOptionalBoolFalse)
-      dst->AddBoolAttribute(ui::AX_ATTR_GRABBED, false);
-    else if (optionalBool == blink::WebAXOptionalBoolTrue)
-      dst->AddBoolAttribute(ui::AX_ATTR_GRABBED, true);
 
     // ARIA role.
     if (element.hasAttribute("role")) {
@@ -420,6 +408,8 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
       std::string role = GetEquivalentAriaRoleString(dst->role);
       if (!role.empty())
         dst->AddStringAttribute(ui::AX_ATTR_ROLE, role);
+      else if (dst->role == ui::AX_ROLE_TIME)
+        dst->AddStringAttribute(ui::AX_ATTR_ROLE, "time");
     }
 
     // Browser plugin (used in a <webview>).
@@ -486,18 +476,6 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
       dst->AddStringAttribute(ui::AX_ATTR_DOC_DOCTYPE,
                               UTF16ToUTF8(doctype.name()));
     }
-
-    const gfx::Size& scroll_offset = document.scrollOffset();
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X, scroll_offset.width());
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y, scroll_offset.height());
-
-    const gfx::Size& min_offset = document.minimumScrollOffset();
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X_MIN, min_offset.width());
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y_MIN, min_offset.height());
-
-    const gfx::Size& max_offset = document.maximumScrollOffset();
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, max_offset.width());
-    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX, max_offset.height());
 
     if (node_to_frame_routing_id_map_ && !src.equals(GetRoot())) {
       WebLocalFrame* frame = document.frame();
@@ -608,11 +586,6 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
         ui::AX_ATTR_DESCRIBEDBY_IDS, describedby, dst);
   }
 
-  if (src.ariaDropEffect().length()) {
-    dst->AddStringAttribute(ui::AX_ATTR_DROPEFFECT,
-        UTF16ToUTF8(src.ariaDropEffect()));
-  }
-
   WebVector<WebAXObject> flowTo;
   if (src.ariaFlowTo(flowTo))
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_FLOWTO_IDS, flowTo, dst);
@@ -626,6 +599,21 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   WebVector<WebAXObject> owns;
   if (src.ariaOwns(owns))
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_OWNS_IDS, owns, dst);
+
+
+  if (src.isScrollableContainer()) {
+    const gfx::Point& scrollOffset = src.scrollOffset();
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X, scrollOffset.x());
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y, scrollOffset.y());
+
+    const gfx::Point& minScrollOffset = src.minimumScrollOffset();
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X_MIN, minScrollOffset.x());
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y_MIN, minScrollOffset.y());
+
+    const gfx::Point& maxScrollOffset = src.maximumScrollOffset();
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, maxScrollOffset.x());
+    dst->AddIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX, maxScrollOffset.y());
+  }
 }
 
 blink::WebDocument BlinkAXTreeSource::GetMainDocument() const {

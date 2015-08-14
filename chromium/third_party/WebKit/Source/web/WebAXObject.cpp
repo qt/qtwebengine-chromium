@@ -38,9 +38,9 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/PinchViewport.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
 #include "core/style/ComputedStyle.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -76,13 +76,13 @@ static bool isLayoutClean(Document* document)
 #endif
 
 WebScopedAXContext::WebScopedAXContext(WebDocument& rootDocument)
-    : m_private(adoptRef(new ScopedAXObjectCache(*rootDocument.unwrap<Document>())))
+    : m_private(ScopedAXObjectCache::create(*rootDocument.unwrap<Document>()))
 {
 }
 
 WebScopedAXContext::~WebScopedAXContext()
 {
-    m_private.reset();
+    m_private.reset(0);
 }
 
 WebAXObject WebScopedAXContext::root() const
@@ -127,7 +127,7 @@ bool WebAXObject::updateLayoutAndCheckValidity()
         Document* document = m_private->document();
         if (!document || !document->topDocument().view())
             return false;
-        document->view()->updateLayoutAndStyleForPainting();
+        document->view()->updateAllLifecyclePhases();
     }
 
     // Doing a layout can cause this object to be invalid, so check again.
@@ -223,14 +223,6 @@ bool WebAXObject::isAnchor() const
         return false;
 
     return m_private->isAnchor();
-}
-
-WebAXOptionalBool WebAXObject::isAriaGrabbed() const
-{
-    if (isDetached())
-        return WebAXOptionalBoolUndefined;
-
-    return static_cast<WebAXOptionalBool>(m_private->isAriaGrabbed());
 }
 
 bool WebAXObject::isAriaReadOnly() const
@@ -496,14 +488,6 @@ bool WebAXObject::ariaControls(WebVector<WebAXObject>& controlsElements) const
     return true;
 }
 
-WebString WebAXObject::ariaDropEffect() const
-{
-    if (isDetached())
-        return WebString();
-
-    return WebString(m_private->ariaDropEffect());
-}
-
 bool WebAXObject::ariaHasPopup() const
 {
     if (isDetached())
@@ -534,6 +518,14 @@ bool WebAXObject::isMultiline() const
         return false;
 
     return m_private->isMultiline();
+}
+
+bool WebAXObject::isRichlyEditable() const
+{
+    if (isDetached())
+        return false;
+
+    return m_private->isRichlyEditable();
 }
 
 int WebAXObject::posInSet() const
@@ -626,18 +618,13 @@ WebString WebAXObject::containerLiveRegionStatus() const
 
 bool WebAXObject::ariaOwns(WebVector<WebAXObject>& ownsElements) const
 {
-    if (isDetached())
-        return false;
+    // aria-owns rearranges the accessibility tree rather than just
+    // exposing an attribute.
 
-    AXObject::AccessibilityChildrenVector owns;
-    m_private->ariaOwnsElements(owns);
+    // FIXME(dmazzoni): remove this function after we stop calling it
+    // from Chromium.  http://crbug.com/489590
 
-    WebVector<WebAXObject> result(owns.size());
-    for (size_t i = 0; i < owns.size(); i++)
-        result[i] = WebAXObject(owns[i]);
-    ownsElements.swap(result);
-
-    return true;
+    return false;
 }
 
 WebRect WebAXObject::boundingBoxRect() const
@@ -724,7 +711,7 @@ WebAXObject WebAXObject::hitTest(const WebPoint& point) const
         return WebAXObject();
 
     IntPoint contentsPoint = m_private->documentFrameView()->soonToBeRemovedUnscaledViewportToContents(point);
-    RefPtr<AXObject> hit = m_private->accessibilityHitTest(contentsPoint);
+    RefPtrWillBeRawPtr<AXObject> hit = m_private->accessibilityHitTest(contentsPoint);
 
     if (hit)
         return WebAXObject(hit);
@@ -1076,7 +1063,7 @@ WebString WebAXObject::name(WebAXNameFrom& outNameFrom, WebVector<WebAXObject>& 
         return WebString();
 
     AXNameFrom nameFrom = AXNameFromAttribute;
-    Vector<AXObject*> nameObjects;
+    WillBeHeapVector<RawPtrWillBeMember<AXObject>> nameObjects;
     WebString result = m_private->name(nameFrom, nameObjects);
     outNameFrom = static_cast<WebAXNameFrom>(nameFrom);
 
@@ -1094,7 +1081,7 @@ WebString WebAXObject::description(WebAXNameFrom nameFrom, WebAXDescriptionFrom&
         return WebString();
 
     AXDescriptionFrom descriptionFrom;
-    Vector<AXObject*> descriptionObjects;
+    WillBeHeapVector<RawPtrWillBeMember<AXObject>> descriptionObjects;
     String result = m_private->description(static_cast<AXNameFrom>(nameFrom), descriptionFrom, descriptionObjects);
     outDescriptionFrom = static_cast<WebAXDescriptionFrom>(descriptionFrom);
 
@@ -1237,14 +1224,6 @@ bool WebAXObject::lineBreaks(WebVector<int>& result) const
     result.swap(lineBreaksWebVector);
 
     return true;
-}
-
-WebString WebAXObject::textInputType() const
-{
-    if (isDetached())
-        return WebString();
-
-    return WebString(m_private->textInputType());
 }
 
 unsigned WebAXObject::columnCount() const
@@ -1581,18 +1560,18 @@ void WebAXObject::scrollToGlobalPoint(const WebPoint& point) const
         m_private->scrollToGlobalPoint(point);
 }
 
-WebAXObject::WebAXObject(const WTF::PassRefPtr<AXObject>& object)
+WebAXObject::WebAXObject(const PassRefPtrWillBeRawPtr<AXObject>& object)
     : m_private(object)
 {
 }
 
-WebAXObject& WebAXObject::operator=(const WTF::PassRefPtr<AXObject>& object)
+WebAXObject& WebAXObject::operator=(const PassRefPtrWillBeRawPtr<AXObject>& object)
 {
     m_private = object;
     return *this;
 }
 
-WebAXObject::operator WTF::PassRefPtr<AXObject>() const
+WebAXObject::operator PassRefPtrWillBeRawPtr<AXObject>() const
 {
     return m_private.get();
 }

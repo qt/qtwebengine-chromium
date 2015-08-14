@@ -16,14 +16,7 @@ namespace ui {
 
 InputControllerEvdev::InputControllerEvdev(KeyboardEvdev* keyboard,
                                            MouseButtonMapEvdev* button_map)
-    : settings_update_pending_(false),
-      input_device_factory_(nullptr),
-      keyboard_(keyboard),
-      button_map_(button_map),
-      has_mouse_(false),
-      has_touchpad_(false),
-      caps_lock_led_state_(false),
-      weak_ptr_factory_(this) {
+    : keyboard_(keyboard), button_map_(button_map), weak_ptr_factory_(this) {
 }
 
 InputControllerEvdev::~InputControllerEvdev() {
@@ -45,6 +38,11 @@ void InputControllerEvdev::set_has_touchpad(bool has_touchpad) {
   has_touchpad_ = has_touchpad;
 }
 
+void InputControllerEvdev::SetInputDevicesEnabled(bool enabled) {
+  input_device_settings_.enable_devices = enabled;
+  ScheduleUpdateDeviceSettings();
+}
+
 bool InputControllerEvdev::HasMouse() {
   return has_mouse_;
 }
@@ -63,7 +61,7 @@ void InputControllerEvdev::SetCapsLockEnabled(bool enabled) {
 }
 
 void InputControllerEvdev::SetNumLockEnabled(bool enabled) {
-  NOTIMPLEMENTED();
+  // No num lock on Chrome OS.
 }
 
 bool InputControllerEvdev::IsAutoRepeatEnabled() {
@@ -84,27 +82,22 @@ void InputControllerEvdev::GetAutoRepeatRate(base::TimeDelta* delay,
   keyboard_->GetAutoRepeatRate(delay, interval);
 }
 
-void InputControllerEvdev::DisableInternalTouchpad() {
-  if (input_device_factory_)
-    input_device_factory_->DisableInternalTouchpad();
+void InputControllerEvdev::SetInternalTouchpadEnabled(bool enabled) {
+  input_device_settings_.enable_internal_touchpad = enabled;
+  ScheduleUpdateDeviceSettings();
 }
 
-void InputControllerEvdev::EnableInternalTouchpad() {
-  if (input_device_factory_)
-    input_device_factory_->EnableInternalTouchpad();
+void InputControllerEvdev::SetTouchEventLoggingEnabled(bool enabled) {
+  input_device_settings_.touch_event_logging_enabled = enabled;
+  ScheduleUpdateDeviceSettings();
 }
 
-void InputControllerEvdev::DisableInternalKeyboardExceptKeys(
-    scoped_ptr<std::set<DomCode>> excepted_keys) {
-  if (input_device_factory_) {
-    input_device_factory_->DisableInternalKeyboardExceptKeys(
-        excepted_keys.Pass());
-  }
-}
-
-void InputControllerEvdev::EnableInternalKeyboard() {
-  if (input_device_factory_)
-    input_device_factory_->EnableInternalKeyboard();
+void InputControllerEvdev::SetInternalKeyboardFilter(
+    bool enable_filter,
+    std::vector<DomCode> allowed_keys) {
+  input_device_settings_.enable_internal_keyboard_filter = enable_filter;
+  input_device_settings_.internal_keyboard_allowed_keys = allowed_keys;
+  ScheduleUpdateDeviceSettings();
 }
 
 void InputControllerEvdev::SetTouchpadSensitivity(int value) {

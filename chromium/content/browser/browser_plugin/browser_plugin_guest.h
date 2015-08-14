@@ -51,6 +51,8 @@ struct FrameHostMsg_ShowPopup_Params;
 
 namespace cc {
 class CompositorFrame;
+struct SurfaceId;
+struct SurfaceSequence;
 }  // namespace cc
 
 namespace gfx {
@@ -77,6 +79,9 @@ struct DropData;
 // A BrowserPluginGuest can also create a new unattached guest via
 // CreateNewWindow. The newly created guest will live in the same partition,
 // which means it can share storage and can script this guest.
+//
+// Note: in --site-per-process, all IPCs sent out from this class will be
+// dropped on the floor since we don't have a BrowserPlugin.
 class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                                           public WebContentsObserver {
  public:
@@ -188,6 +193,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // Returns whether the guest is attached to an embedder.
   bool attached() const { return attached_; }
 
+  // Returns true when an attachment has taken place since the last time the
+  // compositor surface was set.
+  bool has_attached_since_surface_set() const {
+    return has_attached_since_surface_set_;
+  }
+
   // Attaches this BrowserPluginGuest to the provided |embedder_web_contents|
   // and initializes the guest with the provided |params|. Attaching a guest
   // to an embedder implies that this guest's lifetime is no longer managed
@@ -213,10 +224,17 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   void PointerLockPermissionResponse(bool allow);
 
-  void SwapCompositorFrame(uint32 output_surface_id,
-                           int host_process_id,
-                           int host_routing_id,
-                           scoped_ptr<cc::CompositorFrame> frame);
+  // The next three functions are virtual for test purposes.
+  virtual void UpdateGuestSizeIfNecessary(const gfx::Size& frame_size,
+                                          float scale_factor);
+  virtual void SwapCompositorFrame(uint32 output_surface_id,
+                                   int host_process_id,
+                                   int host_routing_id,
+                                   scoped_ptr<cc::CompositorFrame> frame);
+  virtual void SetChildFrameSurface(const cc::SurfaceId& surface_id,
+                                    const gfx::Size& frame_size,
+                                    float scale_factor,
+                                    const cc::SurfaceSequence& sequence);
 
   void SetContentsOpaque(bool opaque);
 
@@ -227,20 +245,36 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
             const blink::WebFindOptions& options);
   bool StopFinding(StopFindAction action);
 
- private:
-  class EmbedderVisibilityObserver;
+ protected:
 
   // BrowserPluginGuest is a WebContentsObserver of |web_contents| and
   // |web_contents| has to stay valid for the lifetime of BrowserPluginGuest.
+  // Constructor protected for testing.
   BrowserPluginGuest(bool has_render_view,
                      WebContentsImpl* web_contents,
                      BrowserPluginGuestDelegate* delegate);
+
+  // Protected for testing.
+  void set_has_attached_since_surface_set_for_test(bool has_attached) {
+    has_attached_since_surface_set_ = has_attached;
+  }
+
+  void set_attached_for_test(bool attached) {
+    attached_ = attached;
+  }
+
+ private:
+  class EmbedderVisibilityObserver;
 
   void InitInternal(const BrowserPluginHostMsg_Attach_Params& params,
                     WebContentsImpl* owner_web_contents);
 
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
+  void OnSatisfySequence(int instance_id, const cc::SurfaceSequence& sequence);
+  void OnRequireSequence(int instance_id,
+                         const cc::SurfaceId& id,
+                         const cc::SurfaceSequence& sequence);
   // Message handlers for messages from embedder.
   void OnCompositorFrameSwappedACK(
       int instance_id,
@@ -356,6 +390,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   // Indicates whether this guest has been attached to a container.
   bool attached_;
+
+  // Used to signal if a browser plugin has been attached since the last time
+  // the compositing surface was set.
+  bool has_attached_since_surface_set_;
 
   // An identifier that uniquely identifies a browser plugin within an embedder.
   int browser_plugin_instance_id_;

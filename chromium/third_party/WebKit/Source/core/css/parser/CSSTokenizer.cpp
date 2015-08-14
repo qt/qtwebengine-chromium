@@ -11,10 +11,9 @@ namespace blink {
 
 #include "core/css/parser/CSSParserObserverWrapper.h"
 #include "core/css/parser/CSSParserTokenRange.h"
-#include "core/css/parser/CSSParserValues.h"
 #include "core/css/parser/CSSTokenizerInputStream.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 
 namespace blink {
 
@@ -567,8 +566,7 @@ CSSParserToken CSSTokenizer::consumeUnicodeRange()
         } while (lengthRemaining && isASCIIHexDigit(m_input.nextInputChar()));
     }
 
-    String range = String::format("U+%X-%X", start, end);
-    return CSSParserToken(UnicodeRangeToken, registerString(range), start, end);
+    return CSSParserToken(UnicodeRangeToken, start, end);
 }
 
 // http://dev.w3.org/csswg/css-syntax/#non-printable-code-point

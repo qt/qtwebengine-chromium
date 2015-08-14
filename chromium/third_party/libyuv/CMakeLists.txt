@@ -14,7 +14,7 @@ set(ly_source_files
   ${ly_src_dir}/compare.cc
   ${ly_src_dir}/compare_common.cc
   ${ly_src_dir}/compare_neon.cc
-  ${ly_src_dir}/compare_posix.cc
+  ${ly_src_dir}/compare_gcc.cc
   ${ly_src_dir}/compare_win.cc
   ${ly_src_dir}/convert.cc
   ${ly_src_dir}/convert_argb.cc
@@ -35,7 +35,7 @@ set(ly_source_files
   ${ly_src_dir}/row_common.cc
   ${ly_src_dir}/row_mips.cc
   ${ly_src_dir}/row_neon.cc
-  ${ly_src_dir}/row_posix.cc
+  ${ly_src_dir}/row_gcc.cc
   ${ly_src_dir}/row_win.cc
   ${ly_src_dir}/scale.cc
   ${ly_src_dir}/scale_any.cc
@@ -43,7 +43,7 @@ set(ly_source_files
   ${ly_src_dir}/scale_common.cc
   ${ly_src_dir}/scale_mips.cc
   ${ly_src_dir}/scale_neon.cc
-  ${ly_src_dir}/scale_posix.cc
+  ${ly_src_dir}/scale_gcc.cc
   ${ly_src_dir}/scale_win.cc
   ${ly_src_dir}/video_common.cc
 )
@@ -59,6 +59,7 @@ set(ly_unittest_sources
   ${ly_base_dir}/unit_test/rotate_argb_test.cc
   ${ly_base_dir}/unit_test/rotate_test.cc
   ${ly_base_dir}/unit_test/scale_argb_test.cc
+  ${ly_base_dir}/unit_test/scale_color_test.cc
   ${ly_base_dir}/unit_test/scale_test.cc
   ${ly_base_dir}/unit_test/unit_test.cc
   ${ly_base_dir}/unit_test/video_common_test.cc

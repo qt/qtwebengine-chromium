@@ -50,11 +50,15 @@ class DOMException;
 class CORE_EXPORT ScriptPromise final {
 public:
     // Constructs an empty promise.
-    ScriptPromise() { }
+    ScriptPromise();
 
     // Constructs a ScriptPromise from |promise|.
     // If |promise| is not a Promise object, throws a v8 TypeError.
     ScriptPromise(ScriptState*, v8::Local<v8::Value> promise);
+
+    ScriptPromise(const ScriptPromise&);
+
+    ~ScriptPromise();
 
     ScriptPromise then(v8::Local<v8::Function> onFulfilled, v8::Local<v8::Function> onRejected = v8::Local<v8::Function>());
 
@@ -98,6 +102,11 @@ public:
         m_promise.clear();
     }
 
+    void setReference(const v8::Persistent<v8::Object>& parent, v8::Isolate* isolate)
+    {
+        m_promise.setReference(parent, isolate);
+    }
+
     bool operator==(const ScriptPromise& value) const
     {
         return m_promise == value.m_promise;
@@ -138,6 +147,9 @@ public:
     };
 
 private:
+    static void increaseInstanceCount();
+    static void decreaseInstanceCount();
+
     RefPtr<ScriptState> m_scriptState;
     ScriptValue m_promise;
 };

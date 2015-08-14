@@ -41,10 +41,16 @@ public:
         , m_bottomRight(Length(0, Fixed), Length(0, Fixed))
     {
     }
+
     bool hasBorder() const
     {
         bool haveImage = m_image.hasImage();
         return m_left.nonZero(!haveImage) || m_right.nonZero(!haveImage) || m_top.nonZero(!haveImage) || m_bottom.nonZero(!haveImage);
+    }
+
+    bool hasBorderFill() const
+    {
+        return m_image.hasImage() && m_image.fill();
     }
 
     bool hasBorderRadius() const
@@ -60,28 +66,28 @@ public:
         return false;
     }
 
-    unsigned borderLeftWidth() const
+    int borderLeftWidth() const
     {
         if (!m_image.hasImage() && (m_left.style() == BNONE || m_left.style() == BHIDDEN))
             return 0;
         return m_left.width();
     }
 
-    unsigned borderRightWidth() const
+    int borderRightWidth() const
     {
         if (!m_image.hasImage() && (m_right.style() == BNONE || m_right.style() == BHIDDEN))
             return 0;
         return m_right.width();
     }
 
-    unsigned borderTopWidth() const
+    int borderTopWidth() const
     {
         if (!m_image.hasImage() && (m_top.style() == BNONE || m_top.style() == BHIDDEN))
             return 0;
         return m_top.width();
     }
 
-    unsigned borderBottomWidth() const
+    int borderBottomWidth() const
     {
         if (!m_image.hasImage() && (m_bottom.style() == BNONE || m_bottom.style() == BHIDDEN))
             return 0;

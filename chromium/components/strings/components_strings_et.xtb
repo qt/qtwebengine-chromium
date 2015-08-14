@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="et">
 <translation id="2774256287122201187">Võite jätkata. Kui liigute edasi lehele, ei ilmu see hoiatus järgmise viie minuti jooksul uuesti.</translation>
+<translation id="3963721102035795474">Lugejarežiim</translation>
 <translation id="7485870689360869515">Andmeid ei leitud.</translation>
 <translation id="3884278016824448484">Seadme identifikaator on konfliktne</translation>
 <translation id="5172758083709347301">Masin</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">Kohustuslik</translation>
 <translation id="2958431318199492670">Võrgu seadistus ei vasta ONC standardile. On võimalik, et seadistuse mõnd osa ei saa importida.</translation>
 <translation id="3583757800736429874">&amp;Teisalda uuesti</translation>
+<translation id="7887683347370398519">Kontrollige CVC-d ja proovige uuesti</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">Seadme kirje puudub</translation>
 <translation id="1491151370853475546">Laadi leht uuesti</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">Tõlgi alati: <ph name="LANGUAGE"/></translation>
 <translation id="1227633850867390598">Peida väärtus</translation>
 <translation id="6753269504797312559">Reegli väärtus</translation>
+<translation id="3369366829301677151">Krediitkaardi <ph name="CREDIT_CARD"/> värskendamine ja kinnitamine</translation>
 <translation id="8834246243508017242">Luba automaatne täitmine kontakte kasutades …</translation>
 <translation id="7275334191706090484">Hallatud järjehoidjad</translation>
 <translation id="7400418766976504921">URL</translation>
 <translation id="7378627244592794276">Ei</translation>
 <translation id="2704283930420550640">Väärtus ei vasta vormingule.</translation>
 <translation id="1055184225775184556">&amp;Võta lisamine tagasi</translation>
+<translation id="7813600968533626083">Kas eemaldada Chrome'ist vormi soovitus?</translation>
 <translation id="4850886885716139402">Kuva</translation>
 <translation id="8091372947890762290">Aktiveerimine on serveris ootel</translation>
 <translation id="6874604403660855544">&amp;Lisa uuesti</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">Piirkond</translation>
 <translation id="1871208020102129563">Puhverserver on seatud kasutama fikseeritud puhverservereid, mitte pac-skripti URL-i.</translation>
+<translation id="8988760548304185580">Sisestage aegumiskuupäev ja 3-kohaline CVC kaardi tagaküljelt</translation>
 <translation id="8940229512486821554">Käita teenuse <ph name="EXTENSION_NAME"/> käsku: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">Tundmatu viga</translation>
 <translation id="112840717907525620">Reegli vahemälu töötab probleemideta</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">Valideerimisviga: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">Tõlkimine <ph name="TARGET_LANGUAGE"/> keelde ebaõnnestus.</translation>
 <translation id="4103249731201008433">Seadme seerianumber on kehtetu</translation>
+<translation id="3219579145727097045">Sisestage aegumiskuupäev ja 4-kohaline CVC kaardi tagaküljelt</translation>
 <translation id="59107663811261420">Google Payments ei toeta selle kaupmehe puhul seda tüüpi kaarti. Valige teine kaart.</translation>
-<translation id="3667681724235208644">Originaali kuvamine</translation>
 <translation id="4079302484614802869">Puhverserveri konfigureerimine on määratud kasutama pac-skripti URL-i, mitte fikseeritud puhverservereid.</translation>
 <translation id="5540224163453853">Taotletud artiklit ei õnnestunud leida.</translation>
 <translation id="8437238597147034694">&amp;Võta teisaldamine tagasi</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">Kas tõlkida <ph name="ORIGINAL_LANGUAGE"/> keelest <ph name="TARGET_LANGUAGE"/> keelde?</translation>
 <translation id="8218327578424803826">Määratud asukoht:</translation>
 <translation id="3542684924769048008">Kasuta parooli:</translation>
+<translation id="2855922900409897335">Kaardi <ph name="CREDIT_CARD"/> kinnitamine</translation>
 <translation id="7186367841673660872">See leht on tõlgitud keelest<ph name="ORIGINAL_LANGUAGE"/>keelde<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">Kas eemaldada Chrome'ist aadress?</translation>
 <translation id="7139724024395191329">Emiraat</translation>
+<translation id="6646897916597483132">Sisestage 4-kohaline CVC kaardi tagaküljelt</translation>
 <translation id="5145883236150621069">Reegli vastuses sisaldus veakood</translation>
 <translation id="7983301409776629893">Tõlgi alati keelest <ph name="ORIGINAL_LANGUAGE"/> keelde <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="6970216967273061347">Ringkond</translation>
 <translation id="3427342743765426898">&amp;Muuda uuesti</translation>
 <translation id="3010559122411665027">Loendi kirje „<ph name="ENTRY_INDEX"/>”: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Kas eemaldada Chrome'ist krediitkaart?</translation>
 <translation id="6445051938772793705">Riik</translation>
 <translation id="5031870354684148875">Teave Google'i tõlke kohta</translation>
 <translation id="1152921474424827756">Hankige juurdepääs aadressi <ph name="URL"/> <ph name="BEGIN_LINK"/>vahemällu salvestatud koopiale<ph name="END_LINK"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">Domeeni <ph name="DOMAIN"/> järjehoidjad</translation>
 <translation id="4300246636397505754">Vanema soovitused</translation>
 <translation id="111844081046043029">Olete kindel, et soovite sellele lehelt lahkuda?</translation>
+<translation id="2495083838625180221">JSON-i parser</translation>
 <translation id="1973335181906896915">Viga jadaks teisendamisel</translation>
 <translation id="5989320800837274978">Määratud ei ole fikseeritud puhverservereid ega pac-skriptiga URL-i.</translation>
 <translation id="7805768142964895445">Olek</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">Reegli seadete talletamine ebaõnnestus</translation>
 <translation id="5439770059721715174">Skeemi valideerimise viga asukohas „<ph name="ERROR_PATH"/>”: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">Järjehoidjariba</translation>
+<translation id="587701087903783706">Sule mobiilisõbralik vaade</translation>
 <translation id="7208899522964477531">Otsi <ph name="SITE_NAME"/>-st päringut <ph name="SEARCH_TERMS"/></translation>
 <translation id="7956713633345437162">Mobiili järjehoidjad</translation>
 <translation id="5089810972385038852">Osariik</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">Kehtetu puhverserveri režiim.</translation>
 <translation id="3105172416063519923">Vara ID:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">Selle funktsiooni kasutamiseks peab JavaScript olema lubatud.</translation>
 <translation id="2587841377698384444">Kataloogi API ID:</translation>
 <translation id="7752995774971033316">Haldamata</translation>
 <translation id="3712624925041724820">Litsentsid on ammendunud</translation>
 <translation id="4926049483395192435">Tuleb määrata.</translation>
+<translation id="1455235771979731432">Kaardi kinnitamisel tekkis probleem. Kontrollige Interneti-ühendust ja proovige uuesti.</translation>
 <translation id="7542995811387359312">Automaatne krediitkaardi täide on keelatud, sest see vorm ei kasuta turvalist ühendust.</translation>
 <translation id="5179510805599951267">Tegu ei ole <ph name="ORIGINAL_LANGUAGE"/> keelega? Andke veast teada</translation>
 <translation id="8088680233425245692">Artikli kuvamine ebaõnnestus.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">Aktiivne</translation>
 <translation id="7568593326407688803">See leht on keeles<ph name="ORIGINAL_LANGUAGE"/>Kas soovite seda tõlkida?</translation>
 <translation id="8876793034577346603">Võrgu seadistust ei õnnestunud sõeluda.</translation>
+<translation id="4800132727771399293">Kontrollige aegumiskuupäeva ja CVC-d ning proovige uuesti</translation>
 <translation id="4171400957073367226">Sobimatu kinnitusallkiri</translation>
+<translation id="9125941078353557812">Sisestage 3-kohaline CVC kaardi tagaküljelt</translation>
 <translation id="106701514854093668">Töölaua järjehoidjad</translation>
 <translation id="6154808779448689242">Tagastatud reegli luba ei kattu praeguse loaga</translation>
 <translation id="7995512525968007366">Ei ole määratud</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;Võta korrastamine tagasi</translation>
 <translation id="20817612488360358">Kasutamiseks on määratud süsteemi puhverserveri seaded, kuid määratud on ka konkreetne puhverserveri konfigureerimine.</translation>
 <translation id="2639739919103226564">Olek:</translation>
+<translation id="8824019021993735287">Chrome ei saanud praegu teie kaarti kinnitada. Proovige hiljem uuesti.</translation>
 <translation id="4968547170521245791">Puhverserverit ei saa kasutada</translation>
 <translation id="385051799172605136">Tagasi</translation>
 <translation id="4196861286325780578">&amp;Teisalda uuesti</translation>

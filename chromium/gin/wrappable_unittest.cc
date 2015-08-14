@@ -40,36 +40,14 @@ class MyObject : public BaseClass,
 
  protected:
   MyObject() : value_(0) {}
-  ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate) override;
+  ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate) final {
+    return Wrappable<MyObject>::GetObjectTemplateBuilder(isolate)
+        .SetProperty("value", &MyObject::value, &MyObject::set_value);
+  }
   ~MyObject() override {}
 
  private:
   int value_;
-};
-
-class MyObjectSubclass : public MyObject {
- public:
-  static gin::Handle<MyObjectSubclass> Create(v8::Isolate* isolate) {
-    return CreateHandle(isolate, new MyObjectSubclass());
-  }
-
-  void SayHello(const std::string& name) {
-    result = std::string("Hello, ") + name;
-  }
-
-  std::string result;
-
- private:
-  ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) override {
-    return MyObject::GetObjectTemplateBuilder(isolate)
-        .SetMethod("sayHello", &MyObjectSubclass::SayHello);
-  }
-
-  MyObjectSubclass() {
-  }
-
-  ~MyObjectSubclass() override {}
 };
 
 class MyCallableObject : public Wrappable<MyCallableObject> {
@@ -83,8 +61,7 @@ class MyCallableObject : public Wrappable<MyCallableObject> {
   int result() { return result_; }
 
  private:
-  ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) override {
+  ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate) final {
     return Wrappable<MyCallableObject>::GetObjectTemplateBuilder(isolate)
         .SetCallAsFunctionHandler(&MyCallableObject::Call);
   }
@@ -109,20 +86,9 @@ class MyObject2 : public Wrappable<MyObject2> {
   static WrapperInfo kWrapperInfo;
 };
 
-class MyObjectBlink : public Wrappable<MyObjectBlink> {
- public:
-  static WrapperInfo kWrapperInfo;
-};
-
 WrapperInfo MyObject::kWrapperInfo = { kEmbedderNativeGin };
-ObjectTemplateBuilder MyObject::GetObjectTemplateBuilder(v8::Isolate* isolate) {
-  return Wrappable<MyObject>::GetObjectTemplateBuilder(isolate)
-      .SetProperty("value", &MyObject::value, &MyObject::set_value);
-}
-
 WrapperInfo MyCallableObject::kWrapperInfo = { kEmbedderNativeGin };
 WrapperInfo MyObject2::kWrapperInfo = { kEmbedderNativeGin };
-WrapperInfo MyObjectBlink::kWrapperInfo = { kEmbedderNativeGin };
 
 typedef V8Test WrappableTest;
 
@@ -155,12 +121,6 @@ TEST_F(WrappableTest, UnwrapFailures) {
   EXPECT_FALSE(ConvertFromV8(isolate, thing, &unwrapped));
   EXPECT_FALSE(unwrapped);
 
-  // An object that's wrapping a C++ object from Blink.
-  thing.Clear();
-  thing = ConvertToV8(isolate, new MyObjectBlink());
-  EXPECT_FALSE(ConvertFromV8(isolate, thing, &unwrapped));
-  EXPECT_FALSE(unwrapped);
-
   // An object that's wrapping a C++ object of the wrong type.
   thing.Clear();
   thing = ConvertToV8(isolate, new MyObject2());
@@ -183,7 +143,7 @@ TEST_F(WrappableTest, GetAndSetProperty) {
       "   else obj.value = 191; })");
   EXPECT_FALSE(source.IsEmpty());
 
-  gin::TryCatch try_catch;
+  gin::TryCatch try_catch(isolate);
   v8::Local<v8::Script> script = v8::Script::Compile(source);
   EXPECT_FALSE(script.IsEmpty());
   v8::Local<v8::Value> val = script->Run();
@@ -200,28 +160,6 @@ TEST_F(WrappableTest, GetAndSetProperty) {
   EXPECT_EQ(191, obj->value());
 }
 
-TEST_F(WrappableTest, WrappableSubclass) {
-  v8::Isolate* isolate = instance_->isolate();
-  v8::HandleScope handle_scope(isolate);
-
-  gin::Handle<MyObjectSubclass> object(MyObjectSubclass::Create(isolate));
-  v8::Local<v8::String> source = StringToV8(isolate,
-                                             "(function(obj) {"
-                                             "obj.sayHello('Lily');"
-                                             "})");
-  gin::TryCatch try_catch;
-  v8::Local<v8::Script> script = v8::Script::Compile(source);
-  v8::Local<v8::Value> val = script->Run();
-  v8::Local<v8::Function> func;
-  EXPECT_TRUE(ConvertFromV8(isolate, val, &func));
-  v8::Local<v8::Value> argv[] = {
-    ConvertToV8(isolate, object.get())
-  };
-  func->Call(v8::Undefined(isolate), 1, argv);
-  EXPECT_FALSE(try_catch.HasCaught());
-  EXPECT_EQ("Hello, Lily", object->result);
-}
-
 TEST_F(WrappableTest, CallAsFunction) {
   v8::Isolate* isolate = instance_->isolate();
   v8::HandleScope handle_scope(isolate);
@@ -232,7 +170,7 @@ TEST_F(WrappableTest, CallAsFunction) {
                                              "(function(obj) {"
                                              "obj(42, 2, 5);"
                                              "})");
-  gin::TryCatch try_catch;
+  gin::TryCatch try_catch(isolate);
   v8::Local<v8::Script> script = v8::Script::Compile(source);
   v8::Local<v8::Value> val = script->Run();
   v8::Local<v8::Function> func;
@@ -255,7 +193,7 @@ TEST_F(WrappableTest, CallAsConstructor) {
                                              "(function(obj) {"
                                              "new obj(42, 2, 5);"
                                              "})");
-  gin::TryCatch try_catch;
+  gin::TryCatch try_catch(isolate);
   v8::Local<v8::Script> script = v8::Script::Compile(source);
   v8::Local<v8::Value> val = script->Run();
   v8::Local<v8::Function> func;

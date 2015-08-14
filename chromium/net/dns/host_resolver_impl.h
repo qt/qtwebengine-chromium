@@ -135,8 +135,6 @@ class NET_EXPORT HostResolverImpl
                        AddressList* addresses,
                        const BoundNetLog& source_net_log) override;
   void CancelRequest(RequestHandle req) override;
-  void SetDefaultAddressFamily(AddressFamily address_family) override;
-  AddressFamily GetDefaultAddressFamily() const override;
   void SetDnsClientEnabled(bool enabled) override;
   HostCache* GetHostCache() override;
   base::Value* GetDnsConfigAsValue() const override;
@@ -163,7 +161,8 @@ class NET_EXPORT HostResolverImpl
   // Helper used by |Resolve()| and |ResolveFromCache()|.  Performs IP
   // literal, cache and HOSTS lookup (if enabled), returns OK if successful,
   // ERR_NAME_NOT_RESOLVED if either hostname is invalid or IP literal is
-  // incompatible, ERR_DNS_CACHE_MISS if entry was not found in cache and HOSTS.
+  // incompatible, ERR_DNS_CACHE_MISS if entry was not found in cache and
+  // HOSTS and is not localhost.
   int ResolveHelper(const Key& key,
                     const RequestInfo& info,
                     const IPAddressNumber* ip_address,
@@ -192,6 +191,12 @@ class NET_EXPORT HostResolverImpl
                       const RequestInfo& info,
                       AddressList* addresses);
 
+  // If |key| is for a localhost name (RFC 6761), returns true and fills
+  // |addresses| with the loopback IP. Otherwise returns false.
+  bool ServeLocalhost(const Key& key,
+                      const RequestInfo& info,
+                      AddressList* addresses);
+
   // Callback from HaveOnlyLoopbackAddresses probe.
   void SetHaveOnlyLoopbackAddresses(bool result);
 
@@ -205,7 +210,7 @@ class NET_EXPORT HostResolverImpl
   // Probes IPv6 support and returns true if IPv6 support is enabled.
   // Results are cached, i.e. when called repeatedly this method returns result
   // from the first probe for some time before probing again.
-  bool IsIPv6Reachable(const BoundNetLog& net_log);
+  virtual bool IsIPv6Reachable(const BoundNetLog& net_log);
 
   // Records the result in cache if cache is present.
   void CacheResult(const Key& key,
@@ -268,9 +273,6 @@ class NET_EXPORT HostResolverImpl
 
   NetLog* net_log_;
 
-  // Address family to use when the request doesn't specify one.
-  AddressFamily default_address_family_;
-
   // If present, used by DnsTask and ServeFromHosts to resolve requests.
   scoped_ptr<DnsClient> dns_client_;
 
@@ -280,10 +282,6 @@ class NET_EXPORT HostResolverImpl
 
   // Number of consecutive failures of DnsTask, counted when fallback succeeds.
   unsigned num_dns_failures_;
-
-  // True if probing is done for each Request to set address family. When false,
-  // explicit setting in |default_address_family_| is used.
-  bool probe_ipv6_support_;
 
   // True if DnsConfigService detected that system configuration depends on
   // local IPv6 connectivity. Disables probing.

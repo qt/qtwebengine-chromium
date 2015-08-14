@@ -291,7 +291,7 @@ public:
     // Return value      : VCM_OK, on success.
     //                     < 0,         on error.
     virtual int32_t AddVideoFrame(
-        const I420VideoFrame& videoFrame,
+        const VideoFrame& videoFrame,
         const VideoContentMetrics* contentMetrics = NULL,
         const CodecSpecificInfo* codecSpecificInfo = NULL) = 0;
 
@@ -533,12 +533,6 @@ public:
     // Setting a desired delay to the VCM receiver. Video rendering will be
     // delayed by at least desired_delay_ms.
     virtual int SetMinReceiverDelay(int desired_delay_ms) = 0;
-
-    // Enables recording of debugging information.
-    virtual int StartDebugRecording(const char* file_name_utf8) = 0;
-
-    // Disables recording of debugging information.
-    virtual int StopDebugRecording() = 0;
 
     // Lets the sender suspend video when the rate drops below
     // |threshold_bps|, and turns back on when the rate goes back up above

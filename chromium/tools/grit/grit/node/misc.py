@@ -323,13 +323,17 @@ class GritNode(base.Node):
     # Check if the input is required for any output configuration.
     input_files = set()
     old_output_language = self.output_language
-    for lang, ctx in self.GetConfigurations():
+    for lang, ctx, fallback in self.GetConfigurations():
       self.SetOutputLanguage(lang or self.GetSourceLanguage())
       self.SetOutputContext(ctx)
+      self.SetFallbackToDefaultLayout(fallback)
+
       for node in self.ActiveDescendants():
         if isinstance(node, (io.FileNode, include.IncludeNode, misc.PartNode,
                              structure.StructureNode, variant.SkeletonNode)):
-          input_files.add(node.GetInputPath())
+          input_path = node.GetInputPath()
+          if input_path is not None:
+            input_files.add(input_path)
     self.SetOutputLanguage(old_output_language)
     return sorted(map(self.ToRealPath, input_files))
 
@@ -364,9 +368,10 @@ class GritNode(base.Node):
     raise exception.MissingElement()
 
   def GetConfigurations(self):
-    """Returns the distinct (language, context) pairs from the output nodes.
+    """Returns the distinct (language, context, fallback_to_default_layout)
+    triples from the output nodes.
     """
-    return set((n.GetLanguage(), n.GetContext()) for n in self.GetOutputFiles())
+    return set((n.GetLanguage(), n.GetContext(), n.GetFallbackToDefaultLayout()) for n in self.GetOutputFiles())
 
   def GetSubstitutionMessages(self):
     """Returns the list of <message sub_variable="true"> nodes."""
@@ -395,6 +400,10 @@ class GritNode(base.Node):
 
   def SetOutputContext(self, output_context):
     self.output_context = output_context
+    self.substituter = None  # force recalculate
+
+  def SetFallbackToDefaultLayout(self, fallback_to_default_layout):
+    self.fallback_to_default_layout = fallback_to_default_layout
     self.substituter = None  # force recalculate
 
   def SetDefines(self, defines):

@@ -11,25 +11,41 @@
 
 #if LINK_CORE_MODULES_SEPARATELY && defined(COMPONENT_BUILD)
 #if defined(WIN32)
+
 #if defined(BLINK_CORE_IMPLEMENTATION) && BLINK_CORE_IMPLEMENTATION
 #define CORE_EXPORT __declspec(dllexport)
 #else
 #define CORE_EXPORT __declspec(dllimport)
-#endif
+#endif // defined(BLINK_CORE_IMPLEMENTATION) && BLINK_CORE_IMPLEMENTATION
+
 #else // defined(WIN32)
+#if defined(BLINK_CORE_IMPLEMENTATION) && BLINK_CORE_IMPLEMENTATION
 #define CORE_EXPORT __attribute__((visibility("default")))
+#else
+#define CORE_EXPORT
 #endif
+#endif
+
 #else // defined(COMPONENT_BUILD)
 #define CORE_EXPORT
 #endif
 
-// Should not use CORE_EXPORT when compiling core with msvc, because
-// '__declspec(dllexport)' doesn't work with 'extern' (warning C4910).
-// c.f. https://msdn.microsoft.com/en-us/library/bb531392(v=vs.90).aspx
-#if COMPILER(MSVC) && defined(BLINK_CORE_IMPLEMENTATION) && BLINK_CORE_IMPLEMENTATION
+#if defined(BLINK_CORE_IMPLEMENTATION) && BLINK_CORE_IMPLEMENTATION
+#if COMPILER(MSVC)
+#define CORE_TEMPLATE_CLASS_EXPORT
+#define CORE_EXTERN_TEMPLATE_EXPORT CORE_EXPORT
+#define CORE_TEMPLATE_EXPORT CORE_EXPORT
+#elif COMPILER(GCC)
+#define CORE_TEMPLATE_CLASS_EXPORT CORE_EXPORT
+#define CORE_EXTERN_TEMPLATE_EXPORT CORE_EXPORT
 #define CORE_TEMPLATE_EXPORT
 #else
-#define CORE_TEMPLATE_EXPORT CORE_EXPORT
+#error Unknown compiler
+#endif
+#else // !BLINK_CORE_IMPLEMENTATION
+#define CORE_TEMPLATE_CLASS_EXPORT
+#define CORE_EXTERN_TEMPLATE_EXPORT CORE_EXPORT
+#define CORE_TEMPLATE_EXPORT
 #endif
 
 #endif // CoreExport_h

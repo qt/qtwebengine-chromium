@@ -16,6 +16,7 @@
 #include "content/public/common/request_context_type.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerClientType.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerResponseError.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerState.h"
 #include "url/gurl.h"
@@ -38,6 +39,7 @@ static const int kInvalidServiceWorkerRequestId = -1;
 extern const char kServiceWorkerRegisterErrorPrefix[];
 extern const char kServiceWorkerUnregisterErrorPrefix[];
 extern const char kServiceWorkerGetRegistrationErrorPrefix[];
+extern const char kServiceWorkerGetRegistrationsErrorPrefix[];
 extern const char kFetchScriptError[];
 
 // Constants for invalid identifiers.
@@ -51,6 +53,10 @@ static const int64 kInvalidServiceWorkerResponseId = -1;
 static const int kInvalidEmbeddedWorkerThreadId = -1;
 static const int kInvalidServiceWorkerClientId = 0;
 
+// The HTTP cache is bypassed for Service Worker scripts if the last network
+// fetch occurred over 24 hours ago.
+static const int kServiceWorkerScriptMaxCacheAgeInHours = 24;
+
 // ServiceWorker provider type.
 enum ServiceWorkerProviderType {
   SERVICE_WORKER_PROVIDER_UNKNOWN,
@@ -63,7 +69,11 @@ enum ServiceWorkerProviderType {
   // For ServiceWorkers.
   SERVICE_WORKER_PROVIDER_FOR_CONTROLLER,
 
-  SERVICE_WORKER_PROVIDER_TYPE_LAST = SERVICE_WORKER_PROVIDER_FOR_CONTROLLER
+  // For sandboxed frames.
+  SERVICE_WORKER_PROVIDER_FOR_SANDBOXED_FRAME,
+
+  SERVICE_WORKER_PROVIDER_TYPE_LAST =
+      SERVICE_WORKER_PROVIDER_FOR_SANDBOXED_FRAME
 };
 
 enum FetchRequestMode {
@@ -132,7 +142,8 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
                         const ServiceWorkerHeaderMap& headers,
                         const std::string& blob_uuid,
                         uint64 blob_size,
-                        const GURL& stream_url);
+                        const GURL& stream_url,
+                        blink::WebServiceWorkerResponseError error);
   ~ServiceWorkerResponse();
 
   GURL url;
@@ -143,6 +154,7 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   std::string blob_uuid;
   uint64 blob_size;
   GURL stream_url;
+  blink::WebServiceWorkerResponseError error;
 };
 
 // Represents initialization info for a WebServiceWorker object.

@@ -69,6 +69,7 @@
           '../bindings/modules/generated.gyp:modules_event_generated',
           '../bindings/modules/v8/generated.gyp:bindings_modules_v8_generated',
           '../wtf/wtf.gyp:wtf',
+          '<(DEPTH)/skia/skia.gyp:skia',
           '<(DEPTH)/url/url.gyp:url_lib',
           '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
         ],
@@ -77,10 +78,16 @@
         'dependencies': [
           '../core/core.gyp:webcore',
         ],
+        'conditions': [
+          # Shard this target into parts to work around linker limitations.
+          ['OS=="win" and buildtype=="Official"', {
+            'msvs_shard': 4,
+          }],
+        ],
       }]
     ],
     # Disable c4267 warnings until we fix size_t to int truncations.
-    'msvs_disabled_warnings': [ 4267, 4334, ]
+    'msvs_disabled_warnings': [ 4267, 4334, ],
   },
   {
     # GN version: //third_party/WebKit/Source/modules:modules_testing
@@ -102,6 +109,7 @@
       ['component=="shared_library" and link_core_modules_separately==1', {
         'dependencies': [
           '../core/core.gyp:webcore_shared',
+          '<(DEPTH)/gin/gin.gyp:gin',
         ],
       }, {
         'dependencies': [

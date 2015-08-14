@@ -9,11 +9,12 @@
 #define GrPipelineBuilder_DEFINED
 
 #include "GrBlend.h"
+#include "GrCaps.h"
 #include "GrClip.h"
-#include "GrDrawTargetCaps.h"
 #include "GrGpuResourceRef.h"
 #include "GrFragmentStage.h"
 #include "GrProcOptInfo.h"
+#include "GrProcessorDataManager.h"
 #include "GrRenderTarget.h"
 #include "GrStencil.h"
 #include "GrXferProcessor.h"
@@ -24,7 +25,7 @@
 #include "effects/GrSimpleTextureEffect.h"
 
 class GrBatch;
-class GrDrawTargetCaps;
+class GrCaps;
 class GrPaint;
 class GrTexture;
 
@@ -37,15 +38,15 @@ public:
         *this = pipelineBuilder;
     }
 
-    virtual ~GrPipelineBuilder();
-
     /**
-     * Initializes the GrPipelineBuilder based on a GrPaint, view matrix and render target. Note
+     * Initializes the GrPipelineBuilder based on a GrPaint, render target, and clip. Note
      * that GrPipelineBuilder encompasses more than GrPaint. Aspects of GrPipelineBuilder that have
      * no GrPaint equivalents are set to default values with the exception of vertex attribute state
      * which is unmodified by this function and clipping which will be enabled.
      */
-    void setFromPaint(const GrPaint&, GrRenderTarget*, const GrClip&);
+    GrPipelineBuilder(const GrPaint&, GrRenderTarget*, const GrClip&);
+
+    virtual ~GrPipelineBuilder();
 
     ///////////////////////////////////////////////////////////////////////////
     /// @name Fragment Processors
@@ -83,23 +84,27 @@ public:
      * Creates a GrSimpleTextureEffect that uses local coords as texture coordinates.
      */
     void addColorTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addColorProcessor(GrSimpleTextureEffect::Create(texture, matrix))->unref();
+        this->addColorProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                              matrix))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addCoverageProcessor(GrSimpleTextureEffect::Create(texture, matrix))->unref();
+        this->addCoverageProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                                 matrix))->unref();
     }
 
     void addColorTextureProcessor(GrTexture* texture,
                                   const SkMatrix& matrix,
                                   const GrTextureParams& params) {
-        this->addColorProcessor(GrSimpleTextureEffect::Create(texture, matrix, params))->unref();
+        this->addColorProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture, matrix,
+                                                              params))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture,
                                      const SkMatrix& matrix,
                                      const GrTextureParams& params) {
-        this->addCoverageProcessor(GrSimpleTextureEffect::Create(texture, matrix, params))->unref();
+        this->addCoverageProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture, matrix,
+                                                                 params))->unref();
     }
 
     /**
@@ -139,10 +144,12 @@ public:
     ////
 
     /**
-     * This function returns true if the render target destination pixel values will be read for
-     * blending during draw.
+     * Returns true if this pipeline's color output will be affected by the existing render target
+     * destination pixel values (meaning we need to be careful with overlapping draws). Note that we
+     * can conflate coverage and color, so the destination color may still bleed into pixels that
+     * have partial coverage, even if this function returns false.
      */
-    bool willBlendWithDst(const GrPrimitiveProcessor*) const;
+    bool willColorBlendWithDst(const GrPrimitiveProcessor*) const;
 
     /**
      * Installs a GrXPFactory. This object controls how src color, fractional pixel coverage,
@@ -177,10 +184,10 @@ public:
     }
 
     /**
-     * Checks whether the xp will need a copy of the destination to correctly blend.
+     * Checks whether the xp will need destination in a texture to correctly blend.
      */
-    bool willXPNeedDstCopy(const GrDrawTargetCaps& caps, const GrProcOptInfo& colorPOI,
-                           const GrProcOptInfo& coveragePOI) const;
+    bool willXPNeedDstTexture(const GrCaps& caps, const GrProcOptInfo& colorPOI,
+                              const GrProcOptInfo& coveragePOI) const;
 
     /// @}
 
@@ -202,6 +209,14 @@ public:
      * @param target  The render target to set.
      */
     void setRenderTarget(GrRenderTarget* target) { fRenderTarget.reset(SkSafeRef(target)); }
+
+    /**
+     * Returns whether the rasterizer and stencil test (if any) will run at a higher sample rate
+     * than the color buffer. In is scenario, the higher sample rate is resolved during blending.
+     */
+    bool hasMixedSamples() const {
+        return this->isHWAntialias() && !fRenderTarget->isUnifiedMultisampled();
+    }
 
     /// @}
 
@@ -381,13 +396,15 @@ public:
     void setClip(const GrClip& clip) { fClip = clip; }
     const GrClip& clip() const { return fClip; }
 
+    GrProcessorDataManager* getProcessorDataManager() { return &fProcDataManager; }
+
 private:
     // Calculating invariant color / coverage information is expensive, so we partially cache the
     // results.
     //
     // canUseFracCoveragePrimProc() - Called in regular skia draw, caches results but only for a
     //                                specific color and coverage.  May be called multiple times
-    // willBlendWithDst() - only called by Nvpr, does not cache results
+    // willColorBlendWithDst() - only called by Nvpr, does not cache results
     // GrOptDrawState constructor - never caches results
 
     /**
@@ -421,6 +438,7 @@ private:
 
     typedef SkSTArray<4, GrFragmentStage> FragmentStageArray;
 
+    GrProcessorDataManager                  fProcDataManager;
     SkAutoTUnref<GrRenderTarget>            fRenderTarget;
     uint32_t                                fFlags;
     GrStencilSettings                       fStencilSettings;

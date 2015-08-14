@@ -329,7 +329,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseGetAll(
     int32 ipc_database_id,
     int64 transaction_id,
     int64 object_store_id,
+    int64 index_id,
     const IndexedDBKeyRange& key_range,
+    bool key_only,
     int64 max_count,
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
@@ -338,7 +340,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseGetAll(
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
+  params.index_id = index_id;
   params.key_range = key_range;
+  params.key_only = key_only;
   params.max_count = max_count;
   Send(new IndexedDBHostMsg_DatabaseGetAll(params));
 }

@@ -29,13 +29,20 @@ source_set("browser") {
     "//content/browser/service_worker:service_worker_proto",
     "//content/browser/speech/proto",
     "//content/public/common:common_sources",
+    "//content/public/common:mojo_bindings",
     "//crypto",
     "//device/battery",
     "//device/vibration",
     "//google_apis",
+    "//mojo/application/public/cpp:cpp_for_chromium",
+    "//mojo/application/public/interfaces",
+    "//mojo/common",
+    "//mojo/shell",
     "//net",
+    "//net:extras",
     "//skia",
     "//sql",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//third_party/npapi",
     "//third_party/re2",
     "//third_party/WebKit/public:blink_headers",
@@ -107,7 +114,11 @@ source_set("browser") {
       "//content/common:mojo_bindings",
       "//content/public/common:mojo_bindings",
       "//device/bluetooth",
+      "//gin",
       "//mojo/application/public/interfaces",
+      "//mojo/common:url_type_converters",
+      "//mojo/converters/geometry",
+      "//skia/public",
       "//storage/browser",
       "//storage/common",
       "//third_party/WebKit/public:image_resources",
@@ -259,6 +270,7 @@ source_set("browser") {
                            ".",
                            "//content")
     deps += [
+      "//ppapi/host",
       "//ppapi/proxy:ipc",
       "//ppapi/shared_impl",
     ]
@@ -437,6 +449,13 @@ source_set("browser") {
     deps += [ "//ui/compositor" ]
   }
 
+  if (!is_ios) {
+    sources += [
+      "compositor/surface_utils.cc",
+      "compositor/surface_utils.h",
+    ]
+  }
+
   if (enable_web_speech) {
     deps += [
       "//third_party/flac",
@@ -461,7 +480,17 @@ source_set("browser") {
     deps += [ "//third_party/boringssl" ]
   }
 
-  if (enable_media_mojo_renderer) {
-    deps += [ "//media/mojo/services:renderer_service" ]
+  if (enable_mojo_media == "browser") {
+    deps += [ "//media/mojo/services:application" ]
+  }
+
+  if (enable_webvr) {
+    sources += [
+      "vr/vr_device.cc",
+      "vr/vr_device.h",
+      "vr/vr_device_manager.cc",
+      "vr/vr_device_manager.h",
+      "vr/vr_device_provider.h",
+    ]
   }
 }

@@ -11,7 +11,6 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
@@ -31,7 +30,6 @@
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator_collection.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_switches.h"
 
@@ -81,11 +79,12 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       compositor_lock_(NULL),
       layer_animator_collection_(this),
       weak_ptr_factory_(this) {
-  root_web_layer_ = cc::Layer::Create();
+  root_web_layer_ = cc::Layer::Create(Layer::UILayerSettings());
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   cc::LayerTreeSettings settings;
+
   // When impl-side painting is enabled, this will ensure PictureLayers always
   // can have LCD text, to match the previous behaviour with ContentLayers,
   // where LCD-not-allowed notifications were ignored.
@@ -94,13 +93,10 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       context_factory_->DoesCreateTestContexts() ? kTestRefreshRate
                                                  : kDefaultRefreshRate;
   settings.main_frame_before_activation_enabled = false;
-  settings.throttle_frame_production =
-      !command_line->HasSwitch(switches::kDisableGpuVsync);
+  settings.renderer_settings.disable_gpu_vsync =
+      command_line->HasSwitch(switches::kDisableGpuVsync);
   settings.renderer_settings.partial_swap_enabled =
       !command_line->HasSwitch(cc::switches::kUIDisablePartialSwap);
-#if defined(OS_CHROMEOS)
-  settings.per_tile_painting_enabled = true;
-#endif
 #if defined(OS_WIN)
   settings.renderer_settings.finish_rendering_on_resize = true;
 #endif
@@ -126,12 +122,27 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   settings.initial_debug_state.SetRecordRenderingStats(
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
-  settings.impl_side_painting = IsUIImplSidePaintingEnabled();
-  settings.use_display_lists = IsUISlimmingPaintEnabled();
-  settings.use_cached_picture_in_display_list = false;
+  settings.use_display_lists = true;
+
   settings.use_zero_copy = IsUIZeroCopyEnabled();
   settings.use_one_copy = IsUIOneCopyEnabled();
-  settings.use_image_texture_target = context_factory_->GetImageTextureTarget();
+
+  // TODO(reveman): We currently assume that the compositor will use BGRA_8888
+  // if it's able to, and RGBA_8888 otherwise. Since we don't know what it will
+  // use we hardcode BGRA_8888 here for now. We should instead
+  // move decisions about GpuMemoryBuffer format to the browser embedder so we
+  // know it here, and pass that decision to the compositor for each usage.
+  // crbug.com/490362
+  gfx::GpuMemoryBuffer::Format format = gfx::GpuMemoryBuffer::BGRA_8888;
+
+  // Use PERSISTENT_MAP memory buffers to support partial tile raster for
+  // software raster into GpuMemoryBuffers.
+  gfx::GpuMemoryBuffer::Usage usage = gfx::GpuMemoryBuffer::PERSISTENT_MAP;
+  settings.use_persistent_map_for_gpu_memory_buffers = true;
+
+  settings.use_image_texture_target =
+      context_factory_->GetImageTextureTarget(format, usage);
+
   // Note: gathering of pixel refs is only needed when using multiple
   // raster threads.
   settings.gather_pixel_refs = false;
@@ -166,10 +177,13 @@ Compositor::~Compositor() {
   FOR_EACH_OBSERVER(CompositorObserver, observer_list_,
                     OnCompositingShuttingDown(this));
 
+  FOR_EACH_OBSERVER(CompositorAnimationObserver, animation_observer_list_,
+                    OnCompositingShuttingDown(this));
+
   DCHECK(begin_frame_observer_list_.empty());
 
   if (root_layer_)
-    root_layer_->SetCompositor(NULL);
+    root_layer_->ResetCompositor();
 
   // Stop all outstanding draws before telling the ContextFactory to tear
   // down any contexts that the |host_| may rely upon.
@@ -191,13 +205,11 @@ void Compositor::SetRootLayer(Layer* root_layer) {
   if (root_layer_ == root_layer)
     return;
   if (root_layer_)
-    root_layer_->SetCompositor(NULL);
+    root_layer_->ResetCompositor();
   root_layer_ = root_layer;
-  if (root_layer_ && !root_layer_->GetCompositor())
-    root_layer_->SetCompositor(this);
   root_web_layer_->RemoveAllChildren();
   if (root_layer_)
-    root_web_layer_->AddChild(root_layer_->cc_layer());
+    root_layer_->SetCompositor(this, root_web_layer_);
 }
 
 void Compositor::SetHostHasTransparentBackground(
@@ -262,6 +274,17 @@ void Compositor::SetVisible(bool visible) {
 
 bool Compositor::IsVisible() {
   return host_->visible();
+}
+
+void Compositor::SetAuthoritativeVSyncInterval(
+    const base::TimeDelta& interval) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+         cc::switches::kEnableBeginFrameScheduling)) {
+    host_->SetAuthoritativeVSyncInterval(interval);
+    return;
+  }
+
+  vsync_manager_->SetAuthoritativeVSyncInterval(interval);
 }
 
 scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {
@@ -346,12 +369,6 @@ void Compositor::Layout() {
 }
 
 void Compositor::RequestNewOutputSurface() {
-  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
-  // is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "466870 Compositor::RequestNewOutputSurface"));
-
   context_factory_->CreateOutputSurface(weak_ptr_factory_.GetWeakPtr());
 }
 
@@ -380,7 +397,7 @@ void Compositor::DidCompleteSwapBuffers() {
 }
 
 void Compositor::DidPostSwapBuffers() {
-  base::TimeTicks start_time = gfx::FrameTime::Now();
+  base::TimeTicks start_time = base::TimeTicks::Now();
   FOR_EACH_OBSERVER(CompositorObserver, observer_list_,
                     OnCompositingStarted(this, start_time));
 }

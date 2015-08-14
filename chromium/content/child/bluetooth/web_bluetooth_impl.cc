@@ -17,8 +17,9 @@ WebBluetoothImpl::~WebBluetoothImpl() {
 }
 
 void WebBluetoothImpl::requestDevice(
+    const blink::WebRequestDeviceOptions& options,
     blink::WebBluetoothRequestDeviceCallbacks* callbacks) {
-  GetDispatcher()->requestDevice(callbacks);
+  GetDispatcher()->requestDevice(options, callbacks);
 }
 
 void WebBluetoothImpl::connectGATT(const blink::WebString& device_instance_id,
@@ -26,9 +27,33 @@ void WebBluetoothImpl::connectGATT(const blink::WebString& device_instance_id,
   GetDispatcher()->connectGATT(device_instance_id, callbacks);
 }
 
-void WebBluetoothImpl::SetBluetoothMockDataSetForTesting(
-    const std::string& name) {
-  GetDispatcher()->SetBluetoothMockDataSetForTesting(name);
+void WebBluetoothImpl::getPrimaryService(
+    const blink::WebString& device_instance_id,
+    const blink::WebString& service_uuid,
+    blink::WebBluetoothGetPrimaryServiceCallbacks* callbacks) {
+  GetDispatcher()->getPrimaryService(device_instance_id, service_uuid,
+                                     callbacks);
+}
+
+void WebBluetoothImpl::getCharacteristic(
+    const blink::WebString& service_instance_id,
+    const blink::WebString& characteristic_uuid,
+    blink::WebBluetoothGetCharacteristicCallbacks* callbacks) {
+  GetDispatcher()->getCharacteristic(service_instance_id, characteristic_uuid,
+                                     callbacks);
+}
+
+void WebBluetoothImpl::readValue(
+    const blink::WebString& characteristic_instance_id,
+    blink::WebBluetoothReadValueCallbacks* callbacks) {
+  GetDispatcher()->readValue(characteristic_instance_id, callbacks);
+}
+
+void WebBluetoothImpl::writeValue(
+    const blink::WebString& characteristic_instance_id,
+    const std::vector<uint8_t>& value,
+    blink::WebBluetoothWriteValueCallbacks* callbacks) {
+  GetDispatcher()->writeValue(characteristic_instance_id, value, callbacks);
 }
 
 BluetoothDispatcher* WebBluetoothImpl::GetDispatcher() {

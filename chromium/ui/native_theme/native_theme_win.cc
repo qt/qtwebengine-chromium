@@ -295,8 +295,7 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
 }
 
 NativeThemeWin::NativeThemeWin()
-    : theme_dll_(LoadLibrary(L"uxtheme.dll")),
-      draw_theme_(NULL),
+    : draw_theme_(NULL),
       draw_theme_ex_(NULL),
       get_theme_color_(NULL),
       get_theme_content_rect_(NULL),
@@ -306,6 +305,7 @@ NativeThemeWin::NativeThemeWin()
       set_theme_properties_(NULL),
       is_theme_active_(NULL),
       get_theme_int_(NULL),
+      theme_dll_(LoadLibrary(L"uxtheme.dll")),
       color_change_listener_(this),
       is_using_high_contrast_(false),
       is_using_high_contrast_valid_(false) {
@@ -482,7 +482,7 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
 
     // Dialogs
     case kColorId_DialogBackground:
-      return gfx::IsInvertedColorScheme() ?
+      return color_utils::IsInvertedColorScheme() ?
           color_utils::InvertColor(kDialogBackgroundColor) :
           kDialogBackgroundColor;
 
@@ -1129,10 +1129,10 @@ HRESULT NativeThemeWin::PaintScrollbarArrow(
     const gfx::Rect& rect,
     const ScrollbarArrowExtraParams& extra) const {
   static const int state_id_matrix[4][kNumStates] = {
-      ABS_DOWNDISABLED, ABS_DOWNHOT, ABS_DOWNNORMAL, ABS_DOWNPRESSED,
-      ABS_LEFTDISABLED, ABS_LEFTHOT, ABS_LEFTNORMAL, ABS_LEFTPRESSED,
-      ABS_RIGHTDISABLED, ABS_RIGHTHOT, ABS_RIGHTNORMAL, ABS_RIGHTPRESSED,
-      ABS_UPDISABLED, ABS_UPHOT, ABS_UPNORMAL, ABS_UPPRESSED
+      {ABS_DOWNDISABLED, ABS_DOWNHOT, ABS_DOWNNORMAL, ABS_DOWNPRESSED},
+      {ABS_LEFTDISABLED, ABS_LEFTHOT, ABS_LEFTNORMAL, ABS_LEFTPRESSED},
+      {ABS_RIGHTDISABLED, ABS_RIGHTHOT, ABS_RIGHTNORMAL, ABS_RIGHTPRESSED},
+      {ABS_UPDISABLED, ABS_UPHOT, ABS_UPNORMAL, ABS_UPPRESSED},
   };
   HANDLE handle = GetThemeHandle(SCROLLBAR);
   RECT rect_win = rect.ToRECT();

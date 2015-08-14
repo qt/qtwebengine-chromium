@@ -23,14 +23,14 @@
 #ifndef StringImpl_h
 #define StringImpl_h
 
-#include <limits.h>
 #include "wtf/ASCIICType.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/StringHasher.h"
 #include "wtf/Vector.h"
 #include "wtf/WTFExport.h"
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
+#include <limits.h>
 
 #if USE(CF)
 typedef const struct __CFString * CFStringRef;
@@ -119,7 +119,7 @@ class WTF_EXPORT StringImpl {
 private:
     // StringImpls are allocated out of the WTF buffer partition.
     void* operator new(size_t);
-    void* operator new(size_t, void* ptr) { return ptr; };
+    void* operator new(size_t, void* ptr) { return ptr; }
     void operator delete(void*);
 
     // Used to construct static strings, which have an special refCount that can never hit zero.
@@ -421,6 +421,7 @@ public:
 #ifdef STRING_STATS
     ALWAYS_INLINE static StringStats& stringStats() { return m_stringStats; }
 #endif
+    static const UChar latin1CaseFoldTable[256];
 
 private:
     template<typename CharType> static size_t allocationSize(unsigned length)
@@ -755,6 +756,10 @@ inline PassRefPtr<StringImpl> StringImpl::isolatedCopy() const
         return create(characters8(), m_length);
     return create(characters16(), m_length);
 }
+
+// TODO(rob.buis) possibly find a better place for this method.
+// Turns a UChar32 to uppercase based on localeIdentifier.
+WTF_EXPORT UChar32 toUpper(UChar32, const AtomicString& localeIdentifier);
 
 struct StringHash;
 

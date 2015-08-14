@@ -15,6 +15,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/resource_response_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
@@ -64,6 +65,12 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
     ResourceContext* resource_context) {
+  if (job_.get() && worker_start_time_.is_null()) {
+    // Save worker timings of the first job.
+    worker_start_time_ = job_->worker_start_time();
+    worker_ready_time_ = job_->worker_ready_time();
+  }
+
   if (!context_ || !provider_host_) {
     // We can't do anything other than to fall back to network.
     job_ = NULL;
@@ -110,26 +117,21 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
 }
 
 void ServiceWorkerControlleeRequestHandler::GetExtraResponseInfo(
-    bool* was_fetched_via_service_worker,
-    bool* was_fallback_required_by_service_worker,
-    GURL* original_url_via_service_worker,
-    blink::WebServiceWorkerResponseType* response_type_via_service_worker,
-    base::TimeTicks* fetch_start_time,
-    base::TimeTicks* fetch_ready_time,
-    base::TimeTicks* fetch_end_time) const {
+    ResourceResponseInfo* response_info) const {
   if (!job_.get()) {
-    *was_fetched_via_service_worker = false;
-    *was_fallback_required_by_service_worker = false;
-    *original_url_via_service_worker = GURL();
+    response_info->was_fetched_via_service_worker = false;
+    response_info->was_fallback_required_by_service_worker = false;
+    response_info->original_url_via_service_worker = GURL();
+    response_info->service_worker_start_time = worker_start_time_;
+    response_info->service_worker_ready_time = worker_ready_time_;
     return;
   }
-  job_->GetExtraResponseInfo(was_fetched_via_service_worker,
-                             was_fallback_required_by_service_worker,
-                             original_url_via_service_worker,
-                             response_type_via_service_worker,
-                             fetch_start_time,
-                             fetch_ready_time,
-                             fetch_end_time);
+  job_->GetExtraResponseInfo(response_info);
+  if (!worker_start_time_.is_null()) {
+    // If we have worker timings from previous job, use it.
+    response_info->service_worker_start_time = worker_start_time_;
+    response_info->service_worker_ready_time = worker_ready_time_;
+  }
 }
 
 void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(

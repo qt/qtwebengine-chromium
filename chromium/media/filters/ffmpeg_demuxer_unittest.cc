@@ -86,7 +86,7 @@ class FFmpegDemuxerTest : public testing::Test {
         &FFmpegDemuxerTest::OnEncryptedMediaInitData, base::Unretained(this));
 
     demuxer_.reset(new FFmpegDemuxer(
-        message_loop_.message_loop_proxy(), data_source_.get(),
+        message_loop_.task_runner(), data_source_.get(),
         encrypted_media_init_data_cb, new MediaLog()));
   }
 
@@ -636,7 +636,7 @@ TEST_F(FFmpegDemuxerTest, Read_EndOfStream_NoDuration_VideoOnly) {
   CreateDemuxer("bear-320x240-video-only.webm");
   InitializeDemuxer();
   set_duration_known(false);
-  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(2703)));
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(2736)));
   ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::VIDEO));
 }
 
@@ -970,6 +970,28 @@ TEST_F(FFmpegDemuxerTest, Rotate_Metadata_270) {
   DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
   ASSERT_TRUE(stream);
   ASSERT_EQ(VIDEO_ROTATION_270, stream->video_rotation());
+}
+
+TEST_F(FFmpegDemuxerTest, NaturalSizeWithoutPASP) {
+  CreateDemuxer("bear-640x360-non_square_pixel-without_pasp.mp4");
+  InitializeDemuxer();
+
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
+  ASSERT_TRUE(stream);
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  EXPECT_EQ(gfx::Size(638, 360), video_config.natural_size());
+}
+
+TEST_F(FFmpegDemuxerTest, NaturalSizeWithPASP) {
+  CreateDemuxer("bear-640x360-non_square_pixel-with_pasp.mp4");
+  InitializeDemuxer();
+
+  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
+  ASSERT_TRUE(stream);
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  EXPECT_EQ(gfx::Size(638, 360), video_config.natural_size());
 }
 
 #endif

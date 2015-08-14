@@ -113,13 +113,34 @@ function detailsButtonClick() {
     errorPageController.detailsButtonClick();
 }
 
+/**
+ * Replace the reload button with the Google cached copy suggestion.
+ */
+function setUpCachedButton(buttonStrings) {
+  var reloadButton = document.getElementById('reload-button');
+
+  reloadButton.textContent = buttonStrings.msg;
+  var url = buttonStrings.cacheUrl;
+  var trackingId = buttonStrings.trackingId;
+  reloadButton.onclick = function(e) {
+    e.preventDefault();
+    trackClick(trackingId);
+    if (window.errorPageController) {
+      errorPageController.trackCachedCopyButtonClick(
+          buttonStrings.defaultLabel);
+    }
+    location = url;
+  };
+  reloadButton.style.display = '';
+  document.getElementById('control-buttons').hidden = false;
+}
+
 var primaryControlOnLeft = true;
 <if expr="is_macosx or is_ios or is_linux or is_android">
 primaryControlOnLeft = false;
 </if>
 
 function onDocumentLoad() {
-  var buttonsDiv = document.getElementById('buttons');
   var controlButtonDiv = document.getElementById('control-buttons');
   var reloadButton = document.getElementById('reload-button');
   var detailsButton = document.getElementById('details-button');
@@ -177,6 +198,11 @@ function onDocumentLoad() {
     var p = document.querySelector('#main-message p');
     p.innerHTML = loadTimeData.getString('primaryParagraph');
     p.hidden = false;
+  }
+
+  // Check for Google cached copy suggestion.
+  if (loadTimeData.valueExists('cacheButton')) {
+    setUpCachedButton(loadTimeData.getValue('cacheButton'));
   }
 }
 

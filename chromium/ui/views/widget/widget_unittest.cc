@@ -23,10 +23,8 @@
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/test_views.h"
-#include "ui/views/test/test_views_delegate.h"
 #include "ui/views/test/test_widget_observer.h"
 #include "ui/views/test/widget_test.h"
-#include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_delegate.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget_deletion_observer.h"
@@ -312,8 +310,6 @@ TEST_F(WidgetTest, GetTopLevelWidget_Native) {
 // when window activation changes.
 TEST_F(WidgetTest, ChangeActivation) {
   Widget* top1 = CreateTopLevelPlatformWidget();
-  // CreateInputMethod before activated
-  top1->GetInputMethod();
   top1->Show();
   RunPendingMessages();
 
@@ -324,8 +320,6 @@ TEST_F(WidgetTest, ChangeActivation) {
   top1->Activate();
   RunPendingMessages();
 
-  // Create InputMethod after deactivated.
-  top2->GetInputMethod();
   top2->Activate();
   RunPendingMessages();
 
@@ -804,7 +798,6 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     widget->GetThemeProvider();
     widget->GetNativeTheme();
     widget->GetFocusManager();
-    widget->GetInputMethod();
     widget->SchedulePaintInRect(gfx::Rect(0, 0, 1, 2));
     widget->IsMouseEventsEnabled();
     widget->SetNativeWindowProperty("xx", widget);
@@ -1027,6 +1020,9 @@ TEST_F(WidgetObserverTest, WidgetBoundsChanged) {
 
   child2->OnNativeWidgetSizeChanged(gfx::Size());
   EXPECT_EQ(child2, widget_bounds_changed());
+
+  child2->CloseNow();
+  child1->CloseNow();
 }
 
 // An extension to WidgetBoundsChanged to ensure notifications are forwarded
@@ -1827,6 +1823,8 @@ TEST_F(WidgetTest, SynthesizeMouseMoveEvent) {
 
   widget->SynthesizeMouseMoveEvent();
   EXPECT_EQ(1, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
+
+  widget->CloseNow();
 }
 
 // No touch on desktop Mac. Tracked in http://crbug.com/445520.
@@ -2963,6 +2961,7 @@ TEST_F(WidgetTest, GetAllChildWidgets) {
 
   EXPECT_EQ(expected.size(), widgets.size());
   EXPECT_TRUE(std::equal(expected.begin(), expected.end(), widgets.begin()));
+  toplevel->CloseNow();
 }
 
 // Used by DestroyChildWidgetsInOrder. On destruction adds the supplied name to
@@ -3441,6 +3440,7 @@ TEST_F(WidgetTest, AlwaysOnTop) {
   EXPECT_TRUE(widget->IsAlwaysOnTop());
   widget->SetAlwaysOnTop(false);
   EXPECT_FALSE(widget->IsAlwaysOnTop());
+  widget->CloseNow();
 }
 
 }  // namespace test

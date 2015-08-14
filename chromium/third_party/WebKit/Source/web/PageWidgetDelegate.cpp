@@ -33,17 +33,17 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
 #include "core/page/AutoscrollController.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/Logging.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/transforms/AffineTransform.h"
 #include "public/web/WebInputEvent.h"
 #include "web/PageOverlayList.h"
@@ -72,10 +72,10 @@ void PageWidgetDelegate::paint(Page& page, PageOverlayList* overlays, WebCanvas*
     if (rect.isEmpty())
         return;
 
-    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas);
+    IntRect intRect(rect);
+    SkPictureBuilder pictureBuilder(intRect);
     {
-        DisplayItemListContextRecorder contextRecorder(*context);
-        GraphicsContext& paintContext = contextRecorder.context();
+        GraphicsContext& paintContext = pictureBuilder.context();
 
         // FIXME: device scale factor settings are layering violations and should not
         // be used within Blink paint code.
@@ -94,12 +94,12 @@ void PageWidgetDelegate::paint(Page& page, PageOverlayList* overlays, WebCanvas*
             view->paint(&paintContext, dirtyRect);
             if (overlays)
                 overlays->paintWebFrame(paintContext);
-        } else {
+        } else if (!DrawingRecorder::useCachedDrawingIfPossible(paintContext, root, DisplayItem::PageWidgetDelegateBackgroundFallback)) {
             DrawingRecorder drawingRecorder(paintContext, root, DisplayItem::PageWidgetDelegateBackgroundFallback, dirtyRect);
-            if (!drawingRecorder.canUseCachedDrawing())
-                paintContext.fillRect(dirtyRect, Color::white);
+            paintContext.fillRect(dirtyRect, Color::white);
         }
     }
+    pictureBuilder.endRecording()->playback(canvas);
 }
 
 bool PageWidgetDelegate::handleInputEvent(PageWidgetEventHandler& handler, const WebInputEvent& event, LocalFrame* root)

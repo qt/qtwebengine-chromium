@@ -9,9 +9,12 @@
 
 namespace content {
 
-TraceMessageFilter::TraceMessageFilter()
+TraceMessageFilter::TraceMessageFilter(int child_process_id)
     : BrowserMessageFilter(TracingMsgStart),
       has_child_(false),
+      tracing_process_id_(
+          base::trace_event::MemoryDumpManager::
+              ChildProcessIdToTracingProcessId(child_process_id)),
       is_awaiting_end_ack_(false),
       is_awaiting_capture_monitoring_snapshot_ack_(false),
       is_awaiting_buffer_percent_full_ack_(false) {
@@ -61,12 +64,10 @@ bool TraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
 }
 
 void TraceMessageFilter::SendBeginTracing(
-    const base::trace_event::CategoryFilter& category_filter,
-    const base::trace_event::TraceOptions& options) {
+      const base::trace_event::TraceConfig& trace_config) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  Send(new TracingMsg_BeginTracing(category_filter.ToString(),
-                                   base::TimeTicks::NowFromSystemTraceTime(),
-                                   options.ToString()));
+  Send(new TracingMsg_BeginTracing(
+      trace_config.ToString(), base::TraceTicks::Now(), tracing_process_id_));
 }
 
 void TraceMessageFilter::SendEndTracing() {
@@ -76,13 +77,18 @@ void TraceMessageFilter::SendEndTracing() {
   Send(new TracingMsg_EndTracing);
 }
 
-void TraceMessageFilter::SendEnableMonitoring(
-    const base::trace_event::CategoryFilter& category_filter,
-    const base::trace_event::TraceOptions& options) {
+void TraceMessageFilter::SendCancelTracing() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  Send(new TracingMsg_EnableMonitoring(category_filter.ToString(),
-      base::TimeTicks::NowFromSystemTraceTime(),
-      options.ToString()));
+  DCHECK(!is_awaiting_end_ack_);
+  is_awaiting_end_ack_ = true;
+  Send(new TracingMsg_CancelTracing);
+}
+
+void TraceMessageFilter::SendEnableMonitoring(
+      const base::trace_event::TraceConfig& trace_config) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  Send(new TracingMsg_EnableMonitoring(trace_config.ToString(),
+                                       base::TraceTicks::Now()));
 }
 
 void TraceMessageFilter::SendDisableMonitoring() {

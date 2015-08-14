@@ -9,18 +9,14 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/aura/client/focus_client.h"
-#include "ui/aura/window.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/ime/dummy_text_input_client.h"
-#include "ui/base/ime/text_input_focus_manager.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/test/focus_manager_test.h"
+#include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
@@ -124,6 +120,10 @@ TEST_F(FocusManagerTest, FocusChangeListener) {
 }
 
 TEST_F(FocusManagerTest, WidgetFocusChangeListener) {
+  // First, ensure the simulator is aware of the Widget created in SetUp() being
+  // currently active.
+  test::WidgetTest::SimulateNativeActivate(GetWidget());
+
   TestWidgetFocusChangeListener widget_listener;
   AddWidgetFocusChangeListener(&widget_listener);
 
@@ -142,14 +142,14 @@ TEST_F(FocusManagerTest, WidgetFocusChangeListener) {
 
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view1 = widget1->GetNativeView();
-  aura::client::GetFocusClient(native_view1)->FocusWindow(native_view1);
+  test::WidgetTest::SimulateNativeActivate(widget1.get());
   ASSERT_EQ(2u, widget_listener.focus_changes().size());
   EXPECT_EQ(nullptr, widget_listener.focus_changes()[0]);
   EXPECT_EQ(native_view1, widget_listener.focus_changes()[1]);
 
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view2 = widget2->GetNativeView();
-  aura::client::GetFocusClient(native_view2)->FocusWindow(native_view2);
+  test::WidgetTest::SimulateNativeActivate(widget2.get());
   ASSERT_EQ(2u, widget_listener.focus_changes().size());
   EXPECT_EQ(nullptr, widget_listener.focus_changes()[0]);
   EXPECT_EQ(native_view2, widget_listener.focus_changes()[1]);
@@ -794,60 +794,6 @@ TEST_F(FocusManagerTest, StoreFocusedView) {
   EXPECT_EQ(NULL, GetFocusManager()->GetFocusedView());
   EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
   EXPECT_EQ(&view, GetFocusManager()->GetStoredFocusView());
-}
-
-class TextInputTestView : public View {
- public:
-  TextInputTestView() {}
-
-  ui::TextInputClient* GetTextInputClient() override {
-    return &text_input_client_;
-  }
-
- private:
-  ui::DummyTextInputClient text_input_client_;
-
-  DISALLOW_COPY_AND_ASSIGN(TextInputTestView);
-};
-
-TEST_F(FocusManagerTest, TextInputClient) {
-  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
-  cmd_line->AppendSwitch(switches::kEnableTextInputFocusManager);
-
-  View* view = new TextInputTestView;
-  ui::TextInputClient* text_input_client = view->GetTextInputClient();
-  view->SetFocusable(true);
-  GetContentsView()->AddChildView(view);
-  ui::TextInputFocusManager* text_input_focus_manager =
-      ui::TextInputFocusManager::GetInstance();
-
-  GetFocusManager()->SetFocusedView(view);
-  EXPECT_EQ(view, GetFocusManager()->GetFocusedView());
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
-  GetFocusManager()->StoreFocusedView(false);
-  EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
-
-  // Repeat with |true|.
-  GetFocusManager()->SetFocusedView(view);
-  EXPECT_EQ(view, GetFocusManager()->GetFocusedView());
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
-  GetFocusManager()->StoreFocusedView(true);
-  EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
-
-  // Focus the view twice in a row.
-  GetFocusManager()->SetFocusedView(view);
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
-  ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
-  GetFocusManager()->SetFocusedView(view);
-  EXPECT_EQ(text_input_client,
-            text_input_focus_manager->GetFocusedTextInputClient());
 }
 
 namespace {

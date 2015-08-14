@@ -40,7 +40,7 @@
 #include "platform/scroll/ScrollbarThemeMacCommon.h"
 #include "platform/scroll/ScrollbarThemeMacOverlayAPI.h"
 #include "wtf/MainThread.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 using namespace blink;
 
@@ -652,9 +652,9 @@ private:
 
 namespace blink {
 
-PassRefPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
+PassOwnPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
 {
-    return adoptRef(new ScrollAnimatorMac(scrollableArea));
+    return adoptPtr(new ScrollAnimatorMac(scrollableArea));
 }
 
 ScrollAnimatorMac::ScrollAnimatorMac(ScrollableArea* scrollableArea)
@@ -705,15 +705,15 @@ static bool scrollAnimationEnabledForSystem()
     return enabled;
 }
 
-ScrollResultOneDimensional ScrollAnimatorMac::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
+ScrollResultOneDimensional ScrollAnimatorMac::userScroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
 {
     m_haveScrolledSincePageLoad = true;
 
     if (!scrollAnimationEnabledForSystem() || !m_scrollableArea->scrollAnimatorEnabled())
-        return ScrollAnimator::scroll(orientation, granularity, step, delta);
+        return ScrollAnimator::userScroll(orientation, granularity, step, delta);
 
     if (granularity == ScrollByPixel || granularity == ScrollByPrecisePixel)
-        return ScrollAnimator::scroll(orientation, granularity, step, delta);
+        return ScrollAnimator::userScroll(orientation, granularity, step, delta);
 
     float currentPos = orientation == HorizontalScrollbar ? m_currentPosX : m_currentPosY;
     float newPos = std::max<float>(std::min<float>(currentPos + (step * delta), m_scrollableArea->maximumScrollPosition(orientation)), m_scrollableArea->minimumScrollPosition(orientation));
@@ -741,9 +741,6 @@ void ScrollAnimatorMac::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 
 FloatPoint ScrollAnimatorMac::adjustScrollPositionIfNecessary(const FloatPoint& position) const
 {
-    if (!m_scrollableArea->constrainsScrollingToContentEdge())
-        return position;
-
     IntPoint minPos = m_scrollableArea->minimumScrollPosition();
     IntPoint maxPos = m_scrollableArea->maximumScrollPosition();
 

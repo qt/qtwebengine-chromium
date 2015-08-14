@@ -5,26 +5,43 @@
 #include "config.h"
 #include "modules/bluetooth/BluetoothGATTRemoteServer.h"
 
-#include "public/platform/modules/bluetooth/WebBluetoothGATTRemoteServer.h"
+#include "bindings/core/v8/CallbackPromiseAdapter.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/ExceptionCode.h"
+#include "modules/bluetooth/BluetoothError.h"
+#include "modules/bluetooth/BluetoothGATTService.h"
+#include "modules/bluetooth/BluetoothUUID.h"
+#include "public/platform/Platform.h"
+#include "public/platform/modules/bluetooth/WebBluetooth.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
-BluetoothGATTRemoteServer::BluetoothGATTRemoteServer(const WebBluetoothGATTRemoteServer& webGATT)
+BluetoothGATTRemoteServer::BluetoothGATTRemoteServer(PassOwnPtr<WebBluetoothGATTRemoteServer> webGATT)
     : m_webGATT(webGATT)
 {
 }
 
-BluetoothGATTRemoteServer* BluetoothGATTRemoteServer::take(ScriptPromiseResolver*, WebBluetoothGATTRemoteServer* webGATTRawPointer)
+BluetoothGATTRemoteServer* BluetoothGATTRemoteServer::take(ScriptPromiseResolver*, PassOwnPtr<WebBluetoothGATTRemoteServer> webGATT)
 {
-    OwnPtr<WebBluetoothGATTRemoteServer> webGATT = adoptPtr(webGATTRawPointer);
-    return new BluetoothGATTRemoteServer(*webGATT);
+    return new BluetoothGATTRemoteServer(webGATT);
 }
 
-void BluetoothGATTRemoteServer::dispose(WebBluetoothGATTRemoteServer* webGATTRaw)
+ScriptPromise BluetoothGATTRemoteServer::getPrimaryService(ScriptState* scriptState, const StringOrUnsignedLong& service, ExceptionState& exceptionState)
 {
-    delete webGATTRaw;
-}
+    WebBluetooth* webbluetooth = Platform::current()->bluetooth();
 
+    String serviceUUID = BluetoothUUID::getService(service, exceptionState);
+    if (exceptionState.hadException())
+        return exceptionState.reject(scriptState);
+
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+    webbluetooth->getPrimaryService(m_webGATT->deviceInstanceID, serviceUUID, new CallbackPromiseAdapter<BluetoothGATTService, BluetoothError>(resolver));
+
+    return promise;
+}
 
 } // namespace blink

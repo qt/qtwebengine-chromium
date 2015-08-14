@@ -49,9 +49,7 @@ class Event;
 
 class AudioRate {
  public:
-  explicit AudioRate(int sample_rate_hz)
-      : rate_(sample_rate_hz),
-        samples_per_channel_(AudioProcessing::kChunkSizeMs * rate_ / 1000) {}
+  explicit AudioRate(int sample_rate_hz) { set(sample_rate_hz); }
   virtual ~AudioRate() {}
 
   void set(int rate) {
@@ -136,6 +134,7 @@ class AudioProcessingImpl : public AudioProcessing {
   int StartDebugRecording(FILE* handle) override;
   int StartDebugRecordingForPlatformFile(rtc::PlatformFile handle) override;
   int StopDebugRecording() override;
+  void UpdateHistogramsOnCallEnd() override;
   EchoCancellation* echo_cancellation() const override;
   EchoControlMobile* echo_control_mobile() const override;
   GainControl* gain_control() const override;
@@ -173,6 +172,7 @@ class AudioProcessingImpl : public AudioProcessing {
   void InitializeExperimentalAgc() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   void InitializeTransient() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   void InitializeBeamformer() EXCLUSIVE_LOCKS_REQUIRED(crit_);
+  void MaybeUpdateHistograms() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   EchoCancellationImpl* echo_cancellation_;
   EchoControlMobileImpl* echo_control_mobile_;
@@ -209,6 +209,10 @@ class AudioProcessingImpl : public AudioProcessing {
   int stream_delay_ms_;
   int delay_offset_ms_;
   bool was_stream_delay_set_;
+  int last_stream_delay_ms_;
+  int last_aec_system_delay_ms_;
+  int stream_delay_jumps_;
+  int aec_system_delay_jumps_;
 
   bool output_will_be_muted_ GUARDED_BY(crit_);
 

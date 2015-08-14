@@ -5,9 +5,10 @@
 #include "cc/blink/web_compositor_support_impl.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "cc/animation/transform_operations.h"
 #include "cc/blink/web_animation_impl.h"
+#include "cc/blink/web_compositor_animation_player_impl.h"
+#include "cc/blink/web_compositor_animation_timeline_impl.h"
 #include "cc/blink/web_content_layer_impl.h"
 #include "cc/blink/web_display_item_list_impl.h"
 #include "cc/blink/web_external_texture_layer_impl.h"
@@ -26,6 +27,8 @@
 
 using blink::WebCompositorAnimation;
 using blink::WebCompositorAnimationCurve;
+using blink::WebCompositorAnimationPlayer;
+using blink::WebCompositorAnimationTimeline;
 using blink::WebContentLayer;
 using blink::WebContentLayerClient;
 using blink::WebDisplayItemList;
@@ -96,15 +99,9 @@ WebScrollbarLayer* WebCompositorSupportImpl::createSolidColorScrollbarLayer(
 WebCompositorAnimation* WebCompositorSupportImpl::createAnimation(
     const blink::WebCompositorAnimationCurve& curve,
     blink::WebCompositorAnimation::TargetProperty target,
-#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
     int group_id,
-#endif
     int animation_id) {
-#ifdef WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP
   return new WebCompositorAnimationImpl(curve, target, animation_id, group_id);
-#else
-  return new WebCompositorAnimationImpl(curve, target, animation_id, 0);
-#endif
 }
 
 WebFilterAnimationCurve*
@@ -134,6 +131,20 @@ WebTransformOperations* WebCompositorSupportImpl::createTransformOperations() {
 
 WebFilterOperations* WebCompositorSupportImpl::createFilterOperations() {
   return new WebFilterOperationsImpl();
+}
+
+WebDisplayItemList* WebCompositorSupportImpl::createDisplayItemList() {
+  return new WebDisplayItemListImpl();
+}
+
+WebCompositorAnimationPlayer*
+WebCompositorSupportImpl::createAnimationPlayer() {
+  return new WebCompositorAnimationPlayerImpl();
+}
+
+WebCompositorAnimationTimeline*
+WebCompositorSupportImpl::createAnimationTimeline() {
+  return new WebCompositorAnimationTimelineImpl();
 }
 
 }  // namespace cc_blink

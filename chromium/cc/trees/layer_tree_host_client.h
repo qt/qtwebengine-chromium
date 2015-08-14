@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
+#include "cc/debug/frame_timing_tracker.h"
 
 namespace gfx {
 class Vector2d;
@@ -35,9 +36,6 @@ class LayerTreeHostClient {
       const gfx::Vector2dF& elastic_overscroll_delta,
       float page_scale,
       float top_controls_delta) = 0;
-  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
-                                   float page_scale,
-                                   float top_controls_delta) = 0;
   // Request an OutputSurface from the client. When the client has one it should
   // call LayerTreeHost::SetOutputSurface.  This will result in either
   // DidFailToInitializeOutputSurface or DidInitializeOutputSurface being
@@ -49,6 +47,9 @@ class LayerTreeHostClient {
   virtual void DidCommit() = 0;
   virtual void DidCommitAndDrawFrame() = 0;
   virtual void DidCompleteSwapBuffers() = 0;
+  virtual void RecordFrameTimingEvents(
+      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events) = 0;
 
   // Called when page scale animation has completed.
   virtual void DidCompletePageScaleAnimation() = 0;

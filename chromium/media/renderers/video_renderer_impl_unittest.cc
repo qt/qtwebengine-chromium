@@ -46,7 +46,8 @@ MATCHER_P(HasTimestamp, ms, "") {
   return arg->timestamp().InMilliseconds() == ms;
 }
 
-class VideoRendererImplTest : public testing::TestWithParam<bool> {
+class VideoRendererImplTest
+    : public testing::TestWithParam<bool /* new_video_renderer */> {
  public:
   VideoRendererImplTest()
       : tick_clock_(new base::SimpleTestTickClock()),
@@ -60,7 +61,7 @@ class VideoRendererImplTest : public testing::TestWithParam<bool> {
         base::Bind(&MockCB::FrameReceived, base::Unretained(&mock_cb_)),
         message_loop_.task_runner()));
 
-    renderer_.reset(new VideoRendererImpl(message_loop_.message_loop_proxy(),
+    renderer_.reset(new VideoRendererImpl(message_loop_.task_runner(),
                                           null_video_sink_.get(),
                                           decoders.Pass(), true,
                                           nullptr,  // gpu_factories
@@ -97,24 +98,26 @@ class VideoRendererImplTest : public testing::TestWithParam<bool> {
         .WillRepeatedly(Invoke(this, &VideoRendererImplTest::FlushRequested));
 
     // Initialize, we shouldn't have any reads.
-    InitializeRenderer(PIPELINE_OK, low_delay);
+    InitializeRenderer(low_delay, true);
   }
 
-  void InitializeRenderer(PipelineStatus expected, bool low_delay) {
-    SCOPED_TRACE(base::StringPrintf("InitializeRenderer(%d)", expected));
+  void InitializeRenderer(bool low_delay, bool expect_to_success) {
+    SCOPED_TRACE(
+        base::StringPrintf("InitializeRenderer(%d)", expect_to_success));
     WaitableMessageLoopEvent event;
-    CallInitialize(event.GetPipelineStatusCB(), low_delay, expected);
-    event.RunAndWaitForStatus(expected);
+    CallInitialize(event.GetPipelineStatusCB(), low_delay, expect_to_success);
+    event.RunAndWaitForStatus(expect_to_success ? PIPELINE_OK
+                                                : DECODER_ERROR_NOT_SUPPORTED);
   }
 
   void CallInitialize(const PipelineStatusCB& status_cb,
                       bool low_delay,
-                      PipelineStatus decoder_status) {
+                      bool expect_to_success) {
     if (low_delay)
       demuxer_stream_.set_liveness(DemuxerStream::LIVENESS_LIVE);
     EXPECT_CALL(*decoder_, Initialize(_, _, _, _))
         .WillOnce(
-            DoAll(SaveArg<3>(&output_cb_), RunCallback<2>(decoder_status)));
+            DoAll(SaveArg<3>(&output_cb_), RunCallback<2>(expect_to_success)));
     EXPECT_CALL(*this, OnWaitingForDecryptionKey()).Times(0);
     renderer_->Initialize(
         &demuxer_stream_, status_cb, media::SetDecryptorReadyCB(),
@@ -488,28 +491,29 @@ TEST_P(VideoRendererImplTest, StartPlayingFrom_RightAfter) {
 }
 
 TEST_P(VideoRendererImplTest, StartPlayingFrom_LowDelay) {
-  // In low-delay mode only one frame is required to finish preroll.
+  // In low-delay mode only one frame is required to finish preroll. But frames
+  // prior to the start time will not be used.
   InitializeWithLowDelay(true);
-  QueueFrames("0");
+  QueueFrames("0 10");
 
+  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(10)));
   // Expect some amount of have enough/nothing due to only requiring one frame.
-  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(0)));
   EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_ENOUGH))
       .Times(AnyNumber());
   EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_NOTHING))
       .Times(AnyNumber());
-  StartPlayingFrom(0);
+  StartPlayingFrom(10);
 
-  QueueFrames("10");
+  QueueFrames("20");
   SatisfyPendingRead();
 
   renderer_->OnTimeStateChanged(true);
   time_source_.StartTicking();
 
   WaitableMessageLoopEvent event;
-  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(10)))
+  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(20)))
       .WillOnce(RunClosure(event.GetClosure()));
-  AdvanceTimeInMs(10);
+  AdvanceTimeInMs(20);
   event.RunAndWait();
 
   Destroy();
@@ -530,7 +534,7 @@ TEST_P(VideoRendererImplTest, DestroyDuringOutstandingRead) {
 }
 
 TEST_P(VideoRendererImplTest, VideoDecoder_InitFailure) {
-  InitializeRenderer(DECODER_ERROR_NOT_SUPPORTED, false);
+  InitializeRenderer(false, false);
   Destroy();
 }
 

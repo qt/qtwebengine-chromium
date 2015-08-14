@@ -172,6 +172,12 @@ bool GLSurfaceWGL::InitializeOneOff() {
   return true;
 }
 
+void GLSurfaceWGL::InitializeOneOffForTesting() {
+  if (g_display == NULL) {
+    g_display = new DisplayWGL;
+  }
+}
+
 HDC GLSurfaceWGL::GetDisplayDC() {
   return g_display->device_context();
 }
@@ -250,7 +256,7 @@ bool NativeViewGLSurfaceWGL::IsOffscreen() {
   return false;
 }
 
-bool NativeViewGLSurfaceWGL::SwapBuffers() {
+gfx::SwapResult NativeViewGLSurfaceWGL::SwapBuffers() {
   TRACE_EVENT2("gpu", "NativeViewGLSurfaceWGL:RealSwapBuffers",
       "width", GetSize().width(),
       "height", GetSize().height());
@@ -259,18 +265,19 @@ bool NativeViewGLSurfaceWGL::SwapBuffers() {
   // it as it moves.
   RECT rect;
   if (!GetClientRect(window_, &rect))
-    return false;
+    return gfx::SwapResult::SWAP_FAILED;
   if (!MoveWindow(child_window_,
                   0,
                   0,
                   rect.right - rect.left,
                   rect.bottom - rect.top,
                   FALSE)) {
-    return false;
+    return gfx::SwapResult::SWAP_FAILED;
   }
 
   DCHECK(device_context_);
-  return ::SwapBuffers(device_context_) == TRUE;
+  return ::SwapBuffers(device_context_) == TRUE ? gfx::SwapResult::SWAP_ACK
+                                                : gfx::SwapResult::SWAP_FAILED;
 }
 
 gfx::Size NativeViewGLSurfaceWGL::GetSize() {
@@ -345,9 +352,9 @@ bool PbufferGLSurfaceWGL::IsOffscreen() {
   return true;
 }
 
-bool PbufferGLSurfaceWGL::SwapBuffers() {
+gfx::SwapResult PbufferGLSurfaceWGL::SwapBuffers() {
   NOTREACHED() << "Attempted to call SwapBuffers on a pbuffer.";
-  return false;
+  return gfx::SwapResult::SWAP_FAILED;
 }
 
 gfx::Size PbufferGLSurfaceWGL::GetSize() {

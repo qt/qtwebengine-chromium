@@ -36,42 +36,43 @@ class AXObjectCacheImpl;
 
 class AXSpinButton final : public AXMockObject {
 public:
-    static PassRefPtr<AXSpinButton> create(AXObjectCacheImpl*);
-    virtual ~AXSpinButton();
+    static PassRefPtrWillBeRawPtr<AXSpinButton> create(AXObjectCacheImpl&);
+    ~AXSpinButton() override;
+    DECLARE_VIRTUAL_TRACE();
 
     void setSpinButtonElement(SpinButtonElement* spinButton) { m_spinButtonElement = spinButton; }
     void step(int amount);
 
 private:
-    explicit AXSpinButton(AXObjectCacheImpl*);
+    explicit AXSpinButton(AXObjectCacheImpl&);
 
-    virtual AccessibilityRole roleValue() const override;
-    virtual bool isSpinButton() const override { return true; }
-    virtual bool isNativeSpinButton() const override { return true; }
-    virtual void addChildren() override;
-    virtual LayoutRect elementRect() const override;
-    virtual void detach() override;
-    virtual void detachFromParent() override;
+    AccessibilityRole roleValue() const override;
+    bool isSpinButton() const override { return true; }
+    bool isNativeSpinButton() const override { return true; }
+    void addChildren() override;
+    LayoutRect elementRect() const override;
+    void detach() override;
+    void detachFromParent() override;
 
-    SpinButtonElement* m_spinButtonElement;
+    RawPtrWillBeMember<SpinButtonElement> m_spinButtonElement;
 };
 
 class AXSpinButtonPart final : public AXMockObject {
 public:
-    static PassRefPtr<AXSpinButtonPart> create(AXObjectCacheImpl*);
-    virtual ~AXSpinButtonPart() { }
+    static PassRefPtrWillBeRawPtr<AXSpinButtonPart> create(AXObjectCacheImpl&);
+    ~AXSpinButtonPart() override { }
 
     bool isIncrementor() const { return m_isIncrementor; }
     void setIsIncrementor(bool value) { m_isIncrementor = value; }
 
 private:
-    explicit AXSpinButtonPart(AXObjectCacheImpl*);
+    explicit AXSpinButtonPart(AXObjectCacheImpl&);
     bool m_isIncrementor : 1;
 
-    virtual bool press() const override;
-    virtual AccessibilityRole roleValue() const override { return ButtonRole; }
-    virtual bool isSpinButtonPart() const override { return true; }
-    virtual LayoutRect elementRect() const override;
+    bool press() const override;
+    AccessibilityRole roleValue() const override { return ButtonRole; }
+    bool isSpinButtonPart() const override { return true; }
+    LayoutRect elementRect() const override;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXSpinButton, isNativeSpinButton());

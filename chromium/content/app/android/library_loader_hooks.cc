@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
+#include "components/tracing/startup_tracing.h"
 #include "content/app/android/app_jni_registrar.h"
 #include "content/browser/android/browser_jni_registrar.h"
 #include "content/common/android/common_jni_registrar.h"
@@ -91,12 +92,12 @@ bool LibraryLoaded(JNIEnv* env, jclass clazz) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(switches::kTraceStartup)) {
-    base::trace_event::CategoryFilter category_filter(
-        command_line->GetSwitchValueASCII(switches::kTraceStartup));
+    base::trace_event::TraceConfig trace_config(
+        command_line->GetSwitchValueASCII(switches::kTraceStartup), "");
     base::trace_event::TraceLog::GetInstance()->SetEnabled(
-        category_filter,
-        base::trace_event::TraceLog::RECORDING_MODE,
-        base::trace_event::TraceOptions());
+        trace_config, base::trace_event::TraceLog::RECORDING_MODE);
+  } else {
+    tracing::EnableStartupTracingIfConfigFileExists();
   }
 
   // Android's main browser loop is custom so we set the browser

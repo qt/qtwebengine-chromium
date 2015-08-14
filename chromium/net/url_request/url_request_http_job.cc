@@ -10,13 +10,16 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_version_info.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/rand_util.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -45,7 +48,6 @@
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "net/url_request/url_request_redirect_job.h"
-#include "net/url_request/url_request_throttler_header_adapter.h"
 #include "net/url_request/url_request_throttler_manager.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
 
@@ -308,11 +310,8 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
   // also need this info.
   is_cached_content_ = response_info_->was_cached;
 
-  if (!is_cached_content_ && throttling_entry_.get()) {
-    URLRequestThrottlerHeaderAdapter response_adapter(GetResponseHeaders());
-    throttling_entry_->UpdateWithResponse(request_info_.url.host(),
-                                          &response_adapter);
-  }
+  if (!is_cached_content_ && throttling_entry_.get())
+    throttling_entry_->UpdateWithResponse(GetResponseCode());
 
   // The ordering of these calls is not important.
   ProcessStrictTransportSecurityHeader();
@@ -324,7 +323,7 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
     SdchProblemCode rv = sdch_manager->IsInSupportedDomain(request()->url());
     if (rv != SDCH_OK) {
       // If SDCH is just disabled, it is not a real error.
-      if (rv != SDCH_DISABLED && rv != SDCH_SECURE_SCHEME_NOT_SUPPORTED) {
+      if (rv != SDCH_DISABLED) {
         SdchManager::SdchErrorRecovery(rv);
         request()->net_log().AddEvent(
             NetLog::TYPE_SDCH_DECODING_ERROR,
@@ -496,8 +495,7 @@ void URLRequestHttpJob::StartTransactionInternal() {
                      base::Unretained(this)));
 
       if (!throttling_entry_.get() ||
-          !throttling_entry_->ShouldRejectRequest(*request_,
-                                                  network_delegate())) {
+          !throttling_entry_->ShouldRejectRequest(*request_)) {
         rv = transaction_->Start(
             &request_info_, start_callback_, request_->net_log());
         start_time_ = base::TimeTicks::Now();
@@ -513,10 +511,9 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), rv));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
+                            weak_factory_.GetWeakPtr(), rv));
 }
 
 void URLRequestHttpJob::AddExtraHeaders() {
@@ -541,7 +538,7 @@ void URLRequestHttpJob::AddExtraHeaders() {
       if (rv != SDCH_OK) {
         advertise_sdch = false;
         // If SDCH is just disabled, it is not a real error.
-        if (rv != SDCH_DISABLED && rv != SDCH_SECURE_SCHEME_NOT_SUPPORTED) {
+        if (rv != SDCH_DISABLED) {
           SdchManager::SdchErrorRecovery(rv);
           request()->net_log().AddEvent(
               NetLog::TYPE_SDCH_DECODING_ERROR,
@@ -1207,10 +1204,9 @@ void URLRequestHttpJob::CancelAuth() {
   //
   // We have to do this via InvokeLater to avoid "recursing" the consumer.
   //
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), OK));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
+                            weak_factory_.GetWeakPtr(), OK));
 }
 
 void URLRequestHttpJob::ContinueWithCertificate(
@@ -1232,10 +1228,9 @@ void URLRequestHttpJob::ContinueWithCertificate(
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), rv));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
+                            weak_factory_.GetWeakPtr(), rv));
 }
 
 void URLRequestHttpJob::ContinueDespiteLastError() {
@@ -1258,10 +1253,9 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
 
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                 weak_factory_.GetWeakPtr(), rv));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
+                            weak_factory_.GetWeakPtr(), rv));
 }
 
 void URLRequestHttpJob::ResumeNetworkStart() {

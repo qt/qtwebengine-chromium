@@ -71,6 +71,7 @@ var ProfileInfo;
  *   isReadOnly: boolean,
  *   hasMedia: boolean,
  *   configurable: boolean,
+ *   watchable: boolean,
  *   mountCondition: (string|undefined),
  *   mountContext: (string|undefined)
  * }}
@@ -148,6 +149,7 @@ var FileWatchEvent;
  *   driveEnabled: boolean,
  *   cellularDisabled: boolean,
  *   hostedFilesDisabled: boolean,
+ *   searchSuggestEnabled: boolean,
  *   use24hourClock: boolean,
  *   allowRedeemOffers: boolean
  * }}
@@ -208,11 +210,20 @@ var DeviceEvent;
  *   extensionId: string,
  *   name: string,
  *   configurable: boolean,
+ *   watchable: boolean,
  *   multipleMounts: boolean,
  *   source: string
  * }}
  */
 var ProvidingExtension;
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   title: (string|undefined)
+ * }}
+ */
+var EntryAction;
 
 /**
  * @const
@@ -268,20 +279,21 @@ chrome.fileManagerPrivate.getFileTasks = function(fileUrls, callback) {};
 chrome.fileManagerPrivate.getStrings = function(callback) {};
 
 /**
- * Adds file watch. |fileUrl| URL of file to watch |callback|
- * @param {string} fileUrl
- * @param {Function} callback |success| True when file watch is successfully
- * added.
+ * Adds file watch. |entry| Entry of file to watch |callback|
+ * @param {!Entry} entry
+ * @param {function(boolean)} callback |success| True when file watch is
+ *     successfully added.
  */
-chrome.fileManagerPrivate.addFileWatch = function(fileUrl, callback) {};
+chrome.fileManagerPrivate.addFileWatch = function(entry, callback) {};
 
 /**
- * Removes file watch. |fileUrl| URL of watched file to remove |callback|
- * @param {string} fileUrl
- * @param {Function} callback |success| True when file watch is successfully
+ * Removes file watch. |entry| Entry of watched file to remove |callback|
+ * @param {!Entry} entry
+ * @param {function(boolean)} callback |success| True when file watch is
+ *     successfully
  * removed.
  */
-chrome.fileManagerPrivate.removeFileWatch = function(fileUrl, callback) {};
+chrome.fileManagerPrivate.removeFileWatch = function(entry, callback) {};
 
 /**
  * Enables the extenal file scheme necessary to initiate drags to the browser
@@ -323,12 +335,12 @@ chrome.fileManagerPrivate.selectFile = function(selectedPath, index, forOpening,
 /**
  * Requests additional properties for files. |fileUrls| list of URLs of files
  * |callback|
- * @param {!Array<string>} fileUrls
+ * @param {!Array<!Entry>} entries
  * @param {!Array<string>} names
  * @param {!Function} callback |entryProperties| A dictionary containing
  * properties of the requested entries.
  */
-chrome.fileManagerPrivate.getEntryProperties = function(fileUrls, names, callback) {};
+chrome.fileManagerPrivate.getEntryProperties = function(entries, names, callback) {};
 
 /**
  * Pins/unpins a Drive file in the cache. |fileUrl| URL of a file to pin/unpin.
@@ -616,6 +628,24 @@ chrome.fileManagerPrivate.addProvidedFileSystem =
  * @param {function()} callback
  */
 chrome.fileManagerPrivate.configureVolume = function(volumeId, callback) {};
+
+/**
+ * Requests fetching list of actions for the specified entry. If not possible,
+ * then returns an error via chrome.runtime.lastError.
+ * @param {string} entryUrl
+ * @param {function(!Array<!EntryAction>)} callback
+ */
+chrome.fileManagerPrivate.getEntryActions = function(entryUrl, callback) {};
+
+/**
+ * Executes the action on the specified entry. If not possible, then returns an
+ * error via chrome.runtime.lastError.
+ * @param {string} entryUrl
+ * @param {string} actionId
+ * @param {function()} callback
+ */
+chrome.fileManagerPrivate.executeAction = function(
+    entryUrl, actionId, callback) {};
 
 /** @type {!ChromeEvent} */
 chrome.fileManagerPrivate.onMountCompleted;

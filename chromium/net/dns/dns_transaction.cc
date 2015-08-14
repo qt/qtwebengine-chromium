@@ -10,16 +10,18 @@
 
 #include "base/big_endian.h"
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/rand_util.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
@@ -58,13 +60,14 @@ bool IsIPLiteral(const std::string& hostname) {
   return ParseIPLiteralToNumber(hostname, &ip);
 }
 
-base::Value* NetLogStartCallback(const std::string* hostname,
-                                 uint16 qtype,
-                                 NetLogCaptureMode /* capture_mode */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+scoped_ptr<base::Value> NetLogStartCallback(
+    const std::string* hostname,
+    uint16 qtype,
+    NetLogCaptureMode /* capture_mode */) {
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("hostname", *hostname);
   dict->SetInteger("query_type", qtype);
-  return dict;
+  return dict.Pass();
 };
 
 // ----------------------------------------------------------------------------
@@ -98,14 +101,15 @@ class DnsAttempt {
   // Returns a Value representing the received response, along with a reference
   // to the NetLog source source of the UDP socket used.  The request must have
   // completed before this is called.
-  base::Value* NetLogResponseCallback(NetLogCaptureMode capture_mode) const {
+  scoped_ptr<base::Value> NetLogResponseCallback(
+      NetLogCaptureMode capture_mode) const {
     DCHECK(GetResponse()->IsValid());
 
-    base::DictionaryValue* dict = new base::DictionaryValue();
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
     dict->SetInteger("rcode", GetResponse()->rcode());
     dict->SetInteger("answer_count", GetResponse()->answer_count());
-    GetSocketNetLog().source().AddToEventParameters(dict);
-    return dict;
+    GetSocketNetLog().source().AddToEventParameters(dict.get());
+    return dict.Pass();
   }
 
   void set_result(int result) {
@@ -603,7 +607,7 @@ class DnsTransactionImpl : public DnsTransaction,
 
     // Must always return result asynchronously, to avoid reentrancy.
     if (result.rv != ERR_IO_PENDING) {
-      base::MessageLoop::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::Bind(&DnsTransactionImpl::DoCallback, AsWeakPtr(), result));
     }

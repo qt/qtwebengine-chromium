@@ -32,6 +32,7 @@
 #include "core/paint/CompositingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/TransformRecorder.h"
+#include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGUseElement.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
@@ -40,6 +41,7 @@
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/pathops/SkPathOps.h"
 
 namespace blink {
 
@@ -71,8 +73,10 @@ bool LayoutSVGResourceClipper::tryPathOnlyClipping(const LayoutObject& layoutObj
     // If the current clip-path gets clipped itself, we have to fallback to masking.
     if (!style()->svgStyle().clipperResource().isEmpty())
         return false;
-    WindRule clipRule = RULE_NONZERO;
-    Path clipPath = Path();
+
+    Path clipPath;
+    bool usingBuilder = false;
+    SkOpBuilder clipPathBuilder;
 
     for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
         LayoutObject* childLayoutObject = childElement->layoutObject();
@@ -83,7 +87,7 @@ bool LayoutSVGResourceClipper::tryPathOnlyClipping(const LayoutObject& layoutObj
             return false;
         if (!childElement->isSVGGraphicsElement())
             continue;
-        SVGGraphicsElement* styled = toSVGGraphicsElement(childElement);
+
         const ComputedStyle* style = childLayoutObject->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
             continue;
@@ -92,26 +96,43 @@ bool LayoutSVGResourceClipper::tryPathOnlyClipping(const LayoutObject& layoutObj
         if (!svgStyle.clipperResource().isEmpty())
             return false;
 
+        // First clip shape.
         if (clipPath.isEmpty()) {
-            // First clip shape.
-            styled->toClipPath(clipPath);
-            clipRule = svgStyle.clipRule();
-            clipPath.setWindRule(clipRule);
+            if (isSVGGeometryElement(childElement))
+                toSVGGeometryElement(childElement)->toClipPath(clipPath);
+            else if (isSVGUseElement(childElement))
+                toSVGUseElement(childElement)->toClipPath(clipPath);
+
             continue;
         }
 
-        if (RuntimeEnabledFeatures::pathOpsSVGClippingEnabled()) {
-            // Attempt to generate a combined clip path, fall back to masking if not possible.
-            Path subPath;
-            styled->toClipPath(subPath);
-            subPath.setWindRule(svgStyle.clipRule());
-            if (!clipPath.unionPath(subPath))
-                return false;
-        } else {
+        // Multiple shapes require PathOps.
+        if (!RuntimeEnabledFeatures::pathOpsSVGClippingEnabled())
             return false;
+
+        // Second clip shape => start using the builder.
+        if (!usingBuilder) {
+            clipPathBuilder.add(clipPath.skPath(), kUnion_SkPathOp);
+            usingBuilder = true;
         }
+
+        Path subPath;
+        if (isSVGGeometryElement(childElement))
+            toSVGGeometryElement(childElement)->toClipPath(subPath);
+        else if (isSVGUseElement(childElement))
+            toSVGUseElement(childElement)->toClipPath(subPath);
+
+        clipPathBuilder.add(subPath.skPath(), kUnion_SkPathOp);
     }
-    // Only one visible shape/path was found. Directly continue clipping and transform the content to userspace if necessary.
+
+    if (usingBuilder) {
+        SkPath resolvedPath;
+        clipPathBuilder.resolve(&resolvedPath);
+        clipPath = resolvedPath;
+    }
+
+    // We are able to represent the clip as a path. Continue with direct clipping,
+    // and transform the content to userspace if necessary.
     if (clipPathUnits() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         AffineTransform transform;
         transform.translate(objectBoundingBox.x(), objectBoundingBox.y());
@@ -122,22 +143,19 @@ bool LayoutSVGResourceClipper::tryPathOnlyClipping(const LayoutObject& layoutObj
     // Transform path by animatedLocalTransform.
     clipPath.transform(animatedLocalTransform);
 
-    // The SVG specification wants us to clip everything, if clip-path doesn't have a child.
-    if (clipPath.isEmpty())
-        clipPath.addRect(FloatRect());
-
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         if (!context->displayItemList()->displayItemConstructionIsDisabled())
-            context->displayItemList()->add(BeginClipPathDisplayItem::create(layoutObject, clipPath, clipRule));
+            context->displayItemList()->createAndAppend<BeginClipPathDisplayItem>(layoutObject, clipPath);
     } else {
-        BeginClipPathDisplayItem clipPathDisplayItem(layoutObject, clipPath, clipRule);
+        BeginClipPathDisplayItem clipPathDisplayItem(layoutObject, clipPath);
         clipPathDisplayItem.replay(*context);
     }
 
     return true;
 }
 
-PassRefPtr<const SkPicture> LayoutSVGResourceClipper::createContentPicture(AffineTransform& contentTransformation, const FloatRect& targetBoundingBox)
+PassRefPtr<const SkPicture> LayoutSVGResourceClipper::createContentPicture(AffineTransform& contentTransformation, const FloatRect& targetBoundingBox,
+    GraphicsContext* context)
 {
     ASSERT(frame());
 
@@ -156,7 +174,7 @@ PassRefPtr<const SkPicture> LayoutSVGResourceClipper::createContentPicture(Affin
     // userSpaceOnUse units (http://crbug.com/294900).
     FloatRect bounds = strokeBoundingBox();
 
-    SkPictureBuilder pictureBuilder(bounds);
+    SkPictureBuilder pictureBuilder(bounds, nullptr, context);
 
     for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
         LayoutObject* layoutObject = childElement->layoutObject();
@@ -169,7 +187,11 @@ PassRefPtr<const SkPicture> LayoutSVGResourceClipper::createContentPicture(Affin
 
         bool isUseElement = isSVGUseElement(*childElement);
         if (isUseElement) {
-            layoutObject = toSVGUseElement(*childElement).layoutObjectClipChild();
+            const SVGGraphicsElement* clippingElement = toSVGUseElement(*childElement).targetGraphicsElementForClipping();
+            if (!clippingElement)
+                continue;
+
+            layoutObject = clippingElement->layoutObject();
             if (!layoutObject)
                 continue;
         }

@@ -33,37 +33,39 @@ void TilingSetEvictionQueue::GenerateTilingOrder(
   // for this class.
   PictureLayerTilingSet::TilingRange range =
       tiling_set->GetTilingRange(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES);
-  for (int i = range.start; i < range.end; ++i) {
-    PictureLayerTiling* tiling = tiling_set->tiling_at(i);
+  for (size_t index = range.start; index < range.end; ++index) {
+    PictureLayerTiling* tiling = tiling_set->tiling_at(index);
     if (tiling->has_tiles())
       tilings_.push_back(tiling);
   }
 
   range = tiling_set->GetTilingRange(PictureLayerTilingSet::LOWER_THAN_LOW_RES);
-  for (int i = range.end - 1; i >= range.start; --i) {
-    PictureLayerTiling* tiling = tiling_set->tiling_at(i);
+  for (size_t i = range.start; i < range.end; ++i) {
+    size_t index = range.start + (range.end - 1 - i);
+    PictureLayerTiling* tiling = tiling_set->tiling_at(index);
     if (tiling->has_tiles())
       tilings_.push_back(tiling);
   }
 
   range = tiling_set->GetTilingRange(
       PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES);
-  for (int i = range.end - 1; i >= range.start; --i) {
-    PictureLayerTiling* tiling = tiling_set->tiling_at(i);
+  for (size_t i = range.start; i < range.end; ++i) {
+    size_t index = range.start + (range.end - 1 - i);
+    PictureLayerTiling* tiling = tiling_set->tiling_at(index);
     if (tiling->has_tiles())
       tilings_.push_back(tiling);
   }
 
   range = tiling_set->GetTilingRange(PictureLayerTilingSet::LOW_RES);
-  for (int i = range.start; i < range.end; ++i) {
-    PictureLayerTiling* tiling = tiling_set->tiling_at(i);
+  for (size_t index = range.start; index < range.end; ++index) {
+    PictureLayerTiling* tiling = tiling_set->tiling_at(index);
     if (tiling->has_tiles())
       tilings_.push_back(tiling);
   }
 
   range = tiling_set->GetTilingRange(PictureLayerTilingSet::HIGH_RES);
-  for (int i = range.start; i < range.end; ++i) {
-    PictureLayerTiling* tiling = tiling_set->tiling_at(i);
+  for (size_t index = range.start; index < range.end; ++index) {
+    PictureLayerTiling* tiling = tiling_set->tiling_at(index);
     if (tiling->has_tiles())
       tilings_.push_back(tiling);
   }
@@ -222,9 +224,11 @@ bool TilingSetEvictionQueue::EvictionRectIterator::GetFirstTileAndCheckIfValid(
   // After the pending visible rect has been processed, we must return false
   // for pending visible rect tiles as tiling iterators do not ignore those
   // tiles.
-  if (priority_rect_type_ > PictureLayerTiling::PENDING_VISIBLE_RECT &&
-      tiling->pending_visible_rect().Intersects(tile->content_rect())) {
-    return false;
+  if (priority_rect_type_ > PictureLayerTiling::PENDING_VISIBLE_RECT) {
+    gfx::Rect tile_rect = tiling->tiling_data()->TileBounds(
+        tile->tiling_i_index(), tile->tiling_j_index());
+    if (tiling->pending_visible_rect().Intersects(tile_rect))
+      return false;
   }
   (*tilings_)[tiling_index_]->UpdateRequiredStatesOnTile(tile);
   prioritized_tile_ = (*tilings_)[tiling_index_]->MakePrioritizedTile(

@@ -23,7 +23,6 @@
 
 #include "core/layout/LayoutObjectInlines.h"
 #include "core/layout/OverflowModel.h"
-#include "core/layout/line/FloatToLayoutUnit.h"
 #include "core/layout/line/InlineBox.h"
 #include "core/style/ShadowData.h"
 
@@ -44,10 +43,10 @@ class InlineFlowBox : public InlineBox {
 public:
     InlineFlowBox(LayoutObject& obj)
         : InlineBox(obj)
-        , m_firstChild(0)
-        , m_lastChild(0)
-        , m_prevLineBox(0)
-        , m_nextLineBox(0)
+        , m_firstChild(nullptr)
+        , m_lastChild(nullptr)
+        , m_prevLineBox(nullptr)
+        , m_nextLineBox(nullptr)
         , m_includeLogicalLeftEdge(false)
         , m_includeLogicalRightEdge(false)
         , m_descendantsHaveSameLineHeightAndBaseline(true)
@@ -76,7 +75,7 @@ public:
 #endif
 
 #ifndef NDEBUG
-    virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const LayoutObject* = 0, int = 0) const override;
+    virtual void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr, int = 0) const override;
 #endif
     virtual const char* boxName() const override;
 
@@ -94,7 +93,7 @@ public:
     InlineBox* lastLeafChild() const;
 
     typedef void (*CustomInlineBoxRangeReverse)(void* userData, Vector<InlineBox*>::iterator first, Vector<InlineBox*>::iterator last);
-    void collectLeafBoxesInLogicalOrder(Vector<InlineBox*>&, CustomInlineBoxRangeReverse customReverseImplementation = 0, void* userData = 0) const;
+    void collectLeafBoxesInLogicalOrder(Vector<InlineBox*>&, CustomInlineBoxRangeReverse customReverseImplementation = 0, void* userData = nullptr) const;
 
     virtual void setConstructed() override final
     {
@@ -107,7 +106,7 @@ public:
     virtual void deleteLine() override final;
     virtual void extractLine() override final;
     virtual void attachLine() override final;
-    virtual void adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy) override;
+    virtual void move(const LayoutSize&) override;
 
     virtual void extractLineBoxFromLayoutObject();
     virtual void attachLineBoxToLayoutObject();
@@ -175,11 +174,11 @@ public:
     // Helper functions used during line construction and placement.
     void determineSpacingForFlowBoxes(bool lastLine, bool isLogicallyLastRunWrapped, LayoutObject* logicallyLastRunLayoutObject);
     LayoutUnit getFlowSpacingLogicalWidth();
-    FloatWillBeLayoutUnit placeBoxesInInlineDirection(FloatWillBeLayoutUnit logicalLeft, bool& needsWordSpacing);
-    FloatWillBeLayoutUnit placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild,
-        FloatWillBeLayoutUnit& logicalLeft, FloatWillBeLayoutUnit& minLogicalLeft, FloatWillBeLayoutUnit& maxLogicalRight, bool& needsWordSpacing);
-    void beginPlacingBoxRangesInInlineDirection(FloatWillBeLayoutUnit logicalLeft) { setLogicalLeft(logicalLeft); }
-    void endPlacingBoxRangesInInlineDirection(FloatWillBeLayoutUnit logicalLeft, FloatWillBeLayoutUnit logicalRight, FloatWillBeLayoutUnit minLogicalLeft, FloatWillBeLayoutUnit maxLogicalRight)
+    LayoutUnit placeBoxesInInlineDirection(LayoutUnit logicalLeft, bool& needsWordSpacing);
+    LayoutUnit placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild,
+        LayoutUnit& logicalLeft, LayoutUnit& minLogicalLeft, LayoutUnit& maxLogicalRight, bool& needsWordSpacing);
+    void beginPlacingBoxRangesInInlineDirection(LayoutUnit logicalLeft) { setLogicalLeft(logicalLeft); }
+    void endPlacingBoxRangesInInlineDirection(LayoutUnit logicalLeft, LayoutUnit logicalRight, LayoutUnit minLogicalLeft, LayoutUnit maxLogicalRight)
     {
         setLogicalWidth(logicalRight - logicalLeft);
         if (knownToHaveNoOverflow() && (minLogicalLeft < logicalLeft || maxLogicalRight > logicalRight))
@@ -202,7 +201,7 @@ public:
     virtual LayoutObject::SelectionState selectionState() const override;
 
     virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const override final;
-    virtual FloatWillBeLayoutUnit placeEllipsisBox(bool ltr, FloatWillBeLayoutUnit blockLeftEdge, FloatWillBeLayoutUnit blockRightEdge, FloatWillBeLayoutUnit ellipsisWidth, FloatWillBeLayoutUnit &truncatedWidth, bool&) override;
+    virtual LayoutUnit placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, LayoutUnit blockRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool&) override;
 
     bool hasTextChildren() const { return m_hasTextChildren; }
     bool hasTextDescendants() const { return m_hasTextDescendants; }
@@ -216,9 +215,7 @@ public:
     // respectively are flipped when compared to their physical counterparts.  For example minX is on the left in vertical-lr, but it is on the right in vertical-rl.
     LayoutRect layoutOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
-        // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
-        // the transition to LayoutUnit-based types is complete (crbug.com/321237)
-        return m_overflow ? m_overflow->layoutOverflowRect() : frameRectIncludingLineHeight(lineTop, lineBottom).enclosingLayoutRect();
+        return m_overflow ? m_overflow->layoutOverflowRect() : frameRectIncludingLineHeight(lineTop, lineBottom);
     }
     LayoutUnit logicalTopLayoutOverflow(LayoutUnit lineTop) const
     {
@@ -242,12 +239,10 @@ public:
 
     LayoutRect visualOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
-        // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
-        // the transition to LayoutUnit-based types is complete (crbug.com/321237)
-        return m_overflow ? m_overflow->visualOverflowRect() : frameRectIncludingLineHeight(lineTop, lineBottom).enclosingLayoutRect();
+        return m_overflow ? m_overflow->visualOverflowRect() : frameRectIncludingLineHeight(lineTop, lineBottom);
     }
-    LayoutUnit logicalLeftVisualOverflow() const { return m_overflow ? (isHorizontal() ? m_overflow->visualOverflowRect().x() : m_overflow->visualOverflowRect().y()) : logicalLeft().toLayoutUnit(); }
-    LayoutUnit logicalRightVisualOverflow() const { return m_overflow ? (isHorizontal() ? m_overflow->visualOverflowRect().maxX() : m_overflow->visualOverflowRect().maxY()) : static_cast<LayoutUnit>(ceilf(logicalRight())); }
+    LayoutUnit logicalLeftVisualOverflow() const { return m_overflow ? (isHorizontal() ? m_overflow->visualOverflowRect().x() : m_overflow->visualOverflowRect().y()) : logicalLeft(); }
+    LayoutUnit logicalRightVisualOverflow() const { return m_overflow ? (isHorizontal() ? m_overflow->visualOverflowRect().maxX() : m_overflow->visualOverflowRect().maxY()) : static_cast<LayoutUnit>(logicalRight().ceil()); }
     LayoutUnit logicalTopVisualOverflow(LayoutUnit lineTop) const
     {
         if (m_overflow)
@@ -270,16 +265,16 @@ public:
 
     void setOverflowFromLogicalRects(const LayoutRect& logicalLayoutOverflow, const LayoutRect& logicalVisualOverflow, LayoutUnit lineTop, LayoutUnit lineBottom);
 
-    FloatRectWillBeLayoutRect frameRectIncludingLineHeight(LayoutUnit lineTop, LayoutUnit lineBottom) const
+    LayoutRect frameRectIncludingLineHeight(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         if (isHorizontal())
-            return FloatRectWillBeLayoutRect(m_topLeft.x(), lineTop.toFloat(), width(), (lineBottom - lineTop).toFloat());
-        return FloatRectWillBeLayoutRect(lineTop.toFloat(), m_topLeft.y(), (lineBottom - lineTop).toFloat(), height());
+            return LayoutRect(m_topLeft.x(), lineTop, width(), lineBottom - lineTop);
+        return LayoutRect(lineTop, m_topLeft.y(), lineBottom - lineTop, height());
     }
 
-    FloatRectWillBeLayoutRect logicalFrameRectIncludingLineHeight(LayoutUnit lineTop, LayoutUnit lineBottom) const
+    LayoutRect logicalFrameRectIncludingLineHeight(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
-        return FloatRectWillBeLayoutRect(logicalLeft(), lineTop.toFloat(), logicalWidth(), (lineBottom - lineTop).toFloat());
+        return LayoutRect(logicalLeft(), lineTop, logicalWidth(), lineBottom - lineTop);
     }
 
     bool descendantsHaveSameLineHeightAndBaseline() const { return m_descendantsHaveSameLineHeightAndBaseline; }
@@ -316,7 +311,7 @@ protected:
 
     // Maximum logicalTop among all children of an InlineFlowBox. Used to
     // calculate the offset for TextUnderlinePositionUnder.
-    void computeMaxLogicalTop(FloatWillBeLayoutUnit& maxLogicalTop) const;
+    void computeMaxLogicalTop(LayoutUnit& maxLogicalTop) const;
 
 private:
     unsigned m_includeLogicalLeftEdge : 1;

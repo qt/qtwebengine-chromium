@@ -108,12 +108,15 @@ static const int kDataSize = 1024;
 
 static const char kHttpUrl[] = "http://localhost/foo.webm";
 static const char kFileUrl[] = "file:///tmp/bar.webm";
+static const char kHttpDifferentPathUrl[] = "http://localhost/bar.webm";
+static const char kHttpDifferentOriginUrl[] = "http://127.0.0.1/foo.webm";
 
 class BufferedDataSourceTest : public testing::Test {
  public:
   BufferedDataSourceTest()
       : view_(WebView::create(NULL)),
-        frame_(WebLocalFrame::create(&client_)),
+        frame_(
+            WebLocalFrame::create(blink::WebTreeScopeType::Document, &client_)),
         preload_(BufferedDataSource::AUTO) {
     view_->setMainFrame(frame_);
   }
@@ -129,7 +132,7 @@ class BufferedDataSourceTest : public testing::Test {
     GURL gurl(url);
     data_source_.reset(
         new MockBufferedDataSource(gurl,
-                                   message_loop_.message_loop_proxy(),
+                                   message_loop_.task_runner(),
                                    view_->mainFrame()->toWebLocalFrame(),
                                    &host_));
     data_source_->SetPreload(preload_);
@@ -217,6 +220,46 @@ class BufferedDataSourceTest : public testing::Test {
                        base::Bind(&BufferedDataSourceTest::ReadCallback,
                                   base::Unretained(this)));
     message_loop_.RunUntilIdle();
+  }
+
+  void ExecuteMixedResponseSuccessTest(const WebURLResponse& response1,
+                                       const WebURLResponse& response2) {
+    EXPECT_CALL(host_, SetTotalBytes(kFileSize));
+    EXPECT_CALL(host_, AddBufferedByteRange(kDataSize, kDataSize * 2 - 1));
+    EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+    EXPECT_CALL(*this, ReadCallback(kDataSize)).Times(2);
+
+    Respond(response1);
+    ReadAt(0);
+    ReceiveData(kDataSize);
+    EXPECT_TRUE(data_source_->loading());
+
+    ExpectCreateResourceLoader();
+    FinishLoading();
+    ReadAt(kDataSize);
+    Respond(response2);
+    ReceiveData(kDataSize);
+    FinishLoading();
+    Stop();
+  }
+
+  void ExecuteMixedResponseFailureTest(const WebURLResponse& response1,
+                                       const WebURLResponse& response2) {
+    EXPECT_CALL(host_, SetTotalBytes(kFileSize));
+    EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+    EXPECT_CALL(*this, ReadCallback(kDataSize));
+    EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError));
+
+    Respond(response1);
+    ReadAt(0);
+    ReceiveData(kDataSize);
+    EXPECT_TRUE(data_source_->loading());
+
+    ExpectCreateResourceLoader();
+    FinishLoading();
+    ReadAt(kDataSize);
+    Respond(response2);
+    Stop();
   }
 
   // Accessors for private variables on |data_source_|.
@@ -440,6 +483,98 @@ TEST_F(BufferedDataSourceTest, Http_RetryOnError) {
   FinishLoading();
   EXPECT_FALSE(data_source_->loading());
   Stop();
+}
+
+TEST_F(BufferedDataSourceTest, Http_PartialResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  // The origin URL of response1 and response2 are same. So no error should
+  // occur.
+  ExecuteMixedResponseSuccessTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_RedirectedToDifferentPathResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  response2.setURL(GURL(kHttpDifferentPathUrl));
+  // The origin URL of response1 and response2 are same. So no error should
+  // occur.
+  ExecuteMixedResponseSuccessTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_RedirectedToDifferentOriginResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  response2.setURL(GURL(kHttpDifferentOriginUrl));
+  // The origin URL of response1 and response2 are different. So an error should
+  // occur.
+  ExecuteMixedResponseFailureTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_ServiceWorkerGeneratedResponseAndNormalResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  response1.setWasFetchedViaServiceWorker(true);
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  // response1 is generated in a Service Worker but response2 is from a native
+  // server. So an error should occur.
+  ExecuteMixedResponseFailureTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_ServiceWorkerProxiedAndSameURLResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  response1.setWasFetchedViaServiceWorker(true);
+  response1.setOriginalURLViaServiceWorker(GURL(kHttpUrl));
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  // The origin URL of response1 and response2 are same. So no error should
+  // occur.
+  ExecuteMixedResponseSuccessTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_ServiceWorkerProxiedAndDifferentPathResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  response1.setWasFetchedViaServiceWorker(true);
+  response1.setOriginalURLViaServiceWorker(GURL(kHttpDifferentPathUrl));
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  // The origin URL of response1 and response2 are same. So no error should
+  // occur.
+  ExecuteMixedResponseSuccessTest(response1, response2);
+}
+
+TEST_F(BufferedDataSourceTest,
+       Http_MixedResponse_ServiceWorkerProxiedAndDifferentOriginResponse) {
+  Initialize(kHttpUrl, true);
+  WebURLResponse response1 =
+      response_generator_->GeneratePartial206(0, kDataSize - 1);
+  response1.setWasFetchedViaServiceWorker(true);
+  response1.setOriginalURLViaServiceWorker(GURL(kHttpDifferentOriginUrl));
+  WebURLResponse response2 =
+      response_generator_->GeneratePartial206(kDataSize, kDataSize * 2 - 1);
+  // The origin URL of response1 and response2 are different. So an error should
+  // occur.
+  ExecuteMixedResponseFailureTest(response1, response2);
 }
 
 TEST_F(BufferedDataSourceTest, File_Retry) {

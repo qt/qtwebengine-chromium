@@ -157,7 +157,6 @@ public:
     void updateLayerPositionsAfterLayout();
     void updateLayerPositionsAfterOverflowScroll(const DoubleSize& scrollDelta);
 
-    bool isPaginated() const { return m_isPaginated; }
     DeprecatedPaintLayer* enclosingPaginationLayer() const { return m_enclosingPaginationLayer; }
 
     void updateTransformationMatrix();
@@ -196,9 +195,14 @@ public:
     bool hasVisibleNonLayerContent() const { return m_hasVisibleNonLayerContent; }
     bool hasNonCompositedChild() const { ASSERT(isAllowedToQueryCompositingState()); return m_hasNonCompositedChild; }
 
-    // Gets the nearest enclosing positioned ancestor layer (also includes
-    // the <html> layer and the root layer).
-    DeprecatedPaintLayer* enclosingPositionedAncestor() const;
+    // Gets the ancestor layer that serves as the containing block of this layer. It is assumed
+    // that this layer is established by an out-of-flow positioned layout object (i.e. either
+    // absolutely or fixed positioned).
+    // If |ancestor| is specified, |*skippedAncestor| will be set to true if |ancestor| is found in
+    // the ancestry chain between this layer and the containing block layer; if not found, it will
+    // be set to false. Either both |ancestor| and |skippedAncestor| should be nullptr, or none of
+    // them should.
+    DeprecatedPaintLayer* enclosingPositionedAncestor(const DeprecatedPaintLayer* ancestor = nullptr, bool* skippedAncestor = nullptr) const;
 
     bool isPaintInvalidationContainer() const;
 
@@ -217,7 +221,7 @@ public:
     bool canUseConvertToLayerCoords() const
     {
         // These LayoutObjects have an impact on their layers without the layoutObjects knowing about it.
-        return !layoutObject()->hasColumns() && !layoutObject()->hasTransformRelatedProperty() && !layoutObject()->isSVGRoot();
+        return !layoutObject()->hasTransformRelatedProperty() && !layoutObject()->isSVGRoot();
     }
 
     void convertToLayerCoords(const DeprecatedPaintLayer* ancestorLayer, LayoutPoint&) const;
@@ -272,7 +276,7 @@ public:
     // currentTransform computes a transform which takes accelerated animations into account. The
     // resulting transform has transform-origin baked in. If the layer does not have a transform,
     // returns the identity matrix.
-    TransformationMatrix currentTransform(ComputedStyle::ApplyTransformOrigin = ComputedStyle::IncludeTransformOrigin) const;
+    TransformationMatrix currentTransform() const;
     TransformationMatrix renderableTransform(PaintBehavior) const;
 
     // Get the perspective transform, which is applied to transformed sublayers.
@@ -312,7 +316,11 @@ public:
     void ensureCompositedDeprecatedPaintLayerMapping();
     void clearCompositedDeprecatedPaintLayerMapping(bool layerBeingDestroyed = false);
     CompositedDeprecatedPaintLayerMapping* groupedMapping() const { return m_groupedMapping; }
-    void setGroupedMapping(CompositedDeprecatedPaintLayerMapping* groupedMapping, bool layerBeingDestroyed = false);
+    enum SetGroupMappingOptions {
+        InvalidateLayerAndRemoveFromMapping,
+        DoNotInvalidateLayerAndRemoveFromMapping
+    };
+    void setGroupedMapping(CompositedDeprecatedPaintLayerMapping*, SetGroupMappingOptions);
 
     bool hasCompositedMask() const;
     bool hasCompositedClippingMask() const;
@@ -368,8 +376,6 @@ public:
     void updateFilters(const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
 
     Node* enclosingElement() const;
-
-    bool isInTopLayer() const;
 
     bool scrollsWithViewport() const;
     bool scrollsWithRespectTo(const DeprecatedPaintLayer*) const;
@@ -491,7 +497,6 @@ public:
     void setShouldIsolateCompositedDescendants(bool);
 
     void updateDescendantDependentFlags();
-    void updateDescendantDependentFlagsForEntireSubtree();
 
     void updateOrRemoveFilterEffectBuilder();
 
@@ -501,8 +506,6 @@ public:
     LayoutPoint computeOffsetFromTransformedAncestor() const;
 
     void didUpdateNeedsCompositedScrolling();
-
-    void setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
 
     bool hasSelfPaintingLayerDescendant() const
     {
@@ -563,13 +566,6 @@ private:
         const LayoutRect& hitTestRect, const HitTestLocation&,
         const HitTestingTransformState*, double* zOffsetForDescendants, double* zOffset,
         const HitTestingTransformState* unflattenedTransformState, bool depthSortDescendants);
-    DeprecatedPaintLayer* hitTestPaginatedChildLayer(DeprecatedPaintLayer* childLayer, DeprecatedPaintLayer* rootLayer, HitTestResult&,
-        const LayoutRect& hitTestRect, const HitTestLocation&,
-        const HitTestingTransformState*, double* zOffset);
-    DeprecatedPaintLayer* hitTestChildLayerColumns(DeprecatedPaintLayer* childLayer, DeprecatedPaintLayer* rootLayer, HitTestResult&,
-        const LayoutRect& hitTestRect, const HitTestLocation&,
-        const HitTestingTransformState*, double* zOffset,
-        const Vector<DeprecatedPaintLayer*>& columnLayers, size_t columnIndex);
 
     PassRefPtr<HitTestingTransformState> createLocalTransformState(DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer* containerLayer,
         const LayoutRect& hitTestRect, const HitTestLocation&,
@@ -579,7 +575,7 @@ private:
     bool hitTestContents(HitTestResult&, const LayoutRect& layerBounds, const HitTestLocation&, HitTestFilter) const;
     bool hitTestContentsForFragments(const DeprecatedPaintLayerFragments&, HitTestResult&, const HitTestLocation&, HitTestFilter, bool& insideClipRect) const;
     DeprecatedPaintLayer* hitTestTransformedLayerInFragments(DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer* containerLayer, HitTestResult&,
-        const LayoutRect& hitTestRect, const HitTestLocation&, const HitTestingTransformState* = 0, double* zOffset = 0);
+        const LayoutRect& hitTestRect, const HitTestLocation&, const HitTestingTransformState*, double* zOffset, ClipRectsCacheSlot);
 
     bool childBackgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const;
 
@@ -608,7 +604,6 @@ private:
     void updateOrRemoveFilterClients();
 
     void updatePaginationRecursive(bool needsPaginationUpdate = false);
-    void updatePagination();
     void clearPaginationRecursive();
 
     DeprecatedPaintLayerType m_layerType;
@@ -631,8 +626,6 @@ private:
     unsigned m_hasVisibleDescendant : 1;
 
     unsigned m_hasVisibleNonLayerContent : 1;
-
-    unsigned m_isPaginated : 1; // If we think this layer is split by a multi-column ancestor, then this bit will be set.
 
 #if ENABLE(ASSERT)
     unsigned m_needsPositionUpdate : 1;
@@ -710,7 +703,7 @@ private:
     IntRect m_blockSelectionGapsBounds;
 
     OwnPtr<CompositedDeprecatedPaintLayerMapping> m_compositedDeprecatedPaintLayerMapping;
-    OwnPtr<DeprecatedPaintLayerScrollableArea> m_scrollableArea;
+    OwnPtrWillBePersistent<DeprecatedPaintLayerScrollableArea> m_scrollableArea;
 
     CompositedDeprecatedPaintLayerMapping* m_groupedMapping;
 

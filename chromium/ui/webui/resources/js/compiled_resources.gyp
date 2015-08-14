@@ -9,6 +9,9 @@
     },
     {
       'target_name': 'cr',
+      'variables': {
+        'externs': ['../../../../third_party/closure_compiler/externs/chrome_send.js'],
+      },
       'includes': ['../../../../third_party/closure_compiler/compile_js.gypi'],
     },
     {
@@ -29,17 +32,14 @@
     {
       'target_name': 'util',
       'variables': {
-        'depends': ['cr.js'],
+        'depends': ['compiled_resources.gyp:cr'],
         # TODO(jlklein): Get <(VARIABLES) in transient externs/depends working.
-        'externs': ['../../../../third_party/closure_compiler/externs/chrome_send_externs.js'],
+        'externs': ['../../../../third_party/closure_compiler/externs/chrome_send.js'],
       },
       'includes': ['../../../../third_party/closure_compiler/compile_js.gypi'],
     },
     {
       'target_name': 'parse_html_subset',
-      'variables': {
-        'externs': ['../../../../third_party/closure_compiler/externs/pending_compiler_externs.js'],
-      },
       'includes': ['../../../../third_party/closure_compiler/compile_js.gypi'],
     },
     {

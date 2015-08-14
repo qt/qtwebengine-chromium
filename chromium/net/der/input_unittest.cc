@@ -13,18 +13,26 @@ namespace test {
 const uint8_t kInput[] = {'t', 'e', 's', 't'};
 
 TEST(InputTest, Equals) {
-  Input test(kInput, arraysize(kInput));
-  Input test2(kInput, arraysize(kInput));
+  Input test(kInput);
+  Input test2(kInput);
   EXPECT_TRUE(test.Equals(test2));
 
-  std::string input_copy(reinterpret_cast<const char*>(kInput),
-                         arraysize(kInput));
+  uint8_t input_copy[arraysize(kInput)] = {0};
+  memcpy(input_copy, kInput, arraysize(kInput));
   Input test_copy(input_copy);
   EXPECT_TRUE(test.Equals(test_copy));
 
   Input test_truncated(kInput, arraysize(kInput) - 1);
   EXPECT_FALSE(test.Equals(test_truncated));
   EXPECT_FALSE(test_truncated.Equals(test));
+}
+
+TEST(InputTest, StaticArray) {
+  Input input(kInput);
+  EXPECT_EQ(arraysize(kInput), input.Length());
+
+  Input input2(kInput);
+  EXPECT_TRUE(input.Equals(input2));
 }
 
 TEST(ByteReaderTest, NoReadPastEnd) {
@@ -35,7 +43,7 @@ TEST(ByteReaderTest, NoReadPastEnd) {
 
 TEST(ByteReaderTest, ReadToEnd) {
   uint8_t out;
-  ByteReader reader(Input(kInput, arraysize(kInput)));
+  ByteReader reader((Input(kInput)));
   for (size_t i = 0; i < arraysize(kInput); ++i) {
     ASSERT_TRUE(reader.ReadByte(&out));
     ASSERT_EQ(kInput[i], out);
@@ -45,13 +53,13 @@ TEST(ByteReaderTest, ReadToEnd) {
 
 TEST(ByteReaderTest, PartialReadFails) {
   Input out;
-  ByteReader reader(Input(kInput, arraysize(kInput)));
+  ByteReader reader((Input(kInput)));
   EXPECT_FALSE(reader.ReadBytes(5, &out));
 }
 
 TEST(ByteReaderTest, HasMore) {
   Input out;
-  ByteReader reader(Input(kInput, arraysize(kInput)));
+  ByteReader reader((Input(kInput)));
 
   ASSERT_TRUE(reader.HasMore());
   ASSERT_TRUE(reader.ReadBytes(arraysize(kInput), &out));
@@ -60,7 +68,7 @@ TEST(ByteReaderTest, HasMore) {
 
 TEST(ByteReaderTest, ReadToMark) {
   uint8_t out;
-  Input input(kInput, arraysize(kInput));
+  Input input(kInput);
   ByteReader reader(input);
 
   // Read 2 bytes from the reader and then set a mark.
@@ -76,8 +84,10 @@ TEST(ByteReaderTest, ReadToMark) {
 
 TEST(ByteReaderTest, CantReadToWrongMark) {
   Input out;
-  Input in1(kInput, arraysize(kInput));
-  Input in2("test");
+  Input in1(kInput);
+
+  const uint8_t in2_bytes[] = {'t', 'e', 's', 't'};
+  Input in2(in2_bytes);
   ByteReader reader1(in1);
   ByteReader reader2(in2);
   ASSERT_TRUE(reader1.ReadBytes(2, &out));
@@ -94,7 +104,7 @@ TEST(ByteReaderTest, CantReadToWrongMark) {
 
 TEST(ByteReaderTest, MarksAreSharedBetweenSameInputs) {
   Input out;
-  Input in1(kInput, arraysize(kInput));
+  Input in1(kInput);
   Input in2(kInput, 1);
   ByteReader reader1(in1);
   ByteReader reader2(in2);
@@ -119,8 +129,8 @@ TEST(ByteReaderTest, CantReadToWrongMarkWithInputsOnStack) {
   const uint8_t data1[] = "test";
   const uint8_t data2[] = "foo";
   Input out;
-  Input in1(data1, arraysize(data1));
-  Input in2(data2, arraysize(data2));
+  Input in1(data1);
+  Input in2(data2);
 
   ByteReader reader1(in1);
   ByteReader reader2(in2);

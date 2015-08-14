@@ -52,17 +52,18 @@ class PreemptiveExpand : public TimeStretch {
  protected:
   // Sets the parameters |best_correlation| and |peak_index| to suitable
   // values when the signal contains no active speech.
-  void SetParametersForPassiveSpeech(size_t len,
-                                     int16_t* w16_bestCorr,
-                                     int* w16_bestIndex) const override;
+  void SetParametersForPassiveSpeech(size_t input_length,
+                                     int16_t* best_correlation,
+                                     int* peak_index) const override;
 
   // Checks the criteria for performing the time-stretching operation and,
   // if possible, performs the time-stretching.
-  ReturnCodes CheckCriteriaAndStretch(const int16_t* pw16_decoded,
-                                      size_t len,
-                                      size_t w16_bestIndex,
-                                      int16_t w16_bestCorr,
-                                      bool w16_VAD,
+  ReturnCodes CheckCriteriaAndStretch(const int16_t* input,
+                                      size_t input_length,
+                                      size_t peak_index,
+                                      int16_t best_correlation,
+                                      bool active_speech,
+                                      bool /*fast_mode*/,
                                       AudioMultiVector* output) const override;
 
  private:

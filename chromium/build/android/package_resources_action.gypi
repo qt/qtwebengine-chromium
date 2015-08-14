@@ -12,6 +12,9 @@
 #  app_manifest_version_code - set the apps version number.
 # Optional variables:
 #  asset_location - The directory where assets are located (if any).
+#  create_density_splits - Whether to create density-based apk splits. Splits
+#    are supported only for minSdkVersion >= 21.
+#  language_splits - List of languages to create apk splits for.
 #  resource_zips - List of paths to resource zip files.
 #  shared_resources - Make a resource package that can be loaded by a different
 #    application at runtime to access the package's resources.
@@ -20,6 +23,7 @@
 {
   'variables': {
     'asset_location%': '',
+    'create_density_splits%': 0,
     'resource_zips%': [],
     'shared_resources%': 0,
     'extensions_to_not_compress%': '',
@@ -42,7 +46,7 @@
   'action': [
     'python', '<(DEPTH)/build/android/gyp/package_resources.py',
     '--android-sdk', '<(android_sdk)',
-    '--android-sdk-tools', '<(android_sdk_tools)',
+    '--aapt-path', '<(android_aapt_path)',
     '--configuration-name', '<(CONFIGURATION_NAME)',
     '--android-manifest', '<(android_manifest_path)',
     '--version-code', '<(app_manifest_version_code)',
@@ -59,6 +63,26 @@
     ['asset_location != ""', {
       'action': [
         '--asset-dir', '<(asset_location)',
+      ],
+    }],
+    ['create_density_splits == 1', {
+      'action': [
+        '--create-density-splits',
+      ],
+      'outputs': [
+        '<(resource_packaged_apk_path)_hdpi',
+        '<(resource_packaged_apk_path)_xhdpi',
+        '<(resource_packaged_apk_path)_xxhdpi',
+        '<(resource_packaged_apk_path)_xxxhdpi',
+        '<(resource_packaged_apk_path)_tvdpi',
+      ],
+    }],
+    ['language_splits != []', {
+      'action': [
+        '--language-splits=<(language_splits)',
+      ],
+      'outputs': [
+        "<!@(python <(DEPTH)/build/apply_locales.py '<(resource_packaged_apk_path)_ZZLOCALE' <(language_splits))",
       ],
     }],
     ['resource_zips != []', {

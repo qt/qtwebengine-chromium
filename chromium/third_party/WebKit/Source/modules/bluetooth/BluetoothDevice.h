@@ -8,6 +8,7 @@
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Heap.h"
 #include "public/platform/modules/bluetooth/WebBluetoothDevice.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -27,23 +28,20 @@ class BluetoothDevice final
     , public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    BluetoothDevice(const WebBluetoothDevice&);
-
-    static BluetoothDevice* create(const WebBluetoothDevice&);
+    BluetoothDevice(PassOwnPtr<WebBluetoothDevice>);
 
     ScriptPromise connectGATT(ScriptState*);
 
     // Interface required by CallbackPromiseAdapter:
     typedef WebBluetoothDevice WebType;
-    static BluetoothDevice* take(ScriptPromiseResolver*, WebBluetoothDevice*);
-    static void dispose(WebBluetoothDevice*);
+    static BluetoothDevice* take(ScriptPromiseResolver*, PassOwnPtr<WebBluetoothDevice>);
 
     // Interface required by Garbage Collection:
     DEFINE_INLINE_TRACE() { }
 
     // IDL exposed interface:
-    String instanceID() { return m_webDevice.instanceID; }
-    String name() { return m_webDevice.name; }
+    String instanceID() { return m_webDevice->instanceID; }
+    String name() { return m_webDevice->name; }
     unsigned deviceClass(bool& isNull);
     String vendorIDSource();
     unsigned vendorID(bool& isNull);
@@ -53,7 +51,7 @@ public:
     Vector<String> uuids();
 
 private:
-    WebBluetoothDevice m_webDevice;
+    OwnPtr<WebBluetoothDevice> m_webDevice;
 };
 
 } // namespace blink

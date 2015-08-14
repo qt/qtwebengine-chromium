@@ -4,10 +4,15 @@
 
 #include "content/renderer/input/input_handler_proxy.h"
 
+#include <algorithm>
+
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "content/common/input/did_overscroll_params.h"
 #include "content/common/input/web_input_event_traits.h"
@@ -17,7 +22,6 @@
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/point_conversions.h"
 
 using blink::WebFloatPoint;
@@ -49,11 +53,11 @@ const double kMinBoostFlingSpeedSquare = 350. * 350.;
 // fling for which cancellation has been deferred.
 const double kMinBoostTouchScrollSpeedSquare = 150 * 150.;
 
-// Timeout window after which the active fling will be cancelled if no scrolls
-// or flings of sufficient velocity relative to the current fling are received.
-// The default value on Android native views is 40ms, but we use a slightly
-// increased value to accomodate small IPC message delays.
-const double kFlingBoostTimeoutDelaySeconds = 0.045;
+// Timeout window after which the active fling will be cancelled if no animation
+// ticks, scrolls or flings of sufficient velocity relative to the current fling
+// are received. The default value on Android native views is 40ms, but we use a
+// slightly increased value to accomodate small IPC message delays.
+const double kFlingBoostTimeoutDelaySeconds = 0.05;
 
 gfx::Vector2dF ToClientScrollIncrement(const WebFloatSize& increment) {
   return gfx::Vector2dF(-increment.width, -increment.height);
@@ -66,12 +70,16 @@ double InSecondsF(const base::TimeTicks& time) {
 bool ShouldSuppressScrollForFlingBoosting(
     const gfx::Vector2dF& current_fling_velocity,
     const WebGestureEvent& scroll_update_event,
-    double time_since_last_boost_event) {
+    double time_since_last_boost_event,
+    double time_since_last_fling_animate) {
   DCHECK_EQ(WebInputEvent::GestureScrollUpdate, scroll_update_event.type);
 
   gfx::Vector2dF dx(scroll_update_event.data.scrollUpdate.deltaX,
                     scroll_update_event.data.scrollUpdate.deltaY);
   if (gfx::DotProduct(current_fling_velocity, dx) <= 0)
+    return false;
+
+  if (time_since_last_fling_animate > kFlingBoostTimeoutDelaySeconds)
     return false;
 
   if (time_since_last_boost_event < 0.001)
@@ -406,7 +414,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleMouseWheel(
     // Note that the call to the elasticity controller is made asynchronously,
     // to minimize divergence between main thread and impl thread event
     // handling paths.
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&InputScrollElasticityController::ObserveWheelEventAndResult,
                    scroll_elasticity_controller_->GetWeakPtr(), wheel_event,
@@ -417,13 +425,21 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleMouseWheel(
 
 InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollBegin(
     const WebGestureEvent& gesture_event) {
-  DCHECK(!gesture_scroll_on_impl_thread_);
+  if (gesture_scroll_on_impl_thread_)
+    CancelCurrentFling();
+
 #ifndef NDEBUG
   DCHECK(!expect_scroll_update_end_);
   expect_scroll_update_end_ = true;
 #endif
-  cc::InputHandler::ScrollStatus scroll_status = input_handler_->ScrollBegin(
-      gfx::Point(gesture_event.x, gesture_event.y), cc::InputHandler::GESTURE);
+  cc::InputHandler::ScrollStatus scroll_status;
+  if (gesture_event.data.scrollBegin.targetViewport) {
+    scroll_status = input_handler_->RootScrollBegin(cc::InputHandler::GESTURE);
+  } else {
+    scroll_status = input_handler_->ScrollBegin(
+        gfx::Point(gesture_event.x, gesture_event.y),
+        cc::InputHandler::GESTURE);
+  }
   UMA_HISTOGRAM_ENUMERATION("Renderer4.CompositorScrollHitTestResult",
                             scroll_status,
                             cc::InputHandler::ScrollStatusCount);
@@ -483,9 +499,14 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
   cc::InputHandler::ScrollStatus scroll_status;
 
   if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad) {
-    scroll_status = input_handler_->ScrollBegin(
-        gfx::Point(gesture_event.x, gesture_event.y),
-        cc::InputHandler::NON_BUBBLING_GESTURE);
+    if (gesture_event.data.flingStart.targetViewport) {
+      scroll_status = input_handler_->RootScrollBegin(
+          cc::InputHandler::NON_BUBBLING_GESTURE);
+    } else {
+      scroll_status = input_handler_->ScrollBegin(
+          gfx::Point(gesture_event.x, gesture_event.y),
+          cc::InputHandler::NON_BUBBLING_GESTURE);
+    }
   } else {
     if (!gesture_scroll_on_impl_thread_)
       scroll_status = cc::InputHandler::SCROLL_ON_MAIN_THREAD;
@@ -529,7 +550,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
           WebPoint(gesture_event.globalX, gesture_event.globalY);
       fling_parameters_.modifiers = gesture_event.modifiers;
       fling_parameters_.sourceDevice = gesture_event.sourceDevice;
-      input_handler_->SetNeedsAnimate();
+      input_handler_->SetNeedsAnimateInput();
       return DID_HANDLE;
     }
     case cc::InputHandler::SCROLL_UNKNOWN:
@@ -640,9 +661,12 @@ bool InputHandlerProxy::FilterInputEventForFlingBoosting(
     case WebInputEvent::GestureScrollUpdate: {
       const double time_since_last_boost_event =
           event.timeStampSeconds - last_fling_boost_event_.timeStampSeconds;
+      const double time_since_last_fling_animate = std::max(
+          0.0, event.timeStampSeconds - InSecondsF(last_fling_animate_time_));
       if (ShouldSuppressScrollForFlingBoosting(current_fling_velocity_,
                                                gesture_event,
-                                               time_since_last_boost_event)) {
+                                               time_since_last_boost_event,
+                                               time_since_last_fling_animate)) {
         ExtendBoostedFlingTimeout(gesture_event);
         return true;
       }
@@ -732,6 +756,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
   if (!fling_curve_)
     return;
 
+  last_fling_animate_time_ = time;
   double monotonic_time_sec = InSecondsF(time);
 
   if (deferred_fling_cancel_time_seconds_ &&
@@ -751,7 +776,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
         monotonic_time_sec >= fling_parameters_.startTime +
                                   kMaxSecondsFromFlingTimestampToFirstAnimate) {
       fling_parameters_.startTime = monotonic_time_sec;
-      input_handler_->SetNeedsAnimate();
+      input_handler_->SetNeedsAnimateInput();
       return;
     }
   }
@@ -764,7 +789,7 @@ void InputHandlerProxy::Animate(base::TimeTicks time) {
     fling_is_active = false;
 
   if (fling_is_active) {
-    input_handler_->SetNeedsAnimate();
+    input_handler_->SetNeedsAnimateInput();
   } else {
     TRACE_EVENT_INSTANT0("input",
                          "InputHandlerProxy::animate::flingOver",

@@ -77,13 +77,11 @@ class TestRequestPeer : public RequestPeer {
     total_encoded_data_length_ += encoded_data_length;
   }
 
-  void OnReceivedData(const char* data,
-                      int data_length,
-                      int encoded_data_length) override {
+  void OnReceivedData(scoped_ptr<ReceivedData> data) override {
     EXPECT_TRUE(received_response_);
     EXPECT_FALSE(complete_);
-    data_.append(data, data_length);
-    total_encoded_data_length_ += encoded_data_length;
+    data_.append(data->payload(), data->length());
+    total_encoded_data_length_ += data->encoded_length();
   }
 
   void OnCompletedRequest(int error_code,
@@ -95,6 +93,24 @@ class TestRequestPeer : public RequestPeer {
     EXPECT_TRUE(received_response_);
     EXPECT_FALSE(complete_);
     complete_ = true;
+  }
+
+  void OnReceivedCompletedResponse(const ResourceResponseInfo& info,
+                                   scoped_ptr<ReceivedData> data,
+                                   int error_code,
+                                   bool was_ignored_by_handler,
+                                   bool stale_copy_in_cache,
+                                   const std::string& security_info,
+                                   const base::TimeTicks& completion_time,
+                                   int64 total_transfer_size) override {
+    bool cancel_on_receive_response = cancel_on_receive_response_;
+    OnReceivedResponse(info);
+    if (cancel_on_receive_response)
+      return;
+    if (data)
+      OnReceivedData(data.Pass());
+    OnCompletedRequest(error_code, was_ignored_by_handler, stale_copy_in_cache,
+                       security_info, completion_time, total_transfer_size);
   }
 
   void set_follow_redirects(bool follow_redirects) {
@@ -186,60 +202,60 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
       ADD_FAILURE() << "Expected ResourceHostMsg_RequestResource message";
       return -1;
     }
-    ResourceHostMsg_Request request = get<2>(params);
+    ResourceHostMsg_Request request = base::get<2>(params);
     EXPECT_EQ(kTestPageUrl, request.url.spec());
     message_queue_.erase(message_queue_.begin());
-    return get<1>(params);
+    return base::get<1>(params);
   }
 
   void ConsumeFollowRedirect(int expected_request_id) {
     ASSERT_FALSE(message_queue_.empty());
-    Tuple<int> args;
+    base::Tuple<int> args;
     ASSERT_EQ(ResourceHostMsg_FollowRedirect::ID, message_queue_[0].type());
     ASSERT_TRUE(ResourceHostMsg_FollowRedirect::Read(
         &message_queue_[0], &args));
-    EXPECT_EQ(expected_request_id, get<0>(args));
+    EXPECT_EQ(expected_request_id, base::get<0>(args));
     message_queue_.erase(message_queue_.begin());
   }
 
   void ConsumeDataReceived_ACK(int expected_request_id) {
     ASSERT_FALSE(message_queue_.empty());
-    Tuple<int> args;
+    base::Tuple<int> args;
     ASSERT_EQ(ResourceHostMsg_DataReceived_ACK::ID, message_queue_[0].type());
     ASSERT_TRUE(ResourceHostMsg_DataReceived_ACK::Read(
         &message_queue_[0], &args));
-    EXPECT_EQ(expected_request_id, get<0>(args));
+    EXPECT_EQ(expected_request_id, base::get<0>(args));
     message_queue_.erase(message_queue_.begin());
   }
 
   void ConsumeDataDownloaded_ACK(int expected_request_id) {
     ASSERT_FALSE(message_queue_.empty());
-    Tuple<int> args;
+    base::Tuple<int> args;
     ASSERT_EQ(ResourceHostMsg_DataDownloaded_ACK::ID, message_queue_[0].type());
     ASSERT_TRUE(ResourceHostMsg_DataDownloaded_ACK::Read(
         &message_queue_[0], &args));
-    EXPECT_EQ(expected_request_id, get<0>(args));
+    EXPECT_EQ(expected_request_id, base::get<0>(args));
     message_queue_.erase(message_queue_.begin());
   }
 
   void ConsumeReleaseDownloadedFile(int expected_request_id) {
     ASSERT_FALSE(message_queue_.empty());
-    Tuple<int> args;
+    base::Tuple<int> args;
     ASSERT_EQ(ResourceHostMsg_ReleaseDownloadedFile::ID,
               message_queue_[0].type());
     ASSERT_TRUE(ResourceHostMsg_ReleaseDownloadedFile::Read(
         &message_queue_[0], &args));
-    EXPECT_EQ(expected_request_id, get<0>(args));
+    EXPECT_EQ(expected_request_id, base::get<0>(args));
     message_queue_.erase(message_queue_.begin());
   }
 
   void ConsumeCancelRequest(int expected_request_id) {
     ASSERT_FALSE(message_queue_.empty());
-    Tuple<int> args;
+    base::Tuple<int> args;
     ASSERT_EQ(ResourceHostMsg_CancelRequest::ID, message_queue_[0].type());
     ASSERT_TRUE(ResourceHostMsg_CancelRequest::Read(
         &message_queue_[0], &args));
-    EXPECT_EQ(expected_request_id, get<0>(args));
+    EXPECT_EQ(expected_request_id, base::get<0>(args));
     message_queue_.erase(message_queue_.begin());
   }
 
@@ -734,9 +750,7 @@ class TimeConversionTest : public ResourceDispatcherTest,
 
   void OnDownloadedData(int len, int encoded_data_length) override {}
 
-  void OnReceivedData(const char* data,
-                      int data_length,
-                      int encoded_data_length) override {}
+  void OnReceivedData(scoped_ptr<ReceivedData> data) override {}
 
   void OnCompletedRequest(int error_code,
                           bool was_ignored_by_handler,
@@ -744,6 +758,15 @@ class TimeConversionTest : public ResourceDispatcherTest,
                           const std::string& security_info,
                           const base::TimeTicks& completion_time,
                           int64 total_transfer_size) override {}
+
+  void OnReceivedCompletedResponse(const ResourceResponseInfo& info,
+                                   scoped_ptr<ReceivedData> data,
+                                   int error_code,
+                                   bool was_ignored_by_handler,
+                                   bool stale_copy_in_cache,
+                                   const std::string& security_info,
+                                   const base::TimeTicks& completion_time,
+                                   int64 total_transfer_size) override {}
 
   const ResourceResponseInfo& response_info() const { return response_info_; }
 

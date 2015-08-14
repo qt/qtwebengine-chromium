@@ -34,8 +34,6 @@ class EncodedFrameObserver;
 
 namespace vcm {
 
-class DebugRecorder;
-
 class VCMProcessTimer {
  public:
   VCMProcessTimer(int64_t periodMs, Clock* clock)
@@ -95,21 +93,19 @@ class VideoSender {
   int32_t SetChannelParameters(uint32_t target_bitrate,  // bits/s.
                                uint8_t lossRate,
                                int64_t rtt);
+  int32_t UpdateEncoderParameters();
 
   int32_t RegisterTransportCallback(VCMPacketizationCallback* transport);
   int32_t RegisterSendStatisticsCallback(VCMSendStatisticsCallback* sendStats);
   int32_t RegisterProtectionCallback(VCMProtectionCallback* protection);
   void SetVideoProtection(bool enable, VCMVideoProtection videoProtection);
 
-  int32_t AddVideoFrame(const I420VideoFrame& videoFrame,
+  int32_t AddVideoFrame(const VideoFrame& videoFrame,
                         const VideoContentMetrics* _contentMetrics,
                         const CodecSpecificInfo* codecSpecificInfo);
 
   int32_t IntraFrameRequest(int stream_index);
   int32_t EnableFrameDropper(bool enable);
-
-  int StartDebugRecording(const char* file_name_utf8);
-  void StopDebugRecording();
 
   void SuspendBelowMinBitrate();
   bool VideoSuspended() const;
@@ -119,8 +115,6 @@ class VideoSender {
 
  private:
   Clock* clock_;
-
-  rtc::scoped_ptr<DebugRecorder> recorder_;
 
   rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _sendCritSect;
@@ -139,6 +133,15 @@ class VideoSender {
 
   VCMQMSettingsCallback* const qm_settings_callback_;
   VCMProtectionCallback* protection_callback_;
+
+  rtc::CriticalSection params_lock_;
+  struct EncoderParameters {
+    uint32_t target_bitrate;
+    uint8_t loss_rate;
+    int64_t rtt;
+    uint32_t input_frame_rate;
+    bool updated;
+  } encoder_params_ GUARDED_BY(params_lock_);
 };
 
 class VideoReceiver {
@@ -201,7 +204,6 @@ class VideoReceiver {
       EXCLUSIVE_LOCKS_REQUIRED(_receiveCritSect);
   int32_t RequestKeyFrame();
   int32_t RequestSliceLossIndication(const uint64_t pictureID) const;
-  int32_t NackList(uint16_t* nackList, uint16_t* size);
 
  private:
   enum VCMKeyRequestMode {

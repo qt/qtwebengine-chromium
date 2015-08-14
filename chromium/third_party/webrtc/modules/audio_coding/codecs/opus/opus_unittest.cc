@@ -45,7 +45,7 @@ class OpusTest : public TestWithParam<::testing::tuple<int, int>> {
 
   int EncodeDecode(WebRtcOpusEncInst* encoder,
                    const int16_t* input_audio,
-                   const int input_samples,
+                   int input_samples,
                    WebRtcOpusDecInst* decoder,
                    int16_t* output_audio,
                    int16_t* audio_type);
@@ -97,7 +97,7 @@ void OpusTest::SetMaxPlaybackRate(WebRtcOpusEncInst* encoder,
 
 int OpusTest::EncodeDecode(WebRtcOpusEncInst* encoder,
                            const int16_t* input_audio,
-                           const int input_samples,
+                           int input_samples,
                            WebRtcOpusDecInst* decoder,
                            int16_t* output_audio,
                            int16_t* audio_type) {
@@ -105,6 +105,7 @@ int OpusTest::EncodeDecode(WebRtcOpusEncInst* encoder,
                                     input_audio,
                                     input_samples, kMaxBytes,
                                     bitstream_);
+  EXPECT_GE(encoded_bytes_, 0);
   return WebRtcOpus_Decode(decoder, bitstream_,
                            encoded_bytes_, output_audio,
                            audio_type);
@@ -163,7 +164,7 @@ void OpusTest::TestDtxEffect(bool dtx) {
       EXPECT_EQ(0, opus_encoder_->in_dtx_mode);
       EXPECT_EQ(0, opus_decoder_->in_dtx_mode);
       EXPECT_EQ(0, audio_type);  // Speech.
-    } else if (1 == encoded_bytes_) {
+    } else if (encoded_bytes_ == 1) {
       EXPECT_EQ(1, opus_encoder_->in_dtx_mode);
       EXPECT_EQ(1, opus_decoder_->in_dtx_mode);
       EXPECT_EQ(2, audio_type);  // Comfort noise.
@@ -538,6 +539,7 @@ TEST_P(OpusTest, OpusDurationEstimation) {
                                      speech_data_.GetNextBlock(),
                                      kOpus10msFrameSamples, kMaxBytes,
                                      bitstream_);
+  EXPECT_GE(encoded_bytes_, 0);
   EXPECT_EQ(kOpus10msFrameSamples,
             WebRtcOpus_DurationEst(opus_decoder_, bitstream_,
                                    encoded_bytes_));
@@ -547,6 +549,7 @@ TEST_P(OpusTest, OpusDurationEstimation) {
                                      speech_data_.GetNextBlock(),
                                      kOpus20msFrameSamples, kMaxBytes,
                                      bitstream_);
+  EXPECT_GE(encoded_bytes_, 0);
   EXPECT_EQ(kOpus20msFrameSamples,
             WebRtcOpus_DurationEst(opus_decoder_, bitstream_,
                                    encoded_bytes_));

@@ -14,74 +14,73 @@ without changes to the corresponding grd file. -->
   <release seq="1">
     <includes>
       <include name="IDR_WEBUI_I18N_TEMPLATE_JS" file="js/i18n_template.js" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_WEBUI_I18N_TEMPLATE_POLYMER_JS" file="js/i18n_template_polymer.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBUI_JSTEMPLATE_JS" file="js/jstemplate_compiled.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBUI_ANALYTICS_JS" file="js/analytics.js" flattenhtml="true" type="BINDATA" />
       <!-- Roboto Font -->
-      <include name="IDR_WEBUI_ROBOTO_ROBOTO_WOFF"  file="roboto/roboto.woff" type="BINDATA" />
-      <include name="IDR_WEBUI_ROBOTO_ROBOTO_WOFF2" file="roboto/roboto.woff2" type="BINDATA" /> 
+      <include name="IDR_WEBUI_ROBOTO_ROBOTO_REGULAR_LATIN_WOFF2" file="roboto/roboto-regular-latin.woff2" type="BINDATA" />
+      <include name="IDR_WEBUI_ROBOTO_ROBOTO_MEDIUM_LATIN_WOFF2" file="roboto/roboto-medium-latin.woff2" type="BINDATA" />
 
       <!-- Component apps common image resources - 1x -->
       <!-- White button -->
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON"
-               file="../../resources/default_100_percent/common/button.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_PRESSED"
-               file="../../resources/default_100_percent/common/button_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_HOVER"
-               file="../../resources/default_100_percent/common/button_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_DISABLED"
-               file="../../resources/default_100_percent/common/button_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_inactive.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_FOCUSED"
-               file="../../resources/default_100_percent/common/button_focused.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_FOCUSED_PRESSED"
-               file="../../resources/default_100_percent/common/button_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_FOCUSED_HOVER"
-               file="../../resources/default_100_percent/common/button_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/button_focused_hover.png" type="BINDATA" />
       <!-- Blue button -->
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON"
-               file="../../resources/default_100_percent/common/blue_button.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_PRESSED"
-               file="../../resources/default_100_percent/common/blue_button_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_HOVER"
-               file="../../resources/default_100_percent/common/blue_button_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_DISABLED"
-               file="../../resources/default_100_percent/common/blue_button_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_inactive.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_FOCUSED"
-               file="../../resources/default_100_percent/common/blue_button_focused.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_FOCUSED_PRESSED"
-               file="../../resources/default_100_percent/common/blue_button_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_FOCUSED_HOVER"
-               file="../../resources/default_100_percent/common/blue_button_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/blue_button_focused_hover.png" type="BINDATA" />
       <!-- Checkbox (unchecked) -->
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX"
-               file="../../resources/default_100_percent/common/checkbox.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_HOVER"
-               file="../../resources/default_100_percent/common/checkbox_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_PRESSED"
-               file="../../resources/default_100_percent/common/checkbox_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED"
-               file="../../resources/default_100_percent/common/checkbox_focused.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_HOVER"
-               file="../../resources/default_100_percent/common/checkbox_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_PRESSED"
-               file="../../resources/default_100_percent/common/checkbox_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_INACTIVE"
-               file="../../resources/default_100_percent/common/checkbox_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_inactive.png" type="BINDATA" />
       <!-- Checkbox (checked) -->
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED"
-               file="../../resources/default_100_percent/common/checkbox_checked.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_checked.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_HOVER"
-               file="../../resources/default_100_percent/common/checkbox_checked_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_checked_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_PRESSED"
-               file="../../resources/default_100_percent/common/checkbox_checked_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_checked_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED"
-               file="../../resources/default_100_percent/common/checkbox_focused_checked.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused_checked.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED_HOVER"
-               file="../../resources/default_100_percent/common/checkbox_focused_checked_hover.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused_checked_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED_PRESSED"
-               file="../../resources/default_100_percent/common/checkbox_focused_checked_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_focused_checked_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_INACTIVE"
-               file="../../resources/default_100_percent/common/checkbox_checked_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_100_percent/common/checkbox_checked_inactive.png" type="BINDATA" />
       <!-- Misc buttons -->
       <include name="IDR_WEBUI_IMAGES_APPS_TOPBAR_BUTTON_CLOSE"
                file="images/apps/topbar_button_close.png" type="BINDATA" />
@@ -101,64 +100,64 @@ without changes to the corresponding grd file. -->
       <!-- Component apps common image resources - 2x -->
       <!-- White button -->
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X"
-               file="../../resources/default_200_percent/common/button.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_PRESSED"
-               file="../../resources/default_200_percent/common/button_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_HOVER"
-               file="../../resources/default_200_percent/common/button_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_DISABLED"
-               file="../../resources/default_200_percent/common/button_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_inactive.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_FOCUSED"
-               file="../../resources/default_200_percent/common/button_focused.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_FOCUSED_PRESSED"
-               file="../../resources/default_200_percent/common/button_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BUTTON_2X_FOCUSED_HOVER"
-               file="../../resources/default_200_percent/common/button_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/button_focused_hover.png" type="BINDATA" />
       <!-- Blue button -->
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X"
-               file="../../resources/default_200_percent/common/blue_button.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_PRESSED"
-               file="../../resources/default_200_percent/common/blue_button_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_HOVER"
-               file="../../resources/default_200_percent/common/blue_button_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_DISABLED"
-               file="../../resources/default_200_percent/common/blue_button_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_inactive.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_FOCUSED"
-               file="../../resources/default_200_percent/common/blue_button_focused.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_FOCUSED_PRESSED"
-               file="../../resources/default_200_percent/common/blue_button_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_BLUE_BUTTON_2X_FOCUSED_HOVER"
-               file="../../resources/default_200_percent/common/blue_button_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/blue_button_focused_hover.png" type="BINDATA" />
       <!-- Checkbox (unchecked) -->
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X"
-               file="../../resources/default_200_percent/common/checkbox.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X_HOVER"
-               file="../../resources/default_200_percent/common/checkbox_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X_PRESSED"
-               file="../../resources/default_200_percent/common/checkbox_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X_FOCUSED"
-               file="../../resources/default_200_percent/common/checkbox_focused.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X_FOCUSED_HOVER"
-               file="../../resources/default_200_percent/common/checkbox_focused_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_2X_FOCUSED_PRESSED"
-               file="../../resources/default_200_percent/common/checkbox_focused_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_INACTIVE_2X"
-               file="../../resources/default_200_percent/common/checkbox_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_inactive.png" type="BINDATA" />
       <!-- Checkbox (checked) -->
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_2X"
-               file="../../resources/default_200_percent/common/checkbox_checked.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_checked.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_2X_HOVER"
-               file="../../resources/default_200_percent/common/checkbox_checked_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_checked_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_2X_PRESSED"
-               file="../../resources/default_200_percent/common/checkbox_checked_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_checked_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED_2X"
-               file="../../resources/default_200_percent/common/checkbox_focused_checked.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused_checked.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED_2X_HOVER"
-               file="../../resources/default_200_percent/common/checkbox_focused_checked_hover.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused_checked_hover.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_FOCUSED_CHECKED_2X_PRESSED"
-               file="../../resources/default_200_percent/common/checkbox_focused_checked_pressed.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_focused_checked_pressed.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_APPS_CHECKBOX_CHECKED_INACTIVE_2X"
-               file="../../resources/default_200_percent/common/checkbox_checked_inactive.png" type="BINDATA" />
+               file="../../views/resources/default_200_percent/common/checkbox_checked_inactive.png" type="BINDATA" />
       <!-- Misc buttons -->
       <include name="IDR_WEBUI_IMAGES_APPS_TOPBAR_BUTTON_2X_CLOSE"
                file="images/2x/apps/topbar_button_close.png" type="BINDATA" />
@@ -238,6 +237,8 @@ without changes to the corresponding grd file. -->
       <structure name="IDR_WEBUI_CSS_OVERLAY"
                  file="css/overlay.css" type="chrome_html"
                  flattenhtml="true" />
+      <structure name="IDR_WEBUI_CSS_ROBOTO"
+                 file="css/roboto.css" type="chrome_html" />
       <structure name="IDR_WEBUI_CSS_SPINNER"
                  file="css/spinner.css" type="chrome_html" />
       <structure name="IDR_WEBUI_CSS_TABLE"
@@ -256,16 +257,63 @@ without changes to the corresponding grd file. -->
       <structure name="IDR_WEBUI_CSS_WIDGETS"
                  file="css/widgets.css" type="chrome_html"
                  flattenhtml="true" />
+
+      <structure name="IDR_WEBUI_HTML_ACTION_LINK"
+                 file="html/action_link.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_ASSERT"
+                 file="html/assert.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR"
+                 file="html/cr.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_EVENT_TARGET"
+                 file="html/cr/event_target.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI"
+                 file="html/cr/ui.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_ALERT_OVERLAY"
+                 file="html/cr/ui/alert_overlay.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_COMMAND"
+                 file="html/cr/ui/command.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_CONTEXT_MENU_BUTTON"
+                 file="html/cr/ui/context_menu_button.html"
+                 type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_CONTEXT_MENU_HANDLER"
+                 file="html/cr/ui/context_menu_handler.html"
+                 type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_FOCUS_GRID"
+                 file="html/cr/ui/focus_grid.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_FOCUS_MANAGER"
+                 file="html/cr/ui/focus_manager.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_FOCUS_OUTLINE_MANAGER"
+                 file="html/cr/ui/focus_outline_manager.html"
+                 type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_FOCUS_ROW"
+                 file="html/cr/ui/focus_row.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_MENU"
+                 file="html/cr/ui/menu.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_MENU_BUTTON"
+                 file="html/cr/ui/menu_button.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_MENU_ITEM"
+                 file="html/cr/ui/menu_item.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_OVERLAY"
+                 file="html/cr/ui/overlay.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR_UI_POSITION_UTIL"
+                 file="html/cr/ui/position_util.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_EVENT_TRACKER"
+                 file="html/event_tracker.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_I18N_TEMPLATE"
+                 file="html/i18n_template.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_LOAD_TIME_DATA"
+                 file="html/load_time_data.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_POLYMER_CONFIG"
+                 file="html/polymer_config.html" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_UTIL"
+                 file="html/util.html" type="chrome_html" />
+
       <structure name="IDR_WEBUI_JS_ACTION_LINK"
                  file="js/action_link.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_ASSERT"
                  file="js/assert.js" type="chrome_html" />
-      <structure name="IDR_WEBUI_HTML_ASSERT"
-                 file="html/assert.html" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR"
                  file="js/cr.js" type="chrome_html" />
-      <structure name="IDR_WEBUI_HTML_CR"
-                 file="html/cr.html" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_EVENT_TARGET"
                  file="js/cr/event_target.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_LINK_CONTROLLER"
@@ -380,6 +428,8 @@ without changes to the corresponding grd file. -->
                  file="js/media_common.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_PARSE_HTML_SUBSET"
                  file="js/parse_html_subset.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_POLYMER_CONFIG"
+                 file="js/polymer_config.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_UTIL"
                  file="js/util.js" type="chrome_html" flattenhtml="true" />
       <structure name="IDR_WEBUI_JS_WEBUI_RESOURCE_TEST"

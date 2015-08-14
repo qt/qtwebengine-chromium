@@ -29,7 +29,6 @@ class ServiceRegistry : public ServiceProvider, public ApplicationConnection {
                   const std::string& remote_url,
                   ServiceProviderPtr remote_services,
                   InterfaceRequest<ServiceProvider> local_services);
-  ~ServiceRegistry() override;
 
   // ApplicationConnection overrides.
   void SetServiceConnector(ServiceConnector* service_connector) override;
@@ -38,10 +37,16 @@ class ServiceRegistry : public ServiceProvider, public ApplicationConnection {
   const std::string& GetConnectionURL() override;
   const std::string& GetRemoteApplicationURL() override;
   ServiceProvider* GetServiceProvider() override;
+  ServiceProvider* GetLocalServiceProvider() override;
 
   void RemoveServiceConnectorForName(const std::string& interface_name);
 
  private:
+  ~ServiceRegistry() override;
+
+  // ApplicationConnection overrides.
+  void OnCloseConnection() override;
+
   // ServiceProvider method.
   void ConnectToService(const mojo::String& service_name,
                         ScopedMessagePipeHandle client_handle) override;
@@ -49,11 +54,6 @@ class ServiceRegistry : public ServiceProvider, public ApplicationConnection {
   ApplicationImpl* application_impl_;
   const std::string connection_url_;
   const std::string remote_url_;
-
- private:
-  void RemoveServiceConnectorForNameInternal(const std::string& interface_name);
-
-  Application* application_;
   Binding<ServiceProvider> local_binding_;
   ServiceProviderPtr remote_service_provider_;
   ServiceConnectorRegistry service_connector_registry_;

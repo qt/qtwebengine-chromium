@@ -10,6 +10,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/playback/raster_source.h"
 #include "cc/quads/content_draw_quad_base.h"
+#include "cc/resources/resource_provider.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
@@ -51,8 +52,6 @@ class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
   float contents_scale;
   scoped_refptr<RasterSource> raster_source;
   ResourceFormat texture_format;
-
-  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const PictureDrawQuad* MaterialCast(const DrawQuad* quad);
 

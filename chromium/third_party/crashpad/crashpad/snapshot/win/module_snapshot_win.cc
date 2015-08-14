@@ -15,9 +15,11 @@
 #include "snapshot/win/module_snapshot_win.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "snapshot/win/pe_image_annotations_reader.h"
 #include "snapshot/win/pe_image_reader.h"
 #include "util/misc/tri_state.h"
 #include "util/misc/uuid.h"
+#include "util/win/module_version.h"
 
 namespace crashpad {
 namespace internal {
@@ -39,13 +41,13 @@ bool ModuleSnapshotWin::Initialize(
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
   process_reader_ = process_reader;
-  name_ = base::UTF16ToUTF8(process_reader_module.name);
+  name_ = process_reader_module.name;
   timestamp_ = process_reader_module.timestamp;
   pe_image_reader_.reset(new PEImageReader());
   if (!pe_image_reader_->Initialize(process_reader_,
                                     process_reader_module.dll_base,
                                     process_reader_module.size,
-                                    name_)) {
+                                    base::UTF16ToUTF8(name_))) {
     return false;
   }
 
@@ -74,7 +76,7 @@ void ModuleSnapshotWin::GetCrashpadOptions(CrashpadInfoClientOptions* options) {
 
 std::string ModuleSnapshotWin::Name() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  return name_;
+  return base::UTF16ToUTF8(name_);
 }
 
 uint64_t ModuleSnapshotWin::Address() const {
@@ -97,7 +99,18 @@ void ModuleSnapshotWin::FileVersion(uint16_t* version_0,
                                     uint16_t* version_2,
                                     uint16_t* version_3) const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  CHECK(false) << "TODO(scottmg)";
+  VS_FIXEDFILEINFO ffi;
+  if (GetModuleVersionAndType(base::FilePath(name_), &ffi)) {
+    *version_0 = ffi.dwFileVersionMS >> 16;
+    *version_1 = ffi.dwFileVersionMS & 0xffff;
+    *version_2 = ffi.dwFileVersionLS >> 16;
+    *version_3 = ffi.dwFileVersionLS & 0xffff;
+  } else {
+    *version_0 = 0;
+    *version_1 = 0;
+    *version_2 = 0;
+    *version_3 = 0;
+  }
 }
 
 void ModuleSnapshotWin::SourceVersion(uint16_t* version_0,
@@ -105,13 +118,32 @@ void ModuleSnapshotWin::SourceVersion(uint16_t* version_0,
                                       uint16_t* version_2,
                                       uint16_t* version_3) const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  CHECK(false) << "TODO(scottmg)";
+  VS_FIXEDFILEINFO ffi;
+  if (GetModuleVersionAndType(base::FilePath(name_), &ffi)) {
+    *version_0 = ffi.dwProductVersionMS >> 16;
+    *version_1 = ffi.dwProductVersionMS & 0xffff;
+    *version_2 = ffi.dwProductVersionLS >> 16;
+    *version_3 = ffi.dwProductVersionLS & 0xffff;
+  } else {
+    *version_0 = 0;
+    *version_1 = 0;
+    *version_2 = 0;
+    *version_3 = 0;
+  }
 }
 
 ModuleSnapshot::ModuleType ModuleSnapshotWin::GetModuleType() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  CHECK(false) << "TODO(scottmg)";
-  return ModuleSnapshot::ModuleType();
+  VS_FIXEDFILEINFO ffi;
+  if (GetModuleVersionAndType(base::FilePath(name_), &ffi)) {
+    if (ffi.dwFileType == VFT_APP)
+      return ModuleSnapshot::kModuleTypeExecutable;
+    if (ffi.dwFileType == VFT_DLL)
+      return ModuleSnapshot::kModuleTypeSharedLibrary;
+    if (ffi.dwFileType == VFT_DRV || ffi.dwFileType == VFT_VXD)
+      return ModuleSnapshot::kModuleTypeLoadableModule;
+  }
+  return ModuleSnapshot::kModuleTypeUnknown;
 }
 
 void ModuleSnapshotWin::UUID(crashpad::UUID* uuid) const {
@@ -121,15 +153,18 @@ void ModuleSnapshotWin::UUID(crashpad::UUID* uuid) const {
 
 std::vector<std::string> ModuleSnapshotWin::AnnotationsVector() const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  CHECK(false) << "TODO(scottmg)";
+  // These correspond to system-logged things on Mac. We don't currently track
+  // any of these on Windows, but could in the future.
+  // See https://code.google.com/p/crashpad/issues/detail?id=38.
   return std::vector<std::string>();
 }
 
 std::map<std::string, std::string> ModuleSnapshotWin::AnnotationsSimpleMap()
     const {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  CHECK(false) << "TODO(scottmg)";
-  return std::map<std::string, std::string>();
+  PEImageAnnotationsReader annotations_reader(
+      process_reader_, pe_image_reader_.get(), name_);
+  return annotations_reader.SimpleMap();
 }
 
 }  // namespace internal

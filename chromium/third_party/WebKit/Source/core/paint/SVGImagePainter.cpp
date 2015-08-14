@@ -9,7 +9,6 @@
 #include "core/layout/LayoutImageResource.h"
 #include "core/layout/svg/LayoutSVGImage.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
@@ -23,36 +22,35 @@ namespace blink {
 
 void SVGImagePainter::paint(const PaintInfo& paintInfo)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutSVGImage);
-
     if (paintInfo.phase != PaintPhaseForeground
         || m_layoutSVGImage.style()->visibility() == HIDDEN
         || !m_layoutSVGImage.imageResource()->hasImage())
         return;
 
     FloatRect boundingBox = m_layoutSVGImage.paintInvalidationRectInLocalCoordinates();
+    if (!paintInfo.intersectsCullRect(m_layoutSVGImage.localToParentTransform(), boundingBox))
+        return;
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
+    // Images cannot have children so do not call updateCullRectForSVGTransform.
     TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGImage, m_layoutSVGImage.localToParentTransform());
     {
         SVGPaintContext paintContext(m_layoutSVGImage, paintInfoBeforeFiltering);
-        if (paintContext.applyClipMaskAndFilterIfNecessary()) {
+        if (paintContext.applyClipMaskAndFilterIfNecessary() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase)) {
             LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_layoutSVGImage, paintContext.paintInfo().phase, boundingBox);
-            if (!recorder.canUseCachedDrawing()) {
-                // There's no need to cache a buffered SkPicture with slimming
-                // paint because it's automatically done in the display list.
-                if (m_layoutSVGImage.style()->svgStyle().bufferedRendering() != BR_STATIC || RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+            // There's no need to cache a buffered SkPicture with slimming
+            // paint because it's automatically done in the display list.
+            if (m_layoutSVGImage.style()->svgStyle().bufferedRendering() != BR_STATIC || RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+                paintForeground(paintContext.paintInfo());
+            } else {
+                RefPtr<const SkPicture>& bufferedForeground = m_layoutSVGImage.bufferedForeground();
+                if (!bufferedForeground) {
+                    paintContext.paintInfo().context->beginRecording(m_layoutSVGImage.objectBoundingBox());
                     paintForeground(paintContext.paintInfo());
-                } else {
-                    RefPtr<const SkPicture>& bufferedForeground = m_layoutSVGImage.bufferedForeground();
-                    if (!bufferedForeground) {
-                        paintContext.paintInfo().context->beginRecording(m_layoutSVGImage.objectBoundingBox());
-                        paintForeground(paintContext.paintInfo());
-                        bufferedForeground = paintContext.paintInfo().context->endRecording();
-                    }
-
-                    paintContext.paintInfo().context->drawPicture(bufferedForeground.get());
+                    bufferedForeground = paintContext.paintInfo().context->endRecording();
                 }
+
+                paintContext.paintInfo().context->drawPicture(bufferedForeground.get());
             }
         }
     }
@@ -61,7 +59,8 @@ void SVGImagePainter::paint(const PaintInfo& paintInfo)
         PaintInfo outlinePaintInfo(paintInfoBeforeFiltering);
         outlinePaintInfo.phase = PaintPhaseSelfOutline;
         LayoutRect layoutBoundingBox(boundingBox);
-        ObjectPainter(m_layoutSVGImage).paintOutline(outlinePaintInfo, layoutBoundingBox, layoutBoundingBox);
+        LayoutRect visualOverflowRect = ObjectPainter::outlineBounds(layoutBoundingBox, m_layoutSVGImage.styleRef());
+        ObjectPainter(m_layoutSVGImage).paintOutline(outlinePaintInfo, layoutBoundingBox, visualOverflowRect);
     }
 }
 

@@ -22,6 +22,8 @@
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/main/acm2/call_statistics.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/metrics.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 #include "webrtc/typedefs.h"
@@ -88,9 +90,11 @@ int UpMix(const AudioFrame& frame, int length_out_buff, int16_t* out_buff) {
   if (length_out_buff < frame.samples_per_channel_) {
     return -1;
   }
-  for (int n = frame.samples_per_channel_ - 1; n >= 0; --n) {
-    out_buff[2 * n + 1] = frame.data_[n];
-    out_buff[2 * n] = frame.data_[n];
+  for (int n = frame.samples_per_channel_; n > 0; --n) {
+    int i = n - 1;
+    int16_t sample = frame.data_[i];
+    out_buff[2 * i + 1] = sample;
+    out_buff[2 * i] = sample;
   }
   return 0;
 }
@@ -118,6 +122,14 @@ void ConvertEncodedInfoToFragmentationHeader(
 }
 }  // namespace
 
+void AudioCodingModuleImpl::ChangeLogger::MaybeLog(int value) {
+  if (value != last_value_ || first_time_) {
+    first_time_ = false;
+    last_value_ = value;
+    RTC_HISTOGRAM_COUNTS_100(histogram_name_, value);
+  }
+}
+
 AudioCodingModuleImpl::AudioCodingModuleImpl(
     const AudioCodingModule::Config& config)
     : acm_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
@@ -125,7 +137,7 @@ AudioCodingModuleImpl::AudioCodingModuleImpl(
       expected_codec_ts_(0xD87F3F9F),
       expected_in_ts_(0xD87F3F9F),
       receiver_(config),
-      codec_manager_(this),
+      bitrate_logger_("WebRTC.Audio.TargetBitrateInKbps"),
       previous_pltype_(255),
       aux_rtp_header_(NULL),
       receiver_initialized_(false),
@@ -182,6 +194,7 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
   encoded_info = audio_encoder->Encode(rtp_timestamp, input_data.audio,
                                        input_data.length_per_channel,
                                        sizeof(stream), stream);
+  bitrate_logger_.MaybeLog(audio_encoder->GetTargetBitrate() / 1000);
   if (encoded_info.encoded_bytes == 0 && !encoded_info.send_even_if_empty) {
     // Not enough data.
     return 0;
@@ -234,13 +247,19 @@ int AudioCodingModuleImpl::ResetEncoder() {
 // Can be called multiple times for Codec, CNG, RED.
 int AudioCodingModuleImpl::RegisterSendCodec(const CodecInst& send_codec) {
   CriticalSectionScoped lock(acm_crit_sect_);
-  return codec_manager_.RegisterSendCodec(send_codec);
+  return codec_manager_.RegisterEncoder(send_codec);
+}
+
+void AudioCodingModuleImpl::RegisterExternalSendCodec(
+    AudioEncoderMutable* external_speech_encoder) {
+  CriticalSectionScoped lock(acm_crit_sect_);
+  codec_manager_.RegisterEncoder(external_speech_encoder);
 }
 
 // Get current send codec.
 int AudioCodingModuleImpl::SendCodec(CodecInst* current_codec) const {
   CriticalSectionScoped lock(acm_crit_sect_);
-  return codec_manager_.SendCodec(current_codec);
+  return codec_manager_.GetCodecInst(current_codec);
 }
 
 // Get current send frequency.
@@ -264,6 +283,11 @@ int AudioCodingModuleImpl::SendFrequency() const {
 // TODO(henrik.lundin): Remove; not used.
 int AudioCodingModuleImpl::SendBitrate() const {
   FATAL() << "Deprecated";
+  // This return statement is required to workaround a bug in VS2013 Update 4
+  // when turning on the whole program optimizations. Without hit the linker
+  // will hang because it doesn't seem to find an exit path for this function.
+  // This is likely a bug in link.exe and would probably be fixed in VS2015.
+  return -1;
   //  CriticalSectionScoped lock(acm_crit_sect_);
   //
   //  if (!codec_manager_.current_encoder()) {
@@ -280,7 +304,6 @@ int AudioCodingModuleImpl::SendBitrate() const {
 
 void AudioCodingModuleImpl::SetBitRate(int bitrate_bps) {
   CriticalSectionScoped lock(acm_crit_sect_);
-
   if (codec_manager_.CurrentEncoder()) {
     codec_manager_.CurrentEncoder()->SetTargetBitrate(bitrate_bps);
   }
@@ -331,8 +354,8 @@ int AudioCodingModuleImpl::Add10MsDataInternal(const AudioFrame& audio_frame,
   }
 
   // If the length and frequency matches. We currently just support raw PCM.
-  if ((audio_frame.sample_rate_hz_ / 100)
-      != audio_frame.samples_per_channel_) {
+  if ((audio_frame.sample_rate_hz_ / 100) !=
+      audio_frame.samples_per_channel_) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                  "Cannot Add 10 ms audio, input frequency and length doesn't"
                  " match");
@@ -423,8 +446,8 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
 
   if (!down_mix && !resample) {
     // No pre-processing is required.
-    expected_in_ts_ += in_frame.samples_per_channel_;
-    expected_codec_ts_ += in_frame.samples_per_channel_;
+    expected_in_ts_ += static_cast<uint32_t>(in_frame.samples_per_channel_);
+    expected_codec_ts_ += static_cast<uint32_t>(in_frame.samples_per_channel_);
     *ptr_out = &in_frame;
     return 0;
   }
@@ -469,8 +492,9 @@ int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
         codec_manager_.CurrentEncoder()->SampleRateHz();
   }
 
-  expected_codec_ts_ += preprocess_frame_.samples_per_channel_;
-  expected_in_ts_ += in_frame.samples_per_channel_;
+  expected_codec_ts_ +=
+      static_cast<uint32_t>(preprocess_frame_.samples_per_channel_);
+  expected_in_ts_ += static_cast<uint32_t>(in_frame.samples_per_channel_);
 
   return 0;
 }
@@ -569,7 +593,8 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
   for (int i = 0; i < ACMCodecDB::kNumCodecs; i++) {
     if (IsCodecRED(i) || IsCodecCN(i)) {
       uint8_t pl_type = static_cast<uint8_t>(ACMCodecDB::database_[i].pltype);
-      if (receiver_.AddCodec(i, pl_type, 1, NULL) < 0) {
+      int fs = ACMCodecDB::database_[i].plfreq;
+      if (receiver_.AddCodec(i, pl_type, 1, fs, NULL) < 0) {
         WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                      "Cannot register master codec.");
         return -1;
@@ -617,21 +642,35 @@ int AudioCodingModuleImpl::PlayoutFrequency() const {
 int AudioCodingModuleImpl::RegisterReceiveCodec(const CodecInst& codec) {
   CriticalSectionScoped lock(acm_crit_sect_);
   DCHECK(receiver_initialized_);
-  return codec_manager_.RegisterReceiveCodec(codec);
+  if (codec.channels > 2 || codec.channels < 0) {
+    LOG_F(LS_ERROR) << "Unsupported number of channels: " << codec.channels;
+    return -1;
+  }
+
+  int codec_id = ACMCodecDB::ReceiverCodecNumber(codec);
+  if (codec_id < 0 || codec_id >= ACMCodecDB::kNumCodecs) {
+    LOG_F(LS_ERROR) << "Wrong codec params to be registered as receive codec";
+    return -1;
+  }
+
+  // Check if the payload-type is valid.
+  if (!ACMCodecDB::ValidPayloadType(codec.pltype)) {
+    LOG_F(LS_ERROR) << "Invalid payload type " << codec.pltype << " for "
+                    << codec.plname;
+    return -1;
+  }
+
+  // Get |decoder| associated with |codec|. |decoder| is NULL if |codec| does
+  // not own its decoder.
+  return receiver_.AddCodec(codec_id, codec.pltype, codec.channels,
+                            codec.plfreq,
+                            codec_manager_.GetAudioDecoder(codec));
 }
 
 // Get current received codec.
 int AudioCodingModuleImpl::ReceiveCodec(CodecInst* current_codec) const {
   CriticalSectionScoped lock(acm_crit_sect_);
   return receiver_.LastAudioCodec(current_codec);
-}
-
-int AudioCodingModuleImpl::RegisterDecoder(int acm_codec_id,
-                                           uint8_t payload_type,
-                                           int channels,
-                                           AudioDecoder* audio_decoder) {
-  return receiver_.AddCodec(acm_codec_id, payload_type, channels,
-                            audio_decoder);
 }
 
 // Incoming packet from network parsed and ready for decode.

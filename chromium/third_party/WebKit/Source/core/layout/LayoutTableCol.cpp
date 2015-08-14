@@ -78,7 +78,7 @@ void LayoutTableCol::updateFromElement()
         HTMLTableColElement& tc = toHTMLTableColElement(*n);
         m_span = tc.span();
     } else {
-        m_span = !(style() && style()->display() == TABLE_COLUMN_GROUP);
+        m_span = 1;
     }
     if (m_span != oldSpan && style() && parent())
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
@@ -141,13 +141,13 @@ LayoutTable* LayoutTableCol::table() const
     LayoutObject* table = parent();
     if (table && !table->isTable())
         table = table->parent();
-    return table && table->isTable() ? toLayoutTable(table) : 0;
+    return table && table->isTable() ? toLayoutTable(table) : nullptr;
 }
 
 LayoutTableCol* LayoutTableCol::enclosingColumnGroup() const
 {
     if (!parent()->isLayoutTableCol())
-        return 0;
+        return nullptr;
 
     LayoutTableCol* parentColumnGroup = toLayoutTableCol(parent());
     ASSERT(parentColumnGroup->isTableColumnGroup());

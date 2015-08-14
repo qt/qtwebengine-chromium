@@ -221,31 +221,29 @@ bool JsonPrefStore::GetMutableValue(const std::string& key,
 }
 
 void JsonPrefStore::SetValue(const std::string& key,
-                             base::Value* value,
+                             scoped_ptr<base::Value> value,
                              uint32 flags) {
   DCHECK(CalledOnValidThread());
 
   DCHECK(value);
-  scoped_ptr<base::Value> new_value(value);
   base::Value* old_value = NULL;
   prefs_->Get(key, &old_value);
   if (!old_value || !value->Equals(old_value)) {
-    prefs_->Set(key, new_value.Pass());
+    prefs_->Set(key, value.Pass());
     ReportValueChanged(key, flags);
   }
 }
 
 void JsonPrefStore::SetValueSilently(const std::string& key,
-                                     base::Value* value,
+                                     scoped_ptr<base::Value> value,
                                      uint32 flags) {
   DCHECK(CalledOnValidThread());
 
   DCHECK(value);
-  scoped_ptr<base::Value> new_value(value);
   base::Value* old_value = NULL;
   prefs_->Get(key, &old_value);
   if (!old_value || !value->Equals(old_value)) {
-    prefs_->Set(key, new_value.Pass());
+    prefs_->Set(key, value.Pass());
     ScheduleWrite(flags);
   }
 }
@@ -303,11 +301,15 @@ void JsonPrefStore::CommitPendingWrite() {
 
   // Schedule a write for any lossy writes that are outstanding to ensure that
   // they get flushed when this function is called.
-  if (pending_lossy_write_)
-    writer_.ScheduleWrite(this);
+  SchedulePendingLossyWrites();
 
   if (writer_.HasPendingWrite() && !read_only_)
     writer_.DoScheduledWrite();
+}
+
+void JsonPrefStore::SchedulePendingLossyWrites() {
+  if (pending_lossy_write_)
+    writer_.ScheduleWrite(this);
 }
 
 void JsonPrefStore::ReportValueChanged(const std::string& key, uint32 flags) {

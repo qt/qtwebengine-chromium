@@ -39,8 +39,8 @@ namespace blink {
 struct SameSizeAsInlineBox {
     virtual ~SameSizeAsInlineBox() { }
     void* a[4];
-    FloatPointWillBeLayoutPoint b;
-    FloatWillBeLayoutUnit c;
+    LayoutPoint b;
+    LayoutUnit c;
     uint32_t d : 32;
 #if ENABLE(ASSERT)
     bool f;
@@ -73,7 +73,7 @@ void InlineBox::remove(MarkLineBoxes markLineBoxes)
 
 void* InlineBox::operator new(size_t sz)
 {
-    return partitionAlloc(WTF::Partitions::getRenderingPartition(), sz);
+    return partitionAlloc(WTF::Partitions::layoutPartition(), sz);
 }
 
 void InlineBox::operator delete(void* ptr)
@@ -129,20 +129,20 @@ void InlineBox::showBox(int printedCharacters) const
 }
 #endif
 
-FloatWillBeLayoutUnit InlineBox::logicalHeight() const
+LayoutUnit InlineBox::logicalHeight() const
 {
     if (hasVirtualLogicalHeight())
         return virtualLogicalHeight();
 
     if (layoutObject().isText())
-        return m_bitfields.isText() ? FloatWillBeLayoutUnit(layoutObject().style(isFirstLineStyle())->fontMetrics().height()) : FloatWillBeLayoutUnit();
+        return m_bitfields.isText() ? LayoutUnit(layoutObject().style(isFirstLineStyle())->fontMetrics().height()) : LayoutUnit();
     if (layoutObject().isBox() && parent())
         return isHorizontal() ? toLayoutBox(layoutObject()).size().height() : toLayoutBox(layoutObject()).size().width();
 
     ASSERT(isInlineFlowBox());
     LayoutBoxModelObject* flowObject = boxModelObject();
     const FontMetrics& fontMetrics = layoutObject().style(isFirstLineStyle())->fontMetrics();
-    FloatWillBeLayoutUnit result = fontMetrics.height();
+    LayoutUnit result = fontMetrics.height();
     if (parent())
         result += flowObject->borderAndPaddingLogicalHeight();
     return result;
@@ -178,7 +178,7 @@ void InlineBox::dirtyLineBoxes()
 void InlineBox::deleteLine()
 {
     if (!m_bitfields.extracted() && layoutObject().isBox())
-        toLayoutBox(layoutObject()).setInlineBoxWrapper(0);
+        toLayoutBox(layoutObject()).setInlineBoxWrapper(nullptr);
     destroy();
 }
 
@@ -186,7 +186,7 @@ void InlineBox::extractLine()
 {
     m_bitfields.setExtracted(true);
     if (layoutObject().isBox())
-        toLayoutBox(layoutObject()).setInlineBoxWrapper(0);
+        toLayoutBox(layoutObject()).setInlineBoxWrapper(nullptr);
 }
 
 void InlineBox::attachLine()
@@ -196,22 +196,22 @@ void InlineBox::attachLine()
         toLayoutBox(layoutObject()).setInlineBoxWrapper(this);
 }
 
-void InlineBox::adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy)
+void InlineBox::move(const LayoutSize& delta)
 {
-    m_topLeft.move(dx, dy);
+    m_topLeft.move(delta);
 
     if (layoutObject().isReplaced())
-        toLayoutBox(layoutObject()).move(dx, dy);
+        toLayoutBox(layoutObject()).move(delta.width(), delta.height());
 }
 
-void InlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
+void InlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /* lineTop */, LayoutUnit /* lineBottom */)
 {
     // Text clips are painted only for the direct inline children of the object that has a text clip style on it, not block children.
     if (paintInfo.phase != PaintPhaseTextClip)
         BlockPainter::paintInlineBox(*this, paintInfo, paintOffset);
 }
 
-bool InlineBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
+bool InlineBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /* lineBottom */)
 {
     // Hit test all phases of replaced elements atomically, as though the replaced element established its
     // own stacking context.  (See Appendix E.2, section 6.4 on inline block/table elements in the CSS2.1
@@ -264,7 +264,7 @@ bool InlineBox::nextOnLineExists() const
 
 InlineBox* InlineBox::nextLeafChild() const
 {
-    InlineBox* leaf = 0;
+    InlineBox* leaf = nullptr;
     for (InlineBox* box = nextOnLine(); box && !leaf; box = box->nextOnLine())
         leaf = box->isLeaf() ? box : toInlineFlowBox(box)->firstLeafChild();
     if (!leaf && parent())
@@ -274,7 +274,7 @@ InlineBox* InlineBox::nextLeafChild() const
 
 InlineBox* InlineBox::prevLeafChild() const
 {
-    InlineBox* leaf = 0;
+    InlineBox* leaf = nullptr;
     for (InlineBox* box = prevOnLine(); box && !leaf; box = box->prevOnLine())
         leaf = box->isLeaf() ? box : toInlineFlowBox(box)->lastLeafChild();
     if (!leaf && parent())
@@ -285,17 +285,13 @@ InlineBox* InlineBox::prevLeafChild() const
 InlineBox* InlineBox::nextLeafChildIgnoringLineBreak() const
 {
     InlineBox* leaf = nextLeafChild();
-    if (leaf && leaf->isLineBreak())
-        return 0;
-    return leaf;
+    return (leaf && leaf->isLineBreak()) ? nullptr : leaf;
 }
 
 InlineBox* InlineBox::prevLeafChildIgnoringLineBreak() const
 {
     InlineBox* leaf = prevLeafChild();
-    if (leaf && leaf->isLineBreak())
-        return 0;
-    return leaf;
+    return (leaf && leaf->isLineBreak()) ? nullptr : leaf;
 }
 
 LayoutObject::SelectionState InlineBox::selectionState() const
@@ -314,7 +310,7 @@ bool InlineBox::canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidt
     return !(boxRect.intersects(ellipsisRect));
 }
 
-FloatWillBeLayoutUnit InlineBox::placeEllipsisBox(bool, FloatWillBeLayoutUnit, FloatWillBeLayoutUnit, FloatWillBeLayoutUnit, FloatWillBeLayoutUnit& truncatedWidth, bool&)
+LayoutUnit InlineBox::placeEllipsisBox(bool, LayoutUnit, LayoutUnit, LayoutUnit, LayoutUnit& truncatedWidth, bool&)
 {
     // Use -1 to mean "we didn't set the position."
     truncatedWidth += logicalWidth();
@@ -328,31 +324,33 @@ void InlineBox::clearKnownToHaveNoOverflow()
         parent()->clearKnownToHaveNoOverflow();
 }
 
-FloatPointWillBeLayoutPoint InlineBox::locationIncludingFlipping()
+LayoutPoint InlineBox::locationIncludingFlipping()
 {
-    return logicalPositionToPhysicalPoint(m_topLeft.toFloatPoint(), size().toFloatSize());
+    return logicalPositionToPhysicalPoint(m_topLeft, size());
 }
 
-FloatPointWillBeLayoutPoint InlineBox::logicalPositionToPhysicalPoint(const FloatPoint& point, const FloatSize& size)
+LayoutPoint InlineBox::logicalPositionToPhysicalPoint(const LayoutPoint& point, const LayoutSize& size)
 {
     if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
-        return FloatPointWillBeLayoutPoint(point.x(), point.y());
+        return LayoutPoint(point.x(), point.y());
 
     LayoutBlockFlow& block = root().block();
     if (block.style()->isHorizontalWritingMode())
-        return FloatPointWillBeLayoutPoint(point.x(), block.size().height() - size.height() - point.y());
+        return LayoutPoint(point.x(), block.size().height() - size.height() - point.y());
 
-    return FloatPointWillBeLayoutPoint(block.size().width() - size.width() - point.x(), point.y());
+    return LayoutPoint(block.size().width() - size.width() - point.x(), point.y());
 }
 
-LayoutRect InlineBox::logicalRectToPhysicalRect(const LayoutRect& current)
+void InlineBox::logicalRectToPhysicalRect(LayoutRect& current)
 {
-    LayoutRect retval = current;
+    if (isHorizontal() && !layoutObject().hasFlippedBlocksWritingMode())
+        return;
+
     if (!isHorizontal()) {
-        retval = retval.transposedRect();
+        current = current.transposedRect();
     }
-    retval.setLocation(logicalPositionToPhysicalPoint(FloatPoint(retval.location()), FloatSize(retval.size())).toLayoutPoint());
-    return retval;
+    current.setLocation(logicalPositionToPhysicalPoint(current.location(), current.size()));
+    return;
 }
 
 void InlineBox::flipForWritingMode(FloatRect& rect)

@@ -34,12 +34,17 @@ public:
         return adoptRefWillBeNoop(new SVGPathSegCurvetoQuadraticSmoothAbs(element, x, y));
     }
 
+    PassRefPtrWillBeRawPtr<SVGPathSeg> clone() override
+    {
+        return adoptRefWillBeNoop(new SVGPathSegCurvetoQuadraticSmoothAbs(nullptr, x(), y()));
+    }
+
 private:
     SVGPathSegCurvetoQuadraticSmoothAbs(SVGPathElement* element, float x, float y)
         : SVGPathSegSingleCoordinate(element, x, y) { }
 
-    virtual unsigned short pathSegType() const override { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_ABS; }
-    virtual String pathSegTypeAsLetter() const override { return "T"; }
+    unsigned short pathSegType() const override { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_ABS; }
+    String pathSegTypeAsLetter() const override { return "T"; }
 };
 
 } // namespace blink

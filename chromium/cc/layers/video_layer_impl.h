@@ -38,7 +38,7 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
   void AppendQuads(RenderPass* render_pass,
                    AppendQuadsData* append_quads_data) override;
   void DidDraw(ResourceProvider* resource_provider) override;
-  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override;
+  SimpleEnclosedRegion VisibleOpaqueRegion() const override;
   void DidBecomeActive() override;
   void ReleaseResources() override;
 
@@ -62,7 +62,16 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
 
   scoped_ptr<VideoResourceUpdater> updater_;
   VideoFrameExternalResources::ResourceType frame_resource_type_;
-  std::vector<ResourceProvider::ResourceId> frame_resources_;
+  struct FrameResource {
+    FrameResource(ResourceId id, gfx::Size size_in_pixels, bool allow_overlay)
+        : id(id),
+          size_in_pixels(size_in_pixels),
+          allow_overlay(allow_overlay) {}
+    ResourceId id;
+    gfx::Size size_in_pixels;
+    bool allow_overlay;
+  };
+  std::vector<FrameResource> frame_resources_;
 
   // TODO(danakj): Remove these, hide software path inside ResourceProvider and
   // ExternalResource (aka TextureMailbox) classes.

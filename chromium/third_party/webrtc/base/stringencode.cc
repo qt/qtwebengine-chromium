@@ -466,6 +466,10 @@ size_t hex_encode_with_delimiter(char* buffer, size_t buflen,
   return bufpos;
 }
 
+std::string hex_encode(const std::string& str) {
+  return hex_encode(str.c_str(), str.size());
+}
+
 std::string hex_encode(const char* source, size_t srclen) {
   return hex_encode_with_delimiter(source, srclen, 0);
 }
@@ -605,6 +609,27 @@ size_t tokenize(const std::string& source, char delimiter, char start_mark,
   }
 
   return tokenize_append(remain_source, delimiter, fields);
+}
+
+bool tokenize_first(const std::string& source,
+                    const char delimiter,
+                    std::string* token,
+                    std::string* rest) {
+  // Find the first delimiter
+  size_t left_pos = source.find(delimiter);
+  if (left_pos == std::string::npos) {
+    return false;
+  }
+
+  // Look for additional occurrances of delimiter.
+  size_t right_pos = left_pos + 1;
+  while (source[right_pos] == delimiter) {
+    right_pos++;
+  }
+
+  *token = source.substr(0, left_pos);
+  *rest = source.substr(right_pos);
+  return true;
 }
 
 size_t split(const std::string& source, char delimiter,

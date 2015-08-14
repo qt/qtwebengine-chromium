@@ -123,7 +123,7 @@ void CSSKeyframesRule::appendRule(const String& ruleText)
 
     CSSStyleSheet* styleSheet = parentStyleSheet();
     CSSParserContext context(parserContext(), UseCounter::getFrom(styleSheet));
-    RefPtrWillBeRawPtr<StyleRuleKeyframe> keyframe = CSSParser::parseKeyframeRule(context, styleSheet ? styleSheet->contents() : 0, ruleText);
+    RefPtrWillBeRawPtr<StyleRuleKeyframe> keyframe = CSSParser::parseKeyframeRule(context, ruleText);
     if (!keyframe)
         return;
 
@@ -195,10 +195,17 @@ CSSKeyframeRule* CSSKeyframesRule::item(unsigned index) const
     return rule.get();
 }
 
-CSSRuleList* CSSKeyframesRule::cssRules()
+CSSKeyframeRule* CSSKeyframesRule::anonymousIndexedGetter(unsigned index) const
+{
+    if (UseCounter* useCounter = UseCounter::getFrom(parentStyleSheet()))
+        useCounter->count(UseCounter::CSSKeyframesRuleAnonymousIndexedGetter);
+    return item(index);
+}
+
+CSSRuleList* CSSKeyframesRule::cssRules() const
 {
     if (!m_ruleListCSSOMWrapper)
-        m_ruleListCSSOMWrapper = LiveCSSRuleList<CSSKeyframesRule>::create(this);
+        m_ruleListCSSOMWrapper = LiveCSSRuleList<CSSKeyframesRule>::create(const_cast<CSSKeyframesRule*>(this));
     return m_ruleListCSSOMWrapper.get();
 }
 

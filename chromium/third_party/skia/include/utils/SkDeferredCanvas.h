@@ -33,8 +33,6 @@ public:
      */
     static SkDeferredCanvas* Create(SkSurface* surface);
 
-//    static SkDeferredCanvas* Create(SkBaseDevice* device);
-
     virtual ~SkDeferredCanvas();
 
     /**
@@ -180,6 +178,8 @@ protected:
     void onDrawImage(const SkImage*, SkScalar left, SkScalar top, const SkPaint*) override;
     void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                          const SkPaint*) override;
+    void onDrawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,
+                         const SkPaint*) override;
     void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
                           const SkPaint*) override;
     void onDrawSprite(const SkBitmap&, int left, int top, const SkPaint*) override;
@@ -188,6 +188,8 @@ protected:
                         const SkColor colors[], SkXfermode* xmode,
                         const uint16_t indices[], int indexCount,
                         const SkPaint&) override;
+    void onDrawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[], int count,
+                     SkXfermode::Mode, const SkRect* cullRect, const SkPaint*) override;
 
     void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) override;
     void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) override;

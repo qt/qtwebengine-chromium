@@ -6,12 +6,17 @@
 #define BluetoothGATTRemoteServer_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/modules/v8/UnionTypesModules.h"
 #include "platform/heap/Heap.h"
 #include "public/platform/modules/bluetooth/WebBluetoothGATTRemoteServer.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 
+class ScriptPromise;
 class ScriptPromiseResolver;
+class ScriptState;
 
 // BluetoothGATTRemoteServer provides a way to interact with a connected bluetooth peripheral.
 //
@@ -24,21 +29,21 @@ class BluetoothGATTRemoteServer final
     , public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    BluetoothGATTRemoteServer(const WebBluetoothGATTRemoteServer&);
+    BluetoothGATTRemoteServer(PassOwnPtr<WebBluetoothGATTRemoteServer>);
 
     // Interface required by CallbackPromiseAdapter:
     typedef WebBluetoothGATTRemoteServer WebType;
-    static BluetoothGATTRemoteServer* take(ScriptPromiseResolver*, WebBluetoothGATTRemoteServer*);
-    static void dispose(WebBluetoothGATTRemoteServer*);
+    static BluetoothGATTRemoteServer* take(ScriptPromiseResolver*, PassOwnPtr<WebBluetoothGATTRemoteServer>);
 
     // Interface required by Garbage Collectoin:
     DEFINE_INLINE_TRACE() { }
 
     // IDL exposed interface:
-    bool connected() { return m_webGATT.connected; }
+    bool connected() { return m_webGATT->connected; }
+    ScriptPromise getPrimaryService(ScriptState*, const StringOrUnsignedLong& service, ExceptionState&);
 
 private:
-    WebBluetoothGATTRemoteServer m_webGATT;
+    OwnPtr<WebBluetoothGATTRemoteServer> m_webGATT;
 };
 
 } // namespace blink

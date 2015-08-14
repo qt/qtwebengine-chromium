@@ -37,9 +37,8 @@
 namespace blink {
 
 LayoutFlowThread::LayoutFlowThread()
-    : LayoutBlockFlow(0)
+    : LayoutBlockFlow(nullptr)
     , m_columnSetsInvalidated(false)
-    , m_columnSetsHaveUniformLogicalHeight(true)
     , m_pageLogicalSizeChanged(false)
 {
 }
@@ -48,6 +47,13 @@ void LayoutFlowThread::removeColumnSetFromThread(LayoutMultiColumnSet* columnSet
 {
     ASSERT(columnSet);
     m_multiColumnSetList.remove(columnSet);
+    invalidateColumnSets();
+    // Clear the interval tree right away, instead of leaving it around with dead objects. Not that
+    // anyone _should_ try to access the interval tree when the column sets are marked as invalid,
+    // but this is actually possible if other parts of the engine has bugs that cause us to not lay
+    // out everything that was marked for layout, so that LayoutObject::assertLaidOut() (and a LOT
+    // of other assertions) fails.
+    m_multiColumnSetIntervalTree.clear();
 }
 
 void LayoutFlowThread::invalidateColumnSets()
@@ -64,29 +70,7 @@ void LayoutFlowThread::invalidateColumnSets()
 
 void LayoutFlowThread::validateColumnSets()
 {
-    if (m_columnSetsInvalidated) {
-        m_columnSetsInvalidated = false;
-        m_columnSetsHaveUniformLogicalHeight = true;
-
-        if (hasColumnSets()) {
-            LayoutUnit previousLogicalHeight = 0;
-            bool firstVisited = false;
-
-            for (auto* columnSet : m_multiColumnSetList) {
-                LayoutUnit currentLogicalHeight = columnSet->pageLogicalHeight();
-
-                if (!firstVisited) {
-                    firstVisited = true;
-                } else {
-                    if (m_columnSetsHaveUniformLogicalHeight && previousLogicalHeight != currentLogicalHeight)
-                        m_columnSetsHaveUniformLogicalHeight = false;
-                }
-
-                previousLogicalHeight = currentLogicalHeight;
-            }
-        }
-    }
-
+    m_columnSetsInvalidated = false;
     updateLogicalWidth(); // Called to get the maximum logical width for the columnSet.
     generateColumnSetIntervalTree();
 }

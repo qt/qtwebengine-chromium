@@ -54,8 +54,9 @@ class StyleRuleFontFace;
 class StyleSheet;
 class StyleSheetContents;
 
-class CORE_EXPORT StyleEngine final : public CSSFontSelectorClient  {
+class CORE_EXPORT StyleEngine final : public NoBaseWillBeGarbageCollectedFinalized<StyleEngine>, public CSSFontSelectorClient  {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleEngine);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(StyleEngine);
 public:
 
     class IgnoringPendingStylesheet : public TemporaryChange<bool> {
@@ -88,7 +89,6 @@ public:
     void removeStyleSheetCandidateNode(Node*);
     void removeStyleSheetCandidateNode(Node*, TreeScope&);
     void modifiedStyleSheetCandidateNode(Node*);
-    void setExitTransitionStylesheetsEnabled(bool);
 
     void addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet);
 
@@ -119,8 +119,6 @@ public:
     bool usesFirstLineRules() const { return m_usesFirstLineRules; }
     bool usesWindowInactiveSelector() const { return m_usesWindowInactiveSelector; }
 
-    bool usesFirstLetterRules() const { return m_usesFirstLetterRules; }
-    void setUsesFirstLetterRules(bool b) { m_usesFirstLetterRules = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
     void setUsesRemUnit(bool b) { m_usesRemUnits = b; }
 
@@ -167,7 +165,7 @@ public:
 
     void markDocumentDirty();
 
-    PassRefPtrWillBeRawPtr<CSSStyleSheet> createSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
+    PassRefPtrWillBeRawPtr<CSSStyleSheet> createSheet(Element*, const String& text, TextPosition startPosition);
     void removeSheet(StyleSheetContents*);
 
     void collectScopedStyleFeaturesTo(RuleFeatureSet&) const;
@@ -184,7 +182,7 @@ public:
 
 private:
     // CSSFontSelectorClient implementation.
-    virtual void fontsNeedUpdate(CSSFontSelector*) override;
+    void fontsNeedUpdate(CSSFontSelector*) override;
 
 private:
     StyleEngine(Document&);
@@ -204,53 +202,11 @@ private:
 
     typedef WillBeHeapHashSet<RawPtrWillBeMember<TreeScope>> UnorderedTreeScopeSet;
 
-    // A class which holds document-ordered treescopes which have stylesheets.
-    // ListHashSet allows only sequential access, not random access.
-    // So it gets slow when the size of treescopes gets larger when finding
-    // the best place to insert a treescope into the document-ordered
-    // treescopes (requires linear search).
-    // To solve this, use a vector for the document-ordered treescopes and
-    // use a hashset for quickly checking whether a given treescope is
-    // in the document-ordered treescopes or not.
-    class OrderedTreeScopeSet final {
-        DISALLOW_ALLOCATION();
-        WTF_MAKE_NONCOPYABLE(OrderedTreeScopeSet);
-    public:
-        OrderedTreeScopeSet() { }
-
-        void insert(TreeScope*);
-        void remove(TreeScope*);
-
-        // When we don't need to consider document-order, use this iterator.
-        // Otherwise, use [] operator.
-        UnorderedTreeScopeSet::iterator beginUnordered() { return m_hash.begin(); }
-        UnorderedTreeScopeSet::iterator endUnordered() { return m_hash.end(); }
-
-        bool isEmpty() const { return m_treeScopes.isEmpty(); }
-        void clear()
-        {
-            m_treeScopes.clear();
-            m_hash.clear();
-        }
-
-        size_t size() const { return m_treeScopes.size(); }
-
-        TreeScope* operator[](size_t i) { return m_treeScopes[i]; }
-        const TreeScope* operator[](size_t i) const { return m_treeScopes[i]; }
-
-        DECLARE_TRACE();
-
-    private:
-        WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 16> m_treeScopes;
-        UnorderedTreeScopeSet m_hash;
-    };
-
-    static void insertTreeScopeInDocumentOrder(OrderedTreeScopeSet&, TreeScope*);
-    void clearMediaQueryRuleSetOnTreeScopeStyleSheets(UnorderedTreeScopeSet::iterator begin, UnorderedTreeScopeSet::iterator end);
+    void clearMediaQueryRuleSetOnTreeScopeStyleSheets(UnorderedTreeScopeSet&);
 
     void createResolver();
 
-    static PassRefPtrWillBeRawPtr<CSSStyleSheet> parseSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<CSSStyleSheet> parseSheet(Element*, const String& text, TextPosition startPosition);
 
     const DocumentStyleSheetCollection* documentStyleSheetCollection() const
     {
@@ -282,7 +238,7 @@ private:
 
     bool m_documentScopeDirty;
     UnorderedTreeScopeSet m_dirtyTreeScopes;
-    OrderedTreeScopeSet m_activeTreeScopes;
+    UnorderedTreeScopeSet m_activeTreeScopes;
 
     String m_preferredStylesheetSetName;
     String m_selectedStylesheetSetName;
@@ -290,7 +246,6 @@ private:
     bool m_usesSiblingRules;
     bool m_usesFirstLineRules;
     bool m_usesWindowInactiveSelector;
-    bool m_usesFirstLetterRules;
     bool m_usesRemUnits;
     unsigned m_maxDirectAdjacentSelectors;
 

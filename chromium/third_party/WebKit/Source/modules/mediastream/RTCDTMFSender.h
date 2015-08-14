@@ -42,12 +42,12 @@ class RTCDTMFSender final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<RTCDTMFSender>
     , public WebRTCDTMFSenderHandlerClient
     , public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCDTMFSender>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(RTCDTMFSender);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCDTMFSender);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static RTCDTMFSender* create(ExecutionContext*, WebRTCPeerConnectionHandler*, MediaStreamTrack*, ExceptionState&);
-    virtual ~RTCDTMFSender();
+    ~RTCDTMFSender() override;
 
     bool canInsertDTMF() const;
     MediaStreamTrack* track() const;
@@ -62,12 +62,14 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(tonechange);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject
-    virtual void stop() override;
+    void stop() override;
 
+    // Oilpan: need to eagerly finalize m_handler
+    EAGERLY_FINALIZE();
     DECLARE_VIRTUAL_TRACE();
 
 private:
@@ -77,7 +79,7 @@ private:
     void scheduledEventTimerFired(Timer<RTCDTMFSender>*);
 
     // WebRTCDTMFSenderHandlerClient
-    virtual void didPlayTone(const WebString&) override;
+    void didPlayTone(const WebString&) override;
 
     Member<MediaStreamTrack> m_track;
     int m_duration;

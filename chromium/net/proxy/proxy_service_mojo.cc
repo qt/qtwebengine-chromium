@@ -5,7 +5,7 @@
 #include "net/proxy/proxy_service_mojo.h"
 
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/dns/mojo_host_resolver_impl.h"
 #include "net/interfaces/proxy_resolver_service.mojom.h"
 #include "net/proxy/in_process_mojo_proxy_resolver_factory.h"
@@ -13,7 +13,7 @@
 #include "net/proxy/mojo_proxy_resolver_impl.h"
 #include "net/proxy/network_delegate_error_observer.h"
 #include "net/proxy/proxy_resolver_factory.h"
-#include "net/proxy/proxy_resolver_mojo.h"
+#include "net/proxy/proxy_resolver_factory_mojo.h"
 #include "net/proxy/proxy_resolver_v8_tracing.h"
 #include "net/proxy/proxy_service.h"
 
@@ -37,7 +37,8 @@ ProxyService* CreateProxyServiceUsingMojoFactory(
       make_scoped_ptr(new ProxyResolverFactoryMojo(
           mojo_proxy_factory, host_resolver,
           base::Bind(&NetworkDelegateErrorObserver::Create, network_delegate,
-                     base::MessageLoopProxy::current()))),
+                     base::ThreadTaskRunnerHandle::Get()),
+          net_log)),
       net_log);
 
   // Configure fetchers to use for PAC script downloads and auto-detect.

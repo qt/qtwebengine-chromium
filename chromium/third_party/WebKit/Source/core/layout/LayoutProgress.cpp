@@ -44,13 +44,13 @@ LayoutProgress::~LayoutProgress()
 {
 }
 
-void LayoutProgress::destroy()
+void LayoutProgress::willBeDestroyed()
 {
     if (m_animating) {
         m_animationTimer.stop();
         m_animating = false;
     }
-    LayoutBlockFlow::destroy();
+    LayoutBlockFlow::willBeDestroyed();
 }
 
 void LayoutProgress::updateFromElement()
@@ -104,7 +104,7 @@ void LayoutProgress::updateAnimationState()
 HTMLProgressElement* LayoutProgress::progressElement() const
 {
     if (!node())
-        return 0;
+        return nullptr;
 
     if (isHTMLProgressElement(*node()))
         return toHTMLProgressElement(node());

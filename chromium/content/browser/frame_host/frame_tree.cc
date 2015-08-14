@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -17,6 +18,8 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/public/common/content_switches.h"
+#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 
 namespace content {
 
@@ -108,8 +111,11 @@ FrameTree::FrameTree(Navigator* navigator,
                               render_view_delegate,
                               render_widget_delegate,
                               manager_delegate,
+                              // The top-level frame must always be in a
+                              // document scope.
+                              blink::WebTreeScopeType::Document,
                               std::string(),
-                              SandboxFlags::NONE)),
+                              blink::WebSandboxFlags::None)),
       focused_frame_tree_node_id_(-1),
       load_progress_(0.0) {
 }
@@ -180,8 +186,9 @@ void FrameTree::ForEach(
 RenderFrameHostImpl* FrameTree::AddFrame(FrameTreeNode* parent,
                                          int process_id,
                                          int new_routing_id,
+                                         blink::WebTreeScopeType scope,
                                          const std::string& frame_name,
-                                         SandboxFlags sandbox_flags) {
+                                         blink::WebSandboxFlags sandbox_flags) {
   // A child frame always starts with an initial empty document, which means
   // it is in the same SiteInstance as the parent frame. Ensure that the process
   // which requested a child frame to be added is the same as the process of the
@@ -191,9 +198,10 @@ RenderFrameHostImpl* FrameTree::AddFrame(FrameTreeNode* parent,
   if (parent->current_frame_host()->GetProcess()->GetID() != process_id)
     return nullptr;
 
-  scoped_ptr<FrameTreeNode> node(new FrameTreeNode(
-      this, parent->navigator(), render_frame_delegate_, render_view_delegate_,
-      render_widget_delegate_, manager_delegate_, frame_name, sandbox_flags));
+  scoped_ptr<FrameTreeNode> node(
+      new FrameTreeNode(this, parent->navigator(), render_frame_delegate_,
+                        render_view_delegate_, render_widget_delegate_,
+                        manager_delegate_, scope, frame_name, sandbox_flags));
   FrameTreeNode* node_ptr = node.get();
   // AddChild is what creates the RenderFrameHost.
   parent->AddChild(node.Pass(), process_id, new_routing_id);
@@ -216,16 +224,19 @@ void FrameTree::CreateProxiesForSiteInstance(
   // Create the swapped out RVH for the new SiteInstance. This will create
   // a top-level swapped out RFH as well, which will then be wrapped by a
   // RenderFrameProxyHost.
-  if (!source->IsMainFrame()) {
-    RenderViewHostImpl* render_view_host =
-        source->frame_tree()->GetRenderViewHost(site_instance);
+  if (!source || !source->IsMainFrame()) {
+    RenderViewHostImpl* render_view_host = GetRenderViewHost(site_instance);
     if (!render_view_host) {
-      root()->render_manager()->CreateRenderFrame(
-          site_instance, nullptr, MSG_ROUTING_NONE,
-          CREATE_RF_SWAPPED_OUT | CREATE_RF_HIDDEN, nullptr);
+      if (RenderFrameHostManager::IsSwappedOutStateForbidden()) {
+        root()->render_manager()->CreateRenderFrameProxy(site_instance);
+      } else {
+        root()->render_manager()->CreateRenderFrame(
+            site_instance, nullptr, CREATE_RF_SWAPPED_OUT | CREATE_RF_HIDDEN,
+            nullptr);
+      }
     } else {
-      root()->render_manager()->EnsureRenderViewInitialized(
-          source, render_view_host, site_instance);
+      root()->render_manager()->EnsureRenderViewInitialized(render_view_host,
+                                                            site_instance);
     }
   }
 
@@ -259,7 +270,6 @@ RenderViewHostImpl* FrameTree::CreateRenderViewHost(SiteInstance* site_instance,
                                                     int main_frame_routing_id,
                                                     bool swapped_out,
                                                     bool hidden) {
-  DCHECK(main_frame_routing_id != MSG_ROUTING_NONE);
   RenderViewHostMap::iterator iter =
       render_view_host_map_.find(site_instance->GetId());
   if (iter != render_view_host_map_.end()) {
@@ -268,7 +278,8 @@ RenderViewHostImpl* FrameTree::CreateRenderViewHost(SiteInstance* site_instance,
     // Otherwise return the existing RenderViewHost for the SiteInstance.
     RenderFrameHostImpl* main_frame = static_cast<RenderFrameHostImpl*>(
         iter->second->GetMainFrame());
-    if (main_frame->frame_tree_node()->render_manager()->IsPendingDeletion(
+    if (main_frame &&
+        main_frame->frame_tree_node()->render_manager()->IsPendingDeletion(
             main_frame)) {
       render_view_host_pending_shutdown_map_.insert(
           std::pair<int, RenderViewHostImpl*>(site_instance->GetId(),
@@ -299,24 +310,22 @@ RenderViewHostImpl* FrameTree::GetRenderViewHost(SiteInstance* site_instance) {
   return iter->second;
 }
 
-void FrameTree::RegisterRenderFrameHost(
-    RenderFrameHostImpl* render_frame_host) {
-  SiteInstance* site_instance = render_frame_host->GetSiteInstance();
+void FrameTree::AddRenderViewHostRef(RenderViewHostImpl* render_view_host) {
+  SiteInstance* site_instance = render_view_host->GetSiteInstance();
   RenderViewHostMap::iterator iter =
       render_view_host_map_.find(site_instance->GetId());
   CHECK(iter != render_view_host_map_.end());
+  CHECK(iter->second == render_view_host);
 
   iter->second->increment_ref_count();
 }
 
-void FrameTree::UnregisterRenderFrameHost(
-    RenderFrameHostImpl* render_frame_host) {
-  SiteInstance* site_instance = render_frame_host->GetSiteInstance();
+void FrameTree::ReleaseRenderViewHostRef(RenderViewHostImpl* render_view_host) {
+  SiteInstance* site_instance = render_view_host->GetSiteInstance();
   int32 site_instance_id = site_instance->GetId();
   RenderViewHostMap::iterator iter =
       render_view_host_map_.find(site_instance_id);
-  if (iter != render_view_host_map_.end() &&
-      iter->second == render_frame_host->render_view_host()) {
+  if (iter != render_view_host_map_.end() && iter->second == render_view_host) {
     // Decrement the refcount and shutdown the RenderViewHost if no one else is
     // using it.
     CHECK_GT(iter->second->ref_count(), 0);
@@ -335,16 +344,15 @@ void FrameTree::UnregisterRenderFrameHost(
     for (RenderViewHostMultiMap::iterator multi_iter = result.first;
          multi_iter != result.second;
          ++multi_iter) {
-      if (multi_iter->second != render_frame_host->render_view_host())
+      if (multi_iter->second != render_view_host)
         continue;
       render_view_host_found = true;
-      RenderViewHostImpl* rvh = multi_iter->second;
       // Decrement the refcount and shutdown the RenderViewHost if no one else
       // is using it.
-      CHECK_GT(rvh->ref_count(), 0);
-      rvh->decrement_ref_count();
-      if (rvh->ref_count() == 0) {
-        rvh->Shutdown();
+      CHECK_GT(render_view_host->ref_count(), 0);
+      render_view_host->decrement_ref_count();
+      if (render_view_host->ref_count() == 0) {
+        render_view_host->Shutdown();
         render_view_host_pending_shutdown_map_.erase(multi_iter);
       }
       break;

@@ -41,8 +41,6 @@
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
-#include "core/html/canvas/CanvasRenderingContext2D.h"
-#include "core/html/canvas/WebGLRenderingContext.h"
 #include "platform/graphics/BitmapImage.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
@@ -76,7 +74,7 @@ protected:
     }
 
     SkBitmap m_bitmap, m_bitmap2;
-    OwnPtrWillBePersistent<MemoryCache> m_globalMemoryCache;
+    Persistent<MemoryCache> m_globalMemoryCache;
 };
 
 // Verifies that the image resource held by an ImageBitmap is the same as the
@@ -197,26 +195,6 @@ TEST_F(ImageBitmapTest, ImageBitmapSourceChanged)
     ASSERT_TRUE(imageBitmap->bitmapImage()->bitmapForCurrentFrame(&bitmap1));
     ASSERT_TRUE(newImageResource->image()->bitmapForCurrentFrame(&bitmap2));
     ASSERT_NE(bitmap1.pixelRef()->pixels(), bitmap2.pixelRef()->pixels());
-}
-
-// Verifies that ImageBitmaps constructed from ImageBitmaps hold onto their own Image.
-TEST_F(ImageBitmapTest, ImageResourceLifetime)
-{
-    RefPtrWillBeRawPtr<HTMLCanvasElement> canvasElement = HTMLCanvasElement::create(*Document::create().get());
-    canvasElement->setHeight(40);
-    canvasElement->setWidth(40);
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapDerived = nullptr;
-    {
-        RefPtrWillBeRawPtr<ImageBitmap> imageBitmapFromCanvas = ImageBitmap::create(canvasElement.get(), IntRect(0, 0, canvasElement->width(), canvasElement->height()));
-        imageBitmapDerived = ImageBitmap::create(imageBitmapFromCanvas.get(), IntRect(0, 0, 20, 20));
-    }
-    CanvasContextCreationAttributes attributes;
-    CanvasRenderingContext2DOrWebGLRenderingContext context;
-    canvasElement->getContext("2d", attributes, context);
-    TrackExceptionState exceptionState;
-    CanvasImageSourceUnion imageSource;
-    imageSource.setImageBitmap(imageBitmapDerived);
-    context.getAsCanvasRenderingContext2D()->drawImage(imageSource, 0, 0, exceptionState);
 }
 
 } // namespace

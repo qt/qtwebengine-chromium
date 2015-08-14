@@ -5,6 +5,7 @@
 #include "config.h"
 #include "modules/presentation/Presentation.h"
 
+#include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptState.h"
@@ -13,13 +14,29 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalFrame.h"
 #include "modules/EventTargetModules.h"
-#include "modules/presentation/AvailableChangeEvent.h"
 #include "modules/presentation/DefaultSessionStartEvent.h"
+#include "modules/presentation/PresentationAvailabilityCallback.h"
 #include "modules/presentation/PresentationController.h"
 #include "modules/presentation/PresentationSessionClientCallbacks.h"
 #include "public/platform/modules/presentation/WebPresentationSessionClient.h"
 
 namespace blink {
+
+namespace {
+
+// TODO(mlamouri): refactor in one common place.
+WebPresentationClient* presentationClient(ExecutionContext* executionContext)
+{
+    ASSERT(executionContext && executionContext->isDocument());
+
+    Document* document = toDocument(executionContext);
+    if (!document->frame())
+        return nullptr;
+    PresentationController* controller = PresentationController::from(*document->frame());
+    return controller ? controller->client() : nullptr;
+}
+
+} // anonymous namespace
 
 Presentation::Presentation(LocalFrame* frame)
     : DOMWindowProperty(frame)
@@ -33,8 +50,10 @@ Presentation::~Presentation()
 // static
 Presentation* Presentation::create(LocalFrame* frame)
 {
+    ASSERT(frame);
+
     Presentation* presentation = new Presentation(frame);
-    PresentationController* controller = presentation->presentationController();
+    PresentationController* controller = PresentationController::from(*frame);
     if (controller)
         controller->setPresentation(presentation);
     return presentation;
@@ -65,17 +84,17 @@ PresentationSession* Presentation::session() const
     return m_session.get();
 }
 
-ScriptPromise Presentation::startSession(ScriptState* state, const String& presentationUrl, const String& presentationId)
+ScriptPromise Presentation::startSession(ScriptState* state, const String& presentationUrl)
 {
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
 
-    PresentationController* controller = presentationController();
-    if (!controller) {
+    WebPresentationClient* client = presentationClient(executionContext());
+    if (!client) {
         resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
         return promise;
     }
-    controller->startSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+    client->startSession(presentationUrl, new PresentationSessionClientCallbacks(resolver, this));
 
     return promise;
 }
@@ -85,66 +104,29 @@ ScriptPromise Presentation::joinSession(ScriptState* state, const String& presen
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
 
-    PresentationController* controller = presentationController();
-    if (!controller) {
+    WebPresentationClient* client = presentationClient(executionContext());
+    if (!client) {
         resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
         return promise;
     }
-    controller->joinSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+    client->joinSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
 
     return promise;
 }
 
-bool Presentation::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+ScriptPromise Presentation::getAvailability(ScriptState* state, const String& presentationUrl)
 {
-    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
-    if (!RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::addEventListener(eventType, listener, useCapture))
-        return false;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
+    ScriptPromise promise = resolver->promise();
 
-    if (hasEventListeners(EventTypeNames::availablechange) && !hadEventListeners) {
-        PresentationController* controller = presentationController();
-        if (controller)
-            controller->updateAvailableChangeWatched(true);
+    WebPresentationClient* client = presentationClient(executionContext());
+    if (!client) {
+        resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
+        return promise;
     }
+    client->getAvailability(presentationUrl, new PresentationAvailabilityCallback(resolver));
 
-    return true;
-}
-
-bool Presentation::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
-{
-    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
-    if (!RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::removeEventListener(eventType, listener, useCapture))
-        return false;
-
-    if (hadEventListeners && !hasEventListeners(EventTypeNames::availablechange)) {
-        PresentationController* controller = presentationController();
-        if (controller)
-            controller->updateAvailableChangeWatched(false);
-    }
-
-    return true;
-}
-
-void Presentation::removeAllEventListeners()
-{
-    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
-    RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::removeAllEventListeners();
-
-    if (hadEventListeners) {
-        PresentationController* controller = presentationController();
-        if (controller)
-            controller->updateAvailableChangeWatched(false);
-    }
-}
-
-void Presentation::didChangeAvailability(bool available)
-{
-    dispatchEvent(AvailableChangeEvent::create(EventTypeNames::availablechange, available));
-}
-
-bool Presentation::isAvailableChangeWatched() const
-{
-    return hasEventListeners(EventTypeNames::availablechange);
+    return promise;
 }
 
 void Presentation::didStartDefaultSession(PresentationSession* session)
@@ -158,7 +140,7 @@ void Presentation::didChangeSessionState(WebPresentationSessionClient* sessionCl
     if (session)
         session->didChangeState(sessionState);
 
-    PresentationSession::dispose(sessionClient);
+    delete sessionClient;
 }
 
 void Presentation::didReceiveSessionTextMessage(WebPresentationSessionClient* sessionClient, const String& message)
@@ -167,19 +149,21 @@ void Presentation::didReceiveSessionTextMessage(WebPresentationSessionClient* se
     if (session)
         session->didReceiveTextMessage(message);
 
-    PresentationSession::dispose(sessionClient);
+    delete sessionClient;
+}
+
+void Presentation::didReceiveSessionBinaryMessage(WebPresentationSessionClient* sessionClient, const uint8_t* data, size_t length)
+{
+    PresentationSession* session = findSession(sessionClient);
+    if (session)
+        session->didReceiveBinaryMessage(data, length);
+
+    delete sessionClient;
 }
 
 void Presentation::registerSession(PresentationSession* session)
 {
     m_openSessions.add(session);
-}
-
-PresentationController* Presentation::presentationController()
-{
-    if (!frame())
-        return nullptr;
-    return PresentationController::from(*frame());
 }
 
 PresentationSession* Presentation::findSession(WebPresentationSessionClient* sessionClient)

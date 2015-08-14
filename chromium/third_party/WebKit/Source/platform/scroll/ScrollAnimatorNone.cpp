@@ -45,11 +45,11 @@ const double kFrameRate = 60;
 const double kTickTime = 1 / kFrameRate;
 const double kMinimumTimerInterval = .001;
 
-PassRefPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
+PassOwnPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
 {
     if (scrollableArea && scrollableArea->scrollAnimatorEnabled())
-        return adoptRef(new ScrollAnimatorNone(scrollableArea));
-    return adoptRef(new ScrollAnimator(scrollableArea));
+        return adoptPtr(new ScrollAnimatorNone(scrollableArea));
+    return adoptPtr(new ScrollAnimator(scrollableArea));
 }
 
 ScrollAnimatorNone::Parameters::Parameters()
@@ -394,10 +394,10 @@ ScrollAnimatorNone::Parameters ScrollAnimatorNone::parametersForScrollGranularit
     return Parameters();
 }
 
-ScrollResultOneDimensional ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
+ScrollResultOneDimensional ScrollAnimatorNone::userScroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
 {
     if (!m_scrollableArea->scrollAnimatorEnabled())
-        return ScrollAnimator::scroll(orientation, granularity, step, delta);
+        return ScrollAnimator::userScroll(orientation, granularity, step, delta);
 
     TRACE_EVENT0("blink", "ScrollAnimatorNone::scroll");
 
@@ -412,12 +412,12 @@ ScrollResultOneDimensional ScrollAnimatorNone::scroll(ScrollbarOrientation orien
         parameters = parametersForScrollGranularity(granularity);
         break;
     case ScrollByPrecisePixel:
-        return ScrollAnimator::scroll(orientation, granularity, step, delta);
+        return ScrollAnimator::userScroll(orientation, granularity, step, delta);
     }
 
     // If the individual input setting is disabled, bail.
     if (!parameters.m_isEnabled)
-        return ScrollAnimator::scroll(orientation, granularity, step, delta);
+        return ScrollAnimator::userScroll(orientation, granularity, step, delta);
 
     // This is an animatable scroll. Set the animation in motion using the appropriate parameters.
     float scrollableSize = static_cast<float>(m_scrollableArea->scrollSize(orientation));
@@ -435,24 +435,23 @@ ScrollResultOneDimensional ScrollAnimatorNone::scroll(ScrollbarOrientation orien
 
 void ScrollAnimatorNone::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 {
-    stopAnimationTimerIfNeeded();
-
-    m_horizontalData.reset();
-    *m_horizontalData.m_currentPosition = offset.x();
-    m_horizontalData.m_desiredPosition = offset.x();
     m_currentPosX = offset.x();
-
-    m_verticalData.reset();
-    *m_verticalData.m_currentPosition = offset.y();
-    m_verticalData.m_desiredPosition = offset.y();
     m_currentPosY = offset.y();
 
+    // Must be called after setting the position since canceling the animation resets
+    // the desired position to the current.
+    cancelAnimations();
     notifyPositionChanged();
 }
 
 void ScrollAnimatorNone::cancelAnimations()
 {
     m_animationActive = false;
+
+    m_horizontalData.reset();
+    m_verticalData.reset();
+    m_horizontalData.m_desiredPosition = m_currentPosX;
+    m_verticalData.m_desiredPosition = m_currentPosY;
 }
 
 void ScrollAnimatorNone::serviceScrollAnimations()

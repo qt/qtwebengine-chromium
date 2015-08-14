@@ -26,7 +26,6 @@
 #ifndef PropertySetCSSStyleDeclaration_h
 #define PropertySetCSSStyleDeclaration_h
 
-#include "core/css/CSSKeyframeRule.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
@@ -64,7 +63,6 @@ private:
     virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) override final;
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const override final;
-    virtual PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyProperties() const override final;
 
 protected:
     enum MutationType { NoChanges, PropertyChanged };

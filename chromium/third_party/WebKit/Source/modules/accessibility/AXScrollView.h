@@ -37,57 +37,48 @@ class FrameView;
 
 class AXScrollView final : public AXObject {
 public:
-    static PassRefPtr<AXScrollView> create(FrameView*, AXObjectCacheImpl*);
-    virtual AccessibilityRole roleValue() const override { return ScrollAreaRole; }
+    static PassRefPtrWillBeRawPtr<AXScrollView> create(FrameView*, AXObjectCacheImpl&);
+    AccessibilityRole roleValue() const override { return ScrollAreaRole; }
     FrameView* scrollView() const { return m_scrollView; }
 
-    virtual ~AXScrollView();
-    virtual void detach() override;
+    ~AXScrollView() override;
+    DECLARE_VIRTUAL_TRACE();
+    void detach() override;
 
 protected:
-    virtual ScrollableArea* getScrollableAreaIfScrollable() const override;
+    ScrollableArea* getScrollableAreaIfScrollable() const override;
 
 private:
-    AXScrollView(FrameView*, AXObjectCacheImpl*);
+    AXScrollView(FrameView*, AXObjectCacheImpl&);
 
-    virtual bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
-    virtual bool isAXScrollView() const override { return true; }
-    virtual bool isEnabled() const override { return true; }
+    bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
+    bool isAXScrollView() const override { return true; }
+    bool isEnabled() const override { return true; }
 
-    virtual bool isAttachment() const override;
-    virtual Widget* widgetForAttachmentView() const override;
+    bool isAttachment() const override;
+    Widget* widgetForAttachmentView() const override;
 
-    virtual AXObject* scrollBar(AccessibilityOrientation) override;
-    virtual void addChildren() override;
-    virtual void clearChildren() override;
-    virtual AXObject* accessibilityHitTest(const IntPoint&) const override;
-    virtual void updateChildrenIfNecessary() override;
-    virtual void setNeedsToUpdateChildren() override { m_childrenDirty = true; }
+    AXObject* scrollBar(AccessibilityOrientation) override;
+    void addChildren() override;
+    void clearChildren() override;
+    AXObject* accessibilityHitTest(const IntPoint&) const override;
+    void updateChildrenIfNecessary() override;
+    void setNeedsToUpdateChildren() override { m_childrenDirty = true; }
     void updateScrollbars();
 
-    virtual FrameView* documentFrameView() const override;
-    virtual LayoutRect elementRect() const override;
-    virtual AXObject* computeParent() const override;
-    virtual AXObject* computeParentIfExists() const override;
+    FrameView* documentFrameView() const override;
+    LayoutRect elementRect() const override;
+    AXObject* computeParent() const override;
+    AXObject* computeParentIfExists() const override;
 
     AXObject* webAreaObject() const;
-    virtual AXObject* firstChild() const override { return webAreaObject(); }
+    AXObject* firstChild() const override { return webAreaObject(); }
     AXScrollbar* addChildScrollbar(Scrollbar*);
     void removeChildScrollbar(AXObject*);
 
-    // FIXME: Oilpan: Frame/ScrollView is on the heap and its
-    // AXScrollView is detached&removed from the AX cache when the
-    // FrameView is disposed. Which clears m_scrollView, hence this
-    // bare pointer will not be stale, so the bare pointer use is safe
-    // & acceptable.
-    //
-    // However, it would be preferable to have it be normally traced
-    // as part of moving the AX objects to the heap. Temporarily using
-    // a Persistent risks creating a FrameView leak, and brings no
-    // real benefits overall.
-    FrameView* m_scrollView;
-    RefPtr<AXObject> m_horizontalScrollbar;
-    RefPtr<AXObject> m_verticalScrollbar;
+    RawPtrWillBeMember<FrameView> m_scrollView;
+    RefPtrWillBeMember<AXObject> m_horizontalScrollbar;
+    RefPtrWillBeMember<AXObject> m_verticalScrollbar;
     bool m_childrenDirty;
 };
 

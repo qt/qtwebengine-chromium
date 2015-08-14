@@ -98,7 +98,6 @@ public:
     // lock is held.
     // Do not release resources used by an audio rendering thread in dispose().
     virtual void dispose();
-    static unsigned instanceCount() { return s_instanceCount; }
 
     // node() returns a valid object until dispose() is called.  This returns
     // nullptr after dispose().  We must not call node() in an audio rendering
@@ -263,7 +262,6 @@ private:
     static bool s_isNodeCountInitialized;
     static int s_nodeCount[NodeTypeEnd];
 #endif
-    static unsigned s_instanceCount;
 
 protected:
     unsigned m_channelCount;
@@ -275,7 +273,7 @@ protected:
 };
 
 class MODULES_EXPORT AudioNode : public RefCountedGarbageCollectedEventTargetWithInlineData<AudioNode> {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<AudioNode>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(AudioNode);
     DEFINE_WRAPPERTYPEINFO();
     USING_PRE_FINALIZER(AudioNode, dispose);
 public:
@@ -302,8 +300,8 @@ public:
     void setChannelInterpretation(const String&, ExceptionState&);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override final;
-    virtual ExecutionContext* executionContext() const override final;
+    const AtomicString& interfaceName() const final;
+    ExecutionContext* executionContext() const final;
 
     // Called inside AudioHandler constructors.
     void didAddOutput(unsigned numberOfOutputs);

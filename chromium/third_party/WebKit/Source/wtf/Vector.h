@@ -167,11 +167,13 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static void move(const T* src, const T* srcEnd, T* dst)
         {
-            memcpy(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
+            if (LIKELY(dst && src))
+                memcpy(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
         }
         static void moveOverlapping(const T* src, const T* srcEnd, T* dst)
         {
-            memmove(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
+            if (LIKELY(dst && src))
+                memmove(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
         }
         static void swap(T* src, T* srcEnd, T* dst)
         {
@@ -201,7 +203,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static void uninitializedCopy(const T* src, const T* srcEnd, T* dst)
         {
-            memcpy(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
+            if (LIKELY(dst && src))
+                memcpy(dst, src, reinterpret_cast<const char*>(srcEnd) - reinterpret_cast<const char*>(src));
         }
         template<typename U>
         static void uninitializedCopy(const U* src, const U* srcEnd, T* dst)
@@ -246,9 +249,9 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static bool compare(const T* a, const T* b, size_t size)
         {
-            if (LIKELY(a && b))
-                return std::equal(a, a + size, b);
-            return !a && !b;
+            ASSERT(a);
+            ASSERT(b);
+            return std::equal(a, a + size, b);
         }
     };
 
@@ -257,6 +260,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static bool compare(const T* a, const T* b, size_t size)
         {
+            ASSERT(a);
+            ASSERT(b);
             return memcmp(a, b, sizeof(T) * size) == 0;
         }
     };
@@ -333,7 +338,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
         size_t allocationSize(size_t capacity) const
         {
-            return Allocator::Quantizer::template quantizedSize<T>(capacity);
+            return Allocator::template quantizedSize<T>(capacity);
         }
 
         T* buffer() { return m_buffer; }
@@ -418,11 +423,12 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         inline bool shrinkBuffer(size_t newCapacity)
         {
             ASSERT(newCapacity < capacity());
-            size_t newSize = allocationSize(newCapacity);
-            if (!Allocator::shrinkVectorBacking(m_buffer, allocationSize(capacity()), newSize))
-                return false;
-            m_capacity = newSize / sizeof(T);
-            return true;
+            size_t sizeToAllocate = allocationSize(newCapacity);
+            if (Allocator::shrinkVectorBacking(m_buffer, allocationSize(capacity()), sizeToAllocate)) {
+                m_capacity = sizeToAllocate / sizeof(T);
+                return true;
+            }
+            return false;
         }
 
         void resetBufferPointer()
@@ -1290,7 +1296,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         if (a.size() != b.size())
             return false;
-
+        if (a.isEmpty())
+            return true;
         return VectorTypeOperations<T>::compare(a.data(), b.data(), a.size());
     }
 
@@ -1307,6 +1314,18 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     void Vector<T, inlineCapacity, Allocator>::trace(VisitorDispatcher visitor)
     {
         ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
+        if (!buffer())
+            return;
+        if (this->hasOutOfLineBuffer()) {
+            // This is a performance optimization for a case where the buffer
+            // has been already traced by somewhere. This can happen if
+            // the conservative scanning traced an on-stack (false-positive
+            // or real) pointer to the HeapVector, and then visitor->trace()
+            // traces the HeapVector.
+            if (Allocator::isHeapObjectAlive(buffer()))
+                return;
+            Allocator::markNoTracing(visitor, buffer());
+        }
         const T* bufferBegin = buffer();
         const T* bufferEnd = buffer() + size();
         if (ShouldBeTraced<VectorTraits<T>>::value) {
@@ -1314,8 +1333,6 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
                 Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));
             checkUnusedSlots(buffer() + size(), buffer() + capacity());
         }
-        if (this->hasOutOfLineBuffer())
-            Allocator::markNoTracing(visitor, buffer());
     }
 
 #if !ENABLE(OILPAN)

@@ -60,7 +60,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public DeviceEventObserver,
 
   scoped_ptr<SystemInputInjector> CreateSystemInputInjector();
 
-  InputController* input_controller() { return &input_controller_; }
+  InputControllerEvdev* input_controller() { return &input_controller_; }
 
   // User input events.
   void DispatchKeyEvent(const KeyEventParams& params);
@@ -77,6 +77,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public DeviceEventObserver,
       const std::vector<TouchscreenDevice>& devices);
   void DispatchMouseDevicesUpdated(const std::vector<InputDevice>& devices);
   void DispatchTouchpadDevicesUpdated(const std::vector<InputDevice>& devices);
+  void DispatchDeviceListsComplete();
 
  protected:
   // DeviceEventObserver overrides:
@@ -99,7 +100,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public DeviceEventObserver,
       scoped_ptr<InputDeviceFactoryEvdevProxy> input_device_factory);
 
   // Used to uniquely identify input devices.
-  int last_device_id_;
+  int last_device_id_ = 0;
 
   // Interface for scanning & monitoring input devices.
   DeviceManager* device_manager_;  // Not owned.
@@ -124,7 +125,7 @@ class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public DeviceEventObserver,
   InputControllerEvdev input_controller_;
 
   // Whether we've set up the device factory.
-  bool initialized_;
+  bool initialized_ = false;
 
   // Thread for device I/O.
   EventThreadEvdev thread_;

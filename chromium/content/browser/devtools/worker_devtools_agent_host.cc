@@ -4,8 +4,7 @@
 
 #include "content/browser/devtools/worker_devtools_agent_host.h"
 
-#include "content/browser/devtools/ipc_devtools_agent_host.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/devtools/devtools_protocol_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -16,31 +15,21 @@ BrowserContext* WorkerDevToolsAgentHost::GetBrowserContext() {
   return rph ? rph->GetBrowserContext() : nullptr;
 }
 
-void WorkerDevToolsAgentHost::SendMessageToAgent(
-    IPC::Message* message_raw) {
-  scoped_ptr<IPC::Message> message(message_raw);
-  if (state_ != WORKER_INSPECTED)
-    return;
-  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first)) {
-    message->set_routing_id(worker_id_.second);
-    host->Send(message.release());
-  }
-}
-
 void WorkerDevToolsAgentHost::Attach() {
   if (state_ != WORKER_INSPECTED) {
     state_ = WORKER_INSPECTED;
     AttachToWorker();
   }
-  IPCDevToolsAgentHost::Attach();
+  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first))
+    host->Send(new DevToolsAgentMsg_Attach(worker_id_.second, GetId()));
+  OnAttachedStateChanged(true);
+  DevToolsAgentHostImpl::NotifyCallbacks(this, true);
 }
 
-void WorkerDevToolsAgentHost::OnClientAttached(bool reattached) {
-  if (!reattached)
-    DevToolsAgentHostImpl::NotifyCallbacks(this, true);
-}
-
-void WorkerDevToolsAgentHost::OnClientDetached() {
+void WorkerDevToolsAgentHost::Detach() {
+  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first))
+    host->Send(new DevToolsAgentMsg_Detach(worker_id_.second));
+  OnAttachedStateChanged(false);
   if (state_ == WORKER_INSPECTED) {
     state_ = WORKER_UNINSPECTED;
     DetachFromWorker();
@@ -48,6 +37,22 @@ void WorkerDevToolsAgentHost::OnClientDetached() {
     state_ = WORKER_UNINSPECTED;
   }
   DevToolsAgentHostImpl::NotifyCallbacks(this, false);
+}
+
+bool WorkerDevToolsAgentHost::DispatchProtocolMessage(
+    const std::string& message) {
+  if (state_ != WORKER_INSPECTED)
+    return true;
+
+  int call_id;
+  if (protocol_handler_->HandleOptionalMessage(message, &call_id))
+    return true;
+
+  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first)) {
+    host->Send(new DevToolsAgentMsg_DispatchOnInspectorBackend(
+        worker_id_.second, message));
+  }
+  return true;
 }
 
 bool WorkerDevToolsAgentHost::OnMessageReceived(
@@ -76,7 +81,11 @@ void WorkerDevToolsAgentHost::WorkerReadyForInspection() {
     DCHECK(IsAttached());
     state_ = WORKER_INSPECTED;
     AttachToWorker();
-    Reattach();
+    if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first)) {
+      host->Send(new DevToolsAgentMsg_Reattach(
+          worker_id_.second, GetId(), chunk_processor_.state_cookie()));
+    }
+    OnAttachedStateChanged(true);
   }
 }
 
@@ -110,13 +119,23 @@ bool WorkerDevToolsAgentHost::IsTerminated() {
 
 WorkerDevToolsAgentHost::WorkerDevToolsAgentHost(
     WorkerId worker_id)
-    : state_(WORKER_UNINSPECTED),
+    : protocol_handler_(new DevToolsProtocolHandler(
+          this,
+          base::Bind(&WorkerDevToolsAgentHost::SendMessageToClient,
+                     base::Unretained(this)))),
+      chunk_processor_(
+          base::Bind(&WorkerDevToolsAgentHost::SendMessageToClient,
+                     base::Unretained(this))),
+      state_(WORKER_UNINSPECTED),
       worker_id_(worker_id) {
   WorkerCreated();
 }
 
 WorkerDevToolsAgentHost::~WorkerDevToolsAgentHost() {
   DCHECK_EQ(WORKER_TERMINATED, state_);
+}
+
+void WorkerDevToolsAgentHost::OnAttachedStateChanged(bool attached) {
 }
 
 void WorkerDevToolsAgentHost::AttachToWorker() {
@@ -138,7 +157,7 @@ void WorkerDevToolsAgentHost::OnDispatchOnInspectorFrontend(
   if (!IsAttached())
     return;
 
-  ProcessChunkedMessageFromAgent(message);
+  chunk_processor_.ProcessChunkedMessageFromAgent(message);
 }
 
 }  // namespace content

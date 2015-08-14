@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="el">
 <translation id="2774256287122201187">Μπορείτε να συνεχίσετε. Αν συνεχίσετε στη σελίδα, αυτή η προειδοποίηση δεν θα εμφανιστεί ξανά για πέντε λεπτά.</translation>
+<translation id="3963721102035795474">Λειτουργία αναγνώστη</translation>
 <translation id="7485870689360869515">Δεν βρέθηκαν δεδομένα</translation>
 <translation id="3884278016824448484">Αναγνωριστικό συσκευής που προκαλεί διένεξη</translation>
 <translation id="5172758083709347301">Υπολογιστής</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">Υποχρεωτική</translation>
 <translation id="2958431318199492670">Η διαμόρφωση δικτύου δεν συμμορφώνεται με το πρότυπο ONC. Ορισμένα τμήματα αυτής της διαμόρφωσης ενδέχεται να μην εισαχθούν.</translation>
 <translation id="3583757800736429874">&amp;Επανάληψη μετακίνησης</translation>
+<translation id="7887683347370398519">Ελέγξτε τον κωδικό σας CVC και δοκιμάστε ξανά</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">Λείπει κάποιο αρχείο συσκευής</translation>
 <translation id="1491151370853475546">Εκ νέου φόρτωση αυτής της σελίδας</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">Να μεταφράζονται πάντα τα <ph name="LANGUAGE"/></translation>
 <translation id="1227633850867390598">Απόκρυψη τιμής</translation>
 <translation id="6753269504797312559">Τιμή πολιτικής</translation>
+<translation id="3369366829301677151">Ενημέρωση και επαλήθευση της κάρτας σας <ph name="CREDIT_CARD"/></translation>
 <translation id="8834246243508017242">Ενεργοποίηση Αυτόματης συμπλήρωσης χρησιμοποιώντας τις Επαφές…</translation>
 <translation id="7275334191706090484">Διαχειριζόμενοι σελιδοδείκτες</translation>
 <translation id="7400418766976504921">Διεύθυνση URL</translation>
 <translation id="7378627244592794276">Όχι</translation>
 <translation id="2704283930420550640">Η τιμή δεν συμφωνεί με τη μορφή.</translation>
 <translation id="1055184225775184556">&amp;Αναίρεση προσθήκης</translation>
+<translation id="7813600968533626083">Κατάργηση πρότασης φόρμας από το Chrome;</translation>
 <translation id="4850886885716139402">Προβολή</translation>
 <translation id="8091372947890762290">Η ενεργοποίηση στο διακομιστή εκκρεμεί</translation>
 <translation id="6874604403660855544">&amp;Επανάληψη προσθήκης</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">Περιοχή</translation>
 <translation id="1871208020102129563">Ο διακομιστής μεσολάβησης έχει ρυθμιστεί να χρησιμοποιεί διακομιστές μεσολάβησης και όχι μια διεύθυνση URL σεναρίου .pac.</translation>
+<translation id="8988760548304185580">Εισαγάγετε την ημερομηνία λήξης και τον τριψήφιο κωδικό CVC από το πίσω μέρος της κάρτας σας</translation>
 <translation id="8940229512486821554">Εκτέλεση εντολής <ph name="EXTENSION_NAME"/>: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">Άγνωστο σφάλμα</translation>
 <translation id="112840717907525620">Η προσωρινή μνήμη της πολιτικής είναι εντάξει</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">Σφάλμα επικύρωσης: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">Η μετάφραση στα <ph name="TARGET_LANGUAGE"/> απέτυχε.</translation>
 <translation id="4103249731201008433">Ο σειριακός αριθμός της συσκευής δεν είναι έγκυρος</translation>
+<translation id="3219579145727097045">Εισαγάγετε την ημερομηνία λήξης και τον τετραψήφιο κωδικό CVC από το μπροστινό μέρος της κάρτας σας</translation>
 <translation id="59107663811261420">Αυτός ο τύπος κάρτας δεν υποστηρίζεται από το Google Payments γι' αυτόν τον έμπορο. Επιλέξτε διαφορετική κάρτα.</translation>
-<translation id="3667681724235208644">Προβολή αρχικής</translation>
 <translation id="4079302484614802869">Η διαμόρφωση του διακομιστή μεσολάβησης είναι ορισμένη να χρησιμοποιεί μια διεύθυνση URL σεναρίου .pac και όχι σταθερούς διακομιστές μεσολάβησης.</translation>
 <translation id="5540224163453853">Δεν ήταν δυνατή η εύρεση του άρθρου που ζητήσατε.</translation>
 <translation id="8437238597147034694">&amp;Αναίρεση μετακίνησης</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">Μετάφραση των <ph name="ORIGINAL_LANGUAGE"/> στα <ph name="TARGET_LANGUAGE"/>;</translation>
 <translation id="8218327578424803826">Εκχωρημένη τοποθεσία:</translation>
 <translation id="3542684924769048008">Χρήση κωδικού πρόσβασης για:</translation>
+<translation id="2855922900409897335">Επαλήθευση της κάρτας <ph name="CREDIT_CARD"/></translation>
 <translation id="7186367841673660872">Αυτή η σελίδα έχει μεταφραστεί από τα<ph name="ORIGINAL_LANGUAGE"/>στα<ph name="LANGUAGE_LANGUAGE"/></translation>
+<translation id="4587425331216688090">Κατάργηση διεύθυνσης από το Chrome;</translation>
 <translation id="7139724024395191329">Εμιράτο</translation>
+<translation id="6646897916597483132">Εισαγάγετε τον τετραψήφιο κωδικό CVC από το μπροστινό μέρος της κάρτας σας</translation>
 <translation id="5145883236150621069">Βρέθηκε κωδικός σφάλματος στην απόκριση πολιτικής</translation>
 <translation id="7983301409776629893">Να γίνεται πάντα μετάφραση των <ph name="ORIGINAL_LANGUAGE"/> στα <ph name="TARGET_LANGUAGE"/></translation>
 <translation id="6970216967273061347">Περιοχή</translation>
 <translation id="3427342743765426898">&amp;Επανάληψη επεξεργασίας</translation>
 <translation id="3010559122411665027">Καταχώριση λίστας &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">Κατάργηση πιστωτικής κάρτας από το Chrome;</translation>
 <translation id="6445051938772793705">Χώρα</translation>
 <translation id="5031870354684148875">Σχετικά με τη Google Μετάφραση</translation>
 <translation id="1152921474424827756">Πρόσβαση σε <ph name="BEGIN_LINK"/>προσωρινό αντίγραφο<ph name="END_LINK"/> της διεύθυνσης <ph name="URL"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">Σελιδοδείκτες <ph name="DOMAIN"/></translation>
 <translation id="4300246636397505754">Γονικές προτάσεις</translation>
 <translation id="111844081046043029">Είστε βέβαιοι ότι επιθυμείτε έξοδο από αυτή τη σελίδα;</translation>
+<translation id="2495083838625180221">Συντακτικός αναλυτής JSON</translation>
 <translation id="1973335181906896915">Σφάλμα σειριοποίησης</translation>
 <translation id="5989320800837274978">Δεν προσδιορίζονται ούτε οι σταθεροί διακομιστές μεσολάβησης ούτε μια διεύθυνση URL σεναρίου .pac.</translation>
 <translation id="7805768142964895445">Κατάσταση</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">Αποτυχία αποθήκευσης ρυθμίσεων πολιτικής</translation>
 <translation id="5439770059721715174">Σφάλμα επαλήθευσης σχήματος σε &quot;<ph name="ERROR_PATH"/>&quot;: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">Γραμμή σελιδοδεικτών</translation>
+<translation id="587701087903783706">Κλείσιμο προβολής φιλικής προς κινητά</translation>
 <translation id="7208899522964477531">Αναζήτηση <ph name="SITE_NAME"/> για <ph name="SEARCH_TERMS"/></translation>
 <translation id="7956713633345437162">Σελιδοδείκτες κινητής συσκευής</translation>
 <translation id="5089810972385038852">Πολιτεία</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">Μη έγκυρη λειτουργία διακομιστή μεσολάβησης.</translation>
 <translation id="3105172416063519923">Αναγνωριστικό στοιχείο:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">Θα πρέπει να ενεργοποιηθεί η JavaScript για τη χρήση αυτής της λειτουργίας.</translation>
 <translation id="2587841377698384444">Αναγνωριστικό API καταλόγου:</translation>
 <translation id="7752995774971033316">Χωρίς διαχείριση</translation>
 <translation id="3712624925041724820">Οι άδειες έχουν εξαντληθεί</translation>
 <translation id="4926049483395192435">Πρέπει να καθοριστεί.</translation>
+<translation id="1455235771979731432">Παρουσιάστηκε ένα πρόβλημα με την επαλήθευση της κάρτας σας. Ελέγξτε τη σύνδεσή σας στο διαδίκτυο και δοκιμάστε ξανά.</translation>
 <translation id="7542995811387359312">Η αυτόματη συμπλήρωση πιστωτικής κάρτας έχει απενεργοποιηθεί, επειδή αυτή η φόρμα δεν χρησιμοποιεί ασφαλή σύνδεση.</translation>
 <translation id="5179510805599951267">Δεν είναι στα <ph name="ORIGINAL_LANGUAGE"/>; Αναφέρετε αυτό το σφάλμα</translation>
 <translation id="8088680233425245692">Αποτυχία προβολής άρθρου.</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">Ενεργό</translation>
 <translation id="7568593326407688803">Αυτή η σελίδα είναι στα<ph name="ORIGINAL_LANGUAGE"/>Θέλετε να τη μεταφράσετε;</translation>
 <translation id="8876793034577346603">Αποτυχία ανάλυσης της διαμόρφωσης δικτύου</translation>
+<translation id="4800132727771399293">Ελέγξτε την ημερομηνία λήξης και τον κωδικό σας CVC και δοκιμάστε ξανά</translation>
 <translation id="4171400957073367226">Εσφαλμένη υπογραφή επαλήθευσης</translation>
+<translation id="9125941078353557812">Εισαγάγετε τον τριψήφιο κωδικό CVC από το πίσω μέρος της κάρτας σας</translation>
 <translation id="106701514854093668">Σελιδοδείκτες επιτραπέζιου υπολογιστή</translation>
 <translation id="6154808779448689242">Το εμφανιζόμενο διακριτικό πολιτικής δεν αντιστοιχεί με το τρέχον διακριτικό</translation>
 <translation id="7995512525968007366">Δεν καθορίστηκε</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;Αναίρεση αναδιάταξης</translation>
 <translation id="20817612488360358">Οι ρυθμίσεις διακομιστή μεσολάβησης του συστήματος έχουν οριστεί για να χρησιμοποιηθούν, αλλά καθορίζεται επίσης μια ρητή διαμόρφωση του διακομιστή μεσολάβησης.</translation>
 <translation id="2639739919103226564">Κατάσταση:</translation>
+<translation id="8824019021993735287">Δεν ήταν δυνατή η επαλήθευση της κάρτας σας αυτήν τη στιγμή από το Chrome. Δοκιμάστε ξανά αργότερα.</translation>
 <translation id="4968547170521245791">Δεν είναι δυνατή η μεσολάβηση</translation>
 <translation id="385051799172605136">Πίσω</translation>
 <translation id="4196861286325780578">&amp;Επανάληψη μετακίνησης</translation>

@@ -38,8 +38,10 @@
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_editcommand_helper.h"
+#include "content/browser/renderer_host/render_widget_resize_helper.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/edit_command.h"
@@ -72,7 +74,6 @@
 #include "ui/compositor/layer.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -828,7 +829,7 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
   NSNumber* screen_number = [screen_description objectForKey:@"NSScreenNumber"];
   CGDirectDisplayID display_id = [screen_number unsignedIntValue];
 
-  display_link_ = DisplayLinkMac::GetForDisplay(display_id);
+  display_link_ = ui::DisplayLinkMac::GetForDisplay(display_id);
   if (!display_link_.get()) {
     // Note that on some headless systems, the display link will fail to be
     // created, so this should not be a fatal error.
@@ -909,8 +910,16 @@ void RenderWidgetHostViewMac::WasOccluded() {
   if (render_widget_host_->is_hidden())
     return;
 
-  render_widget_host_->WasHidden();
+  // SuspendBrowserCompositorView() instructs the GPU process to free up
+  // resources such as textures. WasHidden() places the renderer process in the
+  // background and throttles its I/O. We're cafeful to call WasHidden() only
+  // after calling SuspendBrowserCompositorView(), otherwise the backgrounded
+  // and throttled renderer's communication with GPU process will take extra
+  // time to complete. The delay will block the foreground renderer's
+  // communication with the GPU process, resulting in longer tab switching
+  // time. http://crbug.com/502502 .
   SuspendBrowserCompositorView();
+  render_widget_host_->WasHidden();
 }
 
 void RenderWidgetHostViewMac::SetSize(const gfx::Size& size) {
@@ -1497,7 +1506,8 @@ void RenderWidgetHostViewMac::OnSwapCompositorFrame(
         output_surface_id,
         frame->delegated_frame_data.Pass(),
         frame->metadata.device_scale_factor,
-        frame->metadata.latency_info);
+        frame->metadata.latency_info,
+        &frame->metadata.satisfies_sequences);
   } else {
     DLOG(ERROR) << "Received unexpected frame type.";
     bad_message::ReceivedBadMessage(render_widget_host_->GetProcess(),
@@ -1662,23 +1672,6 @@ gfx::Point RenderWidgetHostViewMac::AccessibilityOriginInScreen(
       [[cocoa_view_ window] convertBaseToScreen:originInWindow];
   originInScreen.y = originInScreen.y - size.height;
   return gfx::Point(originInScreen.x, originInScreen.y);
-}
-
-void RenderWidgetHostViewMac::AccessibilityShowMenu(const gfx::Point& point) {
-  NSPoint location = NSMakePoint(point.x(), point.y());
-  location = [[cocoa_view_ window] convertScreenToBase:location];
-  NSEvent* fakeRightClick = [NSEvent
-                          mouseEventWithType:NSRightMouseDown
-                                    location:location
-                               modifierFlags:0
-                                   timestamp:0
-                                windowNumber:[[cocoa_view_ window] windowNumber]
-                                     context:[NSGraphicsContext currentContext]
-                                 eventNumber:0
-                                  clickCount:1
-                                    pressure:0];
-
-  [cocoa_view_ mouseEvent:fakeRightClick];
 }
 
 void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
@@ -2749,193 +2742,6 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   return [super accessibilityFocusedUIElement];
 }
 
-// Below is the nasty tooltip stuff -- copied from WebKit's WebHTMLView.mm
-// with minor modifications for code style and commenting.
-//
-//  The 'public' interface is -setToolTipAtMousePoint:. This differs from
-// -setToolTip: in that the updated tooltip takes effect immediately,
-//  without the user's having to move the mouse out of and back into the view.
-//
-// Unfortunately, doing this requires sending fake mouseEnter/Exit events to
-// the view, which in turn requires overriding some internal tracking-rect
-// methods (to keep track of its owner & userdata, which need to be filled out
-// in the fake events.) --snej 7/6/09
-
-
-/*
- * Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
- *           (C) 2006, 2007 Graham Dennis (graham.dennis@gmail.com)
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- * 2.  Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
- *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-// Any non-zero value will do, but using something recognizable might help us
-// debug some day.
-static const NSTrackingRectTag kTrackingRectTag = 0xBADFACE;
-
-// Override of a public NSView method, replacing the inherited functionality.
-// See above for rationale.
-- (NSTrackingRectTag)addTrackingRect:(NSRect)rect
-                               owner:(id)owner
-                            userData:(void *)data
-                        assumeInside:(BOOL)assumeInside {
-  DCHECK(trackingRectOwner_ == nil);
-  trackingRectOwner_ = owner;
-  trackingRectUserData_ = data;
-  return kTrackingRectTag;
-}
-
-// Override of (apparently) a private NSView method(!) See above for rationale.
-- (NSTrackingRectTag)_addTrackingRect:(NSRect)rect
-                                owner:(id)owner
-                             userData:(void *)data
-                         assumeInside:(BOOL)assumeInside
-                       useTrackingNum:(int)tag {
-  DCHECK(tag == 0 || tag == kTrackingRectTag);
-  DCHECK(trackingRectOwner_ == nil);
-  trackingRectOwner_ = owner;
-  trackingRectUserData_ = data;
-  return kTrackingRectTag;
-}
-
-// Override of (apparently) a private NSView method(!) See above for rationale.
-- (void)_addTrackingRects:(NSRect *)rects
-                    owner:(id)owner
-             userDataList:(void **)userDataList
-         assumeInsideList:(BOOL *)assumeInsideList
-             trackingNums:(NSTrackingRectTag *)trackingNums
-                    count:(int)count {
-  DCHECK(count == 1);
-  DCHECK(trackingNums[0] == 0 || trackingNums[0] == kTrackingRectTag);
-  DCHECK(trackingRectOwner_ == nil);
-  trackingRectOwner_ = owner;
-  trackingRectUserData_ = userDataList[0];
-  trackingNums[0] = kTrackingRectTag;
-}
-
-// Override of a public NSView method, replacing the inherited functionality.
-// See above for rationale.
-- (void)removeTrackingRect:(NSTrackingRectTag)tag {
-  if (tag == 0)
-    return;
-
-  if (tag == kTrackingRectTag) {
-    trackingRectOwner_ = nil;
-    return;
-  }
-
-  if (tag == lastToolTipTag_) {
-    [super removeTrackingRect:tag];
-    lastToolTipTag_ = 0;
-    return;
-  }
-
-  // If any other tracking rect is being removed, we don't know how it was
-  // created and it's possible there's a leak involved (see Radar 3500217).
-  NOTREACHED();
-}
-
-// Override of (apparently) a private NSView method(!)
-- (void)_removeTrackingRects:(NSTrackingRectTag *)tags count:(int)count {
-  for (int i = 0; i < count; ++i) {
-    int tag = tags[i];
-    if (tag == 0)
-      continue;
-    DCHECK(tag == kTrackingRectTag);
-    trackingRectOwner_ = nil;
-  }
-}
-
-// Sends a fake NSMouseExited event to the view for its current tracking rect.
-- (void)_sendToolTipMouseExited {
-  // Nothing matters except window, trackingNumber, and userData.
-  int windowNumber = [[self window] windowNumber];
-  NSEvent* fakeEvent = [NSEvent enterExitEventWithType:NSMouseExited
-                                              location:NSZeroPoint
-                                         modifierFlags:0
-                                             timestamp:0
-                                          windowNumber:windowNumber
-                                               context:NULL
-                                           eventNumber:0
-                                        trackingNumber:kTrackingRectTag
-                                              userData:trackingRectUserData_];
-  [trackingRectOwner_ mouseExited:fakeEvent];
-}
-
-// Sends a fake NSMouseEntered event to the view for its current tracking rect.
-- (void)_sendToolTipMouseEntered {
-  // Nothing matters except window, trackingNumber, and userData.
-  int windowNumber = [[self window] windowNumber];
-  NSEvent* fakeEvent = [NSEvent enterExitEventWithType:NSMouseEntered
-                                              location:NSZeroPoint
-                                         modifierFlags:0
-                                             timestamp:0
-                                          windowNumber:windowNumber
-                                               context:NULL
-                                           eventNumber:0
-                                        trackingNumber:kTrackingRectTag
-                                              userData:trackingRectUserData_];
-  [trackingRectOwner_ mouseEntered:fakeEvent];
-}
-
-// Sets the view's current tooltip, to be displayed at the current mouse
-// location. (This does not make the tooltip appear -- as usual, it only
-// appears after a delay.) Pass null to remove the tooltip.
-- (void)setToolTipAtMousePoint:(NSString *)string {
-  NSString *toolTip = [string length] == 0 ? nil : string;
-  if ((toolTip && toolTip_ && [toolTip isEqualToString:toolTip_]) ||
-      (!toolTip && !toolTip_)) {
-    return;
-  }
-
-  if (toolTip_) {
-    [self _sendToolTipMouseExited];
-  }
-
-  toolTip_.reset([toolTip copy]);
-
-  if (toolTip) {
-    // See radar 3500217 for why we remove all tooltips
-    // rather than just the single one we created.
-    [self removeAllToolTips];
-    NSRect wideOpenRect = NSMakeRect(-100000, -100000, 200000, 200000);
-    lastToolTipTag_ = [self addToolTipRect:wideOpenRect
-                                     owner:self
-                                  userData:NULL];
-    [self _sendToolTipMouseEntered];
-  }
-}
-
-// NSView calls this to get the text when displaying the tooltip.
-- (NSString *)view:(NSView *)view
-  stringForToolTip:(NSToolTipTag)tag
-             point:(NSPoint)point
-          userData:(void *)data {
-  return [[toolTip_ copy] autorelease];
-}
-
 // Below is our NSTextInputClient implementation.
 //
 // When WebHTMLView receives a NSKeyDown event, WebHTMLView calls the following
@@ -3185,7 +2991,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
     // We ignore commands that insert characters, because this was causing
     // strange behavior (e.g. tab always inserted a tab rather than moving to
     // the next field on the page).
-    if (!StartsWithASCII(command, "insert", false))
+    if (!base::StartsWithASCII(command, "insert", false))
       editCommands_.push_back(EditCommand(command, ""));
   } else {
     RenderWidgetHostImpl* rwh = renderWidgetHostView_->render_widget_host_;
@@ -3278,15 +3084,17 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 }
 
 - (void)cut:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->Cut();
+  content::RenderWidgetHostDelegate* render_widget_host_delegate =
+      renderWidgetHostView_->render_widget_host_->delegate();
+  if (render_widget_host_delegate)
+    render_widget_host_delegate->Cut();
 }
 
 - (void)copy:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->Copy();
+  content::RenderWidgetHostDelegate* render_widget_host_delegate =
+      renderWidgetHostView_->render_widget_host_->delegate();
+  if (render_widget_host_delegate)
+    render_widget_host_delegate->Copy();
 }
 
 - (void)copyToFindPboard:(id)sender {
@@ -3296,9 +3104,10 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 }
 
 - (void)paste:(id)sender {
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->Paste();
+  content::RenderWidgetHostDelegate* render_widget_host_delegate =
+      renderWidgetHostView_->render_widget_host_->delegate();
+  if (render_widget_host_delegate)
+    render_widget_host_delegate->Paste();
 }
 
 - (void)pasteAndMatchStyle:(id)sender {
@@ -3315,9 +3124,10 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   // menu handler, neither is true.
   // Explicitly call SelectAll() here to make sure the renderer returns
   // selection results.
-  WebContents* web_contents = renderWidgetHostView_->GetWebContents();
-  if (web_contents)
-    web_contents->SelectAll();
+  content::RenderWidgetHostDelegate* render_widget_host_delegate =
+      renderWidgetHostView_->render_widget_host_->delegate();
+  if (render_widget_host_delegate)
+    render_widget_host_delegate->SelectAll();
 }
 
 - (void)startSpeaking:(id)sender {

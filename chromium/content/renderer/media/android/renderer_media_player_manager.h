@@ -83,9 +83,6 @@ class RendererMediaPlayerManager : public RenderFrameObserver {
   // Requests the player to enter fullscreen.
   void EnterFullscreen(int player_id);
 
-  // Requests the player to exit fullscreen.
-  void ExitFullscreen(int player_id);
-
   // Requests the player with |player_id| to use the CDM with |cdm_id|.
   // Does nothing if |cdm_id| is kInvalidCdmId.
   // TODO(xhwang): Update this when we implement setCdm(0).
@@ -141,7 +138,6 @@ class RendererMediaPlayerManager : public RenderFrameObserver {
   void OnDidEnterFullscreen(int player_id);
   void OnPlayerPlay(int player_id);
   void OnPlayerPause(int player_id);
-  void OnRequestFullscreen(int player_id);
   void OnRemoteRouteAvailabilityChanged(int player_id, bool routes_available);
 
   // Release all video player resources.

@@ -22,7 +22,7 @@
 #include "mojo/common/common_type_converters.h"
 #include "mojo/common/data_pipe_utils.h"
 #include "mojo/common/url_type_converters.h"
-#include "mojo/services/network/public/interfaces/network_service.mojom.h"
+#include "mojo/services/network/public/interfaces/url_loader_factory.mojom.h"
 #include "mojo/shell/data_pipe_peek.h"
 #include "mojo/shell/switches.h"
 
@@ -30,14 +30,14 @@ namespace mojo {
 namespace shell {
 
 NetworkFetcher::NetworkFetcher(bool disable_cache,
-                               const GURL& url,
-                               NetworkService* network_service,
+                               mojo::URLRequestPtr request,
+                               URLLoaderFactory* url_loader_factory,
                                const FetchCallback& loader_callback)
     : Fetcher(loader_callback),
       disable_cache_(false),
-      url_(url),
+      url_(request->url.To<GURL>()),
       weak_ptr_factory_(this) {
-  StartNetworkRequest(url, network_service);
+  StartNetworkRequest(request.Pass(), url_loader_factory);
 }
 
 NetworkFetcher::~NetworkFetcher() {
@@ -57,6 +57,15 @@ GURL NetworkFetcher::GetRedirectURL() const {
   return GURL(response_->redirect_url);
 }
 
+GURL NetworkFetcher::GetRedirectReferer() const {
+  if (!response_)
+    return GURL::EmptyGURL();
+
+  if (response_->redirect_referrer.is_null())
+    return GURL::EmptyGURL();
+
+  return GURL(response_->redirect_referrer);
+}
 URLResponsePtr NetworkFetcher::AsURLResponse(base::TaskRunner* task_runner,
                                              uint32_t skip) {
   if (skip != 0) {
@@ -209,16 +218,14 @@ bool NetworkFetcher::PeekFirstLine(std::string* line) {
                           kPeekTimeout);
 }
 
-void NetworkFetcher::StartNetworkRequest(const GURL& url,
-                                         NetworkService* network_service) {
+void NetworkFetcher::StartNetworkRequest(mojo::URLRequestPtr request,
+                                         URLLoaderFactory* url_loader_factory) {
   TRACE_EVENT_ASYNC_BEGIN1("mojo_shell", "NetworkFetcher::NetworkRequest", this,
-                           "url", url.spec());
-  URLRequestPtr request(URLRequest::New());
-  request->url = String::From(url);
+                           "url", request->url.To<std::string>());
   request->auto_follow_redirects = false;
   request->bypass_cache = disable_cache_;
 
-  network_service->CreateURLLoader(GetProxy(&url_loader_));
+  url_loader_factory->CreateURLLoader(GetProxy(&url_loader_));
   url_loader_->Start(request.Pass(),
                      base::Bind(&NetworkFetcher::OnLoadComplete,
                                 weak_ptr_factory_.GetWeakPtr()));

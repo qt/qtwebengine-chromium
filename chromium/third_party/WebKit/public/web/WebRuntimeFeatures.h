@@ -41,6 +41,9 @@ namespace blink {
 class WebRuntimeFeatures {
 public:
     BLINK_EXPORT static void enableExperimentalFeatures(bool);
+
+    BLINK_EXPORT static void enableWebBluetooth(bool);
+
     BLINK_EXPORT static void enableTestOnlyFeatures(bool);
 
     // Enables a feature by its string identifier from
@@ -93,8 +96,6 @@ public:
 
     BLINK_EXPORT static void enableNavigatorContentUtils(bool);
 
-    BLINK_EXPORT static void enableNavigationTransitions(bool);
-
     BLINK_EXPORT static void enableNetworkInformation(bool);
 
     BLINK_EXPORT static void enableOrientationEvent(bool);
@@ -108,8 +109,6 @@ public:
     BLINK_EXPORT static void enableScreenOrientation(bool);
 
     BLINK_EXPORT static void enableScriptedSpeech(bool);
-
-    BLINK_EXPORT static void enableServiceWorker(bool);
 
     BLINK_EXPORT static void enableSlimmingPaint(bool);
 

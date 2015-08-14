@@ -8,6 +8,7 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "base/process/process.h"
@@ -51,8 +52,10 @@ class CONTENT_EXPORT VideoCaptureBufferPool
     virtual ~BufferHandle() {}
     virtual size_t size() const = 0;
     virtual void* data() = 0;
-    virtual gfx::GpuMemoryBufferType GetType() = 0;
     virtual ClientBuffer AsClientBuffer() = 0;
+#if defined(OS_POSIX)
+    virtual base::FileDescriptor AsPlatformFile() = 0;
+#endif
   };
 
   explicit VideoCaptureBufferPool(int count);
@@ -81,6 +84,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   // new allocation at a larger size. If so, the ID of the destroyed buffer is
   // returned via |buffer_id_to_drop|.
   int ReserveForProducer(media::VideoPixelFormat format,
+                         media::VideoPixelStorage storage,
                          const gfx::Size& dimensions,
                          int* buffer_id_to_drop);
 
@@ -99,25 +103,35 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   // done, a buffer is returned to the pool for reuse.
   void RelinquishConsumerHold(int buffer_id, int num_clients);
 
+  // Returns a snapshot of the current number of buffers in-use divided by the
+  // maximum |count_|.
+  double GetBufferPoolUtilization() const;
+
  private:
   class GpuMemoryBufferTracker;
   class SharedMemTracker;
-  // Generic class to keep track of the state of a given mappable resource.
+  // Generic class to keep track of the state of a given mappable resource. Each
+  // Tracker carries indication of pixel format and storage type.
   class Tracker {
    public:
     static scoped_ptr<Tracker> CreateTracker(bool use_gmb);
 
     Tracker()
         : pixel_count_(0), held_by_producer_(false), consumer_hold_count_(0) {}
-    virtual bool Init(media::VideoFrame::Format format,
+    virtual bool Init(media::VideoPixelFormat format,
+                      media::VideoPixelStorage storage_type,
                       const gfx::Size& dimensions) = 0;
     virtual ~Tracker();
 
     size_t pixel_count() const { return pixel_count_; }
     void set_pixel_count(size_t count) { pixel_count_ = count; }
-    media::VideoFrame::Format pixel_format() const { return pixel_format_; }
-    void set_pixel_format(media::VideoFrame::Format format) {
+    media::VideoPixelFormat pixel_format() const { return pixel_format_; }
+    void set_pixel_format(media::VideoPixelFormat format) {
       pixel_format_ = format;
+    }
+    media::VideoPixelStorage storage_type() const { return storage_type_; }
+    void set_storage_type(media::VideoPixelStorage storage_type) {
+      storage_type_ = storage_type;
     }
     bool held_by_producer() const { return held_by_producer_; }
     void set_held_by_producer(bool value) { held_by_producer_ = value; }
@@ -135,7 +149,8 @@ class CONTENT_EXPORT VideoCaptureBufferPool
 
    private:
     size_t pixel_count_;
-    media::VideoFrame::Format pixel_format_;
+    media::VideoPixelFormat pixel_format_;
+    media::VideoPixelStorage storage_type_;
     // Indicates whether this Tracker is currently referenced by the producer.
     bool held_by_producer_;
     // Number of consumer processes which hold this Tracker.
@@ -146,6 +161,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   virtual ~VideoCaptureBufferPool();
 
   int ReserveForProducerInternal(media::VideoPixelFormat format,
+                                 media::VideoPixelStorage storage,
                                  const gfx::Size& dimensions,
                                  int* tracker_id_to_drop);
 
@@ -155,7 +171,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   const int count_;
 
   // Protects everything below it.
-  base::Lock lock_;
+  mutable base::Lock lock_;
 
   // The ID of the next buffer.
   int next_buffer_id_;

@@ -22,26 +22,26 @@ void BlockFlowPainter::paintFloats(const PaintInfo& paintInfo, const LayoutPoint
     const FloatingObjectSet& floatingObjectSet = m_layoutBlockFlow.floatingObjects()->set();
     FloatingObjectSetIterator end = floatingObjectSet.end();
     for (FloatingObjectSetIterator it = floatingObjectSet.begin(); it != end; ++it) {
-        FloatingObject* floatingObject = it->get();
+        const FloatingObject& floatingObject = *it->get();
         // Only paint the object if our m_shouldPaint flag is set.
-        if (floatingObject->shouldPaint() && !floatingObject->layoutObject()->hasSelfPaintingLayer()) {
+        if (floatingObject.shouldPaint() && !floatingObject.layoutObject()->hasSelfPaintingLayer()) {
             PaintInfo currentPaintInfo(paintInfo);
             currentPaintInfo.phase = preservePhase ? paintInfo.phase : PaintPhaseBlockBackground;
             // FIXME: LayoutPoint version of xPositionForFloatIncludingMargin would make this much cleaner.
             LayoutPoint childPoint = m_layoutBlockFlow.flipFloatForWritingModeForChild(
                 floatingObject, LayoutPoint(paintOffset.x()
-                + m_layoutBlockFlow.xPositionForFloatIncludingMargin(floatingObject) - floatingObject->layoutObject()->location().x(), paintOffset.y()
-                + m_layoutBlockFlow.yPositionForFloatIncludingMargin(floatingObject) - floatingObject->layoutObject()->location().y()));
-            floatingObject->layoutObject()->paint(currentPaintInfo, childPoint);
+                + m_layoutBlockFlow.xPositionForFloatIncludingMargin(floatingObject) - floatingObject.layoutObject()->location().x(), paintOffset.y()
+                + m_layoutBlockFlow.yPositionForFloatIncludingMargin(floatingObject) - floatingObject.layoutObject()->location().y()));
+            floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
             if (!preservePhase) {
                 currentPaintInfo.phase = PaintPhaseChildBlockBackgrounds;
-                floatingObject->layoutObject()->paint(currentPaintInfo, childPoint);
+                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
                 currentPaintInfo.phase = PaintPhaseFloat;
-                floatingObject->layoutObject()->paint(currentPaintInfo, childPoint);
+                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
                 currentPaintInfo.phase = PaintPhaseForeground;
-                floatingObject->layoutObject()->paint(currentPaintInfo, childPoint);
+                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
                 currentPaintInfo.phase = PaintPhaseOutline;
-                floatingObject->layoutObject()->paint(currentPaintInfo, childPoint);
+                floatingObject.layoutObject()->paint(currentPaintInfo, childPoint);
             }
         }
     }
@@ -49,35 +49,45 @@ void BlockFlowPainter::paintFloats(const PaintInfo& paintInfo, const LayoutPoint
 
 void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (m_layoutBlockFlow.shouldPaintSelectionGaps() && paintInfo.phase == PaintPhaseForeground) {
-        LayoutUnit lastTop = 0;
-        LayoutUnit lastLeft = m_layoutBlockFlow.logicalLeftSelectionOffset(&m_layoutBlockFlow, lastTop);
-        LayoutUnit lastRight = m_layoutBlockFlow.logicalRightSelectionOffset(&m_layoutBlockFlow, lastTop);
+    ASSERT(paintInfo.phase == PaintPhaseForeground);
+    if (!m_layoutBlockFlow.shouldPaintSelectionGaps())
+        return;
 
-        LayoutRect bounds;
-        if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-            bounds = m_layoutBlockFlow.visualOverflowRect();
-            bounds.moveBy(paintOffset);
-        }
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, bounds);
-        ClipScope clipScope(paintInfo.context);
+    LayoutUnit lastTop = 0;
+    LayoutUnit lastLeft = m_layoutBlockFlow.logicalLeftSelectionOffset(&m_layoutBlockFlow, lastTop);
+    LayoutUnit lastRight = m_layoutBlockFlow.logicalRightSelectionOffset(&m_layoutBlockFlow, lastTop);
 
-        LayoutRect gapRectsBounds = m_layoutBlockFlow.selectionGaps(&m_layoutBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
-            recorder.canUseCachedDrawing() ? nullptr : &paintInfo,
-            recorder.canUseCachedDrawing() ? nullptr : &clipScope);
-        // TODO(wkorman): Rework below to process paint invalidation rects during layout rather than paint.
-        if (!gapRectsBounds.isEmpty()) {
-            DeprecatedPaintLayer* layer = m_layoutBlockFlow.enclosingLayer();
-            gapRectsBounds.moveBy(-paintOffset);
-            if (!m_layoutBlockFlow.hasLayer()) {
-                LayoutRect localBounds(gapRectsBounds);
-                m_layoutBlockFlow.flipForWritingMode(localBounds);
-                gapRectsBounds = LayoutRect(m_layoutBlockFlow.localToContainerQuad(FloatRect(localBounds), layer->layoutObject()).enclosingBoundingBox());
-                if (layer->layoutObject()->hasOverflowClip())
-                    gapRectsBounds.move(layer->layoutBox()->scrolledContentOffset());
-            }
-            layer->addBlockSelectionGapsBounds(gapRectsBounds);
+    LayoutRect bounds;
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        bounds = m_layoutBlockFlow.visualOverflowRect();
+        bounds.moveBy(paintOffset);
+    }
+
+    // Only create a DrawingRecorder and ClipScope if skipRecording is false. This logic is needed
+    // because selectionGaps(...) needs to be called even when we do not record.
+    bool skipRecording = LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap);
+    Optional<DrawingRecorder> drawingRecorder;
+    Optional<ClipScope> clipScope;
+    if (!skipRecording) {
+        drawingRecorder.emplace(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, bounds);
+        clipScope.emplace(paintInfo.context);
+    }
+
+    LayoutRect gapRectsBounds = m_layoutBlockFlow.selectionGaps(&m_layoutBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
+        skipRecording ? nullptr : &paintInfo,
+        skipRecording ? nullptr : &(*clipScope));
+    // TODO(wkorman): Rework below to process paint invalidation rects during layout rather than paint.
+    if (!gapRectsBounds.isEmpty()) {
+        DeprecatedPaintLayer* layer = m_layoutBlockFlow.enclosingLayer();
+        gapRectsBounds.moveBy(-paintOffset);
+        if (!m_layoutBlockFlow.hasLayer()) {
+            LayoutRect localBounds(gapRectsBounds);
+            m_layoutBlockFlow.flipForWritingMode(localBounds);
+            gapRectsBounds = LayoutRect(m_layoutBlockFlow.localToContainerQuad(FloatRect(localBounds), layer->layoutObject()).enclosingBoundingBox());
+            if (layer->layoutObject()->hasOverflowClip())
+                gapRectsBounds.move(layer->layoutBox()->scrolledContentOffset());
         }
+        layer->addBlockSelectionGapsBounds(gapRectsBounds);
     }
 }
 

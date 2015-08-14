@@ -57,7 +57,7 @@ void ReplayingCanvas::updateInRange()
         this->SkCanvas::clear(SkColorSetARGB(255, 255, 255, 255)); // FIXME: fill with nine patch instead.
 }
 
-bool ReplayingCanvas::abortDrawing()
+bool ReplayingCanvas::abort()
 {
     return m_abortDrawing;
 }
@@ -70,6 +70,11 @@ SkCanvas::SaveLayerStrategy ReplayingCanvas::willSaveLayer(const SkRect* bounds,
         this->SkCanvas::clear(SkColorSetARGB(255, 255, 255, 255)); // FIXME: fill with nine patch instead.
 
     return this->InterceptingCanvas<ReplayingCanvas>::willSaveLayer(bounds, paint, flags);
+}
+
+void ReplayingCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint)
+{
+    this->unrollDrawPicture(picture, matrix, paint, this);
 }
 
 } // namespace blink

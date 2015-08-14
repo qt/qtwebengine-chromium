@@ -22,7 +22,7 @@ namespace rx
 {
 
 Framebuffer9::Framebuffer9(const gl::Framebuffer::Data &data, Renderer9 *renderer)
-    : FramebufferD3D(data, renderer),
+    : FramebufferD3D(data),
       mRenderer(renderer)
 {
     ASSERT(mRenderer != nullptr);
@@ -30,6 +30,27 @@ Framebuffer9::Framebuffer9(const gl::Framebuffer::Data &data, Renderer9 *rendere
 
 Framebuffer9::~Framebuffer9()
 {
+}
+
+gl::Error Framebuffer9::discard(size_t, const GLenum *)
+{
+    // Extension not implemented in D3D9 renderer
+    UNREACHABLE();
+    return gl::Error(GL_NO_ERROR);
+}
+
+gl::Error Framebuffer9::invalidate(size_t, const GLenum *)
+{
+    // Shouldn't ever reach here in D3D9
+    UNREACHABLE();
+    return gl::Error(GL_NO_ERROR);
+}
+
+gl::Error Framebuffer9::invalidateSub(size_t, const GLenum *, const gl::Rectangle &)
+{
+    // Shouldn't ever reach here in D3D9
+    UNREACHABLE();
+    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error Framebuffer9::clear(const gl::State &state, const ClearParameters &clearParams)

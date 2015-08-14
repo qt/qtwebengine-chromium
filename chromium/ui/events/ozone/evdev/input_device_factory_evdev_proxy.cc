@@ -54,29 +54,9 @@ void InputDeviceFactoryEvdevProxy::RemoveInputDevice(
                                     input_device_factory_, path));
 }
 
-void InputDeviceFactoryEvdevProxy::DisableInternalTouchpad() {
+void InputDeviceFactoryEvdevProxy::OnStartupScanComplete() {
   task_runner_->PostTask(
-      FROM_HERE, base::Bind(&InputDeviceFactoryEvdev::DisableInternalTouchpad,
-                            input_device_factory_));
-}
-
-void InputDeviceFactoryEvdevProxy::EnableInternalTouchpad() {
-  task_runner_->PostTask(
-      FROM_HERE, base::Bind(&InputDeviceFactoryEvdev::EnableInternalTouchpad,
-                            input_device_factory_));
-}
-
-void InputDeviceFactoryEvdevProxy::DisableInternalKeyboardExceptKeys(
-    scoped_ptr<std::set<DomCode>> excepted_keys) {
-  task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&InputDeviceFactoryEvdev::DisableInternalKeyboardExceptKeys,
-                 input_device_factory_, base::Passed(&excepted_keys)));
-}
-
-void InputDeviceFactoryEvdevProxy::EnableInternalKeyboard() {
-  task_runner_->PostTask(
-      FROM_HERE, base::Bind(&InputDeviceFactoryEvdev::EnableInternalKeyboard,
+      FROM_HERE, base::Bind(&InputDeviceFactoryEvdev::OnStartupScanComplete,
                             input_device_factory_));
 }
 

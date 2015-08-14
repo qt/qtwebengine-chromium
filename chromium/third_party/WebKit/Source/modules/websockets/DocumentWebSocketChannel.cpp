@@ -40,10 +40,10 @@
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
+#include "modules/websockets/InspectorWebSocketEvents.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WebSocketFrame.h"
 #include "platform/Logging.h"
@@ -64,15 +64,15 @@ namespace blink {
 class DocumentWebSocketChannel::BlobLoader final : public GarbageCollectedFinalized<DocumentWebSocketChannel::BlobLoader>, public FileReaderLoaderClient {
 public:
     BlobLoader(PassRefPtr<BlobDataHandle>, DocumentWebSocketChannel*);
-    virtual ~BlobLoader() { }
+    ~BlobLoader() override { }
 
     void cancel();
 
     // FileReaderLoaderClient functions.
-    virtual void didStartLoading() override { }
-    virtual void didReceiveData() override { }
-    virtual void didFinishLoading() override;
-    virtual void didFail(FileError::ErrorCode) override;
+    void didStartLoading() override { }
+    void didReceiveData() override { }
+    void didFinishLoading() override;
+    void didFail(FileError::ErrorCode) override;
 
     DEFINE_INLINE_TRACE()
     {
@@ -165,7 +165,7 @@ bool DocumentWebSocketChannel::connect(const KURL& url, const String& protocol)
 
     flowControlIfNecessary();
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketCreate", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketCreateEvent::data(document(), m_identifier, url, protocol));
+        TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketCreate", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketCreateEvent::data(document(), m_identifier, url, protocol));
         InspectorInstrumentation::didCreateWebSocket(document(), m_identifier, url, protocol);
     }
     return true;
@@ -268,7 +268,7 @@ void DocumentWebSocketChannel::disconnect()
 {
     WTF_LOG(Network, "DocumentWebSocketChannel %p disconnect()", this);
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
+        TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didCloseWebSocket(document(), m_identifier);
     }
     abortAsyncOperations();
@@ -422,7 +422,7 @@ void DocumentWebSocketChannel::didStartOpeningHandshake(WebSocketHandle* handle,
     ASSERT(handle == m_handle);
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketSendHandshakeRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
+        TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketSendHandshakeRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::willSendWebSocketHandshakeRequest(document(), m_identifier, &request.toCoreRequest());
         m_handshakeRequest = WebSocketHandshakeRequest::create(request.toCoreRequest());
     }
@@ -436,7 +436,7 @@ void DocumentWebSocketChannel::didFinishOpeningHandshake(WebSocketHandle* handle
     ASSERT(handle == m_handle);
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketReceiveHandshakeResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
+        TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketReceiveHandshakeResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(document(), m_identifier, m_handshakeRequest.get(), &response.toCoreResponse());
     }
     m_handshakeRequest.clear();
@@ -519,7 +519,7 @@ void DocumentWebSocketChannel::didClose(WebSocketHandle* handle, bool wasClean, 
     m_handle.clear();
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
+        TRACE_EVENT_INSTANT1("devtools.timeline", "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didCloseWebSocket(document(), m_identifier);
         m_identifier = 0;
     }

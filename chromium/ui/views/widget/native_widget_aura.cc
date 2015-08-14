@@ -16,8 +16,8 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
@@ -26,8 +26,6 @@
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/drag_utils.h"
-#include "ui/views/ime/input_method_bridge.h"
-#include "ui/views/ime/null_input_method.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_delegate.h"
@@ -267,26 +265,11 @@ bool NativeWidgetAura::HasCapture() const {
   return window_ && window_->HasCapture();
 }
 
-InputMethod* NativeWidgetAura::CreateInputMethod() {
+ui::InputMethod* NativeWidgetAura::GetInputMethod() {
   if (!window_)
-    return NULL;
-
-  if (switches::IsTextInputFocusManagerEnabled())
-    return new NullInputMethod();
-
+    return nullptr;
   aura::Window* root_window = window_->GetRootWindow();
-  ui::InputMethod* host =
-      root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
-  return new InputMethodBridge(this, host, true);
-}
-
-internal::InputMethodDelegate* NativeWidgetAura::GetInputMethodDelegate() {
-  return this;
-}
-
-ui::InputMethod* NativeWidgetAura::GetHostInputMethod() {
-  aura::Window* root_window = window_->GetRootWindow();
-  return root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
+  return root_window ? root_window->GetHost()->GetInputMethod() : nullptr;
 }
 
 void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
@@ -381,9 +364,10 @@ gfx::Rect NativeWidgetAura::GetRestoredBounds() const {
   if (!window_)
     return gfx::Rect();
 
-  // Restored bounds should only be relevant if the window is minimized or
-  // maximized. However, in some places the code expects GetRestoredBounds()
-  // to return the current window bounds if the window is not in either state.
+  // Restored bounds should only be relevant if the window is minimized,
+  // maximized, fullscreen or docked. However, in some places the code expects
+  // GetRestoredBounds() to return the current window bounds if the window is
+  // not in either state.
   if (IsMinimized() || IsMaximized() || IsFullscreen()) {
     // Restore bounds are in screen coordinates, no need to convert.
     gfx::Rect* restore_bounds =
@@ -391,7 +375,20 @@ gfx::Rect NativeWidgetAura::GetRestoredBounds() const {
     if (restore_bounds)
       return *restore_bounds;
   }
-  return window_->GetBoundsInScreen();
+  gfx::Rect bounds = window_->GetBoundsInScreen();
+  if (IsDocked()) {
+    // Restore bounds are in screen coordinates, no need to convert.
+    gfx::Rect* restore_bounds =
+        window_->GetProperty(aura::client::kRestoreBoundsKey);
+    // Use current window horizontal offset origin in order to preserve docked
+    // alignment but preserve restored size and vertical offset for the time
+    // when the |window_| gets undocked.
+    if (restore_bounds) {
+      bounds.set_size(restore_bounds->size());
+      bounds.set_y(restore_bounds->y());
+    }
+  }
+  return bounds;
 }
 
 void NativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
@@ -434,7 +431,7 @@ void NativeWidgetAura::StackBelow(gfx::NativeView native_view) {
     window_->parent()->StackChildBelow(window_, native_view);
 }
 
-void NativeWidgetAura::SetShape(gfx::NativeRegion region) {
+void NativeWidgetAura::SetShape(SkRegion* region) {
   if (window_)
     window_->layer()->SetAlphaShape(make_scoped_ptr(region));
   else
@@ -484,8 +481,10 @@ void NativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
   if (!window_)
     return;
 
-  if (state == ui::SHOW_STATE_MAXIMIZED || state == ui::SHOW_STATE_FULLSCREEN)
+  if (state == ui::SHOW_STATE_MAXIMIZED || state == ui::SHOW_STATE_FULLSCREEN ||
+      state == ui::SHOW_STATE_DOCKED) {
     window_->SetProperty(aura::client::kShowStateKey, state);
+  }
   window_->Show();
   if (delegate_->CanActivate()) {
     if (state != ui::SHOW_STATE_INACTIVE)
@@ -705,7 +704,7 @@ void NativeWidgetAura::SetVisibilityAnimationTransition(
 }
 
 ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
-#if !defined(OS_CHROMEOS)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
   return DesktopWindowTreeHost::GetNativeTheme(window_);
 #else
   return ui::NativeThemeAura::instance();
@@ -730,17 +729,6 @@ void NativeWidgetAura::OnSizeConstraintsChanged() {
 
 void NativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
   OnEvent(native_event);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NativeWidgetAura, views::InputMethodDelegate implementation:
-
-void NativeWidgetAura::DispatchKeyEventPostIME(const ui::KeyEvent& key) {
-  FocusManager* focus_manager = GetWidget()->GetFocusManager();
-  delegate_->OnKeyEvent(const_cast<ui::KeyEvent*>(&key));
-  if (key.handled() || !focus_manager)
-    return;
-  focus_manager->OnKeyEvent(key);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -769,10 +757,6 @@ void NativeWidgetAura::OnBoundsChanged(const gfx::Rect& old_bounds,
   }
   if (old_bounds.size() != new_bounds.size())
     delegate_->OnNativeWidgetSizeChanged(new_bounds.size());
-}
-
-ui::TextInputClient* NativeWidgetAura::GetFocusedTextInputClient() {
-  return GetWidget()->GetFocusedTextInputClient();
 }
 
 gfx::NativeCursor NativeWidgetAura::GetCursor(const gfx::Point& point) {
@@ -877,27 +861,15 @@ void NativeWidgetAura::OnWindowPropertyChanged(aura::Window* window,
 
 void NativeWidgetAura::OnKeyEvent(ui::KeyEvent* event) {
   DCHECK(window_);
-  if (event->is_char()) {
-    // If a ui::InputMethod object is attached to the root window, character
-    // events are handled inside the object and are not passed to this function.
-    // If such object is not attached, character events might be sent (e.g. on
-    // Windows). In this case, we just skip these.
-    return;
-  }
   // Renderer may send a key event back to us if the key event wasn't handled,
   // and the window may be invisible by that time.
   if (!window_->IsVisible())
     return;
-  InputMethod* input_method = GetWidget()->GetInputMethod();
-  if (!input_method)
-    return;
-  input_method->DispatchKeyEvent(*event);
-  if (switches::IsTextInputFocusManagerEnabled()) {
-    FocusManager* focus_manager = GetWidget()->GetFocusManager();
-    delegate_->OnKeyEvent(event);
-    if (!event->handled() && focus_manager)
-      focus_manager->OnKeyEvent(*event);
-  }
+
+  FocusManager* focus_manager = GetWidget()->GetFocusManager();
+  delegate_->OnKeyEvent(event);
+  if (!event->handled() && focus_manager)
+    focus_manager->OnKeyEvent(*event);
   event->SetHandled();
 }
 
@@ -936,8 +908,10 @@ bool NativeWidgetAura::ShouldActivate() const {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, aura::client::ActivationChangeObserver implementation:
 
-void NativeWidgetAura::OnWindowActivated(aura::Window* gained_active,
-                                         aura::Window* lost_active) {
+void NativeWidgetAura::OnWindowActivated(
+    aura::client::ActivationChangeObserver::ActivationReason,
+    aura::Window* gained_active,
+    aura::Window* lost_active) {
   DCHECK(window_ == gained_active || window_ == lost_active);
   if (GetWidget()->GetFocusManager()) {
     if (window_ == gained_active)
@@ -953,29 +927,10 @@ void NativeWidgetAura::OnWindowActivated(aura::Window* gained_active,
 
 void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
                                        aura::Window* lost_focus) {
-  if (window_ == gained_focus) {
-    // In aura, it is possible for child native widgets to take input and focus,
-    // this differs from the behavior on windows.
-    if (GetWidget()->GetInputMethod())  // Null in tests.
-      GetWidget()->GetInputMethod()->OnFocus();
+  if (window_ == gained_focus)
     delegate_->OnNativeFocus();
-  } else if (window_ == lost_focus) {
-    // GetInputMethod() recreates the input method if it's previously been
-    // destroyed.  If we get called during destruction, the input method will be
-    // gone, and creating a new one and telling it that we lost the focus will
-    // trigger a DCHECK (the new input method doesn't think that we have the
-    // focus and doesn't expect a blur).  OnBlur() shouldn't be called during
-    // destruction unless WIDGET_OWNS_NATIVE_WIDGET is set (which is just the
-    // case in tests).
-    if (!destroying_) {
-      if (GetWidget()->GetInputMethod())
-        GetWidget()->GetInputMethod()->OnBlur();
-    } else {
-      DCHECK_EQ(ownership_, Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET);
-    }
-
+  else if (window_ == lost_focus)
     delegate_->OnNativeBlur();
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1018,6 +973,12 @@ NativeWidgetAura::~NativeWidgetAura() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, private:
+
+bool NativeWidgetAura::IsDocked() const {
+  return window_ &&
+         window_->GetProperty(aura::client::kShowStateKey) ==
+             ui::SHOW_STATE_DOCKED;
+}
 
 void NativeWidgetAura::SetInitialFocus(ui::WindowShowState show_state) {
   // The window does not get keyboard messages unless we focus it.

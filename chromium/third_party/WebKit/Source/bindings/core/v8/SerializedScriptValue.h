@@ -51,7 +51,7 @@ class ExceptionState;
 class MessagePort;
 class WebBlobInfo;
 
-typedef WillBeHeapVector<RefPtrWillBeMember<MessagePort>, 1> MessagePortArray;
+typedef HeapVector<Member<MessagePort>, 1> MessagePortArray;
 typedef Vector<RefPtr<DOMArrayBuffer>, 1> ArrayBufferArray;
 typedef HashMap<String, RefPtr<BlobDataHandle>> BlobDataHandleMap;
 typedef Vector<WebBlobInfo> WebBlobInfoArray;
@@ -66,7 +66,8 @@ public:
     // Version 6: Added indexed serialization for File, Blob, and FileList.
     // Version 7: Extended File serialization with user visibility.
     // Version 8: File.lastModified in milliseconds (seconds-based in earlier versions.)
-    static const uint32_t wireFormatVersion = 8;
+    // Version 9: Added Map and Set support.
+    static const uint32_t wireFormatVersion = 9;
 
     // VarInt encoding constants.
     static const int varIntShift = 7;

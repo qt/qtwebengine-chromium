@@ -151,7 +151,7 @@
           'build_glibc': 0,
           'build_irt': 0,
           'build_nonsfi_helper': 0,
-          'disable_glibc%': 1,
+          'disable_glibc%': 0,
           'disable_bionic%': 1,
           'extra_args': [],
           'enable_x86_32': 0,
@@ -169,9 +169,11 @@
           'nacl_newlib_tc_root': '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib',
           'tc_lib_dir_bionic_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_bionic/libarm',
           'tc_lib_dir_newlib_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/libarm',
+          'tc_lib_dir_glibc_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/libarm',
           'tc_lib_dir_irt_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/libarm',
           'tc_lib_dir_nonsfi_helper_arm': '<(SHARED_INTERMEDIATE_DIR)/tc_nonsfi_helper/libarm',
           'tc_include_dir_newlib': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/include',
+          'tc_include_dir_glibc': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/include',
           'tc_include_dir_bionic': '<(SHARED_INTERMEDIATE_DIR)/tc_bionic/include',
           'include_dirs': ['<(DEPTH)'],
           'defines': [
@@ -345,7 +347,7 @@
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
                    '--link_flags=--target=x86_64-unknown-nacl -arch x86-64 --pnacl-allow-translate --pnacl-allow-native -B>(tc_lib_dir_irt64) -L>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags) >(libcpp_irt_stdlibs)',
@@ -388,7 +390,7 @@
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=x86_64-unknown-nacl ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
                    '--link_flags=--target=x86_64-unknown-nacl -B>(tc_lib_dir_irt64) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
@@ -513,7 +515,7 @@
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
                    '--link_flags=--target=i686-unknown-nacl -arch x86-32 --pnacl-allow-translate --pnacl-allow-native >(irt_flags_x86_32) -B>(tc_lib_dir_irt32) -L>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags) >(libcpp_irt_stdlibs)',
@@ -556,7 +558,7 @@
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl >(irt_flags_x86_32) ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl >(irt_flags_x86_32) ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
                    '--link_flags=--target=i686-unknown-nacl -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
@@ -677,6 +679,126 @@
     ['target_arch=="arm"', {
       'target_defaults': {
         'target_conditions': [
+          # arm glibc nexe action
+          ['nexe_target!="" and build_glibc!=0', {
+            'variables': {
+               'tool_name': 'glibc',
+               'out_glibc_arm%': '<(PRODUCT_DIR)/>(nexe_target)_glibc_arm.nexe',
+               'objdir_glibc_arm%': '>(INTERMEDIATE_DIR)/<(tool_name)-arm/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build glibc arm nexe',
+                'variables': {
+                  'source_list_glibc_arm%': '^|(<(tool_name)-arm.>(_target_name).source_list.gypcmd ^(_sources) ^(sources) ^(native_sources))',
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_glibc_arm)',
+                'inputs': [
+                   '<@(common_inputs)',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
+                   '>@(extra_deps)',
+                   '^(source_list_glibc_arm)',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_glibc/nacl_arm_glibc.json',
+                ],
+                'outputs': ['>(out_glibc_arm)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'arm',
+                  '--build', 'glibc_nexe',
+                  '--name', '>(out_glibc_arm)',
+                  '--objdir', '>(objdir_glibc_arm)',
+                  '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=<(arm_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  '--link_flags=-B>(tc_lib_dir_glibc_arm) -L>(tc_lib_dir_glibc_arm) ^(link_flags) >(_link_flags)',
+                  '--source-list=^(source_list_glibc_arm)',
+                ],
+              },
+            ],
+          }],
+          # arm glibc static library action
+          ['nlib_target!="" and build_glibc!=0 and disable_glibc==0', {
+            'variables': {
+              'tool_name': 'glibc',
+              'out_glibc_arm%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/libarm/>(nlib_target)',
+              'objdir_glibc_arm%': '>(INTERMEDIATE_DIR)/<(tool_name)-arm/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build glibc arm nlib',
+                 'variables': {
+                   'source_list_glibc_arm%': '^|(<(tool_name)-arm.>(_target_name).source_list.gypcmd ^(_sources) ^(sources) ^(native_sources))',
+                 },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_glibc_arm)',
+                'inputs': [
+                   '<@(common_inputs)',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
+                   '>@(extra_deps)',
+                   '^(source_list_glibc_arm)',
+                   '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_glibc/nacl_arm_glibc.json',
+                ],
+                'outputs': ['>(out_glibc_arm)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'arm',
+                  '--build', 'glibc_nlib',
+                  '--name', '>(out_glibc_arm)',
+                  '--objdir', '>(objdir_glibc_arm)',
+                  '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=<(arm_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  '--link_flags=-B>(tc_lib_dir_glibc_arm) ^(link_flags) >(_link_flags)',
+                  '--source-list=^(source_list_glibc_arm)',
+                ],
+              },
+            ],
+          }],
+          # arm glibc shared library action
+          ['nso_target!="" and build_glibc!=0 and disable_glibc==0', {
+             'variables': {
+                'tool_name': 'glibc',
+                'out_glibc_arm%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/libarm/>(nso_target)',
+                'objdir_glibc_arm%': '>(INTERMEDIATE_DIR)/<(tool_name)-arm-so/>(_target_name)',
+             },
+             'actions': [
+               {
+                 'action_name': 'build glibc arm nso',
+                 'variables': {
+                   'source_list_glibc_arm%': '^|(<(tool_name)-arm-so.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                 },
+                 'msvs_cygwin_shell': 0,
+                 'description': 'building >(out_glibc_arm)',
+                 'inputs': [
+                    '<@(common_inputs)',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                    '>@(extra_deps)',
+                    '^(source_list_glibc_arm)',
+                    '<(DEPTH)/native_client/toolchain/<(TOOLCHAIN_OS)_x86/nacl_arm_glibc/nacl_arm_glibc.json',
+                 ],
+                 'outputs': ['>(out_glibc_arm)'],
+                 'action': [
+                   '<@(common_args)',
+                   '>@(extra_args)',
+                   '--arch', 'arm',
+                   '--build', 'glibc_nso',
+                   '--name', '>(out_glibc_arm)',
+                   '--objdir', '>(objdir_glibc_arm)',
+                   '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
+                   '--compile_flags=-fPIC <(arm_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                   '--gomadir', '<(gomadir)',
+                   '--defines=^(defines) >(_defines)',
+                   '--link_flags=-B>(tc_lib_dir_glibc_arm) ^(link_flags) >(_link_flags)',
+                   '--source-list=^(source_list_glibc_arm)',
+                 ],
+               },
+             ],
+           }],
           # arm newlib nexe action
           ['nexe_target!="" and build_newlib!=0', {
             'variables': {
@@ -1162,8 +1284,8 @@
     }], # end target_arch = mips
     ['target_arch=="ia32" or target_arch=="x64"', {
       'target_defaults': {
-        # x86-64 glibc nexe action
         'target_conditions': [
+           # x86-64 glibc nexe action
            ['nexe_target!="" and build_glibc!=0 and enable_x86_64!=0 and disable_glibc==0', {
              'variables': {
                 'tool_name': 'glibc',
@@ -1529,9 +1651,7 @@
                '--name', '>(out_pnacl_newlib)',
                '--objdir', '>(objdir_pnacl_newlib)',
                '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-               # TODO(dschuff): try removing gline-tables-only after 3.5 merge
-               # when debug metadata is less memory-intensive
-               '--compile_flags=^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+               '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                '--gomadir', '<(gomadir)',
                '--defines=^(defines) >(_defines)',
                '--link_flags=-B<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_newlib/lib ^(link_flags) >(_link_flags)',
@@ -1694,9 +1814,7 @@
                '--name', '>(out_pnacl_newlib)',
                '--objdir', '>(objdir_pnacl_newlib)',
                '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-               # TODO(dschuff): try removing gline-tables-only after 3.5 merge
-               # when debug metadata is less memory-intensive
-               '--compile_flags=^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+               '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                '--gomadir', '<(gomadir)',
                '--defines=^(defines) >(_defines)',
                '--link_flags=-B>(tc_lib_dir_pnacl_newlib) ^(link_flags) >(_link_flags)',

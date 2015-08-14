@@ -15,6 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "media/video/capture/video_capture_device.h"
 
 namespace media {
@@ -24,8 +25,7 @@ class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
   enum FakeVideoCaptureDeviceType {
     USING_OWN_BUFFERS,
     USING_OWN_BUFFERS_TRIPLANAR,
-    USING_CLIENT_BUFFERS_I420,
-    USING_CLIENT_BUFFERS_GPU,
+    USING_CLIENT_BUFFERS,
   };
 
   static int FakeCapturePeriodMs() { return kFakeCapturePeriodMs; }
@@ -41,9 +41,13 @@ class MEDIA_EXPORT FakeVideoCaptureDevice : public VideoCaptureDevice {
  private:
   static const int kFakeCapturePeriodMs = 50;
 
-  void CaptureUsingOwnBuffers();
-  void CaptureUsingClientBuffers(VideoPixelFormat pixel_format);
-  void BeepAndScheduleNextCapture(const base::Closure& next_capture);
+  void CaptureUsingOwnBuffers(base::TimeTicks expected_execution_time);
+  void CaptureUsingClientBuffers(VideoPixelFormat pixel_format,
+                                 VideoPixelStorage pixel_storage,
+                                 base::TimeTicks expected_execution_time);
+  void BeepAndScheduleNextCapture(
+      base::TimeTicks expected_execution_time,
+      const base::Callback<void(base::TimeTicks)>& next_capture);
 
   // |thread_checker_| is used to check that all methods are called in the
   // correct thread that owns the object.

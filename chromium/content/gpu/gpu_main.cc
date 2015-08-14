@@ -23,6 +23,7 @@
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_config.h"
+#include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/media/gpu_video_decode_accelerator.h"
 #include "content/common/gpu/media/gpu_video_encode_accelerator.h"
@@ -38,6 +39,7 @@
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "ui/events/platform/platform_event_source.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
@@ -350,12 +352,15 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   logging::SetLogMessageHandler(NULL);
 
+  scoped_ptr<GpuMemoryBufferFactory> gpu_memory_buffer_factory =
+      GpuMemoryBufferFactory::Create(
+          GpuChildThread::GetGpuMemoryBufferFactoryType());
+
   GpuProcess gpu_process;
 
-  GpuChildThread* child_thread = new GpuChildThread(watchdog_thread.get(),
-                                                    dead_on_arrival,
-                                                    gpu_info,
-                                                    deferred_messages.Get());
+  GpuChildThread* child_thread = new GpuChildThread(
+      watchdog_thread.get(), dead_on_arrival, gpu_info, deferred_messages.Get(),
+      gpu_memory_buffer_factory.get());
   while (!deferred_messages.Get().empty())
     deferred_messages.Get().pop();
 

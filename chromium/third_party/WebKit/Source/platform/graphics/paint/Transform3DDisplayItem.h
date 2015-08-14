@@ -13,52 +13,39 @@
 namespace blink {
 
 class PLATFORM_EXPORT BeginTransform3DDisplayItem : public PairedBeginDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(BeginTransform3DDisplayItem);
 public:
-    static PassOwnPtr<BeginTransform3DDisplayItem> create(const DisplayItemClientWrapper& client, DisplayItem::Type type, const TransformationMatrix& transform)
-    {
-        return adoptPtr(new BeginTransform3DDisplayItem(client, type, transform));
-    }
-
-    BeginTransform3DDisplayItem(const DisplayItemClientWrapper& client, DisplayItem::Type type, const TransformationMatrix& transform)
+    BeginTransform3DDisplayItem(const DisplayItemClientWrapper& client, Type type, const TransformationMatrix& transform)
         : PairedBeginDisplayItem(client, type)
         , m_transform(transform)
     {
         ASSERT(DisplayItem::isTransform3DType(type));
     }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
     const TransformationMatrix& transform() const { return m_transform; }
 
 private:
     const TransformationMatrix m_transform;
-    FloatPoint3D m_transformOrigin;
 };
 
 class PLATFORM_EXPORT EndTransform3DDisplayItem : public PairedEndDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(EndTransform3DDisplayItem);
 public:
-    static PassOwnPtr<EndTransform3DDisplayItem> create(const DisplayItemClientWrapper& client, DisplayItem::Type type)
-    {
-        return adoptPtr(new EndTransform3DDisplayItem(client, type));
-    }
-
-    EndTransform3DDisplayItem(const DisplayItemClientWrapper& client, DisplayItem::Type type)
+    EndTransform3DDisplayItem(const DisplayItemClientWrapper& client, Type type)
         : PairedEndDisplayItem(client, type)
     {
         ASSERT(DisplayItem::isEndTransform3DType(type));
     }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const override final
+    bool isEndAndPairedWith(DisplayItem::Type otherType) const final
     {
-        return DisplayItem::transform3DTypeToEndTransform3DType(other.type()) == type();
+        return DisplayItem::transform3DTypeToEndTransform3DType(otherType) == type();
     }
 #endif
 };

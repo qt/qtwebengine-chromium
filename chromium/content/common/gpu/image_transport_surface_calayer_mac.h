@@ -11,7 +11,8 @@
 #include "ui/gl/gpu_switching_observer.h"
 #include "ui/gl/scoped_cgl.h"
 
-@class ImageTransportLayer;
+@class ImageTransportCAOpenGLLayer;
+@class ImageTransportIOSurface;
 
 namespace content {
 
@@ -31,36 +32,35 @@ class CALayerStorageProvider
   void FreeColorBufferStorage() override;
   void FrameSizeChanged(
       const gfx::Size& pixel_size, float scale_factor) override;
-  void SwapBuffers() override;
+  void SwapBuffers(const gfx::Rect& dirty_rect) override;
   void WillWriteToBackbuffer() override;
   void DiscardBackbuffer() override;
   void SwapBuffersAckedByBrowser(bool disable_throttling) override;
 
-  // Interface to ImageTransportLayer:
+  // Interface to the CALayer.
   CGLContextObj LayerShareGroupContext();
   base::Closure LayerShareGroupContextDirtiedCallback();
-  bool LayerCanDraw();
-  void LayerDoDraw();
-  void LayerResetStorageProvider();
+  bool LayerHasPendingDraw() const;
+  void LayerDoDraw(const gfx::Rect& dirty_rect, bool flipped);
+  void LayerUnblockBrowserIfNeeded();
+  CAContext* LayerCAContext() { return context_.get(); }
 
   // ui::GpuSwitchingObserver implementation.
   void OnGpuSwitched() override;
 
  private:
+  void CreateLayerAndRequestDraw(bool should_draw_immediately,
+                                 const gfx::Rect& dirty_rect);
   void DrawImmediatelyAndUnblockBrowser();
 
   // The browser will be blocked while there is a frame that was sent to it but
   // hasn't drawn yet. This call will un-block the browser.
   void UnblockBrowserIfNeeded();
 
-  ImageTransportSurfaceFBO* transport_surface_;
+  // Inform the layer that it is no longer being used, and reset the layer.
+  void ResetLayer();
 
-  // Used to determine if we should use setNeedsDisplay or setAsynchronous to
-  // animate. If the last swap time happened very recently, then
-  // setAsynchronous is used (which allows smooth animation, but comes with the
-  // penalty of the canDrawInCGLContext function waking up the process every
-  // vsync).
-  base::TimeTicks last_synchronous_swap_time_;
+  ImageTransportSurfaceFBO* transport_surface_;
 
   // Used to determine if we should use setNeedsDisplay or setAsynchronous to
   // animate. If vsync is disabled, an immediate setNeedsDisplay and
@@ -71,13 +71,10 @@ class CALayerStorageProvider
   // drawInCGLContext, or if we should force it with displayIfNeeded.
   bool throttling_disabled_;
 
-  // Set when a new swap occurs, and un-set when |layer_| draws that frame.
-  bool has_pending_draw_;
-
-  // A counter that is incremented whenever LayerCanDraw returns false. If this
-  // reaches a threshold, then |layer_| is switched to synchronous drawing to
-  // save CPU work.
-  uint32 can_draw_returned_false_count_;
+  // Set when a new swap occurs, and un-set when the frame is acked to the
+  // browser. This is when the CAOpenGLLayer draws or when then IOSurface
+  // is committed.
+  bool has_pending_ack_;
 
   // The texture with the pixels to draw, and the share group it is allocated
   // in.
@@ -98,13 +95,14 @@ class CALayerStorageProvider
 
   // The CALayer that the current frame is being drawn into.
   base::scoped_nsobject<CAContext> context_;
-  base::scoped_nsobject<ImageTransportLayer> layer_;
+  base::scoped_nsobject<ImageTransportCAOpenGLLayer> ca_opengl_layer_;
+  base::scoped_nsobject<ImageTransportIOSurface> io_surface_layer_;
 
   // When a CAContext is destroyed in the GPU process, it will become a blank
   // CALayer in the browser process. Put retains on these contexts in this queue
   // when they are discarded, and remove one item from the queue as each frame
   // is acked.
-  std::list<base::scoped_nsobject<CAContext> > previously_discarded_contexts_;
+  std::list<base::scoped_nsobject<CAContext>> previously_discarded_contexts_;
 
   // Indicates that the CALayer should be recreated at the next swap. This is
   // to ensure that the CGLContext created for the CALayer be on the right GPU.

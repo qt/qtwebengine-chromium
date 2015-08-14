@@ -27,6 +27,7 @@
 #include "core/html/parser/HTMLScriptRunner.h"
 
 #include "bindings/core/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/V8PerIsolateData.h"
 #include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
@@ -133,7 +134,7 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
     pendingScript.stopWatchingForLoad(this);
 
     if (!isExecutingScript()) {
-        Microtask::performCheckpoint();
+        Microtask::performCheckpoint(V8PerIsolateData::mainThreadIsolate());
         if (pendingScriptType == PendingScript::ParsingBlocking) {
             m_hasScriptsWaitingForResources = !m_document->isScriptExecutionReady();
             // The parser cannot be unblocked as a microtask requested another resource
@@ -283,8 +284,11 @@ void HTMLScriptRunner::requestParsingBlockingScript(Element* element)
     // in the cache. Callers will attempt to run the m_parserBlockingScript
     // if possible before returning control to the parser.
     if (!m_parserBlockingScript.isReady()) {
-        if (m_document->frame())
-            ScriptStreamer::startStreaming(m_parserBlockingScript, PendingScript::ParsingBlocking, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
+        if (m_document->frame()) {
+            ScriptState* scriptState = ScriptState::forMainWorld(m_document->frame());
+            if (scriptState->contextIsValid())
+                ScriptStreamer::startStreaming(m_parserBlockingScript, PendingScript::ParsingBlocking, m_document->frame()->settings(), scriptState);
+        }
 
         m_parserBlockingScript.watchForLoad(this);
     }
@@ -296,8 +300,11 @@ void HTMLScriptRunner::requestDeferredScript(Element* element)
     if (!requestPendingScript(pendingScript, element))
         return;
 
-    if (m_document->frame() && !pendingScript.isReady())
-        ScriptStreamer::startStreaming(pendingScript, PendingScript::Deferred, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
+    if (m_document->frame() && !pendingScript.isReady()) {
+        ScriptState* scriptState = ScriptState::forMainWorld(m_document->frame());
+        if (scriptState->contextIsValid())
+            ScriptStreamer::startStreaming(pendingScript, PendingScript::Deferred, m_document->frame()->settings(), scriptState);
+    }
 
     ASSERT(pendingScript.resource());
     m_scriptsToExecuteAfterParsing.append(pendingScript);
@@ -337,7 +344,7 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
         ASSERT(scriptLoader->isParserInserted());
 
         if (!isExecutingScript())
-            Microtask::performCheckpoint();
+            Microtask::performCheckpoint(V8PerIsolateData::mainThreadIsolate());
 
         InsertionPointRecord insertionPointRecord(m_host->inputStream());
         NestingLevelIncrementer nestingLevelIncrementer(m_scriptNestingLevel);
@@ -368,9 +375,7 @@ DEFINE_TRACE(HTMLScriptRunner)
     visitor->trace(m_document);
     visitor->trace(m_host);
     visitor->trace(m_parserBlockingScript);
-#if ENABLE(OILPAN)
     visitor->trace(m_scriptsToExecuteAfterParsing);
-#endif
 }
 
 } // namespace blink

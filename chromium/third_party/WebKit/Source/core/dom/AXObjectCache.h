@@ -32,6 +32,8 @@
 typedef unsigned AXID;
 
 namespace blink {
+
+class AbstractInlineTextBox;
 class AXObject;
 class FrameView;
 class HTMLOptionElement;
@@ -40,14 +42,16 @@ class LayoutMenuList;
 class Page;
 class Widget;
 
-class CORE_EXPORT AXObjectCache {
-    WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED(AXObjectCache);
+class CORE_EXPORT AXObjectCache : public NoBaseWillBeGarbageCollectedFinalized<AXObjectCache> {
+    WTF_MAKE_NONCOPYABLE(AXObjectCache);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(AXObjectCache);
 public:
-    static AXObjectCache* create(Document&);
+    static PassOwnPtrWillBeRawPtr<AXObjectCache> create(Document&);
 
     static AXObject* focusedUIElementForPage(const Page*);
 
     virtual ~AXObjectCache();
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     enum AXNotification {
         AXActiveDescendantChanged,
@@ -81,6 +85,8 @@ public:
         AXValueChanged
     };
 
+    virtual void dispose() = 0;
+
     virtual void selectionChanged(Node*) = 0;
     virtual void childrenChanged(Node*) = 0;
     virtual void childrenChanged(LayoutObject*) = 0;
@@ -92,6 +98,7 @@ public:
     virtual void remove(LayoutObject*) = 0;
     virtual void remove(Node*) = 0;
     virtual void remove(Widget*) = 0;
+    virtual void remove(AbstractInlineTextBox*) = 0;
 
     virtual const Element* rootAXEditableElement(const Node*) = 0;
 
@@ -115,8 +122,6 @@ public:
 
     virtual void setCanvasObjectBounds(Element*, const LayoutRect&) = 0;
 
-    virtual void clearWeakMembers(Visitor*) = 0;
-
     virtual void inlineTextBoxesUpdated(LayoutObject*) = 0;
 
     // Called when the scroll offset changes.
@@ -131,7 +136,7 @@ public:
     virtual const AtomicString& computedRoleForNode(Node*) = 0;
     virtual String computedNameForNode(Node*) = 0;
 
-    typedef AXObjectCache* (*AXObjectCacheCreateFunction)(Document&);
+    typedef PassOwnPtrWillBeRawPtr<AXObjectCache> (*AXObjectCacheCreateFunction)(Document&);
     static void init(AXObjectCacheCreateFunction);
 
 protected:
@@ -141,19 +146,19 @@ private:
     static AXObjectCacheCreateFunction m_createFunction;
 };
 
-class CORE_EXPORT ScopedAXObjectCache : public RefCounted<ScopedAXObjectCache> {
+class CORE_EXPORT ScopedAXObjectCache {
     WTF_MAKE_NONCOPYABLE(ScopedAXObjectCache);
 public:
-    explicit ScopedAXObjectCache(Document&);
+    static PassOwnPtr<ScopedAXObjectCache> create(Document&);
     ~ScopedAXObjectCache();
 
     AXObjectCache* get();
-    AXObjectCache* operator->();
 
 private:
-    Document& m_document;
-    AXObjectCache* m_cache;
-    bool m_isScoped;
+    explicit ScopedAXObjectCache(Document&);
+
+    RefPtrWillBePersistent<Document> m_document;
+    OwnPtrWillBePersistent<AXObjectCache> m_cache;
 };
 
 }

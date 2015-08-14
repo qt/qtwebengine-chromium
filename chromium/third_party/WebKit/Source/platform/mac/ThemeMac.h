@@ -36,8 +36,8 @@ namespace blink {
 
 class ThemeMac : public Theme {
 public:
-    ThemeMac() { }
-    virtual ~ThemeMac() { }
+    ThemeMac() {}
+    ~ThemeMac() override {}
 
     virtual int baselinePositionAdjustment(ControlPart) const;
 
@@ -52,7 +52,7 @@ public:
     virtual bool controlRequiresPreWhiteSpace(ControlPart part) const { return part == PushButtonPart; }
 
     virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect&, float zoomFactor, ScrollableArea*) const;
-    virtual void inflateControlPaintRect(ControlPart, ControlStates, IntRect&, float zoomFactor) const;
+    virtual void addVisualOverflow(ControlPart, ControlStates, float zoomFactor, IntRect& borderBox) const;
 
     // Inflate an IntRect to accout for specific padding around margins.
     enum {
@@ -67,13 +67,11 @@ public:
     static PLATFORM_EXPORT IntRect inflateRectForAA(const IntRect&);
 
     // Inflate an IntRect to account for its focus ring. This is only used when
-    // BUTTON_CELL_DRAW_WITH_FRAME_DRAWS_FOCUS_RING is defined (otherwise, the focus ring's
+    // drawWithFrameDrawsFocusRing() returns true (otherwise, the focus ring's
     // bounds could be accurately computed with -[NSCell focusRingMaskBoundsForFrame:inView:]).
     static PLATFORM_EXPORT IntRect inflateRectForFocusRing(const IntRect&);
 
-    // FIXME: Once LayoutThemeMac is converted over to use Theme then this can be internal to ThemeMac.
-    static NSView* ensuredView(ScrollableArea*);
-    static void setFocusRingClipRect(const FloatRect&);
+    static PLATFORM_EXPORT bool drawWithFrameDrawsFocusRing();
 };
 
 } // namespace blink

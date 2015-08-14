@@ -10,30 +10,29 @@
 namespace blink {
 class WebRemoteFrameImpl;
 
-class RemoteFrameClientImpl : public RemoteFrameClient {
+class RemoteFrameClientImpl final : public RemoteFrameClient {
 public:
     explicit RemoteFrameClientImpl(WebRemoteFrameImpl*);
 
     // FrameClient overrides:
-    virtual void willBeDetached() override;
-    virtual void detached() override;
-
-    virtual Frame* opener() const override;
-    virtual void setOpener(Frame*) override;
-
-    virtual Frame* parent() const override;
-    virtual Frame* top() const override;
-    virtual Frame* previousSibling() const override;
-    virtual Frame* nextSibling() const override;
-    virtual Frame* firstChild() const override;
-    virtual Frame* lastChild() const override;
-
-    virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin*, MessageEvent*, LocalFrame*) const override;
+    bool inShadowTree() const override;
+    void willBeDetached() override;
+    void detached(FrameDetachType) override;
+    Frame* opener() const override;
+    void setOpener(Frame*) override;
+    Frame* parent() const override;
+    Frame* top() const override;
+    Frame* previousSibling() const override;
+    Frame* nextSibling() const override;
+    Frame* firstChild() const override;
+    Frame* lastChild() const override;
+    bool willCheckAndDispatchMessageEvent(SecurityOrigin*, MessageEvent*, LocalFrame*) const override;
 
     // RemoteFrameClient overrides:
-    virtual void navigate(const ResourceRequest&, bool shouldReplaceCurrentEntry) override;
-    virtual void reload(ReloadPolicy, ClientRedirectPolicy) override;
-    virtual void forwardInputEvent(Event*) override;
+    void navigate(const ResourceRequest&, bool shouldReplaceCurrentEntry) override;
+    void reload(FrameLoadType, ClientRedirectPolicy) override;
+    unsigned backForwardLength() override;
+    void forwardInputEvent(Event*) override;
 
     WebRemoteFrameImpl* webFrame() const { return m_webFrame; }
 

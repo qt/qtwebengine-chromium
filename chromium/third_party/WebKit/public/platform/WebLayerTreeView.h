@@ -105,8 +105,11 @@ public:
     // Indicates that an animation needs to be updated.
     virtual void setNeedsAnimate() = 0;
 
-    // Indicates whether a commit is pending.
-    virtual bool commitRequested() const = 0;
+    // Indicates that blink needs a BeginFrame, but that nothing might actually be dirty.
+    virtual void setNeedsBeginFrame() { }
+
+    // Indicates that blink needs a BeginFrame and to update compositor state.
+    virtual void setNeedsCompositorUpdate() { }
 
     // Relays the end of a fling animation.
     virtual void didStopFlinging() { }

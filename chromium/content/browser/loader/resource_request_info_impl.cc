@@ -46,6 +46,7 @@ void ResourceRequestInfo::AllocateForTesting(net::URLRequest* request,
           PROCESS_TYPE_RENDERER,             // process_type
           render_process_id,                 // child_id
           render_view_id,                    // route_id
+          -1,                                // frame_tree_node_id
           0,                                 // origin_pid
           0,                                 // request_id
           render_frame_id,                   // render_frame_id
@@ -60,7 +61,7 @@ void ResourceRequestInfo::AllocateForTesting(net::URLRequest* request,
           allow_download,                    // allow_download
           false,                             // has_user_gesture
           false,                             // enable load timing
-          false,                             // enable upload progress
+          request->has_upload(),             // enable upload progress
           false,                             // do_not_prompt_for_login
           blink::WebReferrerPolicyDefault,   // referrer_policy
           blink::WebPageVisibilityStateVisible,  // visibility_state
@@ -103,6 +104,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     int process_type,
     int child_id,
     int route_id,
+    int frame_tree_node_id,
     int origin_pid,
     int request_id,
     int render_frame_id,
@@ -129,6 +131,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       process_type_(process_type),
       child_id_(child_id),
       route_id_(route_id),
+      frame_tree_node_id_(frame_tree_node_id),
       origin_pid_(origin_pid),
       request_id_(request_id),
       render_frame_id_(render_frame_id),

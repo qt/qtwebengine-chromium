@@ -48,8 +48,8 @@ GrPipelineBuilder& GrPipelineBuilder::operator=(const GrPipelineBuilder& that) {
     return *this;
 }
 
-void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt, const GrClip& clip) {
-    SkASSERT(0 == fBlockEffectRemovalCnt || 0 == this->numFragmentStages());
+GrPipelineBuilder::GrPipelineBuilder(const GrPaint& paint, GrRenderTarget* rt, const GrClip& clip) {
+    SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
 
     fColorStages.reset();
     fCoverageStages.reset();
@@ -75,7 +75,7 @@ void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt, c
 
     this->setState(GrPipelineBuilder::kDither_Flag, paint.isDither());
     this->setState(GrPipelineBuilder::kHWAntialias_Flag,
-                   rt->isMultisampled() && paint.isAntiAlias());
+                   rt->isUnifiedMultisampled() && paint.isAntiAlias());
 
     fColorProcInfoValid = false;
     fCoverageProcInfoValid = false;
@@ -86,10 +86,11 @@ void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt, c
 
 //////////////////////////////////////////////////////////////////////////////s
 
-bool GrPipelineBuilder::willXPNeedDstCopy(const GrDrawTargetCaps& caps,
-                                          const GrProcOptInfo& colorPOI,
-                                          const GrProcOptInfo& coveragePOI) const {
-    return this->getXPFactory()->willNeedDstCopy(caps, colorPOI, coveragePOI);
+bool GrPipelineBuilder::willXPNeedDstTexture(const GrCaps& caps,
+                                             const GrProcOptInfo& colorPOI,
+                                             const GrProcOptInfo& coveragePOI) const {
+    return this->getXPFactory()->willNeedDstTexture(caps, colorPOI, coveragePOI,
+                                                    this->hasMixedSamples());
 }
 
 void GrPipelineBuilder::AutoRestoreFragmentProcessors::set(GrPipelineBuilder* pipelineBuilder) {
@@ -123,13 +124,12 @@ GrPipelineBuilder::~GrPipelineBuilder() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool GrPipelineBuilder::willBlendWithDst(const GrPrimitiveProcessor* pp) const {
+bool GrPipelineBuilder::willColorBlendWithDst(const GrPrimitiveProcessor* pp) const {
     this->calcColorInvariantOutput(pp);
-    this->calcCoverageInvariantOutput(pp);
     
-    GrXPFactory::InvariantOutput output;
-    fXPFactory->getInvariantOutput(fColorProcInfo, fCoverageProcInfo, &output);
-    return output.fWillBlendWithDst;
+    GrXPFactory::InvariantBlendedColor blendedColor;
+    fXPFactory->getInvariantBlendedColor(fColorProcInfo, &blendedColor);
+    return blendedColor.fWillBlendWithDst;
 }
 
 void GrPipelineBuilder::calcColorInvariantOutput(const GrPrimitiveProcessor* pp) const {

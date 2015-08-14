@@ -180,7 +180,7 @@ class ContentShellDriverDetails():
         return '/data/local/tmp/content-shell-crash-dumps'
 
     def additional_command_line_flags(self, use_breakpad):
-        flags = ['--run-layout-test', '--encode-binary']
+        flags = ['--encode-binary']
         if use_breakpad:
             flags.extend(['--enable-crash-reporter', '--crash-dumps-dir=%s' % self.device_crash_dumps_directory()])
         return flags
@@ -461,7 +461,7 @@ class AndroidPort(base.Port):
         return self._build_path(MD5SUM_HOST_FILE_NAME)
 
     def additional_driver_flag(self):
-        return self._driver_details.additional_command_line_flags(use_breakpad=not self.get_option('disable_breakpad'))
+        return super(AndroidPort, self).additional_driver_flag() + self._driver_details.additional_command_line_flags(use_breakpad=not self.get_option('disable_breakpad'))
 
     def default_timeout_ms(self):
         # Android platform has less computing power than desktop platforms.
@@ -478,6 +478,11 @@ class AndroidPort(base.Port):
         if not usable_devices:
             raise test_run_results.TestRunException(test_run_results.NO_DEVICES_EXIT_STATUS, "Unable to find any attached Android devices.")
         return len(usable_devices)
+
+    def max_drivers_per_process(self):
+        # Android falls over when we try to run multiple content_shells per worker.
+        # See https://codereview.chromium.org/1158323009/
+        return 1
 
     def check_wdiff(self, logging=True):
         return self._host_port.check_wdiff(logging)
@@ -659,6 +664,12 @@ class AndroidPort(base.Port):
 
     @staticmethod
     def _android_server_process_constructor(port, server_name, cmd_line, env=None, logging=False):
+        # We need universal_newlines=True, because 'adb shell' for some unknown reason
+        # does newline conversion of unix-style LF into win-style CRLF (and we need
+        # to convert that back). This can cause headaches elsewhere because
+        # server_process' stdout and stderr are now unicode file-like objects,
+        # not binary file-like objects like all of the other ports are.
+        # FIXME: crbug.com/496983.
         return server_process.ServerProcess(port, server_name, cmd_line, env,
                                             universal_newlines=True, treat_no_data_as_crash=True, logging=logging)
 
@@ -1040,7 +1051,14 @@ class ChromiumAndroidDriver(driver.Driver):
             for crash in crashes:
                 stderr += '********* [%s] breakpad minidump %s:\n%s' % (self._port.host.filesystem.basename(crash), self._android_commands.get_serial(), self._port._dump_reader._get_stack_from_dump(crash))
 
-        return super(ChromiumAndroidDriver, self)._get_crash_log(stdout, stderr, newer_than)
+        # The parent method expects stdout and stderr to be byte streams, but
+        # since adb shell does newline conversion, we used universal_newlines
+        # when launching the processes, and hence our stdout and stderr are
+        # text objects that need to be encoded back into bytes.
+        return super(ChromiumAndroidDriver, self)._get_crash_log(
+            stdout.encode('utf8', 'replace'),
+            stderr.encode('utf8', 'replace'),
+            newer_than)
 
     def cmd_line(self, pixel_tests, per_test_args):
         # The returned command line is used to start _server_process. In our case, it's an interactive 'adb shell'.

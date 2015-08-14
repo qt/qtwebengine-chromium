@@ -16,6 +16,7 @@
 
 namespace content {
 
+class FrameNavigationEntry;
 class FrameTreeNode;
 class NavigationControllerImpl;
 class NavigationURLLoader;
@@ -53,15 +54,15 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     FAILED,
   };
 
-  // Helper function to determine if the navigation request to |url| should be
-  // sent to the network stack.
-  static bool ShouldMakeNetworkRequest(const GURL& url);
-
   // Creates a request for a browser-intiated navigation.
   static scoped_ptr<NavigationRequest> CreateBrowserInitiated(
       FrameTreeNode* frame_tree_node,
+      const GURL& dest_url,
+      const Referrer& dest_referrer,
+      const FrameNavigationEntry& frame_entry,
       const NavigationEntryImpl& entry,
       FrameMsg_Navigate_Type::Value navigation_type,
+      bool is_same_document_history_load,
       base::TimeTicks navigation_start,
       NavigationControllerImpl* controller);
 
@@ -126,6 +127,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
                     const RequestNavigationParams& request_params,
                     scoped_refptr<ResourceRequestBody> body,
                     bool browser_initiated,
+                    const FrameNavigationEntry* frame_navigation_entry,
                     const NavigationEntryImpl* navitation_entry);
 
   // NavigationURLLoaderDelegate implementation.

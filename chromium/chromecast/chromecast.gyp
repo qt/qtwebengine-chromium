@@ -44,15 +44,13 @@
         'public/graphics_properties_shlib.h',
         'public/graphics_types.h',
         'public/media/decoder_config.h',
+        'public/media/stream_id.h',
         'public/osd_plane.h',
         'public/osd_plane_shlib.h',
         'public/osd_surface.h',
+        'public/video_plane.h',
       ],
     },
-    # TODO(gunsch): Remove this fake target once it's either added or no
-    # longer referenced from internal code.
-    {'target_name': 'cast_media_audio', 'type': 'none'},
-
     {
       'target_name': 'cast_base',
       'type': '<(component)',
@@ -62,39 +60,72 @@
       'sources': [
         'base/cast_paths.cc',
         'base/cast_paths.h',
+        'base/chromecast_switches.cc',
+        'base/chromecast_switches.h',
+        'base/error_codes.cc',
+        'base/error_codes.h',
         'base/metrics/cast_histograms.h',
         'base/metrics/cast_metrics_helper.cc',
         'base/metrics/cast_metrics_helper.h',
         'base/metrics/grouped_histogram.cc',
         'base/metrics/grouped_histogram.h',
+        'base/path_utils.cc',
+        'base/path_utils.h',
+        'base/process_utils.cc',
+        'base/process_utils.h',
         'base/serializers.cc',
         'base/serializers.h'
       ],
     },  # end of target 'cast_base'
     {
+      'target_name': 'cast_crash',
+      'type': '<(component)',
+      'include_dirs': [
+        # TODO(gfhuang): we should not need to include this directly, but
+        # somehow depending on component.gyp:breakpad_component is not
+        # working as expected.
+        '../breakpad/src',
+      ],
+      'dependencies': [
+        'cast_base',
+        'cast_version_header',
+        '../breakpad/breakpad.gyp:breakpad_client',
+      ],
+      'sources': [
+        'crash/app_state_tracker.cc',
+        'crash/app_state_tracker.h',
+        'crash/cast_crash_keys.cc',
+        'crash/cast_crash_keys.h',
+        'crash/cast_crashdump_uploader.cc',
+        'crash/cast_crashdump_uploader.h',
+        'crash/linux/crash_util.cc',
+        'crash/linux/crash_util.h',
+        'crash/linux/dummy_minidump_generator.cc',
+        'crash/linux/dummy_minidump_generator.h',
+        'crash/linux/dump_info.cc',
+        'crash/linux/dump_info.h',
+        'crash/linux/minidump_generator.h',
+        'crash/linux/synchronized_minidump_manager.cc',
+        'crash/linux/synchronized_minidump_manager.h',
+        'crash/linux/minidump_params.cc',
+        'crash/linux/minidump_params.h',
+        'crash/linux/minidump_writer.cc',
+        'crash/linux/minidump_writer.h',
+      ],
+    },  # end of target 'cast_crash'
+    {
       'target_name': 'cast_crash_client',
       'type': '<(component)',
       'dependencies': [
-        '../breakpad/breakpad.gyp:breakpad_client',
+        'cast_crash',
         '../components/components.gyp:crash_component',
+        '../content/content.gyp:content_common',
       ],
-      'sources': [
-        'crash/cast_crash_keys.cc',
-        'crash/cast_crash_keys.h',
-        'crash/cast_crash_reporter_client.cc',
-        'crash/cast_crash_reporter_client.h',
+      'sources' : [
+        # TODO(slan): Move android crash_client here as well.
+        'app/linux/cast_crash_reporter_client.cc',
+        'app/linux/cast_crash_reporter_client.h',
       ],
-      'conditions': [
-        ['chromecast_branding=="Chrome"', {
-          'dependencies': [
-            'internal/chromecast_internal.gyp:crash_internal',
-          ],
-        }, {
-          'sources': [
-            'crash/cast_crash_reporter_client_simple.cc',
-          ],
-        }],
-      ]
     },  # end of target 'cast_crash_client'
     {
       'target_name': 'cast_net',
@@ -102,6 +133,10 @@
       'sources': [
         'net/connectivity_checker.cc',
         'net/connectivity_checker.h',
+        'net/connectivity_checker_impl.cc',
+        'net/connectivity_checker_impl.h',
+        'net/fake_connectivity_checker.cc',
+        'net/fake_connectivity_checker.h',
         'net/net_switches.cc',
         'net/net_switches.h',
         'net/net_util_cast.cc',
@@ -238,6 +273,8 @@
         'browser/cast_download_manager_delegate.h',
         'browser/cast_http_user_agent_settings.cc',
         'browser/cast_http_user_agent_settings.h',
+        'browser/cast_net_log.cc',
+        'browser/cast_net_log.h',
         'browser/cast_network_delegate.cc',
         'browser/cast_network_delegate.h',
         'browser/cast_permission_manager.cc',
@@ -271,8 +308,6 @@
         'common/cast_content_client.h',
         'common/cast_resource_delegate.cc',
         'common/cast_resource_delegate.h',
-        'common/chromecast_switches.cc',
-        'common/chromecast_switches.h',
         'common/media/cast_messages.h',
         'common/media/cast_message_generator.cc',
         'common/media/cast_message_generator.h',
@@ -304,7 +339,6 @@
             'browser/pref_service_helper_simple.cc',
             'common/platform_client_auth_simple.cc',
             'renderer/cast_content_renderer_client_simple.cc',
-            'renderer/key_systems_cast_simple.cc',
           ],
           'conditions': [
             ['OS=="android"', {
@@ -328,6 +362,8 @@
           'sources': [
             'browser/metrics/external_metrics.cc',
             'browser/metrics/external_metrics.h',
+            'graphics/cast_screen.cc',
+            'graphics/cast_screen.h',
           ],
           'dependencies': [
             '../components/components.gyp:metrics_serialization',
@@ -354,7 +390,7 @@
         'base/cast_sys_info_dummy.h',
       ],
       'conditions': [
-        ['chromecast_branding!="Chrome"', {
+        ['chromecast_branding!="Chrome" and OS!="android"', {
           'sources': [
             'base/cast_sys_info_util_simple.cc',
           ],
@@ -375,10 +411,10 @@
           'message': 'Generating version header file: <@(_outputs)',
           'inputs': [
             '<(version_path)',
-            'common/version.h.in',
+            'base/version.h.in',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/chromecast/common/version.h',
+            '<(SHARED_INTERMEDIATE_DIR)/chromecast/base/version.h',
           ],
           'action': [
             'python',
@@ -392,7 +428,7 @@
             '-e', 'CAST_BUILD_RELEASE="<!(if test -f <(cast_build_release); then cat <(cast_build_release); else echo eng.${USER}; fi)"',
             '-e', 'CAST_IS_DEBUG_BUILD=1 if "<(CONFIGURATION_NAME)" == "Debug" or <(cast_is_debug_build) == 1 else 0',
             '-e', 'CAST_PRODUCT_TYPE=<(cast_product_type)',
-            'common/version.h.in',
+            'base/version.h.in',
             '<@(_outputs)',
           ],
           'includes': [
@@ -448,18 +484,22 @@
           'sources': [
             'android/cast_jni_registrar.cc',
             'android/cast_jni_registrar.h',
-            'android/chromecast_config_android.cc',
-            'android/chromecast_config_android.h',
+            'android/cast_metrics_helper_android.cc',
+            'android/cast_metrics_helper_android.h',
             'android/platform_jni_loader.h',
+            'app/android/cast_crash_reporter_client_android.cc',
+            'app/android/cast_crash_reporter_client_android.h',
             'app/android/cast_jni_loader.cc',
+            'app/android/crash_handler.cc',
+            'app/android/crash_handler.h',
+            'base/cast_sys_info_android.cc',
+            'base/cast_sys_info_android.h',
+            'base/chromecast_config_android.cc',
+            'base/chromecast_config_android.h',
             'browser/android/cast_window_android.cc',
             'browser/android/cast_window_android.h',
             'browser/android/cast_window_manager.cc',
             'browser/android/cast_window_manager.h',
-            'crash/android/cast_crash_reporter_client_android.cc',
-            'crash/android/cast_crash_reporter_client_android.h',
-            'crash/android/crash_handler.cc',
-            'crash/android/crash_handler.h',
           ],
           'conditions': [
             ['chromecast_branding=="Chrome"', {
@@ -468,24 +508,39 @@
               ],
             }, {
               'sources': [
-                'android/chromecast_config_android_stub.cc',
                 'android/platform_jni_loader_stub.cc',
               ],
             }]
           ],
         },  # end of target 'libcast_shell_android'
         {
+          'target_name': 'cast_base_java',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'variables': {
+            'android_manifest_path': 'android/AndroidManifest.xml',
+            'java_in_dir': 'base/java',
+          },
+          'includes': ['../build/java.gypi'],
+        },  # end of target 'cast_base_java'
+        {
           'target_name': 'cast_shell_java',
           'type': 'none',
           'dependencies': [
             '<(android_support_v13_target)',
+            'cast_base_java',
+            'cast_shell_manifest',
             '../base/base.gyp:base_java',
+            '../components/components.gyp:external_video_surface_java',
             '../content/content.gyp:content_java',
             '../media/media.gyp:media_java',
             '../net/net.gyp:net_java',
             '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
+            'android_manifest_path': '<(SHARED_INTERMEDIATE_DIR)/cast_shell_manifest/AndroidManifest.xml',
             'has_java_resources': 1,
             'java_in_dir': 'browser/android/apk',
             'resource_dir': 'browser/android/apk/res',
@@ -531,7 +586,10 @@
           'target_name': 'cast_jni_headers',
           'type': 'none',
           'sources': [
+            'base/java/src/org/chromium/chromecast/base/ChromecastConfigAndroid.java',
             'browser/android/apk/src/org/chromium/chromecast/shell/CastCrashHandler.java',
+            'browser/android/apk/src/org/chromium/chromecast/shell/CastMetricsHelper.java',
+            'browser/android/apk/src/org/chromium/chromecast/shell/CastSysInfoAndroid.java',
             'browser/android/apk/src/org/chromium/chromecast/shell/CastWindowAndroid.java',
             'browser/android/apk/src/org/chromium/chromecast/shell/CastWindowManager.java',
           ],
@@ -562,8 +620,6 @@
             'browser/media/cast_browser_cdm_factory.h',
             'browser/media/cma_message_filter_host.cc',
             'browser/media/cma_message_filter_host.h',
-            'browser/media/cma_message_loop.cc',
-            'browser/media/cma_message_loop.h',
             'browser/media/media_pipeline_host.cc',
             'browser/media/media_pipeline_host.h',
             'common/media/cma_ipc_common.h',

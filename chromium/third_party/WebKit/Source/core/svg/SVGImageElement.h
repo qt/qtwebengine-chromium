@@ -48,29 +48,32 @@ public:
     SVGAnimatedLength* height() const { return m_height.get(); }
     SVGAnimatedPreserveAspectRatio* preserveAspectRatio() { return m_preserveAspectRatio.get(); }
 
+    // Exposed for testing.
+    ImageResource* cachedImage() const { return imageLoader().image(); }
+
 private:
     explicit SVGImageElement(Document&);
 
-    virtual bool isStructurallyExternal() const override { return !hrefString().isNull(); }
+    bool isStructurallyExternal() const override { return !hrefString().isNull(); }
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual void svgAttributeChanged(const QualifiedName&) override;
+    void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    void attach(const AttachContext& = AttachContext()) override;
+    InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual const AtomicString imageSourceURL() const override;
+    const AtomicString imageSourceURL() const override;
 
-    virtual bool haveLoadedRequiredResources() override;
+    bool haveLoadedRequiredResources() override;
 
-    virtual bool selfHasRelativeLengths() const override;
-    virtual void didMoveToNewDocument(Document& oldDocument) override;
-    SVGImageLoader& imageLoader() { return *m_imageLoader; }
+    bool selfHasRelativeLengths() const override;
+    void didMoveToNewDocument(Document& oldDocument) override;
+    SVGImageLoader& imageLoader() const { return *m_imageLoader; }
 
     RefPtrWillBeMember<SVGAnimatedLength> m_x;
     RefPtrWillBeMember<SVGAnimatedLength> m_y;

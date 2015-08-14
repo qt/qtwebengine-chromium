@@ -11,18 +11,16 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/layout/LayoutView.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/DeprecatedPaintLayerPainter.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/ScrollbarPainter.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 namespace blink {
@@ -61,10 +59,6 @@ void FramePainter::paint(GraphicsContext* context, const IntRect& rect)
 
         paintScrollbars(context, scrollViewDirtyRect);
     }
-
-    // Paint the panScroll Icon
-    if (m_frameView.drawPanScrollIcon())
-        m_frameView.paintPanScrollIcon(context);
 }
 
 void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
@@ -86,11 +80,9 @@ void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
     else
         fillWithRed = true;
 
-    if (fillWithRed) {
+    if (fillWithRed && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_frameView.layoutView(), DisplayItem::DebugRedFill)) {
         IntRect contentRect(IntPoint(), m_frameView.contentsSize());
-        DrawingRecorder drawingRecorder(*context, *m_frameView.layoutView(), DisplayItem::DebugRedFill, contentRect);
-        if (!drawingRecorder.canUseCachedDrawing())
-            context->fillRect(contentRect, Color(0xFF, 0, 0));
+        LayoutObjectDrawingRecorder drawingRecorder(*context, *m_frameView.layoutView(), DisplayItem::DebugRedFill, contentRect);
     }
 #endif
 
@@ -103,7 +95,7 @@ void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
     RELEASE_ASSERT(!m_frameView.needsLayout());
     ASSERT(document->lifecycle().state() >= DocumentLifecycle::CompositingClean);
 
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Paint", "data", InspectorPaintEvent::data(layoutView, LayoutRect(rect), 0));
+    TRACE_EVENT1("devtools.timeline", "Paint", "data", InspectorPaintEvent::data(layoutView, LayoutRect(rect), 0));
 
     bool isTopLevelPainter = !s_inPaintContents;
     s_inPaintContents = true;
@@ -178,10 +170,10 @@ void FramePainter::paintScrollCorner(GraphicsContext* context, const IntRect& co
 {
     if (m_frameView.scrollCorner()) {
         bool needsBackground = m_frameView.frame().isMainFrame();
-        if (needsBackground) {
-            DrawingRecorder drawingRecorder(*context, *m_frameView.layoutView(), DisplayItem::ScrollbarCorner, cornerRect);
-            if (!drawingRecorder.canUseCachedDrawing())
-                context->fillRect(cornerRect, m_frameView.baseBackgroundColor());
+        if (needsBackground && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_frameView.layoutView(), DisplayItem::ScrollbarCorner)) {
+            LayoutObjectDrawingRecorder drawingRecorder(*context, *m_frameView.layoutView(), DisplayItem::ScrollbarCorner, cornerRect);
+            context->fillRect(cornerRect, m_frameView.baseBackgroundColor());
+
         }
         ScrollbarPainter::paintIntoRect(m_frameView.scrollCorner(), context, cornerRect.location(), LayoutRect(cornerRect));
         return;

@@ -42,12 +42,18 @@ void TestingDelegate::OnBootstrapError() {
   base::MessageLoop::current()->Quit();
 }
 
-TEST_F(IPCMojoBootstrapTest, Connect) {
+// Times out on Android; see http://crbug.com/502290
+#if defined(OS_ANDROID)
+#define MAYBE_Connect DISABLED_Connect
+#else
+#define MAYBE_Connect Connect
+#endif
+TEST_F(IPCMojoBootstrapTest, MAYBE_Connect) {
   Init("IPCMojoBootstrapTestClient");
 
   TestingDelegate delegate;
   scoped_ptr<IPC::MojoBootstrap> bootstrap = IPC::MojoBootstrap::Create(
-      GetTestChannelHandle(), IPC::Channel::MODE_SERVER, &delegate);
+      GetTestChannelHandle(), IPC::Channel::MODE_SERVER, &delegate, nullptr);
 
   ASSERT_TRUE(bootstrap->Connect());
 #if defined(OS_POSIX)
@@ -55,7 +61,6 @@ TEST_F(IPCMojoBootstrapTest, Connect) {
 #else
   ASSERT_TRUE(StartClient());
 #endif
-  bootstrap->OnClientLaunched(client_process().Handle());
 
   base::MessageLoop::current()->Run();
 
@@ -70,8 +75,7 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCMojoBootstrapTestClient) {
   TestingDelegate delegate;
   scoped_ptr<IPC::MojoBootstrap> bootstrap = IPC::MojoBootstrap::Create(
       IPCTestBase::GetChannelName("IPCMojoBootstrapTestClient"),
-      IPC::Channel::MODE_CLIENT,
-      &delegate);
+      IPC::Channel::MODE_CLIENT, &delegate, nullptr);
 
   bootstrap->Connect();
 

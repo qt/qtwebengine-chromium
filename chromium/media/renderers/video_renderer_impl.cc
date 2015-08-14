@@ -36,7 +36,8 @@ static bool ShouldUseVideoRenderingPath() {
   const bool disabled_via_cli =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableNewVideoRenderer);
-  return !disabled_via_cli && !StartsWithASCII(group_name, "Disabled", true);
+  return !disabled_via_cli &&
+         !base::StartsWithASCII(group_name, "Disabled", true);
 }
 
 VideoRendererImpl::VideoRendererImpl(
@@ -265,13 +266,15 @@ void VideoRendererImpl::OnFrameDropped() {
 void VideoRendererImpl::CreateVideoThread() {
   // This may fail and cause a crash if there are too many threads created in
   // the current process. See http://crbug.com/443291
-  CHECK(base::PlatformThread::Create(0, this, &thread_));
-
+  const base::ThreadPriority priority =
 #if defined(OS_WIN)
-  // Bump up our priority so our sleeping is more accurate.
-  // TODO(scherkus): find out if this is necessary, but it seems to help.
-  ::SetThreadPriority(thread_.platform_handle(), THREAD_PRIORITY_ABOVE_NORMAL);
-#endif  // defined(OS_WIN)
+      // Bump up our priority so our sleeping is more accurate.
+      // TODO(scherkus): find out if this is necessary, but it seems to help.
+      base::ThreadPriority::DISPLAY;
+#else
+      base::ThreadPriority::NORMAL;
+#endif
+  CHECK(base::PlatformThread::CreateWithPriority(0, this, &thread_, priority));
 }
 
 void VideoRendererImpl::OnVideoFrameStreamInitialized(bool success) {
@@ -465,12 +468,9 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
     CHECK(pending_read_);
     pending_read_ = false;
 
-    if (status == VideoFrameStream::DECODE_ERROR ||
-        status == VideoFrameStream::DECRYPT_ERROR) {
+    if (status == VideoFrameStream::DECODE_ERROR) {
       DCHECK(!frame.get());
       PipelineStatus error = PIPELINE_ERROR_DECODE;
-      if (status == VideoFrameStream::DECRYPT_ERROR)
-        error = PIPELINE_ERROR_DECRYPT;
       task_runner_->PostTask(FROM_HERE, base::Bind(error_cb_, error));
       return;
     }
@@ -489,7 +489,17 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
       return;
     }
 
-    if (frame->end_of_stream()) {
+    // In low delay mode, don't accumulate frames that's earlier than the start
+    // time. Otherwise we could declare HAVE_ENOUGH_DATA and start playback
+    // prematurely.
+    if (low_delay_ &&
+        !frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM) &&
+        frame->timestamp() < start_timestamp_) {
+      AttemptRead_Locked();
+      return;
+    }
+
+    if (frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM)) {
       DCHECK(!received_end_of_stream_);
       received_end_of_stream_ = true;
 
@@ -621,7 +631,7 @@ void VideoRendererImpl::AddReadyFrame_Locked(
     const scoped_refptr<VideoFrame>& frame) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   lock_.AssertAcquired();
-  DCHECK(!frame->end_of_stream());
+  DCHECK(!frame->metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM));
 
   frames_decoded_++;
 

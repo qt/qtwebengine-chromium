@@ -39,7 +39,9 @@ class CC_EXPORT LayerTreeHostCommon {
                         const gfx::Transform& device_transform,
                         float device_scale_factor,
                         float page_scale_factor,
-                        const LayerType* page_scale_application_layer,
+                        const LayerType* page_scale_layer,
+                        const LayerType* inner_viewport_scroll_layer,
+                        const LayerType* outer_viewport_scroll_layer,
                         const gfx::Vector2dF& elastic_overscroll,
                         const LayerType* elastic_overscroll_application_layer,
                         int max_texture_size,
@@ -56,7 +58,9 @@ class CC_EXPORT LayerTreeHostCommon {
           device_transform(device_transform),
           device_scale_factor(device_scale_factor),
           page_scale_factor(page_scale_factor),
-          page_scale_application_layer(page_scale_application_layer),
+          page_scale_layer(page_scale_layer),
+          inner_viewport_scroll_layer(inner_viewport_scroll_layer),
+          outer_viewport_scroll_layer(outer_viewport_scroll_layer),
           elastic_overscroll(elastic_overscroll),
           elastic_overscroll_application_layer(
               elastic_overscroll_application_layer),
@@ -76,7 +80,9 @@ class CC_EXPORT LayerTreeHostCommon {
     gfx::Transform device_transform;
     float device_scale_factor;
     float page_scale_factor;
-    const LayerType* page_scale_application_layer;
+    const LayerType* page_scale_layer;
+    const LayerType* inner_viewport_scroll_layer;
+    const LayerType* outer_viewport_scroll_layer;
     gfx::Vector2dF elastic_overscroll;
     const LayerType* elastic_overscroll_application_layer;
     int max_texture_size;
@@ -102,9 +108,6 @@ class CC_EXPORT LayerTreeHostCommon {
         LayerType* root_layer,
         const gfx::Size& device_viewport_size,
         RenderSurfaceLayerListType* render_surface_layer_list);
-
-   private:
-    PropertyTrees temporary_property_trees;
   };
 
   typedef CalcDrawPropsInputs<Layer, RenderSurfaceLayerList>
@@ -121,6 +124,8 @@ class CC_EXPORT LayerTreeHostCommon {
                                   bool* animation_preserves_axis_alignment);
   static void CalculateDrawProperties(CalcDrawPropsMainInputs* inputs);
   static void PreCalculateMetaInformation(Layer* root_layer);
+  static void PreCalculateMetaInformationForTesting(LayerImpl* root_layer);
+  static void PreCalculateMetaInformationForTesting(Layer* root_layer);
 
   typedef CalcDrawPropsInputs<LayerImpl, LayerImplList> CalcDrawPropsImplInputs;
   typedef CalcDrawPropsInputsForTesting<LayerImpl, LayerImplList>
@@ -235,10 +240,8 @@ void LayerTreeHostCommon::CallFunctionForSubtree(LayerType* layer,
   }
 }
 
-CC_EXPORT PropertyTrees* GetPropertyTrees(Layer* layer,
-                                          PropertyTrees* trees_from_inputs);
-CC_EXPORT PropertyTrees* GetPropertyTrees(LayerImpl* layer,
-                                          PropertyTrees* trees_from_inputs);
+CC_EXPORT PropertyTrees* GetPropertyTrees(Layer* layer);
+CC_EXPORT PropertyTrees* GetPropertyTrees(LayerImpl* layer);
 
 template <typename LayerType, typename RenderSurfaceLayerListType>
 LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
@@ -255,6 +258,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           1.f,
           1.f,
           NULL,
+          NULL,
+          NULL,
           gfx::Vector2dF(),
           NULL,
           std::numeric_limits<int>::max() / 2,
@@ -265,7 +270,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           true,
           render_surface_layer_list,
           0,
-          GetPropertyTrees(root_layer, &temporary_property_trees)) {
+          GetPropertyTrees(root_layer)) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }
@@ -284,6 +289,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           1.f,
           1.f,
           NULL,
+          NULL,
+          NULL,
           gfx::Vector2dF(),
           NULL,
           std::numeric_limits<int>::max() / 2,
@@ -294,7 +301,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           true,
           render_surface_layer_list,
           0,
-          GetPropertyTrees(root_layer, &temporary_property_trees)) {
+          GetPropertyTrees(root_layer)) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }

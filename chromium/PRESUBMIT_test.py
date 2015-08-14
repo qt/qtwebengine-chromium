@@ -270,6 +270,16 @@ class VersionControlConflictsTest(unittest.TestCase):
     self.assertTrue('3' in errors[1])
     self.assertTrue('5' in errors[2])
 
+  def testIgnoresReadmes(self):
+    lines = ['A First Level Header',
+             '====================',
+             '',
+             'A Second Level Header',
+             '---------------------']
+    errors = PRESUBMIT._CheckForVersionControlConflictsInFile(
+        MockInputApi(), MockFile('some/polymer/README.md', lines))
+    self.assertEqual(0, len(errors))
+
 class UmaHistogramChangeMatchedOrNotTest(unittest.TestCase):
   def testTypicalCorrectlyMatchedChange(self):
     diff_cc = ['UMA_HISTOGRAM_BOOL("Bla.Foo.Dummy", true)']
@@ -811,7 +821,7 @@ class UserMetricsActionTest(unittest.TestCase):
 
 class LogUsageTest(unittest.TestCase):
 
-  def testCheckNoNewUtilLogUsage(self):
+  def testCheckAndroidCrLogUsage(self):
     mock_input_api = MockInputApi()
     mock_output_api = MockOutputApi()
 
@@ -819,35 +829,99 @@ class LogUsageTest(unittest.TestCase):
       MockAffectedFile('RandomStuff.java', [
         'random stuff'
       ]),
-      MockAffectedFile('HasCrLog.java', [
-        'import org.chromium.base.Log;',
-        'some random stuff',
-        'Log.d("TAG", "foo");',
-      ]),
       MockAffectedFile('HasAndroidLog.java', [
         'import android.util.Log;',
         'some random stuff',
         'Log.d("TAG", "foo");',
       ]),
-      MockAffectedFile('HasExplicitLog.java', [
+      MockAffectedFile('HasExplicitUtilLog.java', [
         'some random stuff',
         'android.util.Log.d("TAG", "foo");',
+      ]),
+      MockAffectedFile('IsInBasePackage.java', [
+        'package org.chromium.base;',
+        'private static final String TAG = "cr.Foo";',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('IsInBasePackageButImportsLog.java', [
+        'package org.chromium.base;',
+        'import android.util.Log;',
+        'private static final String TAG = "cr.Foo";',
+        'Log.d(TAG, "foo");',
       ]),
       MockAffectedFile('HasBothLog.java', [
         'import org.chromium.base.Log;',
         'some random stuff',
-        'Log.d("TAG", "foo");',
+        'private static final String TAG = "cr.Foo";',
+        'Log.d(TAG, "foo");',
         'android.util.Log.d("TAG", "foo");',
+      ]),
+      MockAffectedFile('HasCorrectTag.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'private static final String TAG = "cr.Foo";',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('HasShortCorrectTag.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'private static final String TAG = "cr";',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('HasNoTagDecl.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('HasIncorrectTagDecl.java', [
+        'import org.chromium.base.Log;',
+        'private static final String TAHG = "cr.Foo";',
+        'some random stuff',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('HasInlineTag.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'private static final String TAG = "cr.Foo";',
+        'Log.d("TAG", "foo");',
+      ]),
+      MockAffectedFile('HasIncorrectTag.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'private static final String TAG = "rubbish";',
+        'Log.d(TAG, "foo");',
+      ]),
+      MockAffectedFile('HasTooLongTag.java', [
+        'import org.chromium.base.Log;',
+        'some random stuff',
+        'private static final String TAG = "cr.24_charachers_long___";',
+        'Log.d(TAG, "foo");',
       ]),
     ]
 
-    warnings = PRESUBMIT._CheckNoNewUtilLogUsage(
+    msgs = PRESUBMIT._CheckAndroidCrLogUsage(
         mock_input_api, mock_output_api)
 
-    self.assertEqual(1, len(warnings))
-    self.assertEqual(2, len(warnings[0].items))
-    self.assertTrue('HasAndroidLog.java' in warnings[0].items[0])
-    self.assertTrue('HasExplicitLog.java' in warnings[0].items[1])
+    self.assertEqual(4, len(msgs))
+
+    # Declaration format
+    self.assertEqual(3, len(msgs[0].items))
+    self.assertTrue('HasNoTagDecl.java' in msgs[0].items)
+    self.assertTrue('HasIncorrectTagDecl.java' in msgs[0].items)
+    self.assertTrue('HasIncorrectTag.java' in msgs[0].items)
+
+    # Tag length
+    self.assertEqual(1, len(msgs[1].items))
+    self.assertTrue('HasTooLongTag.java' in msgs[1].items)
+
+    # Tag must be a variable named TAG
+    self.assertEqual(1, len(msgs[2].items))
+    self.assertTrue('HasInlineTag.java:4' in msgs[2].items)
+
+    # Util Log usage
+    self.assertEqual(2, len(msgs[3].items))
+    self.assertTrue('HasAndroidLog.java:3' in msgs[3].items)
+    self.assertTrue('IsInBasePackageButImportsLog.java:4' in msgs[3].items)
 
 
 if __name__ == '__main__':

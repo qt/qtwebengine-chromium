@@ -119,42 +119,33 @@
 #include <openssl/bio.h>
 #include <openssl/bn.h>
 #include <openssl/buf.h>
+#include <openssl/ec_key.h>
 #include <openssl/dh.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
 #include <openssl/pem.h>
+#include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 #include "../crypto/dh/internal.h"
 #include "../crypto/directory.h"
+#include "../crypto/internal.h"
 #include "internal.h"
 
 
+static CRYPTO_once_t g_x509_store_ex_data_index_once;
+static int g_x509_store_ex_data_index;
+
+static void ssl_x509_store_ex_data_index_init(void) {
+  g_x509_store_ex_data_index = X509_STORE_CTX_get_ex_new_index(
+      0, "SSL for verify callback", NULL, NULL, NULL);
+}
+
 int SSL_get_ex_data_X509_STORE_CTX_idx(void) {
-  static int ssl_x509_store_ctx_idx = -1;
-  int got_write_lock = 0;
-
-  CRYPTO_r_lock(CRYPTO_LOCK_SSL_CTX);
-
-  if (ssl_x509_store_ctx_idx < 0) {
-    CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
-    CRYPTO_w_lock(CRYPTO_LOCK_SSL_CTX);
-    got_write_lock = 1;
-
-    if (ssl_x509_store_ctx_idx < 0) {
-      ssl_x509_store_ctx_idx = X509_STORE_CTX_get_ex_new_index(
-          0, "SSL for verify callback", NULL, NULL, NULL);
-    }
-  }
-
-  if (got_write_lock) {
-    CRYPTO_w_unlock(CRYPTO_LOCK_SSL_CTX);
-  } else {
-    CRYPTO_r_unlock(CRYPTO_LOCK_SSL_CTX);
-  }
-
-  return ssl_x509_store_ctx_idx;
+  CRYPTO_once(&g_x509_store_ex_data_index_once,
+              ssl_x509_store_ex_data_index_init);
+  return g_x509_store_ex_data_index;
 }
 
 CERT *ssl_cert_new(void) {
@@ -269,12 +260,12 @@ CERT *ssl_cert_dup(CERT *cert) {
   ret->cert_cb_arg = cert->cert_cb_arg;
 
   if (cert->verify_store) {
-    CRYPTO_add(&cert->verify_store->references, 1, CRYPTO_LOCK_X509_STORE);
+    CRYPTO_refcount_inc(&cert->verify_store->references);
     ret->verify_store = cert->verify_store;
   }
 
   if (cert->chain_store) {
-    CRYPTO_add(&cert->chain_store->references, 1, CRYPTO_LOCK_X509_STORE);
+    CRYPTO_refcount_inc(&cert->chain_store->references);
     ret->chain_store = cert->chain_store;
   }
 
@@ -420,33 +411,48 @@ SESS_CERT *ssl_sess_cert_new(void) {
   }
 
   memset(ret, 0, sizeof *ret);
-  ret->peer_key = &(ret->peer_pkeys[SSL_PKEY_RSA_ENC]);
 
   return ret;
 }
 
-void ssl_sess_cert_free(SESS_CERT *sc) {
-  int i;
+SESS_CERT *ssl_sess_cert_dup(const SESS_CERT *sess_cert) {
+  SESS_CERT *ret = ssl_sess_cert_new();
+  if (ret == NULL) {
+    return NULL;
+  }
 
-  if (sc == NULL) {
+  if (sess_cert->cert_chain != NULL) {
+    ret->cert_chain = X509_chain_up_ref(sess_cert->cert_chain);
+    if (ret->cert_chain == NULL) {
+      ssl_sess_cert_free(ret);
+      return NULL;
+    }
+  }
+  if (sess_cert->peer_cert != NULL) {
+    ret->peer_cert = X509_up_ref(sess_cert->peer_cert);
+  }
+  if (sess_cert->peer_dh_tmp != NULL) {
+    ret->peer_dh_tmp = sess_cert->peer_dh_tmp;
+    DH_up_ref(ret->peer_dh_tmp);
+  }
+  if (sess_cert->peer_ecdh_tmp != NULL) {
+    ret->peer_ecdh_tmp = sess_cert->peer_ecdh_tmp;
+    EC_KEY_up_ref(ret->peer_ecdh_tmp);
+  }
+  return ret;
+}
+
+void ssl_sess_cert_free(SESS_CERT *sess_cert) {
+  if (sess_cert == NULL) {
     return;
   }
 
-  sk_X509_pop_free(sc->cert_chain, X509_free);
+  sk_X509_pop_free(sess_cert->cert_chain, X509_free);
+  X509_free(sess_cert->peer_cert);
+  DH_free(sess_cert->peer_dh_tmp);
+  EC_KEY_free(sess_cert->peer_ecdh_tmp);
 
-  for (i = 0; i < SSL_PKEY_NUM; i++) {
-    X509_free(sc->peer_pkeys[i].x509);
-  }
-
-  DH_free(sc->peer_dh_tmp);
-  EC_KEY_free(sc->peer_ecdh_tmp);
-
-  OPENSSL_free(sc);
-}
-
-int ssl_set_peer_cert_type(SESS_CERT *sc, int type) {
-  sc->peer_cert_type = type;
-  return 1;
+  OPENSSL_free(sess_cert);
 }
 
 int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk) {
@@ -731,8 +737,6 @@ int SSL_add_dir_cert_subjects_to_stack(STACK_OF(X509_NAME) *stack,
   const char *filename;
   int ret = 0;
 
-  CRYPTO_w_lock(CRYPTO_LOCK_READDIR);
-
   /* Note that a side effect is that the CAs will be sorted by name */
   while ((filename = OPENSSL_DIR_read(&d, dir))) {
     char buf[1024];
@@ -763,7 +767,6 @@ err:
   if (d) {
     OPENSSL_DIR_end(&d);
   }
-  CRYPTO_w_unlock(CRYPTO_LOCK_READDIR);
   return ret;
 }
 
@@ -977,7 +980,7 @@ int ssl_cert_set_cert_store(CERT *c, X509_STORE *store, int chain, int ref) {
   *pstore = store;
 
   if (ref && store) {
-    CRYPTO_add(&store->references, 1, CRYPTO_LOCK_X509_STORE);
+    CRYPTO_refcount_inc(&store->references);
   }
   return 1;
 }

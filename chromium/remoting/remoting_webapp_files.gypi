@@ -15,12 +15,16 @@
 {
   'variables': {
 
+    # JSCompiler externs.
+    'remoting_webapp_js_externs_files': [
+      'webapp/externs/qunit.js',
+    ],
+
     # Jscompile proto files.
     # These provide type information for jscompile.
     'remoting_webapp_js_proto_files': [
       'webapp/js_proto/chrome_proto.js',
       'webapp/js_proto/chrome_cast_proto.js',
-      'webapp/js_proto/chrome_event_proto.js',
       'webapp/js_proto/dom_proto.js',
       'webapp/js_proto/remoting_proto.js',
     ],
@@ -90,9 +94,15 @@
       'webapp/base/js/identity_unittest.js',
       'webapp/base/js/ipc_unittest.js',
       'webapp/base/js/l10n_unittest.js',
+      'webapp/base/js/platform_unittest.js',
       'webapp/base/js/protocol_extension_manager_unittest.js',
+      'webapp/base/js/session_logger_unittest.js',
+      'webapp/base/js/telemetry_event_writer_unittest.js',
       'webapp/base/js/typecheck_unittest.js',
       'webapp/base/js/viewport_unittest.js',
+      'webapp/base/js/window_shape_unittest.js',
+      'webapp/base/js/window_message_dispatcher_unittest.js',
+      'webapp/base/js/xhr_event_writer_unittest.js',
       'webapp/base/js/xhr_unittest.js',
       'webapp/base/js/xmpp_connection_unittest.js',
       'webapp/base/js/xmpp_login_handler_unittest.js',
@@ -102,20 +112,17 @@
       'webapp/crd/js/gcd_client_with_mock_xhr_unittest.js',
       'webapp/crd/js/host_controller_unittest.js',
       'webapp/crd/js/host_daemon_facade_unittest.js',
-      'webapp/crd/js/host_list_api_impl_unittest.js',
       'webapp/crd/js/host_table_entry_unittest.js',
+      'webapp/crd/js/legacy_host_list_api_unittest.js',
       'webapp/crd/js/menu_button_unittest.js',
       'webapp/crd/js/mock_xhr_unittest.js',
     ],
     'remoting_webapp_unittests_js_mock_files': [
-      # Some proto files can be repurposed as simple mocks for the unittests.
-      # Note that some defs in chrome_proto are overwritten by chrome_mocks.
       'webapp/crd/js/mock_client_plugin.js',
       'webapp/crd/js/mock_host_daemon_facade.js',
       'webapp/crd/js/mock_host_list_api.js',
       'webapp/crd/js/mock_identity.js',
       'webapp/crd/js/mock_signal_strategy.js',
-      'webapp/js_proto/chrome_proto.js',
       'webapp/js_proto/chrome_mocks.js',
       'webapp/unittests/sinon_helpers.js',
       'webapp/crd/js/mock_xhr.js',
@@ -123,14 +130,15 @@
     # Prototypes for objects that are not mocked.
     'remoting_webapp_unittests_js_proto_files': [
       'webapp/js_proto/chrome_cast_proto.js',
+      'webapp/js_proto/chrome_proto.js',
       'webapp/js_proto/dom_proto.js',
       'webapp/js_proto/remoting_proto.js',
-      'webapp/js_proto/qunit_proto.js',
       'webapp/js_proto/sinon_proto.js',
     ],
     'remoting_webapp_unittests_all_js_files': [
       '<@(remoting_webapp_unittests_js_files)',
       '<@(remoting_webapp_unittests_js_mock_files)',
+      'webapp/unittests/qunit_callbacks.js',
     ],
     # All the files needed to run the unittests.
     'remoting_webapp_unittests_all_files': [
@@ -166,10 +174,10 @@
       'webapp/base/js/credentials_provider.js',
       'webapp/base/js/host_desktop.js',
       'webapp/base/js/smart_reconnector.js',
+      'webapp/base/js/telemetry_event_writer.js',
     ],
     # Remoting core JavaScript files.
     'remoting_webapp_shared_js_core_files': [
-      'webapp/base/js/app_capabilities.js',
       'webapp/base/js/application.js',
       'webapp/base/js/base.js',
       'webapp/base/js/ipc.js',
@@ -179,7 +187,10 @@
       'webapp/base/js/protocol_extension.js',
       'webapp/base/js/error.js',
       'webapp/base/js/plugin_settings.js',
+      'webapp/base/js/suspend_detector.js',
       'webapp/base/js/typecheck.js',
+      'webapp/base/js/window_message_dispatcher.js',
+      'webapp/base/js/xhr_event_writer.js',
       'webapp/base/js/xhr.js',
     ],
     # Host JavaScript files.
@@ -189,9 +200,12 @@
     ],
     # Logging and stats JavaScript files.
     'remoting_webapp_shared_js_logging_files': [
+      'webapp/base/js/chromoting_event.js',
+      'webapp/base/js/logger.js',
       'webapp/base/js/format_iq.js',
       'webapp/base/js/log_to_server.js',
       'webapp/base/js/server_log_entry.js',
+      'webapp/base/js/session_logger.js',
       'webapp/base/js/stats_accumulator.js',
     ],
     # Remoting signaling files.
@@ -208,6 +222,7 @@
     ],
     # Shared UI JavaScript files.
     'remoting_webapp_shared_js_ui_files': [
+      'webapp/base/js/connection_dropped_dialog.js',
       'webapp/base/js/connection_stats.js',
       'webapp/base/js/l10n.js',
       'webapp/base/js/ui_mode.js',
@@ -264,10 +279,15 @@
     'remoting_webapp_js_host_display_files': [
       'webapp/crd/js/host_list.js',
       'webapp/crd/js/host_list_api.js',
-      'webapp/crd/js/host_list_api_gcd_impl.js',
-      'webapp/crd/js/host_list_api_impl.js',
       'webapp/crd/js/host_table_entry.js',
       'webapp/crd/js/local_host_section.js',
+
+      # Must come after host_list_api.js because of an issue with
+      # JSCompiler.  If an implementation of an interface occurs in a
+      # file processed before the interface itself, the @override tag
+      # doesn't always work correctly.
+      'webapp/crd/js/gcd_host_list_api.js',
+      'webapp/crd/js/legacy_host_list_api.js',
     ],
     # The CRD-specific JavaScript files required by main.html.
     'remoting_webapp_crd_js_ui_files': [
@@ -368,8 +388,7 @@
     # These JS files are specific to the background page and are not part of
     # the main JS files.
     'remoting_webapp_background_html_js_files': [
-      'webapp/base/js/message_window_helper.js',
-      'webapp/base/js/message_window_manager.js',
+      'webapp/base/js/chromoting_event.js',
       'webapp/crd/js/activation_handler.js',
       'webapp/crd/js/app_launcher.js',
       'webapp/crd/js/background.js',
@@ -379,7 +398,6 @@
     'remoting_webapp_background_html_all_js_files': [
       '<@(remoting_webapp_background_html_js_files)',
       'webapp/base/js/base.js',
-      'webapp/base/js/client_session.js',
       'webapp/base/js/error.js',
       'webapp/base/js/identity.js',
       'webapp/base/js/ipc.js',
@@ -387,9 +405,12 @@
       'webapp/base/js/oauth2.js',
       'webapp/base/js/oauth2_api.js',
       'webapp/base/js/oauth2_api_impl.js',
+      'webapp/base/js/platform.js',
       'webapp/base/js/plugin_settings.js',
+      'webapp/base/js/telemetry_event_writer.js',
       'webapp/base/js/typecheck.js',
       'webapp/base/js/xhr.js',
+      'webapp/base/js/xhr_event_writer.js',
       'webapp/crd/js/host_installer.js',
       'webapp/crd/js/host_session.js',
       'webapp/crd/js/it2me_host_facade.js',
@@ -438,6 +459,13 @@
     ],
 
     #
+    # All the JavaScript files required by credits.html
+    #
+    'remoting_webapp_credits_html_all_js_files': [
+      'webapp/base/js/credits_js.js',
+    ],
+
+    #
     # Complete webapp JS and resource files.
     #
 
@@ -455,6 +483,7 @@
     'remoting_webapp_crd_js_files': [
       '<@(remoting_webapp_shared_js_files)',
       '<@(remoting_webapp_crd_main_html_all_js_files)',
+      '<@(remoting_webapp_credits_html_all_js_files)',
     ],
 
     'remoting_webapp_info_files': [
@@ -473,7 +502,6 @@
       'resources/icon_cross.webp',
       'resources/icon_disconnect.webp',
       'resources/icon_fullscreen.webp',
-      'resources/icon_help.webp',
       'resources/icon_host.webp',
       'resources/icon_maximize_restore.webp',
       'resources/icon_minimize.webp',
@@ -486,12 +514,14 @@
       'resources/reload.webp',
       'resources/tick.webp',
       'webapp/base/html/connection_stats.css',
+      'webapp/base/html/credits_css.css',
       'webapp/base/html/main.css',
       'webapp/base/html/message_window.css',
       'webapp/base/resources/open_sans.css',
       'webapp/base/resources/open_sans.woff',
       'webapp/base/resources/spinner.gif',
       'webapp/crd/html/butter_bar.css',
+      'webapp/crd/html/crd_main.css',
       'webapp/crd/html/toolbar.css',
       'webapp/crd/html/menu_button.css',
       'webapp/crd/html/window_frame.css',

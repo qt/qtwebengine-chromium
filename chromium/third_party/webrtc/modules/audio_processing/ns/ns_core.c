@@ -606,8 +606,8 @@ static void ComputeSpectralDifference(NoiseSuppressionC* self,
     // Conservative smooth noise spectrum from pause frames.
     avgPause += self->magnAvgPause[i];
   }
-  avgPause = avgPause / ((float)self->magnLen);
-  avgMagn = avgMagn / ((float)self->magnLen);
+  avgPause /= self->magnLen;
+  avgMagn /= self->magnLen;
 
   covMagnPause = 0.0;
   varPause = 0.0;
@@ -619,9 +619,9 @@ static void ComputeSpectralDifference(NoiseSuppressionC* self,
         (self->magnAvgPause[i] - avgPause) * (self->magnAvgPause[i] - avgPause);
     varMagn += (magnIn[i] - avgMagn) * (magnIn[i] - avgMagn);
   }
-  covMagnPause = covMagnPause / ((float)self->magnLen);
-  varPause = varPause / ((float)self->magnLen);
-  varMagn = varMagn / ((float)self->magnLen);
+  covMagnPause /= self->magnLen;
+  varPause /= self->magnLen;
+  varMagn /= self->magnLen;
   // Update of average magnitude spectrum.
   self->featureData[6] += self->signalEnergy;
 
@@ -898,10 +898,10 @@ static void FFT(NoiseSuppressionC* self,
 
   imag[0] = 0;
   real[0] = time_data[0];
-  magn[0] = fabs(real[0]) + 1.f;
+  magn[0] = fabsf(real[0]) + 1.f;
   imag[magnitude_length - 1] = 0;
   real[magnitude_length - 1] = time_data[1];
-  magn[magnitude_length - 1] = fabs(real[magnitude_length - 1]) + 1.f;
+  magn[magnitude_length - 1] = fabsf(real[magnitude_length - 1]) + 1.f;
   for (i = 1; i < magnitude_length - 1; ++i) {
     real[i] = time_data[2 * i];
     imag[i] = time_data[2 * i + 1];
@@ -1090,16 +1090,16 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame) {
     sumMagn += magn[i];
     if (self->blockInd < END_STARTUP_SHORT) {
       if (i >= kStartBand) {
-        tmpFloat2 = log((float)i);
+        tmpFloat2 = logf((float)i);
         sum_log_i += tmpFloat2;
         sum_log_i_square += tmpFloat2 * tmpFloat2;
-        tmpFloat1 = log(magn[i]);
+        tmpFloat1 = logf(magn[i]);
         sum_log_magn += tmpFloat1;
         sum_log_i_log_magn += tmpFloat2 * tmpFloat1;
       }
     }
   }
-  signalEnergy = signalEnergy / ((float)self->magnLen);
+  signalEnergy /= self->magnLen;
   self->signalEnergy = signalEnergy;
   self->sumMagn = sumMagn;
 
@@ -1108,9 +1108,9 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame) {
   // Compute simplified noise model during startup.
   if (self->blockInd < END_STARTUP_SHORT) {
     // Estimate White noise.
-    self->whiteNoiseLevel += sumMagn / ((float)self->magnLen) * self->overdrive;
+    self->whiteNoiseLevel += sumMagn / self->magnLen * self->overdrive;
     // Estimate Pink noise parameters.
-    tmpFloat1 = sum_log_i_square * ((float)(self->magnLen - kStartBand));
+    tmpFloat1 = sum_log_i_square * (self->magnLen - kStartBand);
     tmpFloat1 -= (sum_log_i * sum_log_i);
     tmpFloat2 =
         (sum_log_i_square * sum_log_magn - sum_log_i * sum_log_i_log_magn);
@@ -1121,7 +1121,7 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame) {
     }
     self->pinkNoiseNumerator += tmpFloat3;
     tmpFloat2 = (sum_log_i * sum_log_magn);
-    tmpFloat2 -= ((float)(self->magnLen - kStartBand)) * sum_log_i_log_magn;
+    tmpFloat2 -= (self->magnLen - kStartBand) * sum_log_i_log_magn;
     tmpFloat3 = tmpFloat2 / tmpFloat1;
     // Constrain the pink noise power to be in the interval [0, 1].
     if (tmpFloat3 < 0.f) {
@@ -1136,7 +1136,7 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame) {
     if (self->pinkNoiseExp > 0.f) {
       // Use pink noise estimate.
       parametric_num =
-          exp(self->pinkNoiseNumerator / (float)(self->blockInd + 1));
+          expf(self->pinkNoiseNumerator / (float)(self->blockInd + 1));
       parametric_num *= (float)(self->blockInd + 1);
       parametric_exp = self->pinkNoiseExp / (float)(self->blockInd + 1);
     }
@@ -1150,7 +1150,7 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame) {
         // Use pink noise estimate.
         float use_band = (float)(i < kStartBand ? kStartBand : i);
         self->parametricNoise[i] =
-            parametric_num / pow(use_band, parametric_exp);
+            parametric_num / powf(use_band, parametric_exp);
       }
       // Weight quantile noise with modeled noise.
       noise[i] *= (self->blockInd);

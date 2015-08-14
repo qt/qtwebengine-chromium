@@ -15,6 +15,7 @@
 #include <string.h>  // memcpy
 
 #include <algorithm>
+#include <limits>
 
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/common_types.h"
@@ -193,15 +194,17 @@ class RTPFragmentationHeader {
     }
   }
 
-  void VerifyAndAllocateFragmentationHeader(const uint16_t size) {
-    if (fragmentationVectorSize < size) {
+  void VerifyAndAllocateFragmentationHeader(const size_t size) {
+    assert(size <= std::numeric_limits<uint16_t>::max());
+    const uint16_t size16 = static_cast<uint16_t>(size);
+    if (fragmentationVectorSize < size16) {
       uint16_t oldVectorSize = fragmentationVectorSize;
       {
         // offset
         size_t* oldOffsets = fragmentationOffset;
-        fragmentationOffset = new size_t[size];
+        fragmentationOffset = new size_t[size16];
         memset(fragmentationOffset + oldVectorSize, 0,
-               sizeof(size_t) * (size - oldVectorSize));
+               sizeof(size_t) * (size16 - oldVectorSize));
         // copy old values
         memcpy(fragmentationOffset, oldOffsets,
                sizeof(size_t) * oldVectorSize);
@@ -210,9 +213,9 @@ class RTPFragmentationHeader {
       // length
       {
         size_t* oldLengths = fragmentationLength;
-        fragmentationLength = new size_t[size];
+        fragmentationLength = new size_t[size16];
         memset(fragmentationLength + oldVectorSize, 0,
-               sizeof(size_t) * (size - oldVectorSize));
+               sizeof(size_t) * (size16 - oldVectorSize));
         memcpy(fragmentationLength, oldLengths,
                sizeof(size_t) * oldVectorSize);
         delete[] oldLengths;
@@ -220,9 +223,9 @@ class RTPFragmentationHeader {
       // time diff
       {
         uint16_t* oldTimeDiffs = fragmentationTimeDiff;
-        fragmentationTimeDiff = new uint16_t[size];
+        fragmentationTimeDiff = new uint16_t[size16];
         memset(fragmentationTimeDiff + oldVectorSize, 0,
-               sizeof(uint16_t) * (size - oldVectorSize));
+               sizeof(uint16_t) * (size16 - oldVectorSize));
         memcpy(fragmentationTimeDiff, oldTimeDiffs,
                sizeof(uint16_t) * oldVectorSize);
         delete[] oldTimeDiffs;
@@ -230,14 +233,14 @@ class RTPFragmentationHeader {
       // payload type
       {
         uint8_t* oldTimePlTypes = fragmentationPlType;
-        fragmentationPlType = new uint8_t[size];
+        fragmentationPlType = new uint8_t[size16];
         memset(fragmentationPlType + oldVectorSize, 0,
-               sizeof(uint8_t) * (size - oldVectorSize));
+               sizeof(uint8_t) * (size16 - oldVectorSize));
         memcpy(fragmentationPlType, oldTimePlTypes,
                sizeof(uint8_t) * oldVectorSize);
         delete[] oldTimePlTypes;
       }
-      fragmentationVectorSize = size;
+      fragmentationVectorSize = size16;
     }
   }
 
@@ -424,11 +427,14 @@ inline void AudioFrame::Reset() {
   interleaved_ = true;
 }
 
-inline void AudioFrame::UpdateFrame(int id, uint32_t timestamp,
+inline void AudioFrame::UpdateFrame(int id,
+                                    uint32_t timestamp,
                                     const int16_t* data,
-                                    int samples_per_channel, int sample_rate_hz,
+                                    int samples_per_channel,
+                                    int sample_rate_hz,
                                     SpeechType speech_type,
-                                    VADActivity vad_activity, int num_channels,
+                                    VADActivity vad_activity,
+                                    int num_channels,
                                     uint32_t energy) {
   id_ = id;
   timestamp_ = timestamp;
@@ -439,8 +445,9 @@ inline void AudioFrame::UpdateFrame(int id, uint32_t timestamp,
   num_channels_ = num_channels;
   energy_ = energy;
 
+  assert(num_channels >= 0);
   const int length = samples_per_channel * num_channels;
-  assert(length <= kMaxDataSizeSamples && length >= 0);
+  assert(length <= kMaxDataSizeSamples);
   if (data != NULL) {
     memcpy(data_, data, sizeof(int16_t) * length);
   } else {
@@ -463,8 +470,9 @@ inline void AudioFrame::CopyFrom(const AudioFrame& src) {
   energy_ = src.energy_;
   interleaved_ = src.interleaved_;
 
+  assert(num_channels_ >= 0);
   const int length = samples_per_channel_ * num_channels_;
-  assert(length <= kMaxDataSizeSamples && length >= 0);
+  assert(length <= kMaxDataSizeSamples);
   memcpy(data_, src.data_, sizeof(int16_t) * length);
 }
 
@@ -506,6 +514,18 @@ inline AudioFrame& AudioFrame::Append(const AudioFrame& rhs) {
   return *this;
 }
 
+namespace {
+inline int16_t ClampToInt16(int32_t input) {
+  if (input < -0x00008000) {
+    return -0x8000;
+  } else if (input > 0x00007FFF) {
+    return 0x7FFF;
+  } else {
+    return static_cast<int16_t>(input);
+  }
+}
+}
+
 inline AudioFrame& AudioFrame::operator+=(const AudioFrame& rhs) {
   // Sanity check
   assert((num_channels_ > 0) && (num_channels_ < 3));
@@ -538,15 +558,9 @@ inline AudioFrame& AudioFrame::operator+=(const AudioFrame& rhs) {
   } else {
     // IMPROVEMENT this can be done very fast in assembly
     for (int i = 0; i < samples_per_channel_ * num_channels_; i++) {
-      int32_t wrapGuard =
+      int32_t wrap_guard =
           static_cast<int32_t>(data_[i]) + static_cast<int32_t>(rhs.data_[i]);
-      if (wrapGuard < -32768) {
-        data_[i] = -32768;
-      } else if (wrapGuard > 32767) {
-        data_[i] = 32767;
-      } else {
-        data_[i] = (int16_t)wrapGuard;
-      }
+      data_[i] = ClampToInt16(wrap_guard);
     }
   }
   energy_ = 0xffffffff;
@@ -569,15 +583,9 @@ inline AudioFrame& AudioFrame::operator-=(const AudioFrame& rhs) {
   speech_type_ = kUndefined;
 
   for (int i = 0; i < samples_per_channel_ * num_channels_; i++) {
-    int32_t wrapGuard =
+    int32_t wrap_guard =
         static_cast<int32_t>(data_[i]) - static_cast<int32_t>(rhs.data_[i]);
-    if (wrapGuard < -32768) {
-      data_[i] = -32768;
-    } else if (wrapGuard > 32767) {
-      data_[i] = 32767;
-    } else {
-      data_[i] = (int16_t)wrapGuard;
-    }
+    data_[i] = ClampToInt16(wrap_guard);
   }
   energy_ = 0xffffffff;
   return *this;
@@ -585,11 +593,24 @@ inline AudioFrame& AudioFrame::operator-=(const AudioFrame& rhs) {
 
 inline bool IsNewerSequenceNumber(uint16_t sequence_number,
                                   uint16_t prev_sequence_number) {
+  // Distinguish between elements that are exactly 0x8000 apart.
+  // If s1>s2 and |s1-s2| = 0x8000: IsNewer(s1,s2)=true, IsNewer(s2,s1)=false
+  // rather than having IsNewer(s1,s2) = IsNewer(s2,s1) = false.
+  if (static_cast<uint16_t>(sequence_number - prev_sequence_number) == 0x8000) {
+    return sequence_number > prev_sequence_number;
+  }
   return sequence_number != prev_sequence_number &&
          static_cast<uint16_t>(sequence_number - prev_sequence_number) < 0x8000;
 }
 
 inline bool IsNewerTimestamp(uint32_t timestamp, uint32_t prev_timestamp) {
+  // Distinguish between elements that are exactly 0x80000000 apart.
+  // If t1>t2 and |t1-t2| = 0x80000000: IsNewer(t1,t2)=true,
+  // IsNewer(t2,t1)=false
+  // rather than having IsNewer(t1,t2) = IsNewer(t2,t1) = false.
+  if (static_cast<uint32_t>(timestamp - prev_timestamp) == 0x80000000) {
+    return timestamp > prev_timestamp;
+  }
   return timestamp != prev_timestamp &&
          static_cast<uint32_t>(timestamp - prev_timestamp) < 0x80000000;
 }

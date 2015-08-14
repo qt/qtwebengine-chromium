@@ -10,6 +10,7 @@
 #include "bindings/modules/v8/UnionTypesModules.h"
 #include "modules/ModulesExport.h"
 #include "modules/fetch/Body.h"
+#include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/FetchResponseData.h"
 #include "modules/fetch/Headers.h"
 #include "platform/blob/BlobData.h"
@@ -18,7 +19,7 @@
 namespace blink {
 
 class Blob;
-class BodyStreamBuffer;
+class DrainingBodyStreamBuffer;
 class DOMArrayBuffer;
 class ExceptionState;
 class ResponseInit;
@@ -26,8 +27,9 @@ class WebServiceWorkerResponse;
 
 typedef BlobOrArrayBufferOrArrayBufferViewOrFormDataOrUSVString BodyInit;
 
-class MODULES_EXPORT Response final : public Body {
+class MODULES_EXPORT Response final : public Body, public BodyStreamBuffer::DrainingStreamNotificationClient {
     DEFINE_WRAPPERTYPEINFO();
+    USING_GARBAGE_COLLECTED_MIXIN(Response);
 public:
     ~Response() override { }
 
@@ -57,17 +59,26 @@ public:
     // From Response.idl:
     Response* clone(ExceptionState&);
 
-    void populateWebServiceWorkerResponse(WebServiceWorkerResponse&);
+    // ActiveDOMObject
+    bool hasPendingActivity() const override;
+
+    // Does not call response.setBlobDataHandle().
+    void populateWebServiceWorkerResponse(WebServiceWorkerResponse& /* response */);
 
     bool hasBody() const;
 
-    PassRefPtr<BlobDataHandle> blobDataHandle() const override;
-    BodyStreamBuffer* buffer() const override;
     String mimeType() const override;
-
-    PassRefPtr<BlobDataHandle> internalBlobDataHandle() const;
-    BodyStreamBuffer* internalBuffer() const;
     String internalMIMEType() const;
+
+    // Do not call leakBuffer() on the returned buffer because
+    // hasPendingActivity() assumes didFetchDataLoadFinishedFromDrainingStream()
+    // will be called.
+    PassOwnPtr<DrainingBodyStreamBuffer> createInternalDrainingStream();
+    void didFetchDataLoadFinishedFromDrainingStream() override;
+
+    // Only for tests (null checks and identity checks).
+    void* bufferForTest() const;
+    void* internalBufferForTest() const;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -80,6 +91,7 @@ private:
 
     const Member<FetchResponseData> m_response;
     const Member<Headers> m_headers;
+    bool m_isInternalDrained;
 };
 
 } // namespace blink

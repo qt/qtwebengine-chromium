@@ -28,20 +28,14 @@ class BASE_EXPORT MemoryMappedFile {
   struct BASE_EXPORT Region {
     static const Region kWholeFile;
 
-    Region(int64 offset, int64 size);
-
     bool operator==(const Region& other) const;
+    bool operator!=(const Region& other) const;
 
     // Start of the region (measured in bytes from the beginning of the file).
     int64 offset;
 
     // Length of the region in bytes.
     int64 size;
-
-   private:
-    // This ctor is used only by kWholeFile, to construct a zero-sized Region
-    // (which is forbidden by the public ctor) and uniquely identify kWholeFile.
-    Region(base::LinkerInitialized);
   };
 
   // Opens an existing file and maps it into memory. Access is restricted to

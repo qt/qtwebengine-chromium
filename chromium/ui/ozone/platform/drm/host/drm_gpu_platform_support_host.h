@@ -51,14 +51,14 @@ class DrmGpuPlatformSupportHost : public GpuPlatformSupportHost,
   bool Send(IPC::Message* message) override;
 
  private:
-  int host_id_;
+  int host_id_ = -1;
 
   scoped_refptr<base::SingleThreadTaskRunner> send_runner_;
   base::Callback<void(IPC::Message*)> send_callback_;
 
   std::vector<GpuPlatformSupportHost*> handlers_;  // Not owned.
   DrmCursor* cursor_;                              // Not owned.
-  ObserverList<ChannelObserver> channel_observers_;
+  base::ObserverList<ChannelObserver> channel_observers_;
 };
 
 }  // namespace ui

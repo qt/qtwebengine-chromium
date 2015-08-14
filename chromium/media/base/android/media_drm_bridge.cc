@@ -56,16 +56,19 @@ const uint8 kWidevineUuid[16] = {
 // Convert |init_data_type| to a string supported by MediaDRM.
 // "audio"/"video" does not matter, so use "video".
 std::string ConvertInitDataType(media::EmeInitDataType init_data_type) {
-  // TODO(jrummell): API level >=20 supports "webm" and "cenc", so switch
-  // to those strings.
+  // TODO(jrummell/xhwang): EME init data types like "webm" and "cenc" are
+  // supported in API level >=21 for Widevine key system. Switch to use those
+  // strings when they are officially supported in Android for all key systems.
   switch (init_data_type) {
     case media::EmeInitDataType::WEBM:
       return "video/webm";
     case media::EmeInitDataType::CENC:
       return "video/mp4";
+    case media::EmeInitDataType::KEYIDS:
+      return "keyids";
     default:
       NOTREACHED();
-      return "video/unknown";
+      return "unknown";
   }
 }
 
@@ -293,8 +296,16 @@ bool MediaDrmBridge::SetSecurityLevel(SecurityLevel security_level) {
 void MediaDrmBridge::SetServerCertificate(
     const std::vector<uint8_t>& certificate,
     scoped_ptr<media::SimpleCdmPromise> promise) {
-  promise->reject(NOT_SUPPORTED_ERROR, 0,
-                  "SetServerCertificate() is not supported.");
+  DCHECK(!certificate.empty());
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jbyteArray> j_certificate;
+  if (Java_MediaDrmBridge_setServerCertificate(env, j_media_drm_.obj(),
+                                               j_certificate.obj())) {
+    promise->resolve();
+  } else {
+    promise->reject(INVALID_ACCESS_ERROR, 0, "Set server certificate failed.");
+  }
 }
 
 void MediaDrmBridge::CreateSessionAndGenerateRequest(
@@ -305,6 +316,7 @@ void MediaDrmBridge::CreateSessionAndGenerateRequest(
   DVLOG(1) << __FUNCTION__;
 
   if (session_type != media::MediaKeys::TEMPORARY_SESSION) {
+    NOTIMPLEMENTED() << "EME persistent sessions not yet supported on Android.";
     promise->reject(NOT_SUPPORTED_ERROR, 0,
                     "Only the temporary session type is supported.");
     return;
@@ -356,6 +368,7 @@ void MediaDrmBridge::LoadSession(
     SessionType session_type,
     const std::string& session_id,
     scoped_ptr<media::NewSessionCdmPromise> promise) {
+  NOTIMPLEMENTED() << "EME persistent sessions not yet supported on Android.";
   promise->reject(NOT_SUPPORTED_ERROR, 0, "LoadSession() is not supported.");
 }
 
@@ -391,6 +404,7 @@ void MediaDrmBridge::CloseSession(const std::string& session_id,
 void MediaDrmBridge::RemoveSession(
     const std::string& session_id,
     scoped_ptr<media::SimpleCdmPromise> promise) {
+  NOTIMPLEMENTED() << "EME persistent sessions not yet supported on Android.";
   promise->reject(NOT_SUPPORTED_ERROR, 0, "RemoveSession() is not supported.");
 }
 

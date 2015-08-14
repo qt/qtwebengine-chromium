@@ -138,7 +138,8 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
       channel_id_(channel_id),
       voe_sync_interface_(nullptr) {
   CHECK(channel_group_->CreateReceiveChannel(channel_id_, 0, base_channel_id,
-                                             num_cpu_cores, true));
+                                             &transport_adapter_, num_cpu_cores,
+                                             true));
 
   vie_channel_ = channel_group_->GetChannel(channel_id_);
 
@@ -184,8 +185,6 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
     }
   }
 
-  vie_channel_->RegisterSendTransport(&transport_adapter_);
-
   if (config_.rtp.fec.ulpfec_payload_type != -1) {
     // ULPFEC without RED doesn't make sense.
     DCHECK(config_.rtp.fec.red_payload_type != -1);
@@ -229,7 +228,8 @@ VideoReceiveStream::VideoReceiveStream(int num_cpu_cores,
     const Decoder& decoder = config_.decoders[i];
     CHECK_EQ(0, vie_channel_->RegisterExternalDecoder(
                     decoder.payload_type, decoder.decoder, decoder.is_renderer,
-                    decoder.expected_delay_ms));
+                    decoder.is_renderer ? decoder.expected_delay_ms
+                                        : config.render_delay_ms));
 
     VideoCodec codec = CreateDecoderVideoCodec(decoder);
 
@@ -258,8 +258,6 @@ VideoReceiveStream::~VideoReceiveStream() {
 
   for (size_t i = 0; i < config_.decoders.size(); ++i)
     vie_channel_->DeRegisterExternalDecoder(config_.decoders[i].payload_type);
-
-  vie_channel_->DeregisterSendTransport();
 
   if (voe_sync_interface_ != nullptr) {
     vie_channel_->SetVoiceChannel(-1, nullptr);
@@ -296,18 +294,21 @@ bool VideoReceiveStream::DeliverRtp(const uint8_t* packet, size_t length) {
   return vie_channel_->ReceivedRTPPacket(packet, length, PacketTime()) == 0;
 }
 
-void VideoReceiveStream::FrameCallback(I420VideoFrame* video_frame) {
+void VideoReceiveStream::FrameCallback(VideoFrame* video_frame) {
   stats_proxy_->OnDecodedFrame();
 
-  if (config_.pre_render_callback)
-    config_.pre_render_callback->FrameCallback(video_frame);
+  // Post processing is not supported if the frame is backed by a texture.
+  if (video_frame->native_handle() == NULL) {
+    if (config_.pre_render_callback)
+      config_.pre_render_callback->FrameCallback(video_frame);
+  }
 }
 
 int VideoReceiveStream::RenderFrame(const uint32_t /*stream_id*/,
-                                    const I420VideoFrame& video_frame) {
+                                    const VideoFrame& video_frame) {
   // TODO(pbos): Wire up config_.render->IsTextureSupported() and convert if not
   // supported. Or provide methods for converting a texture frame in
-  // I420VideoFrame.
+  // VideoFrame.
 
   if (config_.renderer != nullptr)
     config_.renderer->RenderFrame(

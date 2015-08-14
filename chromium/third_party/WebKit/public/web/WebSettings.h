@@ -59,17 +59,9 @@ public:
 
     enum V8CacheOptions {
         V8CacheOptionsDefault,
+        V8CacheOptionsNone,
         V8CacheOptionsParse,
         V8CacheOptionsCode,
-        V8CacheOptionsCodeCompressed,
-        V8CacheOptionsNone,
-        V8CacheOptionsParseMemory,
-        V8CacheOptionsHeuristics,
-        V8CacheOptionsHeuristicsMobile,
-        V8CacheOptionsHeuristicsDefault,
-        V8CacheOptionsHeuristicsDefaultMobile,
-        V8CacheOptionsRecent,
-        V8CacheOptionsRecentSmall
     };
 
     // Bit field values indicating available pointer types. Identical to
@@ -105,6 +97,16 @@ public:
         Direction
     };
 
+    // Defines user preference for text track kind.
+    enum class TextTrackKindUserPreference {
+        // Display only tracks marked as default
+        Default,
+        // If available, display captions track in preferred language, else display subtitles.
+        Captions,
+        // If available, display subtitles track in preferred language, else display captions.
+        Subtitles
+    };
+
     // Sets value of a setting by its string identifier from Settings.in and
     // string representation of value. An enum's string representation is the
     // string representation of the integer value of the enum.
@@ -122,7 +124,7 @@ public:
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
     virtual void setPreferCompositingToLCDTextEnabled(bool) = 0;
     // Not implemented yet, see http://crbug.com/178119
-    virtual void setAcceleratedCompositingForTransitionEnabled(bool) { };
+    virtual void setAcceleratedCompositingForTransitionEnabled(bool) { }
     // If set to true, allows frames with an https origin to display passive
     // contents at an insecure URL. Otherwise, disallows it. The
     // FrameLoaderClient set to the frame may override the value set by this
@@ -155,7 +157,6 @@ public:
     virtual void setDefaultTextEncodingName(const WebString&) = 0;
     virtual void setDefaultVideoPosterURL(const WebString&) = 0;
     void setDeferred2dCanvasEnabled(bool) { } // temporary stub
-    virtual void setDeferredImageDecodingEnabled(bool) = 0;
     virtual void setDeviceScaleAdjustment(float) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
     virtual void setDeviceSupportsTouch(bool) = 0;
@@ -167,10 +168,10 @@ public:
     virtual void setEnableTouchAdjustment(bool) = 0;
     virtual bool multiTargetTapNotificationEnabled() = 0;
     virtual void setMultiTargetTapNotificationEnabled(bool) = 0;
-    virtual void setRegionBasedColumnsEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
+    virtual void setReportWheelOverscroll(bool) = 0;
     virtual void setForceZeroLayoutHeight(bool) = 0;
     virtual void setFullscreenSupported(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
@@ -178,6 +179,7 @@ public:
     virtual void setImageAnimationPolicy(ImageAnimationPolicy) = 0;
     virtual void setImagesEnabled(bool) = 0;
     virtual void setInlineTextBoxAccessibilityEnabled(bool) = 0;
+    virtual void setInvertViewportScrollOrder(bool) = 0;
     virtual void setJavaEnabled(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
@@ -202,10 +204,6 @@ public:
     virtual void setPerTilePaintingEnabled(bool) = 0;
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setPinchOverlayScrollbarThickness(int) = 0;
-
-    // TODO(bokan): Temporary, need to remove Chromium side users.
-    virtual void setPinchVirtualViewportEnabled(bool) { }
-
     virtual void setPluginsEnabled(bool) = 0;
     virtual void setAvailablePointerTypes(int) = 0;
     virtual void setPrimaryPointerType(PointerType) = 0;
@@ -245,6 +243,7 @@ public:
     virtual void setTextAreasAreResizable(bool) = 0;
     virtual void setTextAutosizingEnabled(bool) = 0;
     virtual void setAccessibilityFontScaleFactor(float) = 0;
+    virtual void setTextTrackKindUserPreference(TextTrackKindUserPreference) = 0;
     virtual void setTextTrackBackgroundColor(const WebString&) = 0;
     virtual void setTextTrackFontFamily(const WebString&) = 0;
     virtual void setTextTrackFontStyle(const WebString&) = 0;

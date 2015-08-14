@@ -30,7 +30,6 @@ class VIEWS_EXPORT PrefixSelector : public ui::TextInputClient {
   void ClearCompositionText() override;
   void InsertText(const base::string16& text) override;
   void InsertChar(base::char16 ch, int flags) override;
-  gfx::NativeWindow GetAttachedWindow() const override;
   ui::TextInputType GetTextInputType() const override;
   ui::TextInputMode GetTextInputMode() const override;
   int GetTextInputFlags() const override;
@@ -51,9 +50,6 @@ class VIEWS_EXPORT PrefixSelector : public ui::TextInputClient {
       base::i18n::TextDirection direction) override;
   void ExtendSelectionAndDelete(size_t before, size_t after) override;
   void EnsureCaretInRect(const gfx::Rect& rect) override;
-  void OnCandidateWindowShown() override;
-  void OnCandidateWindowUpdated() override;
-  void OnCandidateWindowHidden() override;
 
   bool IsEditCommandEnabled(int command_id) override;
   void SetEditCommandForNextKeyEvent(int command_id) override;

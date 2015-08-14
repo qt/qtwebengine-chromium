@@ -206,10 +206,6 @@ IPC_MESSAGE_ROUTED2(MediaPlayerMsg_RemoteRouteAvailabilityChanged,
                     int /* player_id */,
                     bool /* routes_available */)
 
-// Instructs the video element to enter fullscreen.
-IPC_MESSAGE_ROUTED1(MediaPlayerMsg_RequestFullscreen,
-                    int /*player_id */)
-
 // Messages for controlling the media playback in browser process ----------
 
 // Destroy the media player object.
@@ -249,9 +245,6 @@ IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_SetPoster,
 
 // Requests the player to enter fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_EnterFullscreen, int /* player_id */)
-
-// Requests the player to exit fullscreen.
-IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_ExitFullscreen, int /* player_id */)
 
 // Play the media on a remote device, if possible.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_RequestRemotePlayback,

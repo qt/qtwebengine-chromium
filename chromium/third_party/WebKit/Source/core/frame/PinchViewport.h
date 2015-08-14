@@ -62,13 +62,16 @@ class LocalFrame;
 // offset is set through the GraphicsLayer <-> CC sync mechanisms. Its contents is the page's
 // main FrameView, which corresponds to the outer viewport. The inner viewport is always contained
 // in the outer viewport and can pan within it.
-class CORE_EXPORT PinchViewport final : public GraphicsLayerClient, public ScrollableArea {
+class CORE_EXPORT PinchViewport final : public NoBaseWillBeGarbageCollectedFinalized<PinchViewport>, public GraphicsLayerClient, public ScrollableArea {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PinchViewport);
 public:
-    static PassOwnPtr<PinchViewport> create(FrameHost& host)
+    static PassOwnPtrWillBeRawPtr<PinchViewport> create(FrameHost& host)
     {
-        return adoptPtr(new PinchViewport(host));
+        return adoptPtrWillBeNoop(new PinchViewport(host));
     }
     virtual ~PinchViewport();
+
+    DECLARE_VIRTUAL_TRACE();
 
     void attachToLayerTree(GraphicsLayer*, GraphicsLayerFactory*);
     GraphicsLayer* rootGraphicsLayer()
@@ -173,8 +176,8 @@ public:
     virtual IntPoint minimumScrollPosition() const override;
     virtual IntPoint maximumScrollPosition() const override;
     virtual DoublePoint maximumScrollPositionDouble() const override;
-    virtual int visibleHeight() const override { return visibleRect().height(); };
-    virtual int visibleWidth() const override { return visibleRect().width(); };
+    virtual int visibleHeight() const override { return visibleRect().height(); }
+    virtual int visibleWidth() const override { return visibleRect().width(); }
     virtual IntSize contentsSize() const override;
     virtual bool scrollbarsCanBeActive() const override { return false; }
     virtual IntRect scrollableAreaBoundingBox() const override;
@@ -182,8 +185,8 @@ public:
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const override { return false; }
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
     virtual void invalidateScrollCornerRect(const IntRect&) override { }
-    virtual void setScrollOffset(const IntPoint&) override;
-    virtual void setScrollOffset(const DoublePoint&) override;
+    virtual void setScrollOffset(const IntPoint&, ScrollType) override;
+    virtual void setScrollOffset(const DoublePoint&, ScrollType) override;
     virtual GraphicsLayer* layerForContainer() const override;
     virtual GraphicsLayer* layerForScrolling() const override;
     virtual GraphicsLayer* layerForHorizontalScrollbar() const override;
@@ -203,13 +206,11 @@ private:
 
     FrameHost& frameHost() const
     {
-        return m_frameHost;
+        ASSERT(m_frameHost);
+        return *m_frameHost;
     }
 
-    // TODO(Oilpan): this back reference is safe, but not ideal.
-    // Turning it into a traced Member<> would require moving
-    // ScrollableArea to the heap.
-    FrameHost& m_frameHost;
+    RawPtrWillBeMember<FrameHost> m_frameHost;
     OwnPtr<GraphicsLayer> m_rootTransformLayer;
     OwnPtr<GraphicsLayer> m_innerViewportContainerLayer;
     OwnPtr<GraphicsLayer> m_overscrollElasticityLayer;

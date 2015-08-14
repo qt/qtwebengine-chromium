@@ -252,6 +252,8 @@ class QuicNetworkTransactionTest
 
     session_ = new HttpNetworkSession(params_);
     session_->quic_stream_factory()->set_require_confirmation(false);
+    ASSERT_EQ(params_.quic_socket_receive_buffer_size,
+              session_->quic_stream_factory()->socket_receive_buffer_size());
   }
 
   void CheckWasQuicResponse(const scoped_ptr<HttpNetworkTransaction>& trans) {
@@ -331,18 +333,19 @@ class QuicNetworkTransactionTest
 
   void ExpectBrokenAlternateProtocolMapping() {
     const HostPortPair origin = HostPortPair::FromURL(request_.url);
-    const AlternativeService alternative_service =
-        http_server_properties_.GetAlternativeService(origin);
-    EXPECT_NE(UNINITIALIZED_ALTERNATE_PROTOCOL, alternative_service.protocol);
+    const AlternativeServiceVector alternative_service_vector =
+        http_server_properties_.GetAlternativeServices(origin);
+    EXPECT_EQ(1u, alternative_service_vector.size());
     EXPECT_TRUE(http_server_properties_.IsAlternativeServiceBroken(
-        alternative_service));
+        alternative_service_vector[0]));
   }
 
   void ExpectQuicAlternateProtocolMapping() {
-    const AlternativeService alternative_service =
-        http_server_properties_.GetAlternativeService(
-            HostPortPair::FromURL(request_.url));
-    EXPECT_EQ(QUIC, alternative_service.protocol);
+    const HostPortPair origin = HostPortPair::FromURL(request_.url);
+    const AlternativeServiceVector alternative_service_vector =
+        http_server_properties_.GetAlternativeServices(origin);
+    EXPECT_EQ(1u, alternative_service_vector.size());
+    EXPECT_EQ(QUIC, alternative_service_vector[0].protocol);
   }
 
   void AddHangingNonAlternateProtocolSocketData() {
@@ -474,6 +477,48 @@ TEST_P(QuicNetworkTransactionTest, QuicProxy) {
 
   CreateSession();
 
+  SendRequestAndExpectQuicResponseFromProxyOnPort("hello!", 70);
+}
+
+// Regression test for https://crbug.com/492458.  Test that for an HTTP
+// connection through a QUIC proxy, the certificate exhibited by the proxy is
+// checked against the proxy hostname, not the origin hostname.
+TEST_P(QuicNetworkTransactionTest, QuicProxyWithCert) {
+  const std::string origin_host = "news.example.com";
+  const std::string proxy_host = "www.example.org";
+
+  params_.enable_quic_for_proxies = true;
+  proxy_service_.reset(
+      ProxyService::CreateFixedFromPacResult("QUIC " + proxy_host + ":70"));
+
+  maker_.set_hostname(origin_host);
+  MockQuicData mock_quic_data;
+  mock_quic_data.AddWrite(
+      ConstructRequestHeadersPacket(1, kClientDataStreamId1, true, true,
+                                    GetRequestHeaders("GET", "http", "/")));
+  mock_quic_data.AddRead(ConstructResponseHeadersPacket(
+      1, kClientDataStreamId1, false, false, GetResponseHeaders("200 OK")));
+  mock_quic_data.AddRead(
+      ConstructDataPacket(2, kClientDataStreamId1, false, true, 0, "hello!"));
+  mock_quic_data.AddWrite(ConstructAckPacket(2, 1));
+  mock_quic_data.AddRead(SYNCHRONOUS, 0);
+  mock_quic_data.AddSocketDataToFactory(&socket_factory_);
+
+  scoped_refptr<X509Certificate> cert(
+      ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem"));
+  ASSERT_TRUE(cert.get());
+  // This certificate is valid for the proxy, but not for the origin.
+  bool common_name_fallback_used;
+  EXPECT_TRUE(cert->VerifyNameMatch(proxy_host, &common_name_fallback_used));
+  EXPECT_FALSE(cert->VerifyNameMatch(origin_host, &common_name_fallback_used));
+  ProofVerifyDetailsChromium verify_details;
+  verify_details.cert_verify_result.verified_cert = cert;
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  request_.url = GURL("http://" + origin_host);
+  AddHangingNonAlternateProtocolSocketData();
+  CreateSessionWithNextProtos();
+  AddQuicAlternateProtocolMapping(MockCryptoClientStream::CONFIRM_HANDSHAKE);
   SendRequestAndExpectQuicResponseFromProxyOnPort("hello!", 70);
 }
 
@@ -779,6 +824,88 @@ TEST_P(QuicNetworkTransactionTest, UseAlternateProtocolForQuicForHttps) {
   SendRequestAndExpectHttpResponse("hello world");
 }
 
+class QuicAltSvcCertificateVerificationTest
+    : public QuicNetworkTransactionTest {
+ public:
+  void Run(bool valid) {
+    HostPortPair origin(valid ? "mail.example.org" : "invalid.example.org",
+                        443);
+    HostPortPair alternative("www.example.org", 443);
+    std::string url("https://");
+    url.append(origin.host());
+    url.append(":443");
+    request_.url = GURL(url);
+
+    maker_.set_hostname(origin.host());
+    MockQuicData mock_quic_data;
+    mock_quic_data.AddWrite(
+        ConstructRequestHeadersPacket(1, kClientDataStreamId1, true, true,
+                                      GetRequestHeaders("GET", "https", "/")));
+    mock_quic_data.AddRead(ConstructResponseHeadersPacket(
+        1, kClientDataStreamId1, false, false, GetResponseHeaders("200 OK")));
+    mock_quic_data.AddRead(
+        ConstructDataPacket(2, kClientDataStreamId1, false, true, 0, "hello!"));
+    mock_quic_data.AddWrite(ConstructAckPacket(2, 1));
+    mock_quic_data.AddRead(SYNCHRONOUS, 0);
+    mock_quic_data.AddSocketDataToFactory(&socket_factory_);
+
+    scoped_refptr<X509Certificate> cert(
+        ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem"));
+    ASSERT_TRUE(cert.get());
+    bool common_name_fallback_used;
+    EXPECT_EQ(valid,
+              cert->VerifyNameMatch(origin.host(), &common_name_fallback_used));
+    EXPECT_TRUE(
+        cert->VerifyNameMatch(alternative.host(), &common_name_fallback_used));
+    ProofVerifyDetailsChromium verify_details;
+    verify_details.cert_verify_result.verified_cert = cert;
+    verify_details.cert_verify_result.is_issued_by_known_root = true;
+    crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+    crypto_client_stream_factory_.set_handshake_mode(
+        MockCryptoClientStream::CONFIRM_HANDSHAKE);
+
+    // Connection to |origin| fails, so that success of |request| depends on
+    // connection to |alternate| only.
+    MockConnect refused_connect(ASYNC, ERR_CONNECTION_REFUSED);
+    StaticSocketDataProvider refused_data;
+    refused_data.set_connect_data(refused_connect);
+    socket_factory_.AddSocketDataProvider(&refused_data);
+
+    CreateSessionWithNextProtos();
+    AlternativeService alternative_service(QUIC, alternative);
+    session_->http_server_properties()->SetAlternativeService(
+        origin, alternative_service, 1.0);
+    scoped_ptr<HttpNetworkTransaction> trans(
+        new HttpNetworkTransaction(DEFAULT_PRIORITY, session_.get()));
+    TestCompletionCallback callback;
+    int rv = trans->Start(&request_, callback.callback(), net_log_.bound());
+    EXPECT_EQ(ERR_IO_PENDING, rv);
+    rv = callback.WaitForResult();
+    if (valid) {
+      EXPECT_EQ(OK, rv);
+      CheckWasQuicResponse(trans);
+      CheckResponsePort(trans, 443);
+      CheckResponseData(trans, "hello!");
+    } else {
+      EXPECT_EQ(ERR_CONNECTION_REFUSED, rv);
+    }
+  }
+};
+
+INSTANTIATE_TEST_CASE_P(Version,
+                        QuicAltSvcCertificateVerificationTest,
+                        ::testing::ValuesIn(QuicSupportedVersions()));
+
+TEST_P(QuicAltSvcCertificateVerificationTest,
+       RequestSucceedsWithValidCertificate) {
+  Run(true);
+}
+
+TEST_P(QuicAltSvcCertificateVerificationTest,
+       RequestFailsWithInvalidCertificate) {
+  Run(false);
+}
+
 TEST_P(QuicNetworkTransactionTest, HungAlternateProtocol) {
   crypto_client_stream_factory_.set_handshake_mode(
       MockCryptoClientStream::COLD_START);
@@ -823,18 +950,18 @@ TEST_P(QuicNetworkTransactionTest, HungAlternateProtocol) {
   // Run the first request.
   http_data.StopAfter(arraysize(http_reads) + arraysize(http_writes));
   SendRequestAndExpectHttpResponse("hello world");
-  ASSERT_TRUE(http_data.at_read_eof());
-  ASSERT_TRUE(http_data.at_write_eof());
+  ASSERT_TRUE(http_data.AllReadDataConsumed());
+  ASSERT_TRUE(http_data.AllWriteDataConsumed());
 
   // Now run the second request in which the QUIC socket hangs,
   // and verify the the transaction continues over HTTP.
   http_data2.StopAfter(arraysize(http_reads) + arraysize(http_writes));
   SendRequestAndExpectHttpResponse("hello world");
 
-  ASSERT_TRUE(http_data2.at_read_eof());
-  ASSERT_TRUE(http_data2.at_write_eof());
-  ASSERT_TRUE(!quic_data.at_read_eof());
-  ASSERT_TRUE(!quic_data.at_write_eof());
+  ASSERT_TRUE(http_data2.AllReadDataConsumed());
+  ASSERT_TRUE(http_data2.AllWriteDataConsumed());
+  ASSERT_TRUE(!quic_data.AllReadDataConsumed());
+  ASSERT_TRUE(!quic_data.AllWriteDataConsumed());
 }
 
 TEST_P(QuicNetworkTransactionTest, ZeroRTTWithHttpRace) {
@@ -1104,8 +1231,8 @@ TEST_P(QuicNetworkTransactionTest, FailedZeroRttBrokenAlternateProtocol) {
 
   ExpectBrokenAlternateProtocolMapping();
 
-  EXPECT_TRUE(quic_data.at_read_eof());
-  EXPECT_TRUE(quic_data.at_write_eof());
+  EXPECT_TRUE(quic_data.AllReadDataConsumed());
+  EXPECT_TRUE(quic_data.AllWriteDataConsumed());
 }
 
 TEST_P(QuicNetworkTransactionTest, DISABLED_HangingZeroRttFallback) {

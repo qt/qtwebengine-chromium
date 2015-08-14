@@ -6,7 +6,6 @@
 
 #include "base/files/file_path.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
@@ -22,7 +21,7 @@ namespace net {
 
 namespace {
 
-void CallInt64ToInt(const CompletionCallback& callback, int64 result) {
+void CallInt64ToInt(const CompletionCallback& callback, int64_t result) {
   callback.Run(static_cast<int>(result));
 }
 
@@ -33,10 +32,9 @@ FileStream::Context::IOResult::IOResult()
       os_error(0) {
 }
 
-FileStream::Context::IOResult::IOResult(int64 result,
+FileStream::Context::IOResult::IOResult(int64_t result,
                                         logging::SystemErrorCode os_error)
-    : result(result),
-      os_error(os_error) {
+    : result(result), os_error(os_error) {
 }
 
 // static
@@ -116,19 +114,14 @@ void FileStream::Context::Close(const CompletionCallback& callback) {
   async_in_progress_ = true;
 }
 
-void FileStream::Context::Seek(base::File::Whence whence,
-                               int64 offset,
+void FileStream::Context::Seek(int64_t offset,
                                const Int64CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
 
   bool posted = base::PostTaskAndReplyWithResult(
-      task_runner_.get(),
-      FROM_HERE,
-      base::Bind(
-          &Context::SeekFileImpl, base::Unretained(this), whence, offset),
-      base::Bind(&Context::OnAsyncCompleted,
-                 base::Unretained(this),
-                 callback));
+      task_runner_.get(), FROM_HERE,
+      base::Bind(&Context::SeekFileImpl, base::Unretained(this), offset),
+      base::Bind(&Context::OnAsyncCompleted, base::Unretained(this), callback));
   DCHECK(posted);
 
   async_in_progress_ = true;
@@ -147,6 +140,10 @@ void FileStream::Context::Flush(const CompletionCallback& callback) {
   DCHECK(posted);
 
   async_in_progress_ = true;
+}
+
+bool FileStream::Context::IsOpen() const {
+  return file_.IsValid();
 }
 
 FileStream::Context::OpenResult FileStream::Context::OpenFileImpl(

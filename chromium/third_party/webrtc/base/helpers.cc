@@ -17,13 +17,19 @@
 #if defined(SSL_USE_OPENSSL)
 #include <openssl/rand.h>
 #elif defined(SSL_USE_NSS_RNG)
+// Hack: Define+undefine int64 and uint64 to avoid typedef conflict with NSS.
+// TODO(kjellander): Remove when webrtc:4497 is completed.
+#define uint64 foo_uint64
+#define int64 foo_int64
 #include "pk11func.h"
+#undef uint64
+#undef int64
 #else
 #if defined(WEBRTC_WIN)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <ntsecapi.h>
-#endif  // WEBRTC_WIN 
+#endif  // WEBRTC_WIN
 #endif  // else
 #endif  // FEATURE_ENABLED_SSL
 
@@ -141,7 +147,7 @@ class SecureRandomGenerator : public RandomGenerator {
 
 #error No SSL implementation has been selected!
 
-#endif  // WEBRTC_WIN 
+#endif  // WEBRTC_WIN
 #endif
 
 // A test random generator, for predictable output.
@@ -180,8 +186,8 @@ namespace {
 // This round about way of creating a global RNG is to safe-guard against
 // indeterminant static initialization order.
 scoped_ptr<RandomGenerator>& GetGlobalRng() {
-  LIBJINGLE_DEFINE_STATIC_LOCAL(scoped_ptr<RandomGenerator>, global_rng,
-                                (new SecureRandomGenerator()));
+  RTC_DEFINE_STATIC_LOCAL(scoped_ptr<RandomGenerator>, global_rng,
+                          (new SecureRandomGenerator()));
   return global_rng;
 }
 

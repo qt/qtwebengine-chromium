@@ -27,7 +27,7 @@ class CTLogVerifierTest : public ::testing::Test {
   }
 
  protected:
-  scoped_ptr<CTLogVerifier> log_;
+  scoped_refptr<CTLogVerifier> log_;
 };
 
 TEST_F(CTLogVerifierTest, VerifiesCertSCT) {
@@ -79,13 +79,13 @@ TEST_F(CTLogVerifierTest, FailsInvalidLogID) {
 
 TEST_F(CTLogVerifierTest, SetsValidSTH) {
   ct::SignedTreeHead sth;
-  ct::GetSignedTreeHead(&sth);
+  ct::GetSampleSignedTreeHead(&sth);
   ASSERT_TRUE(log_->VerifySignedTreeHead(sth));
 }
 
 TEST_F(CTLogVerifierTest, DoesNotSetInvalidSTH) {
   ct::SignedTreeHead sth;
-  ct::GetSignedTreeHead(&sth);
+  ct::GetSampleSignedTreeHead(&sth);
   sth.sha256_root_hash[0] = '\x0';
   ASSERT_FALSE(log_->VerifySignedTreeHead(sth));
 }
@@ -95,7 +95,7 @@ TEST_F(CTLogVerifierTest, ExcessDataInPublicKey) {
   std::string key = ct::GetTestPublicKey();
   key += "extra";
 
-  scoped_ptr<CTLogVerifier> log =
+  scoped_refptr<CTLogVerifier> log =
       CTLogVerifier::Create(key, "testlog", "https://ct.example.com");
   EXPECT_FALSE(log);
 }

@@ -7,8 +7,8 @@
 
 #include "base/callback.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/resource_id.h"
 #include "cc/quads/shared_quad_state.h"
-#include "cc/resources/resource_provider.h"
 
 namespace base {
 namespace trace_event {
@@ -27,10 +27,10 @@ namespace cc {
 // Note: quads contain rects and sizes, which live in different spaces. There is
 // the "content space", which is the arbitrary space in which the quad's
 // geometry is defined (generally related to the layer that produced the quad,
-// e.g. the content space for TiledLayerImpls, or the geometry space for
-// PictureLayerImpls). There is also the "target space", which is the space, in
-// "physical" pixels, of the render target where the quads is drawn. The quad's
-// transform maps the content space to the target space.
+// e.g. the geometry space for PictureLayerImpls or the layer's coordinate space
+// for most other layers). There is also the "target space", which is the space,
+// in "physical" pixels, of the render target where the quads is drawn. The
+// quad's transform maps the content space to the target space.
 class CC_EXPORT DrawQuad {
  public:
   enum Material {
@@ -50,17 +50,6 @@ class CC_EXPORT DrawQuad {
   };
 
   virtual ~DrawQuad();
-
-  // TODO(danakj): Chromify or remove these SharedQuadState helpers.
-  const gfx::Transform& quadTransform() const {
-    return shared_quad_state->content_to_target_transform;
-  }
-  gfx::Rect visibleContentRect() const {
-    return shared_quad_state->visible_content_rect;
-  }
-  gfx::Rect clipRect() const { return shared_quad_state->clip_rect; }
-  bool isClipped() const { return shared_quad_state->is_clipped; }
-  float opacity() const { return shared_quad_state->opacity; }
 
   Material material;
 
@@ -96,10 +85,6 @@ class CC_EXPORT DrawQuad {
     return !opaque_rect.Contains(visible_rect);
   }
 
-  typedef ResourceProvider::ResourceId ResourceId;
-  typedef base::Callback<ResourceId(ResourceId)> ResourceIteratorCallback;
-  virtual void IterateResources(const ResourceIteratorCallback& callback) = 0;
-
   // Is the left edge of this tile aligned with the originating layer's
   // left edge?
   bool IsLeftEdge() const { return !rect.x(); }
@@ -111,13 +96,13 @@ class CC_EXPORT DrawQuad {
   // Is the right edge of this tile aligned with the originating layer's
   // right edge?
   bool IsRightEdge() const {
-    return rect.right() == shared_quad_state->content_bounds.width();
+    return rect.right() == shared_quad_state->quad_layer_bounds.width();
   }
 
   // Is the bottom edge of this tile aligned with the originating layer's
   // bottom edge?
   bool IsBottomEdge() const {
-    return rect.bottom() == shared_quad_state->content_bounds.height();
+    return rect.bottom() == shared_quad_state->quad_layer_bounds.height();
   }
 
   // Is any edge of this tile aligned with the originating layer's
@@ -127,6 +112,22 @@ class CC_EXPORT DrawQuad {
   }
 
   void AsValueInto(base::trace_event::TracedValue* value) const;
+
+  struct CC_EXPORT Resources {
+    enum : size_t { kMaxResourceIdCount = 4 };
+    Resources();
+
+    ResourceId* begin() { return ids; }
+    ResourceId* end() {
+      DCHECK_LE(count, kMaxResourceIdCount);
+      return ids + count;
+    }
+
+    size_t count;
+    ResourceId ids[kMaxResourceIdCount];
+  };
+
+  Resources resources;
 
  protected:
   DrawQuad();

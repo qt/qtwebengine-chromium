@@ -5,6 +5,7 @@
 #include "cc/layers/layer_impl.h"
 
 #include "base/json/json_reader.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -69,6 +70,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
       hide_layer_and_subtree_(false),
       transform_is_invertible_(true),
       is_container_for_fixed_position_layers_(false),
+      is_affected_by_page_scale_(true),
       background_color_(0),
       opacity_(1.0),
       blend_mode_(SkXfermode::kSrcOver_Mode),
@@ -81,17 +83,23 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
       num_dependents_need_push_properties_(0),
       sorting_context_id_(0),
       current_draw_mode_(DRAW_MODE_NONE),
-      frame_timing_requests_dirty_(false) {
+      frame_timing_requests_dirty_(false),
+      visited_(false),
+      layer_or_descendant_is_drawn_(false),
+      sorted_for_recursion_(false) {
   DCHECK_GT(layer_id_, 0);
   DCHECK(layer_tree_impl_);
   layer_tree_impl_->RegisterLayer(this);
-  AnimationRegistrar* registrar = layer_tree_impl_->GetAnimationRegistrar();
-  layer_animation_controller_ =
-      registrar->GetAnimationControllerForId(layer_id_);
-  layer_animation_controller_->AddValueObserver(this);
-  if (IsActive()) {
-    layer_animation_controller_->set_value_provider(this);
-    layer_animation_controller_->set_layer_animation_delegate(this);
+
+  if (!layer_tree_impl_->settings().use_compositor_animation_timelines) {
+    AnimationRegistrar* registrar = layer_tree_impl_->GetAnimationRegistrar();
+    layer_animation_controller_ =
+        registrar->GetAnimationControllerForId(layer_id_);
+    layer_animation_controller_->AddValueObserver(this);
+    if (IsActive()) {
+      layer_animation_controller_->set_value_provider(this);
+      layer_animation_controller_->set_layer_animation_delegate(this);
+    }
   }
   SetNeedsPushProperties();
 }
@@ -99,9 +107,11 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
 LayerImpl::~LayerImpl() {
   DCHECK_EQ(DRAW_MODE_NONE, current_draw_mode_);
 
-  layer_animation_controller_->RemoveValueObserver(this);
-  layer_animation_controller_->remove_value_provider(this);
-  layer_animation_controller_->remove_layer_animation_delegate(this);
+  if (layer_animation_controller_) {
+    layer_animation_controller_->RemoveValueObserver(this);
+    layer_animation_controller_->remove_value_provider(this);
+    layer_animation_controller_->remove_layer_animation_delegate(this);
+  }
 
   if (!copy_requests_.empty() && layer_tree_impl_->IsActiveTree())
     layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
@@ -224,8 +234,19 @@ void LayerImpl::SetOpacityTreeIndex(int index) {
 }
 
 void LayerImpl::PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
+  // In the case that a layer still has a copy request, this means that there's
+  // a commit to the active tree without a draw.  This only happens in some
+  // edge cases during lost context or visibility changes, so don't try to
+  // handle preserving these output requests (and their surface).
+  if (!copy_requests_.empty()) {
+    layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
+    // Destroying these will abort them.
+    copy_requests_.clear();
+  }
+
   if (requests->empty())
     return;
+
   DCHECK(render_surface());
   bool was_empty = copy_requests_.empty();
   copy_requests_.insert_and_take(copy_requests_.end(), requests);
@@ -252,10 +273,9 @@ void LayerImpl::TakeCopyRequestsAndTransformToTarget(
       continue;
 
     gfx::Rect request_in_layer_space = request->area();
-    gfx::Rect request_in_content_space =
-        LayerRectToContentRect(request_in_layer_space);
+    request_in_layer_space.Intersect(gfx::Rect(bounds()));
     request->set_area(MathUtil::MapEnclosingClippedRect(
-        draw_properties_.target_space_transform, request_in_content_space));
+        draw_properties_.target_space_transform, request_in_layer_space));
   }
 
   layer_tree_impl()->RemoveLayerWithCopyOutputRequest(this);
@@ -268,11 +288,10 @@ void LayerImpl::ClearRenderSurfaceLayerList() {
 }
 
 void LayerImpl::PopulateSharedQuadState(SharedQuadState* state) const {
-  state->SetAll(
-      draw_properties_.target_space_transform, draw_properties_.content_bounds,
-      draw_properties_.visible_content_rect, draw_properties_.clip_rect,
-      draw_properties_.is_clipped, draw_properties_.opacity,
-      draw_properties_.blend_mode, sorting_context_id_);
+  state->SetAll(draw_properties_.target_space_transform, bounds(),
+                draw_properties_.visible_layer_rect, draw_properties_.clip_rect,
+                draw_properties_.is_clipped, draw_properties_.opacity,
+                draw_properties_.blend_mode, sorting_context_id_);
 }
 
 void LayerImpl::PopulateScaledSharedQuadState(SharedQuadState* state,
@@ -280,16 +299,15 @@ void LayerImpl::PopulateScaledSharedQuadState(SharedQuadState* state,
   gfx::Transform scaled_draw_transform =
       draw_properties_.target_space_transform;
   scaled_draw_transform.Scale(SK_MScalar1 / scale, SK_MScalar1 / scale);
-  gfx::Size scaled_content_bounds =
-      gfx::ToCeiledSize(gfx::ScaleSize(bounds(), scale));
-  gfx::Rect scaled_visible_content_rect =
-      gfx::ScaleToEnclosingRect(visible_content_rect(), scale);
-  scaled_visible_content_rect.Intersect(gfx::Rect(scaled_content_bounds));
+  gfx::Size scaled_bounds = gfx::ToCeiledSize(gfx::ScaleSize(bounds(), scale));
+  gfx::Rect scaled_visible_layer_rect =
+      gfx::ScaleToEnclosingRect(visible_layer_rect(), scale);
+  scaled_visible_layer_rect.Intersect(gfx::Rect(scaled_bounds));
 
-  state->SetAll(scaled_draw_transform, scaled_content_bounds,
-                scaled_visible_content_rect, draw_properties().clip_rect,
-                draw_properties().is_clipped, draw_properties().opacity,
-                draw_properties().blend_mode, sorting_context_id_);
+  state->SetAll(scaled_draw_transform, scaled_bounds, scaled_visible_layer_rect,
+                draw_properties().clip_rect, draw_properties().is_clipped,
+                draw_properties().opacity, draw_properties().blend_mode,
+                sorting_context_id_);
 }
 
 bool LayerImpl::WillDraw(DrawMode draw_mode,
@@ -329,22 +347,18 @@ void LayerImpl::GetDebugBorderProperties(SkColor* color, float* width) const {
 
 void LayerImpl::AppendDebugBorderQuad(
     RenderPass* render_pass,
-    const gfx::Size& content_bounds,
+    const gfx::Size& bounds,
     const SharedQuadState* shared_quad_state,
     AppendQuadsData* append_quads_data) const {
   SkColor color;
   float width;
   GetDebugBorderProperties(&color, &width);
-  AppendDebugBorderQuad(render_pass,
-                        content_bounds,
-                        shared_quad_state,
-                        append_quads_data,
-                        color,
-                        width);
+  AppendDebugBorderQuad(render_pass, bounds, shared_quad_state,
+                        append_quads_data, color, width);
 }
 
 void LayerImpl::AppendDebugBorderQuad(RenderPass* render_pass,
-                                      const gfx::Size& content_bounds,
+                                      const gfx::Size& bounds,
                                       const SharedQuadState* shared_quad_state,
                                       AppendQuadsData* append_quads_data,
                                       SkColor color,
@@ -352,7 +366,7 @@ void LayerImpl::AppendDebugBorderQuad(RenderPass* render_pass,
   if (!ShowDebugBorders())
     return;
 
-  gfx::Rect quad_rect(content_bounds);
+  gfx::Rect quad_rect(bounds);
   gfx::Rect visible_quad_rect(quad_rect);
   DebugBorderDrawQuad* debug_border_quad =
       render_pass->CreateAndAppendDrawQuad<DebugBorderDrawQuad>();
@@ -394,7 +408,7 @@ RenderPassId LayerImpl::NextContributingRenderPassId(RenderPassId id) const {
   return RenderPassId(0, 0);
 }
 
-void LayerImpl::GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
+void LayerImpl::GetContentsResourceId(ResourceId* resource_id,
                                       gfx::Size* resource_size) const {
   NOTREACHED();
   *resource_id = 0;
@@ -402,12 +416,10 @@ void LayerImpl::GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
 
 gfx::Vector2dF LayerImpl::ScrollBy(const gfx::Vector2dF& scroll) {
   gfx::ScrollOffset adjusted_scroll(scroll);
-  if (layer_tree_impl()->settings().use_pinch_virtual_viewport) {
-    if (!user_scrollable_horizontal_)
-      adjusted_scroll.set_x(0);
-    if (!user_scrollable_vertical_)
-      adjusted_scroll.set_y(0);
-  }
+  if (!user_scrollable_horizontal_)
+    adjusted_scroll.set_x(0);
+  if (!user_scrollable_vertical_)
+    adjusted_scroll.set_y(0);
   DCHECK(scrollable());
   gfx::ScrollOffset old_offset = CurrentScrollOffset();
   gfx::ScrollOffset new_offset =
@@ -457,14 +469,8 @@ InputHandler::ScrollStatus LayerImpl::TryScroll(
       // SCROLL_ON_MAIN_THREAD in this case?
     }
 
-    gfx::PointF hit_test_point_in_content_space =
-        MathUtil::ProjectPoint(inverse_screen_space_transform,
-                               screen_space_point,
-                               &clipped);
-    gfx::PointF hit_test_point_in_layer_space =
-        gfx::ScalePoint(hit_test_point_in_content_space,
-                        1.f / contents_scale_x(),
-                        1.f / contents_scale_y());
+    gfx::PointF hit_test_point_in_layer_space = MathUtil::ProjectPoint(
+        inverse_screen_space_transform, screen_space_point, &clipped);
     if (!clipped &&
         non_fast_scrollable_region().Contains(
             gfx::ToRoundedPoint(hit_test_point_in_layer_space))) {
@@ -502,16 +508,6 @@ InputHandler::ScrollStatus LayerImpl::TryScroll(
   return InputHandler::SCROLL_STARTED;
 }
 
-gfx::Rect LayerImpl::LayerRectToContentRect(
-    const gfx::RectF& layer_rect) const {
-  gfx::RectF content_rect =
-      gfx::ScaleRect(layer_rect, contents_scale_x(), contents_scale_y());
-  // Intersect with content rect to avoid the extra pixel because for some
-  // values x and y, ceil((x / y) * y) may be x + 1.
-  content_rect.Intersect(gfx::Rect(content_bounds()));
-  return gfx::ToEnclosingRect(content_rect);
-}
-
 skia::RefPtr<SkPicture> LayerImpl::GetPicture() {
   return skia::RefPtr<SkPicture>();
 }
@@ -524,14 +520,12 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetTransformOrigin(transform_origin_);
   layer->SetBackgroundColor(background_color_);
   layer->SetBounds(bounds_);
-  layer->SetContentBounds(content_bounds());
-  layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDoubleSided(double_sided_);
   layer->SetDrawCheckerboardForMissingTiles(
       draw_checkerboard_for_missing_tiles_);
   layer->SetDrawsContent(DrawsContent());
   layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
-  layer->SetHasRenderSurface(!!render_surface() || layer->HasCopyRequest());
+  layer->SetHasRenderSurface(!!render_surface());
   layer->SetFilters(filters());
   layer->SetBackgroundFilters(background_filters());
   layer->SetMasksToBounds(masks_to_bounds_);
@@ -626,7 +620,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetDebugInfo(debug_info_);
 
   if (frame_timing_requests_dirty_) {
-    layer->PassFrameTimingRequests(&frame_timing_requests_);
+    layer->SetFrameTimingRequests(frame_timing_requests_);
     frame_timing_requests_dirty_ = false;
   }
 
@@ -646,31 +640,12 @@ gfx::Vector2dF LayerImpl::FixedContainerSizeDelta() const {
   // In virtual-viewport mode, we don't need to compensate for pinch zoom or
   // scale since the fixed container is the outer viewport, which sits below
   // the page scale.
-  if (layer_tree_impl()->settings().use_pinch_virtual_viewport)
-    return delta_from_scroll;
-
-  float scale_delta = layer_tree_impl()->page_scale_delta();
-  float scale = layer_tree_impl()->current_page_scale_factor() /
-                layer_tree_impl()->page_scale_delta();
-
-  delta_from_scroll.Scale(1.f / scale);
-
-  // The delta-from-pinch component requires some explanation: A viewport of
-  // size (w,h) will appear to be size (w/s,h/s) under scale s in the content
-  // space. If s -> s' on the impl thread, where s' = s * ds, then the apparent
-  // viewport size change in the content space due to ds is:
-  //
-  // (w/s',h/s') - (w/s,h/s) = (w,h)(1/s' - 1/s) = (w,h)(1 - ds)/(s ds)
-  //
-  gfx::Vector2dF delta_from_pinch =
-      gfx::Rect(scroll_clip_layer_->bounds()).bottom_right() - gfx::PointF();
-  delta_from_pinch.Scale((1.f - scale_delta) / (scale * scale_delta));
-
-  return delta_from_scroll + delta_from_pinch;
+  return delta_from_scroll;
 }
 
 base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
   base::DictionaryValue* result = new base::DictionaryValue;
+  result->SetInteger("LayerId", id());
   result->SetString("LayerType", LayerTypeAsString());
 
   base::ListValue* list = new base::ListValue;
@@ -761,20 +736,12 @@ void LayerImpl::NoteLayerPropertyChangedForDescendants() {
   SetNeedsPushProperties();
 }
 
-#if DCHECK_IS_ON()
-// Verify that the resource id is valid.
-static ResourceProvider::ResourceId ValidateResource(
-    const ResourceProvider* provider,
-    ResourceProvider::ResourceId id) {
-  provider->ValidateResource(id);
-  return id;
-}
-#endif
-
 void LayerImpl::ValidateQuadResourcesInternal(DrawQuad* quad) const {
 #if DCHECK_IS_ON()
-  quad->IterateResources(
-      base::Bind(&ValidateResource, layer_tree_impl_->resource_provider()));
+  const ResourceProvider* resource_provider =
+      layer_tree_impl_->resource_provider();
+  for (ResourceId resource_id : quad->resources)
+    resource_provider->ValidateResource(resource_id);
 #endif
 }
 
@@ -806,6 +773,46 @@ void LayerImpl::ResetAllChangeTrackingForSubtree() {
   num_dependents_need_push_properties_ = 0;
 }
 
+void LayerImpl::UpdatePropertyTreeTransform() {
+  if (transform_tree_index_ != -1) {
+    TransformTree& transform_tree =
+        layer_tree_impl()->property_trees()->transform_tree;
+    TransformNode* node = transform_tree.Node(transform_tree_index_);
+    if (node->data.local != transform_) {
+      node->data.local = transform_;
+      node->data.needs_local_transform_update = true;
+      transform_tree.set_needs_update(true);
+      // TODO(ajuma): The current criteria for creating clip nodes means that
+      // property trees may need to be rebuilt when the new transform isn't
+      // axis-aligned wrt the old transform (see Layer::SetTransform). Since
+      // rebuilding property trees every frame of a transform animation is
+      // something we should try to avoid, change property tree-building so that
+      // it doesn't depend on axis aliginment.
+    }
+  }
+}
+
+void LayerImpl::UpdatePropertyTreeOpacity() {
+  if (opacity_tree_index_ != -1) {
+    OpacityTree& opacity_tree =
+        layer_tree_impl()->property_trees()->opacity_tree;
+    OpacityNode* node = opacity_tree.Node(opacity_tree_index_);
+    node->data.opacity = opacity_;
+    opacity_tree.set_needs_update(true);
+  }
+}
+
+void LayerImpl::UpdatePropertyTreeForScrollingAndAnimationIfNeeded() {
+  if (scrollable())
+    UpdatePropertyTreeScrollOffset();
+
+  if (OpacityIsAnimating())
+    UpdatePropertyTreeOpacity();
+
+  if (TransformIsAnimating())
+    UpdatePropertyTreeTransform();
+}
+
 gfx::ScrollOffset LayerImpl::ScrollOffsetForAnimation() const {
   return CurrentScrollOffset();
 }
@@ -816,10 +823,12 @@ void LayerImpl::OnFilterAnimated(const FilterOperations& filters) {
 
 void LayerImpl::OnOpacityAnimated(float opacity) {
   SetOpacity(opacity);
+  UpdatePropertyTreeOpacity();
 }
 
 void LayerImpl::OnTransformAnimated(const gfx::Transform& transform) {
   SetTransform(transform);
+  UpdatePropertyTreeTransform();
 }
 
 void LayerImpl::OnScrollOffsetAnimated(const gfx::ScrollOffset& scroll_offset) {
@@ -865,16 +874,36 @@ void LayerImpl::SetBounds(const gfx::Size& bounds) {
 }
 
 void LayerImpl::SetBoundsDelta(const gfx::Vector2dF& bounds_delta) {
+  DCHECK(IsActive());
   if (bounds_delta_ == bounds_delta)
     return;
 
   bounds_delta_ = bounds_delta;
 
+  TransformTree& transform_tree =
+      layer_tree_impl()->property_trees()->transform_tree;
+  if (this == layer_tree_impl()->InnerViewportContainerLayer())
+    transform_tree.SetInnerViewportBoundsDelta(bounds_delta);
+  else if (this == layer_tree_impl()->OuterViewportContainerLayer())
+    transform_tree.SetOuterViewportBoundsDelta(bounds_delta);
+
   ScrollbarParametersDidChange(true);
-  if (masks_to_bounds())
+
+  if (masks_to_bounds()) {
+    // If layer is clipping, then update the clip node using the new bounds.
+    ClipNode* clip_node =
+        layer_tree_impl()->property_trees()->clip_tree.Node(clip_tree_index());
+    if (clip_node) {
+      DCHECK(id() == clip_node->owner_id);
+      clip_node->data.clip =
+          gfx::RectF(gfx::PointF() + offset_to_transform_parent(), bounds());
+      layer_tree_impl()->property_trees()->clip_tree.set_needs_update(true);
+    }
+
     NoteLayerPropertyChangedForSubtree();
-  else
+  } else {
     NoteLayerPropertyChanged();
+  }
 }
 
 void LayerImpl::SetMaskLayer(scoped_ptr<LayerImpl> mask_layer) {
@@ -984,10 +1013,16 @@ void LayerImpl::SetFilters(const FilterOperations& filters) {
 }
 
 bool LayerImpl::FilterIsAnimating() const {
-  return layer_animation_controller_->IsAnimatingProperty(Animation::FILTER);
+  return layer_animation_controller_
+             ? layer_animation_controller_->IsAnimatingProperty(
+                   Animation::FILTER)
+             : layer_tree_impl_->IsAnimatingFilterProperty(this);
 }
 
 bool LayerImpl::FilterIsAnimatingOnImplOnly() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->FilterIsAnimatingOnImplOnly(this);
+
   Animation* filter_animation =
       layer_animation_controller_->GetAnimation(Animation::FILTER);
   return filter_animation && filter_animation->is_impl_only();
@@ -1027,10 +1062,28 @@ void LayerImpl::SetOpacity(float opacity) {
 }
 
 bool LayerImpl::OpacityIsAnimating() const {
-  return layer_animation_controller_->IsAnimatingProperty(Animation::OPACITY);
+  return layer_animation_controller_
+             ? layer_animation_controller_->IsAnimatingProperty(
+                   Animation::OPACITY)
+             : layer_tree_impl_->IsAnimatingOpacityProperty(this);
+}
+
+bool LayerImpl::HasPotentiallyRunningOpacityAnimation() const {
+  if (layer_animation_controller_) {
+    if (Animation* animation =
+            layer_animation_controller()->GetAnimation(Animation::OPACITY)) {
+      return !animation->is_finished();
+    }
+    return false;
+  } else {
+    return layer_tree_impl_->HasPotentiallyRunningOpacityAnimation(this);
+  }
 }
 
 bool LayerImpl::OpacityIsAnimatingOnImplOnly() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->OpacityIsAnimatingOnImplOnly(this);
+
   Animation* opacity_animation =
       layer_animation_controller_->GetAnimation(Animation::OPACITY);
   return opacity_animation && opacity_animation->is_impl_only();
@@ -1075,9 +1128,9 @@ void LayerImpl::Set3dSortingContextId(int id) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-void LayerImpl::PassFrameTimingRequests(
-    std::vector<FrameTimingRequest>* requests) {
-  frame_timing_requests_.swap(*requests);
+void LayerImpl::SetFrameTimingRequests(
+    const std::vector<FrameTimingRequest>& requests) {
+  frame_timing_requests_ = requests;
   frame_timing_requests_dirty_ = true;
   SetNeedsPushProperties();
 }
@@ -1109,13 +1162,90 @@ void LayerImpl::SetTransformAndInvertibility(const gfx::Transform& transform,
 }
 
 bool LayerImpl::TransformIsAnimating() const {
-  return layer_animation_controller_->IsAnimatingProperty(Animation::TRANSFORM);
+  return layer_animation_controller_
+             ? layer_animation_controller_->IsAnimatingProperty(
+                   Animation::TRANSFORM)
+             : layer_tree_impl_->IsAnimatingTransformProperty(this);
+}
+
+bool LayerImpl::HasPotentiallyRunningTransformAnimation() const {
+  if (layer_animation_controller_) {
+    if (Animation* animation =
+            layer_animation_controller()->GetAnimation(Animation::TRANSFORM)) {
+      return !animation->is_finished();
+    }
+    return false;
+  } else {
+    return layer_tree_impl_->HasPotentiallyRunningTransformAnimation(this);
+  }
 }
 
 bool LayerImpl::TransformIsAnimatingOnImplOnly() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->TransformIsAnimatingOnImplOnly(this);
+
   Animation* transform_animation =
       layer_animation_controller_->GetAnimation(Animation::TRANSFORM);
   return transform_animation && transform_animation->is_impl_only();
+}
+
+bool LayerImpl::HasOnlyTranslationTransforms() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->HasOnlyTranslationTransforms(this);
+
+  return layer_animation_controller_->HasOnlyTranslationTransforms();
+}
+
+bool LayerImpl::MaximumTargetScale(float* max_scale) const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->MaximumTargetScale(this, max_scale);
+
+  return layer_animation_controller_->MaximumTargetScale(max_scale);
+}
+
+bool LayerImpl::AnimationStartScale(float* start_scale) const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->AnimationStartScale(this, start_scale);
+
+  return layer_animation_controller_->AnimationStartScale(start_scale);
+}
+
+bool LayerImpl::HasFilterAnimationThatInflatesBounds() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->HasFilterAnimationThatInflatesBounds(this);
+
+  return layer_animation_controller_->HasFilterAnimationThatInflatesBounds();
+}
+
+bool LayerImpl::HasTransformAnimationThatInflatesBounds() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->HasTransformAnimationThatInflatesBounds(this);
+
+  return layer_animation_controller_->HasTransformAnimationThatInflatesBounds();
+}
+
+bool LayerImpl::HasAnimationThatInflatesBounds() const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->HasAnimationThatInflatesBounds(this);
+
+  return layer_animation_controller_->HasAnimationThatInflatesBounds();
+}
+
+bool LayerImpl::FilterAnimationBoundsForBox(const gfx::BoxF& box,
+                                            gfx::BoxF* bounds) const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->FilterAnimationBoundsForBox(this, box, bounds);
+
+  return layer_animation_controller_->FilterAnimationBoundsForBox(box, bounds);
+}
+
+bool LayerImpl::TransformAnimationBoundsForBox(const gfx::BoxF& box,
+                                               gfx::BoxF* bounds) const {
+  if (!layer_animation_controller_)
+    return layer_tree_impl_->TransformAnimationBoundsForBox(this, box, bounds);
+
+  return layer_animation_controller_->TransformAnimationBoundsForBox(box,
+                                                                     bounds);
 }
 
 void LayerImpl::SetUpdateRect(const gfx::Rect& update_rect) {
@@ -1127,27 +1257,8 @@ void LayerImpl::AddDamageRect(const gfx::RectF& damage_rect) {
   damage_rect_ = gfx::UnionRects(damage_rect_, damage_rect);
 }
 
-void LayerImpl::SetContentBounds(const gfx::Size& content_bounds) {
-  if (this->content_bounds() == content_bounds)
-    return;
-
-  draw_properties_.content_bounds = content_bounds;
-  NoteLayerPropertyChanged();
-}
-
-void LayerImpl::SetContentsScale(float contents_scale_x,
-                                 float contents_scale_y) {
-  if (this->contents_scale_x() == contents_scale_x &&
-      this->contents_scale_y() == contents_scale_y)
-    return;
-
-  draw_properties_.contents_scale_x = contents_scale_x;
-  draw_properties_.contents_scale_y = contents_scale_y;
-  NoteLayerPropertyChanged();
-}
-
-bool LayerImpl::IsExternalFlingActive() const {
-  return layer_tree_impl_->IsExternalFlingActive();
+bool LayerImpl::IsExternalScrollActive() const {
+  return layer_tree_impl_->IsExternalScrollActive();
 }
 
 void LayerImpl::SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset) {
@@ -1205,6 +1316,7 @@ gfx::Vector2dF LayerImpl::ScrollDelta() const {
 
 void LayerImpl::SetScrollDelta(const gfx::Vector2dF& delta) {
   DCHECK(IsActive());
+  DCHECK(scrollable() || delta.IsZero());
   SetCurrentScrollOffset(scroll_offset_->ActiveBase() +
                          gfx::ScrollOffset(delta));
 }
@@ -1231,16 +1343,37 @@ void LayerImpl::PushScrollOffset(const gfx::ScrollOffset* scroll_offset) {
     DidUpdateScrollOffset(false);
 }
 
+void LayerImpl::UpdatePropertyTreeScrollOffset() {
+  // TODO(enne): in the future, scrolling should update the scroll tree
+  // directly instead of going through layers.
+  if (transform_tree_index_ != -1) {
+    TransformTree& transform_tree =
+        layer_tree_impl()->property_trees()->transform_tree;
+    TransformNode* node = transform_tree.Node(transform_tree_index_);
+    gfx::ScrollOffset current_offset = scroll_offset_->Current(IsActive());
+    if (node->data.scroll_offset != current_offset) {
+      node->data.scroll_offset = current_offset;
+      node->data.needs_local_transform_update = true;
+      transform_tree.set_needs_update(true);
+    }
+  }
+}
+
 void LayerImpl::DidUpdateScrollOffset(bool is_from_root_delegate) {
+  DCHECK(scroll_offset_);
+
   if (!is_from_root_delegate)
     layer_tree_impl()->DidUpdateScrollOffset(id());
   NoteLayerPropertyChangedForSubtree();
   ScrollbarParametersDidChange(false);
+
+  UpdatePropertyTreeScrollOffset();
+
   // Inform the pending twin that a property changed.
   if (layer_tree_impl()->IsActiveTree()) {
     LayerImpl* pending_twin = layer_tree_impl()->FindPendingTreeLayerById(id());
     if (pending_twin)
-      pending_twin->NoteLayerPropertyChangedForSubtree();
+      pending_twin->DidUpdateScrollOffset(is_from_root_delegate);
   }
 }
 
@@ -1252,9 +1385,9 @@ void LayerImpl::SetDoubleSided(bool double_sided) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-SimpleEnclosedRegion LayerImpl::VisibleContentOpaqueRegion() const {
+SimpleEnclosedRegion LayerImpl::VisibleOpaqueRegion() const {
   if (contents_opaque())
-    return SimpleEnclosedRegion(visible_content_rect());
+    return SimpleEnclosedRegion(visible_layer_rect());
   return SimpleEnclosedRegion();
 }
 
@@ -1362,7 +1495,7 @@ void LayerImpl::SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
     scrollbar_needs_animation |=
         scrollbar_layer->SetVisibleToTotalLengthRatio(visible_ratio);
     if (y_offset_did_change && layer_tree_impl()->IsActiveTree() &&
-        this == layer_tree_impl()->InnerViewportScrollLayer()) {
+        this == layer_tree_impl()->OuterViewportScrollLayer()) {
       TRACE_COUNTER_ID1("cc", "scroll_offset_y", this->id(),
                         current_offset.y());
     }
@@ -1496,7 +1629,8 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   MathUtil::AddToTracedValue("position", position_, state);
 
   state->SetInteger("draws_content", DrawsContent());
-  state->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
+  state->SetInteger("gpu_memory_usage",
+                    base::saturated_cast<int>(GPUMemoryUsageInBytes()));
 
   MathUtil::AddToTracedValue(
       "scroll_offset", scroll_offset_ ? scroll_offset_->Current(IsActive())
@@ -1507,9 +1641,7 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
 
   bool clipped;
   gfx::QuadF layer_quad = MathUtil::MapQuad(
-      screen_space_transform(),
-      gfx::QuadF(gfx::Rect(content_bounds())),
-      &clipped);
+      screen_space_transform(), gfx::QuadF(gfx::Rect(bounds())), &clipped);
   MathUtil::AddToTracedValue("layer_quad", layer_quad, state);
   if (!touch_event_handler_region_.IsEmpty()) {
     state->BeginArray("touch_event_handler_region");
@@ -1517,14 +1649,14 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
     state->EndArray();
   }
   if (have_wheel_event_handlers_) {
-    gfx::Rect wheel_rect(content_bounds());
+    gfx::Rect wheel_rect(bounds());
     Region wheel_region(wheel_rect);
     state->BeginArray("wheel_event_handler_region");
     wheel_region.AsValueInto(state);
     state->EndArray();
   }
   if (have_scroll_event_handlers_) {
-    gfx::Rect scroll_rect(content_bounds());
+    gfx::Rect scroll_rect(bounds());
     Region scroll_region(scroll_rect);
     state->BeginArray("scroll_event_handler_region");
     scroll_region.AsValueInto(state);
@@ -1568,7 +1700,9 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
 
   state->SetBoolean(
       "has_animation_bounds",
-      layer_animation_controller()->HasAnimationThatInflatesBounds());
+      layer_animation_controller_
+          ? layer_animation_controller_->HasAnimationThatInflatesBounds()
+          : layer_tree_impl_->HasAnimationThatInflatesBounds(this));
 
   gfx::BoxF box;
   if (LayerUtils::GetAnimationBounds(*this, &box))
@@ -1648,18 +1782,36 @@ Region LayerImpl::GetInvalidationRegion() {
 
 gfx::Rect LayerImpl::GetEnclosingRectInTargetSpace() const {
   return MathUtil::MapEnclosingClippedRect(
-      draw_properties_.target_space_transform,
-      gfx::Rect(draw_properties_.content_bounds));
+      draw_properties_.target_space_transform, gfx::Rect(bounds()));
 }
 
 gfx::Rect LayerImpl::GetScaledEnclosingRectInTargetSpace(float scale) const {
   gfx::Transform scaled_draw_transform =
       draw_properties_.target_space_transform;
   scaled_draw_transform.Scale(SK_MScalar1 / scale, SK_MScalar1 / scale);
-  gfx::Size scaled_content_bounds =
-      gfx::ToCeiledSize(gfx::ScaleSize(content_bounds(), scale));
+  gfx::Size scaled_bounds = gfx::ToCeiledSize(gfx::ScaleSize(bounds(), scale));
   return MathUtil::MapEnclosingClippedRect(scaled_draw_transform,
-                                           gfx::Rect(scaled_content_bounds));
+                                           gfx::Rect(scaled_bounds));
+}
+
+float LayerImpl::GetIdealContentsScale() const {
+  float page_scale = IsAffectedByPageScale()
+                         ? layer_tree_impl()->current_page_scale_factor()
+                         : 1.f;
+  float device_scale = layer_tree_impl()->device_scale_factor();
+
+  float default_scale = page_scale * device_scale;
+  if (!layer_tree_impl()
+           ->settings()
+           .layer_transforms_should_scale_layer_contents) {
+    return default_scale;
+  }
+
+  // TODO(enne): the transform needs to come from property trees instead of
+  // draw properties.
+  gfx::Vector2dF transform_scales = MathUtil::ComputeTransform2dScaleComponents(
+      draw_properties().target_space_transform, default_scale);
+  return std::max(transform_scales.x(), transform_scales.y());
 }
 
 }  // namespace cc

@@ -46,11 +46,12 @@ using blink::WebFilterOperations;
 namespace cc_blink {
 namespace {
 
-bool g_impl_side_painting_enabled = false;
+base::LazyInstance<cc::LayerSettings> g_layer_settings =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
-WebLayerImpl::WebLayerImpl() : layer_(Layer::Create()) {
+WebLayerImpl::WebLayerImpl() : layer_(Layer::Create(LayerSettings())) {
   web_layer_client_ = nullptr;
   layer_->SetLayerClient(this);
 }
@@ -62,18 +63,19 @@ WebLayerImpl::WebLayerImpl(scoped_refptr<Layer> layer) : layer_(layer) {
 
 WebLayerImpl::~WebLayerImpl() {
   layer_->ClearRenderSurface();
-  layer_->set_layer_animation_delegate(nullptr);
+  if (animation_delegate_adapter_.get())
+    layer_->set_layer_animation_delegate(nullptr);
   web_layer_client_ = nullptr;
 }
 
 // static
-bool WebLayerImpl::UsingPictureLayer() {
-  return g_impl_side_painting_enabled;
+void WebLayerImpl::SetLayerSettings(const cc::LayerSettings& settings) {
+  g_layer_settings.Get() = settings;
 }
 
 // static
-void WebLayerImpl::SetImplSidePaintingEnabled(bool enabled) {
-  g_impl_side_painting_enabled = enabled;
+const cc::LayerSettings& WebLayerImpl::LayerSettings() {
+  return g_layer_settings.Get();
 }
 
 int WebLayerImpl::id() const {

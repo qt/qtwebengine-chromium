@@ -6,23 +6,24 @@
 #define ServiceWorkerWindowClient_h
 
 #include "bindings/core/v8/ScriptPromise.h"
+#include "modules/ModulesExport.h"
 #include "modules/serviceworkers/ServiceWorkerClient.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
 class ScriptPromiseResolver;
 class ScriptState;
 
-class ServiceWorkerWindowClient final : public ServiceWorkerClient {
+class MODULES_EXPORT ServiceWorkerWindowClient final : public ServiceWorkerClient {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // To be used by CallbackPromiseAdapter.
     typedef WebServiceWorkerClientInfo WebType;
 
-    static ServiceWorkerWindowClient* take(ScriptPromiseResolver*, WebType*);
-    static void dispose(WebType*);
+    static ServiceWorkerWindowClient* take(ScriptPromiseResolver*, PassOwnPtr<WebType>);
 
     static ServiceWorkerWindowClient* create(const WebServiceWorkerClientInfo&);
     ~ServiceWorkerWindowClient() override;

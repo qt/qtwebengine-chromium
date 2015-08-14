@@ -62,7 +62,8 @@ void get_arrival_time(int current_framesamples,   /* samples */
   /* everything in samples */
   BN_data->sample_count = BN_data->sample_count + current_framesamples;
 
-  BN_data->arrival_time += ((packet_size + HeaderSize) * 8 * FS) / (bottleneck + HeaderRate);
+  BN_data->arrival_time += static_cast<uint32_t>(
+      ((packet_size + HeaderSize) * 8 * FS) / (bottleneck + HeaderRate));
   BN_data->send_time += current_framesamples;
 
   if (BN_data->arrival_time < BN_data->sample_count)
@@ -101,14 +102,15 @@ int main(int argc, char* argv[])
   int i, errtype, h = 0, k, packetLossPercent = 0;
   int16_t CodingMode;
   int16_t bottleneck;
-  int16_t framesize = 30;           /* ms */
+  int framesize = 30;           /* ms */
   int cur_framesmpls, err = 0, lostPackets = 0;
 
   /* Runtime statistics */
   double starttime, runtime, length_file;
 
   int16_t stream_len = 0;
-  int16_t framecnt, declen = 0;
+  int16_t framecnt;
+  int declen = 0;
   int16_t shortdata[FRAMESAMPLES_10ms];
   int16_t decoded[MAX_FRAMESAMPLES];
   uint16_t streamdata[500];
@@ -231,7 +233,7 @@ int main(int argc, char* argv[])
   CodingMode = 0;
   testNum = 0;
   testCE = 0;
-  for (i = 1; i < argc-2;i++) {
+  for (i = 1; i + 2 < argc; i++) {
     /* Instantaneous mode */
     if (!strcmp ("-I", argv[i])) {
       printf("\nInstantaneous BottleNeck\n");
@@ -766,7 +768,7 @@ int main(int argc, char* argv[])
 #else
           declen = -1;
 #endif
-          prevFrameSize = declen/240;
+          prevFrameSize = static_cast<int16_t>(declen / 240);
         }
       }
 

@@ -30,6 +30,7 @@ struct RenderPassSize {
   gfx::Rect output_rect;
   gfx::Rect damage_rect;
   bool has_transparent_background;
+  std::vector<SurfaceId> referenced_surfaces;
   ScopedPtrVector<CopyOutputRequest> copy_callbacks;
 };
 
@@ -51,14 +52,15 @@ static void CompareRenderPassLists(const RenderPassList& expected_list,
     EXPECT_EQ(expected->shared_quad_state_list.size(),
               actual->shared_quad_state_list.size());
     EXPECT_EQ(expected->quad_list.size(), actual->quad_list.size());
+    EXPECT_EQ(expected->referenced_surfaces, actual->referenced_surfaces);
 
     for (auto exp_iter = expected->quad_list.cbegin(),
               act_iter = actual->quad_list.cbegin();
          exp_iter != expected->quad_list.cend();
          ++exp_iter, ++act_iter) {
       EXPECT_EQ(exp_iter->rect.ToString(), act_iter->rect.ToString());
-      EXPECT_EQ(exp_iter->shared_quad_state->content_bounds.ToString(),
-                act_iter->shared_quad_state->content_bounds.ToString());
+      EXPECT_EQ(exp_iter->shared_quad_state->quad_layer_bounds.ToString(),
+                act_iter->shared_quad_state->quad_layer_bounds.ToString());
     }
   }
 }
@@ -104,6 +106,7 @@ TEST(RenderPassTest, CopyShouldBeIdenticalExceptIdAndQuads) {
   EXPECT_EQ(pass->damage_rect, copy->damage_rect);
   EXPECT_EQ(pass->has_transparent_background, copy->has_transparent_background);
   EXPECT_EQ(0u, copy->quad_list.size());
+  EXPECT_EQ(0u, copy->referenced_surfaces.size());
 
   // The copy request should not be copied/duplicated.
   EXPECT_EQ(1u, pass->copy_requests.size());

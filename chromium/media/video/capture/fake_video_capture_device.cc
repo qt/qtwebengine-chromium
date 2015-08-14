@@ -4,6 +4,7 @@
 
 #include "media/video/capture/fake_video_capture_device.h"
 
+#include <algorithm>
 
 #include "base/bind.h"
 #include "base/strings/stringprintf.h"
@@ -101,21 +102,25 @@ void FakeVideoCaptureDevice::AllocateAndStart(
 
   if (device_type_ == USING_OWN_BUFFERS ||
       device_type_ == USING_OWN_BUFFERS_TRIPLANAR) {
+    capture_format_.pixel_storage = PIXEL_STORAGE_CPU;
     fake_frame_.reset(new uint8[VideoFrame::AllocationSize(
         VideoFrame::I420, capture_format_.frame_size)]);
     BeepAndScheduleNextCapture(
+        base::TimeTicks::Now(),
         base::Bind(&FakeVideoCaptureDevice::CaptureUsingOwnBuffers,
                    weak_factory_.GetWeakPtr()));
-  } else if (device_type_ == USING_CLIENT_BUFFERS_I420 ||
-             device_type_ == USING_CLIENT_BUFFERS_GPU) {
-    DVLOG(1) << "starting with " << (device_type_ == USING_CLIENT_BUFFERS_I420
-                                         ? "Client buffers"
-                                         : "GpuMemoryBuffers");
-    BeepAndScheduleNextCapture(base::Bind(
-        &FakeVideoCaptureDevice::CaptureUsingClientBuffers,
-        weak_factory_.GetWeakPtr(), (device_type_ == USING_CLIENT_BUFFERS_I420
-                                         ? PIXEL_FORMAT_I420
-                                         : PIXEL_FORMAT_GPUMEMORYBUFFER)));
+  } else if (device_type_ == USING_CLIENT_BUFFERS) {
+    DVLOG(1) << "starting with "
+             << (params.use_gpu_memory_buffers ? "GMB" : "ShMem");
+    BeepAndScheduleNextCapture(
+        base::TimeTicks::Now(),
+        base::Bind(
+            &FakeVideoCaptureDevice::CaptureUsingClientBuffers,
+            weak_factory_.GetWeakPtr(),
+            params.use_gpu_memory_buffers ? PIXEL_FORMAT_ARGB
+                                          : PIXEL_FORMAT_I420,
+            params.use_gpu_memory_buffers ? PIXEL_STORAGE_GPUMEMORYBUFFER
+                                          : PIXEL_STORAGE_CPU));
   } else {
     client_->OnError("Unknown Fake Video Capture Device type.");
   }
@@ -126,7 +131,8 @@ void FakeVideoCaptureDevice::StopAndDeAllocate() {
   client_.reset();
 }
 
-void FakeVideoCaptureDevice::CaptureUsingOwnBuffers() {
+void FakeVideoCaptureDevice::CaptureUsingOwnBuffers(
+    base::TimeTicks expected_execution_time) {
   DCHECK(thread_checker_.CalledOnValidThread());
   const size_t frame_size = capture_format_.ImageAllocationSize();
   memset(fake_frame_.get(), 0, frame_size);
@@ -157,53 +163,63 @@ void FakeVideoCaptureDevice::CaptureUsingOwnBuffers() {
         base::TimeTicks::Now());
   }
   BeepAndScheduleNextCapture(
+      expected_execution_time,
       base::Bind(&FakeVideoCaptureDevice::CaptureUsingOwnBuffers,
                  weak_factory_.GetWeakPtr()));
 }
 
 void FakeVideoCaptureDevice::CaptureUsingClientBuffers(
-    VideoPixelFormat pixel_format) {
+    VideoPixelFormat pixel_format,
+    VideoPixelStorage pixel_storage,
+    base::TimeTicks expected_execution_time) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   scoped_ptr<VideoCaptureDevice::Client::Buffer> capture_buffer(
-      client_->ReserveOutputBuffer(pixel_format, capture_format_.frame_size));
+      client_->ReserveOutputBuffer(capture_format_.frame_size, pixel_format,
+                                   pixel_storage));
   DLOG_IF(ERROR, !capture_buffer) << "Couldn't allocate Capture Buffer";
 
   if (capture_buffer.get()) {
     uint8_t* const data_ptr = static_cast<uint8_t*>(capture_buffer->data());
     DCHECK(data_ptr) << "Buffer has NO backing memory";
-    DCHECK_EQ(capture_buffer->GetType(), gfx::SHARED_MEMORY_BUFFER);
     memset(data_ptr, 0, capture_buffer->size());
 
-    DrawPacman(
-        (pixel_format == media::PIXEL_FORMAT_GPUMEMORYBUFFER), /* use_argb */
-        data_ptr,
-        frame_count_,
-        kFakeCapturePeriodMs,
-        capture_format_.frame_size);
+    DrawPacman((pixel_format == media::PIXEL_FORMAT_ARGB), /* use_argb */
+               data_ptr, frame_count_, kFakeCapturePeriodMs,
+               capture_format_.frame_size);
 
     // Give the captured frame to the client.
     const VideoCaptureFormat format(capture_format_.frame_size,
-                                    capture_format_.frame_rate,
-                                    pixel_format);
+                                    capture_format_.frame_rate, pixel_format,
+                                    pixel_storage);
     client_->OnIncomingCapturedBuffer(capture_buffer.Pass(), format,
                                       base::TimeTicks::Now());
   }
 
   BeepAndScheduleNextCapture(
+      expected_execution_time,
       base::Bind(&FakeVideoCaptureDevice::CaptureUsingClientBuffers,
-                 weak_factory_.GetWeakPtr(), pixel_format));
+                 weak_factory_.GetWeakPtr(), pixel_format, pixel_storage));
 }
 
 void FakeVideoCaptureDevice::BeepAndScheduleNextCapture(
-    const base::Closure& next_capture) {
+    base::TimeTicks expected_execution_time,
+    const base::Callback<void(base::TimeTicks)>& next_capture) {
   // Generate a synchronized beep sound every so many frames.
   if (frame_count_++ % kFakeCaptureBeepCycle == 0)
     FakeAudioInputStream::BeepOnce();
 
   // Reschedule next CaptureTask.
-  base::MessageLoop::current()->PostDelayedTask(FROM_HERE, next_capture,
-      base::TimeDelta::FromMilliseconds(kFakeCapturePeriodMs));
+  const base::TimeTicks current_time = base::TimeTicks::Now();
+  const base::TimeDelta frame_interval =
+      base::TimeDelta::FromMilliseconds(kFakeCapturePeriodMs);
+  // Don't accumulate any debt if we are lagging behind - just post the next
+  // frame immediately and continue as normal.
+  const base::TimeTicks next_execution_time =
+      std::max(current_time, expected_execution_time + frame_interval);
+  const base::TimeDelta delay = next_execution_time - current_time;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, base::Bind(next_capture, next_execution_time), delay);
 }
 
 }  // namespace media

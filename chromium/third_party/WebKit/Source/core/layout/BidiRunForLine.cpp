@@ -34,14 +34,14 @@ namespace blink {
 using namespace WTF::Unicode;
 
 static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
-    LayoutObject* root, LayoutObject* current = 0)
+    LayoutObject* root, LayoutObject* current = nullptr)
 {
     LayoutObject* next = current;
     while (current) {
         if (isIsolated(current->style()->unicodeBidi())
             && (current->isLayoutInline() || current->isLayoutBlock())) {
             if (current != root)
-                current = 0;
+                current = nullptr;
             else
                 current = next;
             break;
@@ -53,12 +53,12 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
         current = root->slowFirstChild();
 
     while (current) {
-        next = 0;
-        if (isIteratorTarget(current) && !(current->isText()
+        next = nullptr;
+        if (isIteratorTarget(LineLayoutItem(current)) && !(current->isText()
             && toLayoutText(current)->isAllCollapsibleWhitespace()))
             break;
 
-        if (!isIteratorTarget(current)
+        if (!isIteratorTarget(LineLayoutItem(current))
             && !isIsolated(current->style()->unicodeBidi()))
             next = current->slowFirstChild();
 
@@ -84,7 +84,7 @@ TextDirection determinePlaintextDirectionality(LayoutObject* root,
     LayoutObject* current = 0, unsigned pos = 0)
 {
     LayoutObject* firstLayoutObject = firstLayoutObjectForDirectionalityDetermination(root, current);
-    InlineIterator iter(root, firstLayoutObject, firstLayoutObject == current ? pos : 0);
+    InlineIterator iter(LineLayoutItem(root), LineLayoutItem(firstLayoutObject), firstLayoutObject == current ? pos : 0);
     InlineBidiResolver observer;
     observer.setStatus(BidiStatus(root->style()->direction(),
         isOverride(root->style()->unicodeBidi())));
@@ -113,7 +113,7 @@ static inline void setupResolverToResumeInIsolate(InlineBidiResolver& resolver,
     if (root != startObject) {
         LayoutObject* parent = startObject->parent();
         setupResolverToResumeInIsolate(resolver, root, parent);
-        notifyObserverEnteredObject(&resolver, startObject);
+        notifyObserverEnteredObject(&resolver, LineLayoutItem(startObject));
     }
 }
 
@@ -157,7 +157,7 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         // but that would be a layering violation for BidiResolver (which knows
         // nothing about LayoutObject).
         LayoutInline* isolatedInline = toLayoutInline(
-            highestContainingIsolateWithinRoot(startObj, currentRoot));
+            highestContainingIsolateWithinRoot(LineLayoutItem(startObj), LineLayoutItem(currentRoot)));
         ASSERT(isolatedInline);
 
         InlineBidiResolver isolatedResolver;
@@ -184,7 +184,7 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         // isolate that was identified during the earlier call to
         // createBidiRunsForLine. This can be but is not necessarily the first
         // run within the isolate.
-        InlineIterator iter = InlineIterator(isolatedInline, startObj,
+        InlineIterator iter = InlineIterator(LineLayoutItem(isolatedInline), LineLayoutItem(startObj),
             isolatedRun->m_start);
         isolatedResolver.setPositionIgnoringNestedIsolates(iter);
         // We stop at the next end of line; we may re-enter this isolate in the

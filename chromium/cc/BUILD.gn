@@ -13,10 +13,18 @@ component("cc") {
     "animation/animation_delegate.h",
     "animation/animation_events.cc",
     "animation/animation_events.h",
+    "animation/animation_host.cc",
+    "animation/animation_host.h",
     "animation/animation_id_provider.cc",
     "animation/animation_id_provider.h",
+    "animation/animation_player.cc",
+    "animation/animation_player.h",
     "animation/animation_registrar.cc",
     "animation/animation_registrar.h",
+    "animation/animation_timeline.cc",
+    "animation/animation_timeline.h",
+    "animation/element_animations.cc",
+    "animation/element_animations.h",
     "animation/keyframed_animation_curve.cc",
     "animation/keyframed_animation_curve.h",
     "animation/layer_animation_controller.cc",
@@ -82,6 +90,8 @@ component("cc") {
     "debug/rendering_stats_instrumentation.cc",
     "debug/rendering_stats_instrumentation.h",
     "debug/ring_buffer.h",
+    "debug/traced_display_item_list.cc",
+    "debug/traced_display_item_list.h",
     "debug/traced_picture.cc",
     "debug/traced_picture.h",
     "debug/traced_value.cc",
@@ -104,11 +114,7 @@ component("cc") {
     "input/top_controls_manager.h",
     "input/top_controls_manager_client.h",
     "layers/append_quads_data.h",
-    "layers/content_layer.cc",
-    "layers/content_layer.h",
     "layers/content_layer_client.h",
-    "layers/contents_scaling_layer.cc",
-    "layers/contents_scaling_layer.h",
     "layers/delegated_frame_provider.cc",
     "layers/delegated_frame_provider.h",
     "layers/delegated_frame_resource_collection.cc",
@@ -122,8 +128,6 @@ component("cc") {
     "layers/heads_up_display_layer.h",
     "layers/heads_up_display_layer_impl.cc",
     "layers/heads_up_display_layer_impl.h",
-    "layers/image_layer.cc",
-    "layers/image_layer.h",
     "layers/io_surface_layer.cc",
     "layers/io_surface_layer.h",
     "layers/io_surface_layer_impl.cc",
@@ -182,10 +186,6 @@ component("cc") {
     "layers/texture_layer_client.h",
     "layers/texture_layer_impl.cc",
     "layers/texture_layer_impl.h",
-    "layers/tiled_layer.cc",
-    "layers/tiled_layer.h",
-    "layers/tiled_layer_impl.cc",
-    "layers/tiled_layer_impl.h",
     "layers/ui_resource_layer.cc",
     "layers/ui_resource_layer.h",
     "layers/ui_resource_layer_impl.cc",
@@ -282,7 +282,6 @@ component("cc") {
     "output/texture_mailbox_deleter.h",
     "output/viewport_selection_bound.cc",
     "output/viewport_selection_bound.h",
-    "output/vsync_parameter_observer.h",
     "playback/clip_display_item.cc",
     "playback/clip_display_item.h",
     "playback/clip_path_display_item.cc",
@@ -293,6 +292,8 @@ component("cc") {
     "playback/display_item.h",
     "playback/display_item_list.cc",
     "playback/display_item_list.h",
+    "playback/display_item_list_settings.cc",
+    "playback/display_item_list_settings.h",
     "playback/display_list_raster_source.cc",
     "playback/display_list_raster_source.h",
     "playback/display_list_recording_source.cc",
@@ -332,8 +333,6 @@ component("cc") {
     "quads/io_surface_draw_quad.h",
     "quads/largest_draw_quad.cc",
     "quads/largest_draw_quad.h",
-    "quads/list_container.cc",
-    "quads/list_container.h",
     "quads/picture_draw_quad.cc",
     "quads/picture_draw_quad.h",
     "quads/render_pass.cc",
@@ -382,28 +381,10 @@ component("cc") {
     "raster/tile_task_worker_pool.h",
     "raster/zero_copy_tile_task_worker_pool.cc",
     "raster/zero_copy_tile_task_worker_pool.h",
-    "resources/bitmap_content_layer_updater.cc",
-    "resources/bitmap_content_layer_updater.h",
-    "resources/bitmap_skpicture_content_layer_updater.cc",
-    "resources/bitmap_skpicture_content_layer_updater.h",
-    "resources/content_layer_updater.cc",
-    "resources/content_layer_updater.h",
-    "resources/image_layer_updater.cc",
-    "resources/image_layer_updater.h",
-    "resources/layer_painter.h",
-    "resources/layer_updater.cc",
-    "resources/layer_updater.h",
     "resources/memory_history.cc",
     "resources/memory_history.h",
     "resources/platform_color.h",
-    "resources/prioritized_resource.cc",
-    "resources/prioritized_resource.h",
-    "resources/prioritized_resource_manager.cc",
-    "resources/prioritized_resource_manager.h",
-    "resources/priority_calculator.cc",
-    "resources/priority_calculator.h",
     "resources/release_callback.h",
-    "resources/resource.cc",
     "resources/resource.h",
     "resources/resource_format.cc",
     "resources/resource_format.h",
@@ -411,12 +392,6 @@ component("cc") {
     "resources/resource_pool.h",
     "resources/resource_provider.cc",
     "resources/resource_provider.h",
-    "resources/resource_update.cc",
-    "resources/resource_update.h",
-    "resources/resource_update_controller.cc",
-    "resources/resource_update_controller.h",
-    "resources/resource_update_queue.cc",
-    "resources/resource_update_queue.h",
     "resources/returned_resource.h",
     "resources/scoped_resource.cc",
     "resources/scoped_resource.h",
@@ -429,12 +404,8 @@ component("cc") {
     "resources/single_release_callback.h",
     "resources/single_release_callback_impl.cc",
     "resources/single_release_callback_impl.h",
-    "resources/skpicture_content_layer_updater.cc",
-    "resources/skpicture_content_layer_updater.h",
     "resources/texture_mailbox.cc",
     "resources/texture_mailbox.h",
-    "resources/texture_uploader.cc",
-    "resources/texture_uploader.h",
     "resources/transferable_resource.cc",
     "resources/transferable_resource.h",
     "resources/ui_resource_bitmap.cc",
@@ -446,7 +417,11 @@ component("cc") {
     "resources/video_resource_updater.h",
     "scheduler/begin_frame_source.cc",
     "scheduler/begin_frame_source.h",
+    "scheduler/begin_frame_tracker.cc",
+    "scheduler/begin_frame_tracker.h",
     "scheduler/commit_earlyout_reason.h",
+    "scheduler/compositor_timing_history.cc",
+    "scheduler/compositor_timing_history.h",
     "scheduler/delay_based_time_source.cc",
     "scheduler/delay_based_time_source.h",
     "scheduler/draw_result.h",
@@ -459,8 +434,6 @@ component("cc") {
     "scheduler/video_frame_controller.h",
     "tiles/eviction_tile_priority_queue.cc",
     "tiles/eviction_tile_priority_queue.h",
-    "tiles/layer_tiling_data.cc",
-    "tiles/layer_tiling_data.h",
     "tiles/picture_layer_tiling.cc",
     "tiles/picture_layer_tiling.h",
     "tiles/picture_layer_tiling_set.cc",
@@ -507,6 +480,7 @@ component("cc") {
     "trees/layer_tree_impl.h",
     "trees/layer_tree_settings.cc",
     "trees/layer_tree_settings.h",
+    "trees/mutator_host_client.h",
     "trees/occlusion.cc",
     "trees/occlusion.h",
     "trees/occlusion_tracker.cc",
@@ -517,8 +491,6 @@ component("cc") {
     "trees/property_tree_builder.h",
     "trees/proxy.cc",
     "trees/proxy.h",
-    "trees/proxy_timing_history.cc",
-    "trees/proxy_timing_history.h",
     "trees/scoped_abort_remaining_swap_promises.h",
     "trees/single_thread_proxy.cc",
     "trees/single_thread_proxy.h",
@@ -530,8 +502,12 @@ component("cc") {
     "trees/tree_synchronizer.h",
   ]
 
-  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+  if (target_cpu == "x86" || target_cpu == "x64") {
+    sources += [
+      "raster/texture_compressor_etc1_sse.cc",
+      "raster/texture_compressor_etc1_sse.h",
+    ]
+  }
 
   public_deps = [
     "//cc/base",
@@ -540,7 +516,6 @@ component("cc") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//cc:cc_opts",
     "//cc/surfaces:surface_id",
     "//gpu",
     "//gpu/command_buffer/client:gles2_interface",
@@ -558,51 +533,19 @@ component("cc") {
   }
 }
 
-source_set("cc_opts") {
-  public_deps = [
-    "//cc:cc_opts_sse",
-  ]
-}
-
-source_set("cc_opts_sse") {
-  if (target_cpu == "x86" || target_cpu == "x64") {
-    deps = [
-      "//base",
-    ]
-
-    defines = [ "CC_IMPLEMENTATION=1" ]
-
-    if (!is_debug && (is_win || is_android)) {
-      configs -= [ "//build/config/compiler:optimize" ]
-      configs += [ "//build/config/compiler:optimize_max" ]
-    }
-
-    sources = [
-      "raster/texture_compressor.h",
-      "raster/texture_compressor_etc1.h",
-      "raster/texture_compressor_etc1_sse.cc",
-      "raster/texture_compressor_etc1_sse.h",
-    ]
-
-    cflags = [ "-msse2" ]
-  }
-}
-
 source_set("test_support") {
   testonly = true
   sources = [
     "test/animation_test_common.cc",
     "test/animation_test_common.h",
+    "test/animation_timelines_test_common.cc",
+    "test/animation_timelines_test_common.h",
     "test/begin_frame_args_test.cc",
     "test/begin_frame_args_test.h",
     "test/failure_output_surface.cc",
     "test/failure_output_surface.h",
-    "test/fake_content_layer.cc",
-    "test/fake_content_layer.h",
     "test/fake_content_layer_client.cc",
     "test/fake_content_layer_client.h",
-    "test/fake_content_layer_impl.cc",
-    "test/fake_content_layer_impl.h",
     "test/fake_delegated_renderer_layer.cc",
     "test/fake_delegated_renderer_layer.h",
     "test/fake_delegated_renderer_layer_impl.cc",
@@ -640,6 +583,7 @@ source_set("test_support") {
     "test/fake_renderer_client.cc",
     "test/fake_renderer_client.h",
     "test/fake_rendering_stats_instrumentation.h",
+    "test/fake_resource_provider.h",
     "test/fake_scoped_ui_resource.cc",
     "test/fake_scoped_ui_resource.h",
     "test/fake_scrollbar.cc",
@@ -654,7 +598,6 @@ source_set("test_support") {
     "test/fake_video_frame_provider.h",
     "test/geometry_test_utils.cc",
     "test/geometry_test_utils.h",
-    "test/impl_side_painting_settings.h",
     "test/layer_test_common.cc",
     "test/layer_test_common.h",
     "test/layer_tree_host_common_test.cc",
@@ -706,8 +649,6 @@ source_set("test_support") {
     "test/test_image_factory.h",
     "test/test_in_process_context_provider.cc",
     "test/test_in_process_context_provider.h",
-    "test/test_now_source.cc",
-    "test/test_now_source.h",
     "test/test_occlusion_tracker.h",
     "test/test_shared_bitmap_manager.cc",
     "test/test_shared_bitmap_manager.h",
@@ -719,11 +660,7 @@ source_set("test_support") {
     "test/test_tile_priorities.h",
     "test/test_web_graphics_context_3d.cc",
     "test/test_web_graphics_context_3d.h",
-    "test/tiled_layer_test_common.cc",
-    "test/tiled_layer_test_common.h",
   ]
-
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   include_dirs = [
     ".",
@@ -760,7 +697,11 @@ source_set("test_support") {
 
 test("cc_unittests") {
   sources = [
+    "animation/animation_host_unittest.cc",
+    "animation/animation_player_unittest.cc",
+    "animation/animation_timeline_unittest.cc",
     "animation/animation_unittest.cc",
+    "animation/element_animations_unittest.cc",
     "animation/keyframed_animation_curve_unittest.cc",
     "animation/layer_animation_controller_unittest.cc",
     "animation/scroll_offset_animation_curve_unittest.cc",
@@ -768,17 +709,18 @@ test("cc_unittests") {
     "animation/scrollbar_animation_controller_thinning_unittest.cc",
     "animation/transform_operations_unittest.cc",
     "base/float_quad_unittest.cc",
+    "base/histograms_unittest.cc",
+    "base/list_container_unittest.cc",
     "base/math_util_unittest.cc",
     "base/region_unittest.cc",
     "base/rolling_time_delta_history_unittest.cc",
     "base/scoped_ptr_vector_unittest.cc",
+    "base/sidecar_list_container_unittest.cc",
     "base/simple_enclosed_region_unittest.cc",
     "base/tiling_data_unittest.cc",
-    "base/util_unittest.cc",
     "debug/frame_timing_tracker_unittest.cc",
     "debug/micro_benchmark_controller_unittest.cc",
     "input/top_controls_manager_unittest.cc",
-    "layers/contents_scaling_layer_unittest.cc",
     "layers/delegated_frame_provider_unittest.cc",
     "layers/delegated_frame_resource_collection_unittest.cc",
     "layers/delegated_renderer_layer_impl_unittest.cc",
@@ -807,10 +749,9 @@ test("cc_unittests") {
     "layers/surface_layer_unittest.cc",
     "layers/texture_layer_impl_unittest.cc",
     "layers/texture_layer_unittest.cc",
-    "layers/tiled_layer_impl_unittest.cc",
-    "layers/tiled_layer_unittest.cc",
     "layers/ui_resource_layer_impl_unittest.cc",
     "layers/ui_resource_layer_unittest.cc",
+    "layers/video_frame_provider_client_impl_unittest.cc",
     "layers/video_layer_impl_unittest.cc",
     "output/begin_frame_args_unittest.cc",
     "output/delegating_renderer_unittest.cc",
@@ -825,6 +766,7 @@ test("cc_unittests") {
     "output/software_renderer_unittest.cc",
     "output/texture_mailbox_deleter_unittest.cc",
     "playback/display_item_list_unittest.cc",
+    "playback/display_list_raster_source_unittest.cc",
     "playback/display_list_recording_source_unittest.cc",
     "playback/picture_pile_impl_unittest.cc",
     "playback/picture_pile_unittest.cc",
@@ -832,20 +774,18 @@ test("cc_unittests") {
     "playback/pixel_ref_map_unittest.cc",
     "playback/recording_source_unittest.cc",
     "quads/draw_quad_unittest.cc",
-    "quads/list_container_unittest.cc",
     "quads/render_pass_unittest.cc",
     "raster/scoped_gpu_raster_unittest.cc",
     "raster/task_graph_runner_unittest.cc",
     "raster/texture_compressor_etc1_unittest.cc",
     "raster/tile_task_worker_pool_unittest.cc",
     "resources/platform_color_unittest.cc",
-    "resources/prioritized_resource_unittest.cc",
+    "resources/resource_pool_unittest.cc",
     "resources/resource_provider_unittest.cc",
-    "resources/resource_update_controller_unittest.cc",
     "resources/scoped_resource_unittest.cc",
-    "resources/texture_uploader_unittest.cc",
     "resources/video_resource_updater_unittest.cc",
     "scheduler/begin_frame_source_unittest.cc",
+    "scheduler/compositor_timing_history_unittest.cc",
     "scheduler/delay_based_time_source_unittest.cc",
     "scheduler/scheduler_state_machine_unittest.cc",
     "scheduler/scheduler_unittest.cc",
@@ -864,13 +804,14 @@ test("cc_unittests") {
     "trees/layer_tree_host_pixeltest_masks.cc",
     "trees/layer_tree_host_pixeltest_readback.cc",
     "trees/layer_tree_host_pixeltest_synchronous.cc",
+    "trees/layer_tree_host_pixeltest_tiles.cc",
     "trees/layer_tree_host_unittest.cc",
     "trees/layer_tree_host_unittest_animation.cc",
+    "trees/layer_tree_host_unittest_animation_timelines.cc",
     "trees/layer_tree_host_unittest_context.cc",
     "trees/layer_tree_host_unittest_copyrequest.cc",
     "trees/layer_tree_host_unittest_damage.cc",
     "trees/layer_tree_host_unittest_delegated.cc",
-    "trees/layer_tree_host_unittest_no_message_loop.cc",
     "trees/layer_tree_host_unittest_occlusion.cc",
     "trees/layer_tree_host_unittest_picture.cc",
     "trees/layer_tree_host_unittest_proxy.cc",
@@ -893,8 +834,6 @@ test("cc_unittests") {
     "test/cc_test_suite.cc",
     "test/run_all_unittests.cc",
   ]
-
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   deps = [
     ":cc",
@@ -922,6 +861,7 @@ test("cc_perftests") {
     "layers/layer_perftest.cc",
     "layers/picture_layer_impl_perftest.cc",
     "playback/picture_pile_impl_perftest.cc",
+    "quads/draw_quad_perftest.cc",
     "raster/task_graph_runner_perftest.cc",
     "raster/texture_compressor_perftest.cc",
     "raster/tile_task_worker_pool_perftest.cc",
@@ -934,8 +874,6 @@ test("cc_perftests") {
     "trees/layer_tree_host_perftest.cc",
     "trees/occlusion_tracker_perftest.cc",
   ]
-
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   deps = [
     ":cc",
@@ -956,6 +894,10 @@ test("cc_perftests") {
     "//ui/gfx/geometry",
     "//ui/gl",
   ]
+
+  if (is_android) {
+    isolate_file = "cc_perftests.isolate"
+  }
 }
 # When adding support for isolates, please have a look at run-time dependencies
 # in the cc_unittests_run target in cc_tests.gyp.

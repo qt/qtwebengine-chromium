@@ -19,10 +19,11 @@ TEST(SurfaceLayerImplTest, Occlusion) {
   SurfaceLayerImpl* surface_layer_impl =
       impl.AddChildToRoot<SurfaceLayerImpl>();
   surface_layer_impl->SetBounds(layer_size);
-  surface_layer_impl->SetContentBounds(layer_size);
   surface_layer_impl->SetDrawsContent(true);
   SurfaceId surface_id(9);
   surface_layer_impl->SetSurfaceId(surface_id);
+  surface_layer_impl->SetSurfaceScale(1.f);
+  surface_layer_impl->SetSurfaceSize(layer_size);
 
   impl.CalcDrawProps(viewport_size);
 
@@ -38,7 +39,7 @@ TEST(SurfaceLayerImplTest, Occlusion) {
 
   {
     SCOPED_TRACE("Full occlusion");
-    gfx::Rect occluded(surface_layer_impl->visible_content_rect());
+    gfx::Rect occluded(surface_layer_impl->visible_layer_rect());
     impl.AppendQuadsWithOcclusion(surface_layer_impl, occluded);
 
     LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(), gfx::Rect());

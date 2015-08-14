@@ -44,6 +44,15 @@ struct DisallowedFeatures;
 // resources.
 class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
  public:
+  enum ContextType {
+    CONTEXT_TYPE_WEBGL1,
+    CONTEXT_TYPE_WEBGL2,
+    CONTEXT_TYPE_OTHER,
+    CONTEXT_TYPE_UNDEFINED
+  };
+
+  static ContextType GetContextType(unsigned webgl_version);
+
   ContextGroup(
       const scoped_refptr<MailboxManager>& mailbox_manager,
       const scoped_refptr<MemoryTracker>& memory_tracker,
@@ -57,6 +66,7 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   // call to destroy if it succeeds.
   bool Initialize(
       GLES2Decoder* decoder,
+      ContextType context_type,
       const DisallowedFeatures& disallowed_features);
 
   // Destroys all the resources when called for the last context in the group.
@@ -202,6 +212,12 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   bool GetTransformFeedbackServiceId(
       GLuint client_id, GLuint* service_id) const {
+    if (client_id == 0) {
+      // Default one.
+      if (service_id)
+        *service_id = 0;
+      return true;
+    }
     base::hash_map<GLuint, GLuint>::const_iterator iter =
         transformfeedbacks_id_map_.find(client_id);
     if (iter == transformfeedbacks_id_map_.end())
@@ -243,10 +259,12 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   bool QueryGLFeatureU(GLenum pname, GLint min_required, uint32* v);
   bool HaveContexts();
 
+  ContextType context_type_;
+
   scoped_refptr<MailboxManager> mailbox_manager_;
   scoped_refptr<MemoryTracker> memory_tracker_;
   scoped_refptr<ShaderTranslatorCache> shader_translator_cache_;
-  scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
+  scoped_refptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_refptr<SubscriptionRefSet> subscription_ref_set_;
   scoped_refptr<ValueStateMap> pending_valuebuffer_state_;
 

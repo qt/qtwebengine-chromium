@@ -109,11 +109,17 @@ WebInspector.SourceFrame.prototype = {
         this._ensureContentLoaded();
         this._textEditor.show(this.element);
         this._editorAttached = true;
+        // We need CodeMirrorTextEditor to be initialized prior to this call as it calls |cursorPositionToCoordinates| internally. @see crbug.com/506566
+        setImmediate(this._updateBucketDecorations.bind(this));
+        this._wasShownOrLoaded();
+    },
+
+    _updateBucketDecorations: function()
+    {
         for (var line in this._rowMessageBuckets) {
             var bucket = this._rowMessageBuckets[line];
             bucket._updateDecoration();
         }
-        this._wasShownOrLoaded();
     },
 
     /**
@@ -604,7 +610,7 @@ WebInspector.SourceFrame.prototype = {
     {
     },
 
-    populateTextAreaContextMenu: function(contextMenu, lineNumber)
+    populateTextAreaContextMenu: function(contextMenu, lineNumber, columnNumber)
     {
     },
 
@@ -1019,9 +1025,9 @@ WebInspector.TextEditorDelegateForSourceFrame.prototype = {
     /**
      * @override
      */
-    populateTextAreaContextMenu: function(contextMenu, lineNumber)
+    populateTextAreaContextMenu: function(contextMenu, lineNumber, columnNumber)
     {
-        this._sourceFrame.populateTextAreaContextMenu(contextMenu, lineNumber);
+        this._sourceFrame.populateTextAreaContextMenu(contextMenu, lineNumber, columnNumber);
     },
 
     /**

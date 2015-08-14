@@ -24,7 +24,6 @@
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -73,19 +72,16 @@ class DelegatedRendererLayerImplTestSimple
 
     layer_before->SetPosition(gfx::Point(20, 20));
     layer_before->SetBounds(gfx::Size(14, 14));
-    layer_before->SetContentBounds(gfx::Size(14, 14));
     layer_before->SetDrawsContent(true);
     layer_before->SetHasRenderSurface(true);
 
     layer_after->SetPosition(gfx::Point(5, 5));
     layer_after->SetBounds(gfx::Size(15, 15));
-    layer_after->SetContentBounds(gfx::Size(15, 15));
     layer_after->SetDrawsContent(true);
     layer_after->SetHasRenderSurface(true);
 
     delegated_renderer_layer->SetPosition(gfx::Point(3, 3));
     delegated_renderer_layer->SetBounds(gfx::Size(10, 10));
-    delegated_renderer_layer->SetContentBounds(gfx::Size(10, 10));
     delegated_renderer_layer->SetDrawsContent(true);
     gfx::Transform transform;
     transform.Translate(1.0, 1.0);
@@ -149,7 +145,6 @@ TEST_F(DelegatedRendererLayerImplTest,
 
     delegated_renderer_layer->SetPosition(gfx::Point(3, 3));
     delegated_renderer_layer->SetBounds(gfx::Size(10, 10));
-    delegated_renderer_layer->SetContentBounds(gfx::Size(10, 10));
     delegated_renderer_layer->SetDrawsContent(true);
     delegated_renderer_layer->SetHasRenderSurface(true);
     gfx::Transform transform;
@@ -229,7 +224,6 @@ TEST_F(DelegatedRendererLayerImplTest,
 
     delegated_renderer_layer->SetPosition(gfx::Point(3, 3));
     delegated_renderer_layer->SetBounds(gfx::Size(10, 10));
-    delegated_renderer_layer->SetContentBounds(gfx::Size(10, 10));
     delegated_renderer_layer->SetDrawsContent(true);
     delegated_renderer_layer->SetHasRenderSurface(true);
     gfx::Transform transform;
@@ -308,16 +302,16 @@ TEST_F(DelegatedRendererLayerImplTestSimple, AddsContributingRenderPasses) {
   // The DelegatedRendererLayer should have added its contributing RenderPasses
   // to the frame.
   EXPECT_EQ(4, frame.render_passes[1]->id.layer_id);
-  EXPECT_EQ(1, frame.render_passes[1]->id.index);
+  EXPECT_EQ(1u, frame.render_passes[1]->id.index);
   EXPECT_EQ(4, frame.render_passes[2]->id.layer_id);
-  EXPECT_EQ(2, frame.render_passes[2]->id.index);
+  EXPECT_EQ(2u, frame.render_passes[2]->id.index);
   // And all other RenderPasses should be non-delegated.
   EXPECT_NE(4, frame.render_passes[0]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[0]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[0]->id.index);
   EXPECT_NE(4, frame.render_passes[3]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[3]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[3]->id.index);
   EXPECT_NE(4, frame.render_passes[4]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[4]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[4]->id.index);
 
   // The DelegatedRendererLayer should have added its RenderPasses to the frame
   // in order.
@@ -342,9 +336,9 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
   // The DelegatedRendererLayer should have added its contributing RenderPasses
   // to the frame.
   EXPECT_EQ(4, frame.render_passes[1]->id.layer_id);
-  EXPECT_EQ(1, frame.render_passes[1]->id.index);
+  EXPECT_EQ(1u, frame.render_passes[1]->id.index);
   EXPECT_EQ(4, frame.render_passes[2]->id.layer_id);
-  EXPECT_EQ(2, frame.render_passes[2]->id.index);
+  EXPECT_EQ(2u, frame.render_passes[2]->id.index);
 
   // The DelegatedRendererLayer should have added copies of its quads to
   // contributing RenderPasses.
@@ -408,21 +402,26 @@ TEST_F(DelegatedRendererLayerImplTestSimple,
   gfx::Transform transform;
   transform.Translate(4.0, 4.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      transform, frame.render_passes[3]->quad_list.front()->quadTransform());
+      transform, frame.render_passes[3]
+                     ->quad_list.front()
+                     ->shared_quad_state->quad_to_target_transform);
 
   // Quads from non-root RenderPasses should not be shifted though.
   ASSERT_EQ(2u, frame.render_passes[2]->quad_list.size());
 
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[2]->quad_list.front()->quadTransform());
+      gfx::Transform(), frame.render_passes[2]
+                            ->quad_list.front()
+                            ->shared_quad_state->quad_to_target_transform);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[2]->quad_list.ElementAt(1)->quadTransform());
+      gfx::Transform(), frame.render_passes[2]
+                            ->quad_list.ElementAt(1)
+                            ->shared_quad_state->quad_to_target_transform);
   ASSERT_EQ(1u, frame.render_passes[1]->quad_list.size());
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[1]->quad_list.front()->quadTransform());
+      gfx::Transform(), frame.render_passes[1]
+                            ->quad_list.front()
+                            ->shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -481,20 +480,20 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface, AddsRenderPasses) {
   // The DelegatedRendererLayer should have added its contributing RenderPasses
   // to the frame.
   EXPECT_EQ(4, frame.render_passes[1]->id.layer_id);
-  EXPECT_EQ(1, frame.render_passes[1]->id.index);
+  EXPECT_EQ(1u, frame.render_passes[1]->id.index);
   EXPECT_EQ(4, frame.render_passes[2]->id.layer_id);
-  EXPECT_EQ(2, frame.render_passes[2]->id.index);
+  EXPECT_EQ(2u, frame.render_passes[2]->id.index);
   // The DelegatedRendererLayer should have added a RenderPass for its surface
   // to the frame.
   EXPECT_EQ(4, frame.render_passes[1]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[3]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[3]->id.index);
   // And all other RenderPasses should be non-delegated.
   EXPECT_NE(4, frame.render_passes[0]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[0]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[0]->id.index);
   EXPECT_NE(4, frame.render_passes[4]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[4]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[4]->id.index);
   EXPECT_NE(4, frame.render_passes[5]->id.layer_id);
-  EXPECT_EQ(0, frame.render_passes[5]->id.index);
+  EXPECT_EQ(0u, frame.render_passes[5]->id.index);
 
   // The DelegatedRendererLayer should have added its RenderPasses to the frame
   // in order.
@@ -520,9 +519,9 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface,
   // The DelegatedRendererLayer should have added its contributing RenderPasses
   // to the frame.
   EXPECT_EQ(4, frame.render_passes[1]->id.layer_id);
-  EXPECT_EQ(1, frame.render_passes[1]->id.index);
+  EXPECT_EQ(1u, frame.render_passes[1]->id.index);
   EXPECT_EQ(4, frame.render_passes[2]->id.layer_id);
-  EXPECT_EQ(2, frame.render_passes[2]->id.index);
+  EXPECT_EQ(2u, frame.render_passes[2]->id.index);
 
   // The DelegatedRendererLayer should have added copies of its quads to
   // contributing RenderPasses.
@@ -583,22 +582,26 @@ TEST_F(DelegatedRendererLayerImplTestOwnSurface,
   // Because the DelegatedRendererLayer owns a RenderSurfaceImpl, its root
   // RenderPass' quads do not need to be translated at all.
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[3]->quad_list.front()->quadTransform());
+      gfx::Transform(), frame.render_passes[3]
+                            ->quad_list.front()
+                            ->shared_quad_state->quad_to_target_transform);
 
   // Quads from non-root RenderPasses should not be shifted either.
   ASSERT_EQ(2u, frame.render_passes[2]->quad_list.size());
 
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[2]->quad_list.front()->quadTransform());
+      gfx::Transform(), frame.render_passes[2]
+                            ->quad_list.front()
+                            ->shared_quad_state->quad_to_target_transform);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[2]->quad_list.ElementAt(1)->quadTransform());
+      gfx::Transform(), frame.render_passes[2]
+                            ->quad_list.ElementAt(1)
+                            ->shared_quad_state->quad_to_target_transform);
   ASSERT_EQ(1u, frame.render_passes[1]->quad_list.size());
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      gfx::Transform(),
-      frame.render_passes[1]->quad_list.front()->quadTransform());
+      gfx::Transform(), frame.render_passes[1]
+                            ->quad_list.front()
+                            ->shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -625,7 +628,6 @@ class DelegatedRendererLayerImplTestTransform
 
     delegated_renderer_layer->SetPosition(gfx::Point(20, 20));
     delegated_renderer_layer->SetBounds(gfx::Size(75, 75));
-    delegated_renderer_layer->SetContentBounds(gfx::Size(75, 75));
     delegated_renderer_layer->SetDrawsContent(true);
     gfx::Transform transform;
     transform.Scale(2.0, 2.0);
@@ -634,7 +636,7 @@ class DelegatedRendererLayerImplTestTransform
 
     RenderPassList delegated_render_passes;
 
-    gfx::Size child_pass_content_bounds(7, 7);
+    gfx::Size child_pass_bounds(7, 7);
     gfx::Rect child_pass_rect(20, 20, 7, 7);
     gfx::Transform child_pass_transform;
     child_pass_transform.Scale(0.8f, 0.8f);
@@ -649,14 +651,10 @@ class DelegatedRendererLayerImplTestTransform
                                            gfx::Transform());
       SharedQuadState* shared_quad_state =
           pass->CreateAndAppendSharedQuadState();
-      shared_quad_state->SetAll(child_pass_transform,
-                                child_pass_content_bounds,
-                                child_pass_rect,
-                                child_pass_clip_rect,
-                                child_pass_clipped,
-                                1.f,
-                                SkXfermode::kSrcOver_Mode,
-                                0);
+      shared_quad_state->SetAll(child_pass_transform, child_pass_bounds,
+                                child_pass_rect, child_pass_clip_rect,
+                                child_pass_clipped, 1.f,
+                                SkXfermode::kSrcOver_Mode, 0);
 
       SolidColorDrawQuad* color_quad;
       color_quad = pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
@@ -674,7 +672,7 @@ class DelegatedRendererLayerImplTestTransform
                          false);
     }
 
-    gfx::Size root_pass_content_bounds(100, 100);
+    gfx::Size root_pass_bounds(100, 100);
     gfx::Rect root_pass_rect(0, 0, 100, 100);
     gfx::Transform root_pass_transform;
     root_pass_transform.Scale(1.5, 1.5);
@@ -687,13 +685,9 @@ class DelegatedRendererLayerImplTestTransform
                                          root_pass_rect,
                                          gfx::Transform());
     SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
-    shared_quad_state->SetAll(root_pass_transform,
-                              root_pass_content_bounds,
-                              root_pass_rect,
-                              root_pass_clip_rect,
-                              root_pass_clipped,
-                              1.f,
-                              SkXfermode::kSrcOver_Mode,
+    shared_quad_state->SetAll(root_pass_transform, root_pass_bounds,
+                              root_pass_rect, root_pass_clip_rect,
+                              root_pass_clipped, 1.f, SkXfermode::kSrcOver_Mode,
                               0);
 
     RenderPassDrawQuad* render_pass_quad =
@@ -756,10 +750,10 @@ class DelegatedRendererLayerImplTestTransform
     ASSERT_EQ(num_render_passes, frame.render_passes.size());
     // The contributing render pass in the DelegatedRendererLayer.
     EXPECT_EQ(2, frame.render_passes[0]->id.layer_id);
-    EXPECT_EQ(1, frame.render_passes[0]->id.index);
+    EXPECT_EQ(1u, frame.render_passes[0]->id.index);
     // The root render pass.
     EXPECT_EQ(1, frame.render_passes.back()->id.layer_id);
-    EXPECT_EQ(0, frame.render_passes.back()->id.index);
+    EXPECT_EQ(0u, frame.render_passes.back()->id.index);
 
     const QuadList& contrib_delegated_quad_list =
         frame.render_passes[0]->quad_list;
@@ -835,7 +829,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_NoSurface) {
   expected.Scale(1.5, 1.5);
   expected.Translate(7.0, 7.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected, root_delegated_shared_quad_state->content_to_target_transform);
+      expected, root_delegated_shared_quad_state->quad_to_target_transform);
 
   // The contributing render pass should not be transformed from its input.
   EXPECT_EQ(gfx::Rect(21, 21, 3, 3).ToString(),
@@ -845,8 +839,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_NoSurface) {
   expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected,
-      contrib_delegated_shared_quad_state->content_to_target_transform);
+      expected, contrib_delegated_shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -894,7 +887,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_NoSurface) {
   expected.Scale(1.5, 1.5);
   expected.Translate(7.0, 7.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected, root_delegated_shared_quad_state->content_to_target_transform);
+      expected, root_delegated_shared_quad_state->quad_to_target_transform);
 
   // The contributing render pass should not be transformed from its input.
   EXPECT_EQ(gfx::Rect(21, 21, 3, 3).ToString(),
@@ -904,8 +897,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_NoSurface) {
   expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected,
-      contrib_delegated_shared_quad_state->content_to_target_transform);
+      expected, contrib_delegated_shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -943,7 +935,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_Surface) {
   expected.Scale(3.0, 3.0);
   expected.Translate(7.0, 7.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected, root_delegated_shared_quad_state->content_to_target_transform);
+      expected, root_delegated_shared_quad_state->quad_to_target_transform);
 
   // The contributing render pass should not be transformed from its input.
   EXPECT_EQ(gfx::Rect(21, 21, 3, 3).ToString(),
@@ -953,8 +945,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_Surface) {
   expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected,
-      contrib_delegated_shared_quad_state->content_to_target_transform);
+      expected, contrib_delegated_shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -991,7 +982,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_Surface) {
   expected.Scale(3.0, 3.0);
   expected.Translate(7.0, 7.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected, root_delegated_shared_quad_state->content_to_target_transform);
+      expected, root_delegated_shared_quad_state->quad_to_target_transform);
 
   // The contributing render pass should not be transformed from its input.
   EXPECT_EQ(gfx::Rect(21, 21, 3, 3).ToString(),
@@ -1001,8 +992,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_Surface) {
   expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected,
-      contrib_delegated_shared_quad_state->content_to_target_transform);
+      expected, contrib_delegated_shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -1041,7 +1031,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, MismatchedDeviceScaleFactor) {
   expected.Scale(1.5, 1.5);
   expected.Translate(7.0, 7.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
-      expected, root_delegated_shared_quad_state->content_to_target_transform);
+      expected, root_delegated_shared_quad_state->quad_to_target_transform);
 
   host_impl_->DrawLayers(&frame);
   host_impl_->DidDrawAllLayers(frame);
@@ -1066,12 +1056,11 @@ class DelegatedRendererLayerImplTestClip
 
     delegated_renderer_layer->SetPosition(gfx::Point(20, 20));
     delegated_renderer_layer->SetBounds(gfx::Size(50, 50));
-    delegated_renderer_layer->SetContentBounds(gfx::Size(50, 50));
     delegated_renderer_layer->SetDrawsContent(true);
 
     RenderPassList delegated_render_passes;
 
-    gfx::Size child_pass_content_bounds(7, 7);
+    gfx::Size child_pass_bounds(7, 7);
     gfx::Rect child_pass_rect(20, 20, 7, 7);
     gfx::Transform child_pass_transform;
     gfx::Rect child_pass_clip_rect(21, 21, 3, 3);
@@ -1084,14 +1073,10 @@ class DelegatedRendererLayerImplTestClip
                                            gfx::Transform());
       SharedQuadState* shared_quad_state =
           pass->CreateAndAppendSharedQuadState();
-      shared_quad_state->SetAll(child_pass_transform,
-                                child_pass_content_bounds,
-                                child_pass_rect,
-                                child_pass_clip_rect,
-                                child_pass_clipped,
-                                1.f,
-                                SkXfermode::kSrcOver_Mode,
-                                0);
+      shared_quad_state->SetAll(child_pass_transform, child_pass_bounds,
+                                child_pass_rect, child_pass_clip_rect,
+                                child_pass_clipped, 1.f,
+                                SkXfermode::kSrcOver_Mode, 0);
 
       SolidColorDrawQuad* color_quad;
       color_quad = pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
@@ -1109,7 +1094,7 @@ class DelegatedRendererLayerImplTestClip
                          false);
     }
 
-    gfx::Size root_pass_content_bounds(50, 50);
+    gfx::Size root_pass_bounds(50, 50);
     gfx::Rect root_pass_rect(0, 0, 50, 50);
     gfx::Transform root_pass_transform;
     gfx::Rect root_pass_clip_rect(5, 5, 40, 40);
@@ -1120,13 +1105,9 @@ class DelegatedRendererLayerImplTestClip
                                          root_pass_rect,
                                          gfx::Transform());
     SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
-    shared_quad_state->SetAll(root_pass_transform,
-                              root_pass_content_bounds,
-                              root_pass_rect,
-                              root_pass_clip_rect,
-                              root_pass_clipped,
-                              1.f,
-                              SkXfermode::kSrcOver_Mode,
+    shared_quad_state->SetAll(root_pass_transform, root_pass_bounds,
+                              root_pass_rect, root_pass_clip_rect,
+                              root_pass_clipped, 1.f, SkXfermode::kSrcOver_Mode,
                               0);
 
     RenderPassDrawQuad* render_pass_quad =
@@ -1182,7 +1163,6 @@ class DelegatedRendererLayerImplTestClip
 
       clip_layer->SetPosition(clip_rect.origin());
       clip_layer->SetBounds(clip_rect.size());
-      clip_layer->SetContentBounds(clip_rect.size());
       clip_layer->SetMasksToBounds(true);
 
       origin_layer->SetPosition(
@@ -1454,7 +1434,6 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
   FakeDelegatedRendererLayerImpl* delegated_renderer_layer_impl =
       impl.AddChildToRoot<FakeDelegatedRendererLayerImpl>();
   delegated_renderer_layer_impl->SetBounds(layer_size);
-  delegated_renderer_layer_impl->SetContentBounds(layer_size);
   delegated_renderer_layer_impl->SetDrawsContent(true);
 
   // Contributing render pass is offset by a transform and holds a quad that
@@ -1513,7 +1492,7 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
   {
     SCOPED_TRACE("Full occlusion");
     {
-      gfx::Rect occluded(delegated_renderer_layer_impl->visible_content_rect());
+      gfx::Rect occluded(delegated_renderer_layer_impl->visible_layer_rect());
 
       SCOPED_TRACE("Root render pass");
       impl.AppendQuadsForPassWithOcclusion(delegated_renderer_layer_impl, pass1,
@@ -1523,7 +1502,7 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
       EXPECT_EQ(pass1->quad_list.size(), 0u);
     }
     {
-      gfx::Rect occluded(delegated_renderer_layer_impl->visible_content_rect());
+      gfx::Rect occluded(delegated_renderer_layer_impl->visible_layer_rect());
 
       SCOPED_TRACE("Contributing render pass");
       impl.AppendQuadsForPassWithOcclusion(delegated_renderer_layer_impl, pass2,
@@ -1583,6 +1562,9 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
       gfx::Transform layer_transform;
       layer_transform.Translate(11.0, 0.0);
       delegated_renderer_layer_impl->SetTransform(layer_transform);
+      delegated_renderer_layer_impl->layer_tree_impl()
+          ->property_trees()
+          ->needs_rebuild = true;
 
       occlusion_in_target_of_delegated_quad += gfx::Vector2d(11, 0);
 
@@ -1619,7 +1601,6 @@ TEST_F(DelegatedRendererLayerImplTest, DeviceScaleFactorOcclusion) {
   FakeDelegatedRendererLayerImpl* delegated_renderer_layer_impl =
       impl.AddChildToRoot<FakeDelegatedRendererLayerImpl>();
   delegated_renderer_layer_impl->SetBounds(layer_size);
-  delegated_renderer_layer_impl->SetContentBounds(layer_size);
   delegated_renderer_layer_impl->SetDrawsContent(true);
 
   // Contributing render pass is offset by a transform and holds a quad that
@@ -1677,7 +1658,6 @@ TEST_F(DelegatedRendererLayerImplTest, PushPropertiesTo) {
   scoped_ptr<FakeDelegatedRendererLayerImpl> delegated_renderer_layer_impl =
       FakeDelegatedRendererLayerImpl::Create(host_impl_->active_tree(), 5);
   delegated_renderer_layer_impl->SetBounds(layer_size);
-  delegated_renderer_layer_impl->SetContentBounds(layer_size);
   delegated_renderer_layer_impl->SetDrawsContent(true);
 
   RenderPassList delegated_render_passes;

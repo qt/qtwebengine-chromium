@@ -189,7 +189,7 @@ void MCSClientTest::SetUp() {
 void MCSClientTest::BuildMCSClient() {
   gcm_store_.reset(new GCMStoreImpl(
       temp_directory_.path(),
-      message_loop_.message_loop_proxy(),
+      message_loop_.task_runner(),
       make_scoped_ptr<Encryptor>(new FakeEncryptor)));
   mcs_client_.reset(new TestMCSClient(&clock_,
                                       &connection_factory_,
@@ -198,7 +198,7 @@ void MCSClientTest::BuildMCSClient() {
 }
 
 void MCSClientTest::InitializeClient() {
-  gcm_store_->Load(base::Bind(
+  gcm_store_->Load(GCMStore::CREATE_IF_MISSING, base::Bind(
       &MCSClient::Initialize,
       base::Unretained(mcs_client_.get()),
       base::Bind(&MCSClientTest::ErrorCallback,

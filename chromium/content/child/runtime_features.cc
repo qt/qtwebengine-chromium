@@ -60,11 +60,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableFastMobileScrolling(true);
   WebRuntimeFeatures::enableMediaCapture(true);
   WebRuntimeFeatures::enableCompositedSelectionUpdate(true);
-  // If navigation transitions gets activated via field trial, enable it in
-  // blink. We don't set this to false in case the user has manually enabled
-  // the feature via experimental web platform features.
-  if (base::FieldTrialList::FindFullName("NavigationTransitions") == "Enabled")
-    WebRuntimeFeatures::enableNavigationTransitions(true);
   // Android won't be able to reliably support non-persistent notifications, the
   // intended behavior for which is in flux by itself.
   WebRuntimeFeatures::enableNotificationConstructor(false);
@@ -91,6 +86,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
+
+  if (command_line.HasSwitch(switches::kEnableWebBluetooth))
+    WebRuntimeFeatures::enableWebBluetooth(true);
 
   SetRuntimeFeatureDefaultsForPlatform();
 
@@ -204,6 +202,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableUnsafeES3APIs))
     WebRuntimeFeatures::enableUnsafeES3APIs(true);
+
+  if (command_line.HasSwitch(switches::kEnableWebVR)) {
+    WebRuntimeFeatures::enableWebVR(true);
+    WebRuntimeFeatures::enableFeatureFromString("GeometryInterfaces", true);
+  }
 
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.

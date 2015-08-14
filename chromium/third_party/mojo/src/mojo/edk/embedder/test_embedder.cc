@@ -5,7 +5,6 @@
 #include "mojo/edk/embedder/test_embedder.h"
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/edk/embedder/embedder_internal.h"
@@ -48,7 +47,7 @@ void InitWithSimplePlatformSupport() {
 bool Shutdown() {
   // If |InitIPCSupport()| was called, then |ShutdownIPCSupport()| must have
   // been called first.
-  CHECK(internal::g_process_type == ProcessType::UNINITIALIZED);
+  CHECK(!internal::g_ipc_support);
 
   CHECK(internal::g_core);
   bool rv = system::internal::ShutdownCheckNoLeaks(internal::g_core);

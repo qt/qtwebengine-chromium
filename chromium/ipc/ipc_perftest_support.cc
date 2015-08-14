@@ -98,7 +98,7 @@ class ChannelReflectorListener : public Listener {
   bool OnMessageReceived(const Message& message) override {
     CHECK(channel_);
 
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     int64 time_internal;
     EXPECT_TRUE(iter.ReadInt64(&time_internal));
     int msgid;
@@ -167,7 +167,7 @@ class PerformanceChannelListener : public Listener {
   bool OnMessageReceived(const Message& message) override {
     CHECK(sender_);
 
-    PickleIterator iter(message);
+    base::PickleIterator iter(message);
     int64 time_internal;
     EXPECT_TRUE(iter.ReadInt64(&time_internal));
     int msgid;
@@ -327,8 +327,8 @@ PingPongTestClient::~PingPongTestClient() {
 
 scoped_ptr<Channel> PingPongTestClient::CreateChannel(
     Listener* listener) {
-  return Channel::CreateClient(
-      IPCTestBase::GetChannelName("PerformanceClient"), listener);
+  return Channel::CreateClient(IPCTestBase::GetChannelName("PerformanceClient"),
+                               listener, nullptr);
 }
 
 int PingPongTestClient::RunMain() {

@@ -16,6 +16,7 @@
 #include "content/common/gpu/media/gpu_video_accelerator_util.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_message_macros.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/limits.h"
 #include "media/base/video_frame.h"
 
@@ -268,7 +269,7 @@ void GpuVideoEncodeAccelerator::OnEncode(int32 frame_id,
 
   uint8* shm_memory = reinterpret_cast<uint8*>(shm->memory()) + aligned_offset;
   scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::WrapExternalPackedMemory(
+      media::VideoFrame::WrapExternalSharedMemory(
           input_format_,
           input_coded_size_,
           gfx::Rect(input_visible_size_),
@@ -277,16 +278,13 @@ void GpuVideoEncodeAccelerator::OnEncode(int32 frame_id,
           buffer_size,
           buffer_handle,
           buffer_offset,
-          base::TimeDelta(),
-          // It's turtles all the way down...
-          base::Bind(base::IgnoreResult(
-                         &base::SingleThreadTaskRunner::PostTask),
-                     base::ThreadTaskRunnerHandle::Get(),
-                     FROM_HERE,
-                     base::Bind(&GpuVideoEncodeAccelerator::EncodeFrameFinished,
-                                weak_this_factory_.GetWeakPtr(),
-                                frame_id,
-                                base::Passed(&shm))));
+          base::TimeDelta());
+  frame->AddDestructionObserver(
+      media::BindToCurrentLoop(
+          base::Bind(&GpuVideoEncodeAccelerator::EncodeFrameFinished,
+                     weak_this_factory_.GetWeakPtr(),
+                     frame_id,
+                     base::Passed(&shm))));
 
   if (!frame.get()) {
     DLOG(ERROR) << "GpuVideoEncodeAccelerator::OnEncode(): "

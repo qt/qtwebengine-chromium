@@ -30,7 +30,7 @@
 
 .network-log-grid.data-grid {
     border: none;
-    flex: 1 1;
+    flex: auto;
 }
 
 .network-summary-bar {
@@ -108,6 +108,11 @@
 
 .network-log-grid.data-grid .timeline-column {
     padding: 1px 0;
+}
+
+.network-log-grid.data-grid .timeline-column .sort-order-icon-container {
+    right: 15px;
+    pointer-events: none;
 }
 
 #network-container:not(.brief-mode) .network-log-grid.data-grid td.name-column:hover {
@@ -369,6 +374,7 @@
 
 /* Resource categories */
 
+.network-graph-bar.request-timing.queueing,
 .network-graph-bar.request-timing.total,
 .network-graph-bar.request-timing.proxy,
 .network-graph-bar.request-timing.dns,
@@ -378,6 +384,7 @@
     margin: 3px 0;
 }
 
+.network-graph-bar.request-timing.queueing,
 .network-graph-bar.request-timing.total {
     border: solid 1px #AAAAAA;
 }
@@ -512,7 +519,7 @@
 
 .network-event-divider {
     position: absolute;
-    width: 2px;
+    width: 1px;
     margin-left: -1px;
     top: 31px;
     bottom: 0;
@@ -540,18 +547,14 @@
 }
 
 .network-frame-divider {
-    margin-top: -5px;
-    width: 10px;
-    height: 10px;
-    border: 1px solid #063;
-    background-color: #085;
-    border-radius: 5px;
-    z-index: 1;
+    width: 2px;
+    background-color: #FCCC49;
+    z-index: 10;
+    visibility: hidden;
 }
 
 .network-frame-divider-selected {
-    background-color: #FFE3C7;
-    z-index: 10;
+    visibility: visible;
 }
 
 .network-summary-bar .summary-blue {
@@ -595,8 +598,7 @@
 }
 
 #network-container {
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 /* Brief mode peculiarities. */

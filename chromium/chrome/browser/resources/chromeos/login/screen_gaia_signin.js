@@ -170,6 +170,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
           this.onAuthCompletedMessage_.bind(this));
       this.gaiaAuthHost_.addEventListener('loadAbort',
         this.onLoadAbortMessage_.bind(this));
+      this.gaiaAuthHost_.addEventListener(
+          'identifierEntered', this.onIdentifierEnteredMessage_.bind(this));
 
       $('enterprise-info-hint-link').addEventListener('click', function(e) {
         chrome.send('launchHelpApp', [HELP_TOPIC_ENTERPRISE_REPORTING]);
@@ -409,7 +411,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
       if (this.isNewGaiaFlow) {
         $('inner-container').classList.add('new-gaia-flow');
-        $('progress-dots').hidden = true;
         params.chromeType = data.chromeType;
         params.isNewGaiaFlowChromeOS = true;
       }
@@ -649,7 +650,12 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       } else {
         chrome.send('scrapedPasswordVerificationFailed');
         this.showFatalAuthError(
-            loadTimeData.getString('fatalErrorMessageVerificationFailed'));
+            loadTimeData.getString('fatalErrorMessageVerificationFailed'),
+            loadTimeData.getString('fatalErrorTryAgainButton'));
+      }
+      if (this.isNewGaiaFlow) {
+        this.classList.toggle('no-right-panel', false);
+        this.classList.toggle('full-width', false);
       }
     },
 
@@ -671,8 +677,9 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} email The authenticated user's e-mail.
      */
     onAuthNoPassword_: function(email) {
-      this.showFatalAuthError(loadTimeData.getString(
-          'fatalErrorMessageNoPassword'));
+      this.showFatalAuthError(
+          loadTimeData.getString('fatalErrorMessageNoPassword'),
+          loadTimeData.getString('fatalErrorTryAgainButton'));
       chrome.send('scrapedPasswordCount', [0]);
     },
 
@@ -684,17 +691,18 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} url The URL that was blocked.
      */
     onInsecureContentBlocked_: function(url) {
-      this.showFatalAuthError(loadTimeData.getStringF(
-          'fatalErrorMessageInsecureURL',
-          url));
+      this.showFatalAuthError(
+          loadTimeData.getStringF('fatalErrorMessageInsecureURL', url),
+          loadTimeData.getString('fatalErrorDoneButton'));
     },
 
     /**
      * Shows the fatal auth error.
      * @param {string} message The error message to show.
+     * @param {string} buttonLabel The label to display on dismiss button.
      */
-    showFatalAuthError: function(message) {
-      login.FatalErrorScreen.show(message, Oobe.showSigninUI);
+    showFatalAuthError: function(message, buttonLabel) {
+      login.FatalErrorScreen.show(message, buttonLabel, Oobe.showSigninUI);
     },
 
     /**
@@ -702,7 +710,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      */
     missingGaiaInfo_: function() {
       this.showFatalAuthError(
-          loadTimeData.getString('fatalErrorMessageNoAccountDetails'));
+          loadTimeData.getString('fatalErrorMessageNoAccountDetails'),
+          loadTimeData.getString('fatalErrorTryAgainButton'));
     },
 
     /**
@@ -734,7 +743,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
             credentials.email,
             credentials.password,
             credentials.authCode,
-            credentials.usingSAML
+            credentials.usingSAML,
+            credentials.gapsCookie
           ]);
         }
       } else {
@@ -772,6 +782,15 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
+     * Invoked when identifierEntered message received.
+     * @param {!Object} e Payload of the received HTML5 message.
+     * @private
+     */
+    onIdentifierEnteredMessage_: function(e) {
+      this.onIdentifierEntered(e.detail);
+    },
+
+    /**
      * Clears input fields and switches to input mode.
      * @param {boolean} takeFocus True to take focus.
      * @param {boolean} forceOnline Whether online sign-in should be forced.
@@ -796,6 +815,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * Reloads extension frame.
      */
     doReload: function() {
+      if (this.isLocal)
+        return;
       this.error_ = 0;
       this.gaiaAuthHost_.reload();
       this.loading = true;
@@ -878,10 +899,10 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
         return;
       }
 
-      $('pod-row').loadLastWallpaper();
-      Oobe.showScreen({id: SCREEN_ACCOUNT_PICKER});
+      $('offline-gaia').switchToEmailCard();
+
       this.classList.remove('whitelist-error');
-      Oobe.resetSigninUI(true);
+      Oobe.showUserPods();
     },
 
     /**
@@ -903,6 +924,15 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      */
     onWebviewError: function(data) {
       chrome.send('webviewLoadAborted', [data.error]);
+    },
+
+    /**
+     * Handler for identifierEntered event.
+     * @param {!Object} data The identifier entered by user:
+     * {string} accountIdentifier User identifier.
+     */
+    onIdentifierEntered: function(data) {
+      chrome.send('identifierEntered', [data.accountIdentifier]);
     },
 
     /**

@@ -24,10 +24,6 @@
       # The list of sources which is only used by chrome browser tests.
       '../apps/app_restore_service_browsertest.cc',
       '../apps/load_and_launch_browsertest.cc',
-      '../components/autofill/content/renderer/test_password_autofill_agent.cc',
-      '../components/autofill/content/renderer/test_password_autofill_agent.h',
-      '../components/autofill/content/renderer/test_password_generation_agent.cc',
-      '../components/autofill/content/renderer/test_password_generation_agent.h',
       # TODO(rockot): Remove this once extensions_browsertests exists.
       '../extensions/browser/api/app_window/app_window_apitest.cc',
       '../extensions/browser/api/bluetooth/bluetooth_apitest.cc',
@@ -65,7 +61,6 @@
       'browser/apps/speech_recognition_browsertest.cc',
       'browser/apps/window_controls_browsertest.cc',
       'browser/autocomplete/autocomplete_browsertest.cc',
-      'browser/autocomplete/in_memory_url_index_types_unittest.cc',
       'browser/autofill/autofill_browsertest.cc',
       'browser/autofill/autofill_server_browsertest.cc',
       'browser/autofill/content_autofill_driver_browsertest.cc',
@@ -182,6 +177,7 @@
       'browser/extensions/api/notification_provider/notification_provider_apitest.cc',
       'browser/extensions/api/omnibox/omnibox_api_browsertest.cc',
       'browser/extensions/api/page_capture/page_capture_apitest.cc',
+      'browser/extensions/api/passwords_private/passwords_private_apitest.cc',
       'browser/extensions/api/permissions/permissions_apitest.cc',
       'browser/extensions/api/platform_keys/platform_keys_apitest_nss.cc',
       'browser/extensions/api/preference/preference_apitest.cc',
@@ -250,6 +246,7 @@
       'browser/extensions/extension_management_test_util.h',
       'browser/extensions/extension_messages_apitest.cc',
       'browser/extensions/extension_override_apitest.cc',
+      'browser/extensions/extension_request_limiting_throttle_browsertest.cc',
       'browser/extensions/extension_resource_request_policy_apitest.cc',
       'browser/extensions/extension_startup_browsertest.cc',
       'browser/extensions/extension_storage_apitest.cc',
@@ -339,6 +336,7 @@
       'browser/media_galleries/fileapi/media_file_validator_browsertest.cc',
       'browser/media_galleries/media_galleries_dialog_controller_mock.cc',
       'browser/media_galleries/media_galleries_dialog_controller_mock.h',
+      'browser/memory/oom_priority_manager_browsertest_chromeos.cc',
       'browser/metrics/metrics_memory_details_browsertest.cc',
       'browser/metrics/metrics_service_browsertest.cc',
       'browser/net/cookie_policy_browsertest.cc',
@@ -395,6 +393,8 @@
       'browser/sessions/tab_restore_browsertest.cc',
       'browser/spellchecker/spellcheck_service_browsertest.cc',
       'browser/ssl/captive_portal_blocking_page_browsertest.cc',
+      'browser/ssl/certificate_reporting_test_utils.cc',
+      'browser/ssl/certificate_reporting_test_utils.h',
       'browser/ssl/chrome_ssl_host_state_delegate_test.cc',
       'browser/ssl/ssl_browser_tests.cc',
       'browser/ssl/ssl_client_certificate_selector_test.cc',
@@ -404,10 +404,16 @@
       'browser/sync_file_system/mock_remote_file_sync_service.cc',
       'browser/sync_file_system/mock_remote_file_sync_service.h',
       'browser/tab_contents/view_source_browsertest.cc',
+      'browser/task_management/providers/web_contents/background_contents_tag_browsertest.cc',
+      'browser/task_management/providers/web_contents/devtools_tag_browsertest.cc',
+      'browser/task_management/providers/web_contents/tab_contents_tag_browsertest.cc',
+      'browser/task_management/task_management_browsertest_util.cc',
+      'browser/task_management/task_management_browsertest_util.h',
       'browser/task_manager/task_manager_browsertest.cc',
       'browser/task_manager/task_manager_browsertest_util.cc',
       'browser/task_manager/task_manager_browsertest_util.h',
       'browser/themes/theme_service_browsertest.cc',
+      'browser/tracing/chrome_tracing_delegate_browsertest.cc',
       'browser/translate/cld_data_harness.cc',
       'browser/translate/cld_data_harness.h',
       'browser/translate/cld_data_harness_factory.cc',
@@ -431,7 +437,7 @@
       'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
       'browser/ui/autofill/autofill_dialog_view_tester.h',
       'browser/ui/autofill/card_unmask_prompt_view_browsertest.cc',
-      'browser/ui/autofill/card_unmask_view_tester.h',
+      'browser/ui/autofill/card_unmask_prompt_view_tester.h',
       'browser/ui/autofill/mock_address_validator.cc',
       'browser/ui/autofill/mock_address_validator.h',
       'browser/ui/autofill/password_generation_popup_view_browsertest.cc',
@@ -443,7 +449,6 @@
       'browser/ui/blocked_content/popup_blocker_browsertest.cc',
       'browser/ui/bookmarks/bookmark_browsertest.cc',
       'browser/ui/browser_browsertest.cc',
-      'browser/ui/browser_close_browsertest.cc',
       'browser/ui/browser_command_controller_browsertest.cc',
       'browser/ui/browser_navigator_browsertest.cc',
       'browser/ui/browser_navigator_browsertest.h',
@@ -464,9 +469,9 @@
       'browser/ui/cocoa/content_settings/content_setting_bubble_cocoa_unittest.mm',
       'browser/ui/cocoa/dev_tools_controller_browsertest.mm',
       'browser/ui/cocoa/extensions/extension_install_dialog_controller_browsertest.mm',
-      'browser/ui/cocoa/extensions/extension_message_bubble_browsertest_mac.mm',
       'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.h',
       'browser/ui/cocoa/extensions/extension_install_prompt_test_utils.mm',
+      'browser/ui/cocoa/extensions/extension_message_bubble_browsertest_mac.mm',
       'browser/ui/cocoa/extensions/media_galleries_dialog_cocoa_browsertest.mm',
       'browser/ui/cocoa/extensions/windowed_install_dialog_controller_browsertest.mm',
       'browser/ui/cocoa/find_bar/find_bar_browsertest.mm',
@@ -478,12 +483,13 @@
       'browser/ui/cocoa/profiles/profile_signin_confirmation_view_controller_browsertest.mm',
       'browser/ui/cocoa/ssl_client_certificate_selector_cocoa_browsertest.mm',
       'browser/ui/cocoa/view_id_util_browsertest.mm',
+      'browser/ui/cocoa/web_contents_modal_dialog_manager_views_mac_browsertest.mm',
       'browser/ui/cocoa/website_settings/permission_bubble_cocoa_browser_test.mm',
       'browser/ui/content_settings/content_setting_bubble_model_browsertest.cc',
       'browser/ui/exclusive_access/fullscreen_controller_browsertest.cc',
       'browser/ui/extensions/extension_message_bubble_browsertest.cc',
       'browser/ui/extensions/extension_message_bubble_browsertest.h',
-      'browser/ui/extensions/bookmark_app_browsertest.cc',
+      'browser/ui/extensions/hosted_app_browsertest.cc',
       'browser/ui/find_bar/find_bar_host_browsertest.cc',
       'browser/ui/global_error/global_error_service_browsertest.cc',
       'browser/ui/location_bar/location_bar_browsertest.cc',
@@ -492,6 +498,7 @@
       'browser/ui/panels/panel_extension_browsertest.cc',
       'browser/ui/passwords/manage_passwords_test.cc',
       'browser/ui/prefs/prefs_tab_helper_browsertest.cc',
+      'browser/ui/profile_error_browsertest.cc',
       'browser/ui/search/new_tab_page_interceptor_browsertest.cc',
       'browser/ui/search_engines/search_engine_tab_helper_browsertest.cc',
       'browser/ui/settings_window_manager_browsertest.cc',
@@ -502,8 +509,6 @@
       'browser/ui/tab_modal_confirm_dialog_browsertest.h',
       'browser/ui/test/scoped_fake_nswindow_main_status.h',
       'browser/ui/test/scoped_fake_nswindow_main_status.mm',
-      'browser/ui/website_settings/permission_bubble_browser_test_util.cc',
-      'browser/ui/website_settings/permission_bubble_browser_test_util.h',
       'browser/ui/toolbar/browser_actions_bar_browsertest.cc',
       'browser/ui/toolbar/browser_actions_bar_browsertest.h',
       'browser/ui/toolbar/component_toolbar_actions_browsertest.cc',
@@ -511,9 +516,13 @@
       'browser/ui/toolbar/test_toolbar_model.h',
       'browser/ui/website_settings/mock_permission_bubble_view.cc',
       'browser/ui/website_settings/mock_permission_bubble_view.h',
+      'browser/ui/website_settings/permission_bubble_browser_test_util.cc',
+      'browser/ui/website_settings/permission_bubble_browser_test_util.h',
+      'browser/ui/website_settings/permission_bubble_manager_browsertest.cc',
       'browser/ui/webui/bidi_checker_web_ui_test.cc',
       'browser/ui/webui/bidi_checker_web_ui_test.h',
       'browser/ui/webui/bookmarks_ui_browsertest.cc',
+      'browser/ui/webui/chromeos/bluetooth_pairing_ui_browsertest-inl.h',
       'browser/ui/webui/chrome_url_data_manager_browsertest.cc',
       'browser/ui/webui/constrained_web_dialog_ui_browsertest.cc',
       'browser/ui/webui/downloads_dom_handler_browsertest.cc',
@@ -527,11 +536,12 @@
       'browser/ui/webui/interstitials/interstitial_ui_browsertest.cc',
       'browser/ui/webui/net_internals/net_internals_ui_browsertest.cc',
       'browser/ui/webui/net_internals/net_internals_ui_browsertest.h',
-      'browser/ui/webui/ntp/most_visited_browsertest.cc',
       'browser/ui/webui/ntp/new_tab_page_sync_handler_browsertest.cc',
       'browser/ui/webui/ntp/new_tab_ui_browsertest.cc',
       'browser/ui/webui/options/clear_browser_data_browsertest.cc',
       'browser/ui/webui/options/content_settings_exception_area_browsertest.cc',
+      'browser/ui/webui/options/multilanguage_options_browsertest.cc',
+      'browser/ui/webui/options/multilanguage_options_browsertest.h',
       'browser/ui/webui/options/options_browsertest.cc',
       'browser/ui/webui/options/options_ui_browsertest.cc',
       'browser/ui/webui/options/options_ui_browsertest.h',
@@ -621,6 +631,7 @@
       'browser/ui/views/extensions/extension_message_bubble_view_browsertest.cc',
       'browser/ui/views/frame/browser_view_browsertest.cc',
       'browser/ui/views/location_bar/zoom_bubble_view_browsertest.cc',
+      'browser/ui/views/media_router/media_router_ui_browsertest.cc',
       'browser/ui/views/profiles/avatar_menu_button_browsertest.cc',
       'browser/ui/views/profiles/profile_chooser_view_browsertest.cc',
       'browser/ui/views/toolbar/browser_actions_container_browsertest.cc',
@@ -651,18 +662,24 @@
       'browser/chromeos/extensions/file_system_provider/file_system_provider_apitest.cc',
       'browser/chromeos/extensions/info_private_apitest.cc',
       'browser/chromeos/extensions/input_method_apitest_chromeos.cc',
+      'browser/chromeos/extensions/users_private/users_private_apitest.cc',
       'browser/chromeos/extensions/virtual_keyboard_browsertest.cc',
       'browser/chromeos/extensions/virtual_keyboard_browsertest.h',
       'browser/chromeos/extensions/wallpaper_apitest.cc',
       'browser/chromeos/extensions/wallpaper_manager_browsertest.cc',
       'browser/chromeos/extensions/wallpaper_private_apitest.cc',
+      'browser/chromeos/file_manager/audio_player_browsertest.cc',
+      'browser/chromeos/file_manager/gallery_browsertest.cc',
       'browser/chromeos/file_manager/drive_test_util.cc',
       'browser/chromeos/file_manager/drive_test_util.h',
       'browser/chromeos/file_manager/external_filesystem_apitest.cc',
+      'browser/chromeos/file_manager/file_manager_browsertest_base.cc',
+      'browser/chromeos/file_manager/file_manager_browsertest_base.h',
       'browser/chromeos/file_manager/file_manager_browsertest.cc',
       'browser/chromeos/file_manager/file_manager_jstest.cc',
       'browser/chromeos/file_manager/file_manager_jstest_base.cc',
       'browser/chromeos/file_manager/file_manager_jstest_base.h',
+      'browser/chromeos/file_manager/video_player_browsertest.cc',
       'browser/chromeos/file_manager/gallery_jstest.cc',
       'browser/chromeos/file_manager/image_loader_jstest.cc',
       'browser/chromeos/file_manager/zip_file_creator_browsertest.cc',
@@ -714,6 +731,7 @@
       'browser/chromeos/login/screens/network_screen_browsertest.cc',
       'browser/chromeos/login/screens/update_screen_browsertest.cc',
       'browser/chromeos/login/session_login_browsertest.cc',
+      'browser/chromeos/login/signin/device_id_browsertest.cc',
       'browser/chromeos/login/signin/oauth2_browsertest.cc',
       'browser/chromeos/login/supervised/supervised_user_creation_browsertest.cc',
       'browser/chromeos/login/supervised/supervised_user_password_browsertest.cc',
@@ -739,7 +757,6 @@
       'browser/chromeos/login/users/wallpaper/wallpaper_manager_test_utils.h',
       'browser/chromeos/login/webview_login_browsertest.cc',
       'browser/chromeos/login/wizard_controller_browsertest.cc',
-      'browser/chromeos/memory/oom_priority_manager_browsertest.cc',
       'browser/chromeos/net/network_portal_detector_impl_browsertest.cc',
       'browser/chromeos/ownership/fake_owner_settings_service.cc',
       'browser/chromeos/ownership/fake_owner_settings_service.h',
@@ -759,6 +776,8 @@
       'browser/chromeos/policy/restore_on_startup_browsertest_chromeos.cc',
       'browser/chromeos/policy/user_cloud_external_data_manager_browsertest.cc',
       'browser/chromeos/policy/user_cloud_policy_manager_chromeos_browsertest.cc',
+      'browser/chromeos/policy/user_policy_test_helper.cc',
+      'browser/chromeos/policy/user_policy_test_helper.h',
       'browser/chromeos/policy/variations_service_policy_browsertest.cc',
       'browser/chromeos/power/peripheral_battery_observer_browsertest.cc',
       'browser/chromeos/preferences_browsertest.cc',
@@ -792,6 +811,7 @@
     ],
     'chrome_browser_tests_speech_sources': [
       'browser/speech/extension_api/tts_extension_apitest.cc',
+      'browser/speech/speech_recognition_browsertest.cc',
     ],
     'chrome_browser_tests_full_safe_browsing_sources': [
       'browser/safe_browsing/local_safebrowsing_test_server.cc',
@@ -847,13 +867,23 @@
     ],
     'chrome_browser_tests_media_router_sources': [
       'browser/ui/webui/media_router/media_router_dialog_controller_browsertest.cc',
+      'test/data/webui/media_router/media_router_elements_browsertest.js',
+      'test/media_router/media_router_base_browsertest.cc',
+      'test/media_router/media_router_base_browsertest.h',
+      'test/media_router/media_router_e2e_browsertest.cc',
+      'test/media_router/media_router_e2e_browsertest.h',
+      'test/media_router/media_router_integration_browsertest.cc',
+      'test/media_router/media_router_integration_browsertest.h',
+      'test/media_router/test_media_sinks_observer.cc',
+      'test/media_router/test_media_sinks_observer.h',
     ],
     # Javascript sources. These are combined with the .cc files in the GYP build
-    # and are handled by a rule, but in the GN build theyr're in a separate
+    # and are handled by a rule, but in the GN build they're in a separate
     # action so need to be separated out.
     'chrome_browser_tests_webui_js_sources': [
       'browser/devtools/device/webrtc/devtools_bridge_client_browsertest.js',
       'browser/ui/webui/app_list/start_page_browsertest.js',
+      'browser/ui/webui/chromeos/bluetooth_pairing_ui_browsertest.js',
       'browser/ui/webui/chromeos/certificate_manager_dialog_browsertest.js',
       'browser/ui/webui/chromeos/set_time_ui_browsertest.js',
       'browser/ui/webui/downloads_ui_browsertest.js',
@@ -877,6 +907,7 @@
       'browser/ui/webui/options/language_options_browsertest.js',
       'browser/ui/webui/options/language_options_dictionary_download_browsertest.js',
       'browser/ui/webui/options/manage_profile_browsertest.js',
+      'browser/ui/webui/options/multilanguage_options_webui_browsertest.js',
       'browser/ui/webui/options/options_browsertest.js',
       'browser/ui/webui/options/options_browsertest_base.js',
       'browser/ui/webui/options/password_manager_browsertest.js',
@@ -885,7 +916,6 @@
       'browser/ui/webui/options/settings_app_browsertest.js',
       'browser/ui/webui/options/settings_format_browsertest.js',
       'browser/ui/webui/options/startup_page_list_browsertest.js',
-      'browser/ui/webui/options/website_settings_browsertest.js',
       'browser/ui/webui/sync_internals_browsertest.js',
       'browser/ui/webui/sync_setup_browsertest.js',
       'test/data/chromeos/oobe_webui_browsertest.js',
@@ -895,6 +925,7 @@
       'test/data/webui/async_gen.js',
       'test/data/webui/certificate_viewer_dialog_test.js',
       'test/data/webui/chrome_send_browsertest.js',
+      'test/data/webui/cr_elements/cr_elements_browsertest.js',
       'test/data/webui/history_browsertest.js',
       'test/data/webui/mock4js_browsertest.js',
       'test/data/webui/net_internals/bandwidth_view.js',
@@ -911,6 +942,7 @@
       'test/data/webui/net_internals/waterfall_view.js',
       'test/data/webui/net_internals/sdch_view.js',
       'test/data/webui/ntp4.js',
+      'test/data/webui/polymer_browser_test_base.js',
       'test/data/webui/print_preview.js',
       'test/data/webui/sandboxstatus_browsertest.js',
     ],
@@ -929,7 +961,6 @@
       'browser/autofill/autofill_interactive_uitest.cc',
       'browser/autofill/autofill_uitest_util.cc',
       'browser/browser_keyevents_browsertest.cc',
-      'browser/chrome_plugin_interactive_test.cc',
       'browser/extensions/api/extension_action/browser_action_interactive_test.cc',
       'browser/extensions/api/omnibox/omnibox_api_interactive_test.cc',
       'browser/extensions/browsertest_util.cc',
@@ -946,11 +977,13 @@
       'browser/extensions/window_open_interactive_apitest.cc',
       'browser/mouseleave_browsertest.cc',
       'browser/password_manager/password_generation_interactive_uitest.cc',
+      'browser/password_manager/password_manager_interactive_uitest.cc',
       'browser/renderer_context_menu/render_view_context_menu_browsertest_util.cc',
       'browser/renderer_context_menu/render_view_context_menu_browsertest_util.h',
       'browser/task_manager/task_manager_browsertest_util.cc',
       'browser/ui/autofill/autofill_popup_controller_interactive_uitest.cc',
       'browser/ui/browser_focus_uitest.cc',
+      'browser/ui/cocoa/apps/app_shim_menu_controller_mac_interactive_uitest.mm',
       'browser/ui/cocoa/apps/quit_with_apps_controller_mac_interactive_uitest.mm',
       'browser/ui/cocoa/extensions/browser_action_button_interactive_uitest.mm',
       'browser/ui/cocoa/panels/panel_cocoa_browsertest.mm',
@@ -980,7 +1013,6 @@
       'browser/ui/toolbar/test_toolbar_model.cc',
       'browser/ui/toolbar/test_toolbar_model.h',
       'browser/ui/views/accessibility/navigation_accessibility_uitest_win.cc',
-      'browser/ui/webui/options/autofill_options_interactive_uitest.cc',
       'browser/ui/webui/options/language_dictionary_interactive_uitest.cc',
       'browser/ui/webui/options/language_options_interactive_uitest.cc',
       'test/base/interactive_test_utils.cc',
@@ -1010,7 +1042,6 @@
     ],
      # Cross-platform views interactive tests ready for toolkit-views on Mac.
     'chrome_interactive_ui_test_views_sources': [
-      '../ui/views/controls/webview/webview_interactive_uitest.cc',
       '../ui/views/corewm/desktop_capture_controller_unittest.cc',
       '../ui/views/widget/desktop_aura/desktop_window_tree_host_x11_interactive_uitest.cc',
       '../ui/views/widget/desktop_aura/x11_topmost_window_finder_interactive_uitest.cc',
@@ -1059,8 +1090,8 @@
       'browser/ui/views/frame/browser_view_interactive_uitest.cc',
       'browser/ui/views/keyboard_access_browsertest.cc',
       'browser/ui/views/location_bar/location_icon_view_interactive_uitest.cc',
-      'browser/ui/views/location_bar/star_view_browsertest.cc',
       'browser/ui/views/location_bar/page_action_image_view_interactive_uitest.cc',
+      'browser/ui/views/location_bar/star_view_browsertest.cc',
       'browser/ui/views/omnibox/omnibox_view_views_browsertest.cc',
       'browser/ui/views/passwords/manage_passwords_bubble_view_browsertest.cc',
       'browser/ui/views/passwords/manage_passwords_icon_view_browsertest.cc',
@@ -1222,10 +1253,6 @@
       'test/chromedriver/net/websocket.h',
     ],
     'performance_browser_tests_sources': [
-      '../components/autofill/content/renderer/test_password_autofill_agent.cc',
-      '../components/autofill/content/renderer/test_password_autofill_agent.h',
-      '../components/autofill/content/renderer/test_password_generation_agent.cc',
-      '../components/autofill/content/renderer/test_password_generation_agent.h',
       'app/chrome_command_ids.h',
       'app/chrome_dll.rc',
       'app/chrome_dll_resource.h',
@@ -1397,6 +1424,8 @@
       'browser/sync/test/integration/apps_helper.h',
       'browser/sync/test/integration/autofill_helper.cc',
       'browser/sync/test/integration/autofill_helper.h',
+      'browser/sync/test/integration/await_match_status_change_checker.cc',
+      'browser/sync/test/integration/await_match_status_change_checker.h',
       'browser/sync/test/integration/bookmarks_helper.cc',
       'browser/sync/test/integration/bookmarks_helper.h',
       'browser/sync/test/integration/dictionary_helper.cc',
@@ -1497,7 +1526,6 @@
         'debugger',
         'renderer',
         'test_support_common',
-        '../components/components.gyp:guest_view',
         '../components/components.gyp:guest_view_test_support',
         '../content/app/resources/content_resources.gyp:content_resources',
         '../crypto/crypto.gyp:crypto_test_support',
@@ -1510,11 +1538,10 @@
         '../sync/sync.gyp:sync',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '../third_party/hunspell_new/hunspell.gyp:hunspell',
+        '../third_party/hunspell/hunspell.gyp:hunspell',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libpng/libpng.gyp:libpng',
-        '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/zlib/zlib.gyp:zlib',
         '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/resources/ui_resources.gyp:ui_test_pak',
@@ -1626,6 +1653,13 @@
             '../ui/views/controls/webview/webview_tests.gyp:webview_test_support',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_test_support',
+          ],
+          'conditions': [
+            ['use_aura==1', {
+              'dependencies': [
+                '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection',
+              ],
+            }],
           ],
         }],
         ['use_aura==0 or chromeos==1', {
@@ -1989,7 +2023,6 @@
         '../components/components.gyp:captive_portal_test_support',
         '../components/components.gyp:dom_distiller_content',
         '../components/components.gyp:dom_distiller_test_support',
-        '../components/components.gyp:guest_view',
         '../components/components.gyp:guest_view_test_support',
         '../components/components.gyp:translate_core_common',
         '../components/components_resources.gyp:components_resources',
@@ -2015,8 +2048,8 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
         '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput',
-        '../third_party/libjingle/libjingle.gyp:peerconnection_server',
         '../third_party/safe_browsing/safe_browsing.gyp:safe_browsing',
+        '../third_party/webrtc/modules/modules.gyp:desktop_capture',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/accessibility/accessibility.gyp:accessibility_test_support',
         '../ui/compositor/compositor.gyp:compositor_test_support',
@@ -2126,7 +2159,10 @@
                 '../ppapi/native_client/native_client.gyp:nacl_irt',
                 '../ppapi/ppapi_nacl.gyp:ppapi_nacl_tests',
                 '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_background_keepalive',
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_load_unload',
                 '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_media_galleries',
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_multicast_permissions',
+                '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_no_socket_permissions',
                 '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_packaged_app',
                 '../ppapi/tests/extensions/extensions.gyp:ppapi_tests_extensions_socket_permissions',
               ],
@@ -2194,9 +2230,9 @@
           'sources': [ '<@(chrome_browser_tests_chromeos_sources)' ],
           'sources!': [
             '../apps/load_and_launch_browsertest.cc',
+            'browser/policy/policy_startup_browsertest.cc',
             'browser/printing/cloud_print/test/cloud_print_policy_browsertest.cc',
             'browser/printing/cloud_print/test/cloud_print_proxy_process_browsertest.cc',
-            'browser/policy/policy_startup_browsertest.cc',
             # chromeos does not support profile list avatar menu
             'browser/profiles/profile_list_desktop_browsertest.cc',
             'browser/service_process/service_process_control_browsertest.cc',
@@ -2247,10 +2283,6 @@
             'browser/media/chrome_webrtc_disable_encryption_flag_browsertest.cc',
             'browser/media/chrome_webrtc_getmediadevices_browsertest.cc',
          ],
-        }],
-        ['enable_media_router==1', {
-          'sources': [ '<@(chrome_browser_tests_media_router_sources)' ],
-          'dependencies': [ 'browser/media/router/media_router.gyp:media_router_test_support' ],
         }],
         ['OS=="win"', {
           'sources': [
@@ -2341,6 +2373,9 @@
             'renderer/safe_browsing/phishing_classifier_browsertest.cc',
             'renderer/safe_browsing/phishing_classifier_delegate_browsertest.cc',
             'renderer/safe_browsing/phishing_dom_feature_extractor_browsertest.cc',
+            # This tests the language options UI features that do not exist on
+            # Mac.
+            'browser/ui/webui/options/multilanguage_options_webui_browsertest.js',
           ],
         }],  # OS=="mac"
         ['OS=="mac" or OS=="win"', {
@@ -2400,13 +2435,6 @@
             '../v8/src/d8.gyp:d8#host',
           ],
         }],
-        ['OS!="android" and OS!="ios" and OS!="linux"', {
-          # npapi test plugin doesn't build on android or ios
-          'dependencies': [
-            # build time dependency.
-            '../content/content_shell_and_tests.gyp:copy_npapi_test_plugin',
-          ],
-        }],
         ['enable_app_list==1', {
           'sources': [ '<@(chrome_browser_tests_app_list_sources)' ],
         }, {
@@ -2438,6 +2466,18 @@
             'test/data/webui/print_preview.cc',
             'test/data/webui/print_preview.h',
             'test/data/webui/print_preview.js',
+          ],
+        }],
+        ['enable_media_router==1', {
+          'sources': [ '<@(chrome_browser_tests_media_router_sources)' ],
+          'dependencies': [
+            'browser/media/router/media_router.gyp:media_router_test_support',
+            'test/media_router/media_router_tests.gypi:media_router_integration_test_files'
+          ],
+          'conditions': [
+            ['toolkit_views==0', {
+              'sources!': [ 'browser/ui/views/media_router/media_router_ui_browsertest.cc' ],
+            }],
           ],
         }],
         ['enable_mdns==1', {
@@ -2494,6 +2534,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
+        '../components/components.gyp:autofill_content_test_support',
         '../media/cast/cast.gyp:cast_test_utility',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
@@ -2653,7 +2694,7 @@
         'chrome',
         'test_support_common',
         '../base/base.gyp:base',
-        '../components/components.gyp:invalidation',
+        '../components/components.gyp:invalidation_impl',
         '../components/components.gyp:invalidation_test_support',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
@@ -2728,7 +2769,6 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
-        '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/WebKit/public/blink.gyp:blink',
       ],
       'include_dirs': [
@@ -2970,8 +3010,13 @@
             'java_in_dir': 'android/shell/javatests',
             'additional_src_dirs': ['android/javatests_shell/src'],
             'is_test_apk': 1,
+            'test_type': 'instrumentation',
+            'isolate_file': 'chrome_shell_test_apk.isolate',
           },
-          'includes': [ '../build/java_apk.gypi' ],
+          'includes': [
+            '../build/java_apk.gypi',
+            '../build/android/test_runner.gypi',
+          ],
         },
         {
           # GN: //chrome/android:chrome_junit_tests
@@ -2981,6 +3026,7 @@
             'chrome_java',
             '../base/base.gyp:base',
             '../base/base.gyp:base_java_test_support',
+            '../sync/sync.gyp:sync_java_test_support',
             '../testing/android/junit/junit_test.gyp:junit_test_support',
           ],
           'variables': {
@@ -3044,8 +3090,12 @@
             'java_in_dir': 'android/sync_shell/javatests',
             'additional_src_dirs': [ 'android/shell/javatests', ],
             'is_test_apk': 1,
+            'test_type': 'instrumentation',
           },
-          'includes': [ '../build/java_apk.gypi' ],
+          'includes': [
+            '../build/java_apk.gypi',
+            '../build/android/test_runner.gypi',
+          ],
         },
         {
           # GN: //chrome/test/android:chrome_java_test_support
@@ -3056,7 +3106,10 @@
           },
           'dependencies': [
             'chrome_java',
+            '../base/base.gyp:base_java',
+            '../base/base.gyp:base_java_test_support',
             '../content/content_shell_and_tests.gyp:content_java_test_support',
+            '../net/net.gyp:net_java',
             '../net/net.gyp:net_java_test_support',
             '../sync/sync.gyp:sync_java',
             '../sync/sync.gyp:sync_java_test_support',
@@ -3087,6 +3140,26 @@
                 '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
               ],
             }],
+          ],
+        },
+        {
+          'target_name': 'chromedriver_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'chromedriver_unittests',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'chromedriver_unittests.isolate',
           ],
         },
         {
@@ -3140,6 +3213,11 @@
                 # depend on icu to fix races. http://crbug.com/417583
                 '../third_party/icu/icu.gyp:icudata',
               ],
+              # Set this so we aren't included as a target in files that
+              # include this file via a wildcard (such as chrome_tests.gypi).
+              # If we didn't do this the All target ends up with a rule that
+              # makes it unnecessarily compile in certain situations.
+              'suppress_wildcard': 1,
               'direct_dependent_settings': {
                 'includes': [
                   '../build/isolate.gypi',
@@ -3147,10 +3225,10 @@
               },
             },
             {
-              'target_name': 'telemetry_isolate_base',
+              'target_name': 'telemetry_chrome_test_base',
               'type': 'none',
               'dependencies': [
-                '../tools/telemetry/telemetry.gyp:bitmaptools#host',
+                '../content/content_shell_and_tests.gyp:telemetry_base',
               ],
               'conditions': [
                 ['OS=="linux" or OS=="mac"', {
@@ -3204,7 +3282,7 @@
               'dependencies': [
                 'chrome_run',
                 'gpu_tests_base',
-                'telemetry_isolate_base',
+                'telemetry_chrome_test_base',
               ],
               'sources': [
                 'telemetry_gpu_test.isolate',
@@ -3227,7 +3305,7 @@
                 },
               ],
             }],
-            ['OS=="win"', {
+            ['OS=="win" or OS=="linux"', {
               'targets': [
                 {
                   'target_name': 'angle_end2end_tests_run',
@@ -3238,6 +3316,21 @@
                   ],
                   'sources': [
                     'angle_end2end_tests.isolate',
+                  ],
+                },
+              ],
+            }],
+            ['OS=="win"', {
+              'targets': [
+                {
+                  'target_name': 'angle_deqp_tests_run',
+                  'type': 'none',
+                  'dependencies': [
+                    '../gpu/gpu.gyp:angle_deqp_tests',
+                    'gpu_tests_base',
+                  ],
+                  'sources': [
+                    'angle_deqp_tests.isolate',
                   ],
                 },
               ],
@@ -3260,13 +3353,6 @@
           'sources': [
             'tools/service_discovery_sniffer/service_discovery_sniffer.cc',
             'tools/service_discovery_sniffer/service_discovery_sniffer.h',
-          ],
-          'conditions': [
-            ['enable_webrtc==1', {
-              'dependencies': [
-                '../third_party/libjingle/libjingle.gyp:libjingle_webrtc'
-              ]
-            }],
           ],
         }]
     }],

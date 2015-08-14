@@ -103,7 +103,7 @@
             {
               'inputs': [
                 'policy/resources/policy_templates.json',
-		'<(DEPTH)/chrome/VERSION',
+                '<(DEPTH)/chrome/VERSION',
                 '<(generate_policy_source_script_path)',
               ],
               'outputs': [
@@ -124,7 +124,7 @@
                 '--cloud-policy-protobuf=<(cloud_policy_proto_path)',
                 '--cloud-policy-decoder=<(protobuf_decoder_path)',
                 '--app-restrictions-definition=<(app_restrictions_path)',
-		'<(DEPTH)/chrome/VERSION',
+                '<(DEPTH)/chrome/VERSION',
                 '<(OS)',
                 '<(chromeos)',
                 'policy/resources/policy_templates.json',
@@ -360,30 +360,11 @@
           ],
           'actions': [
             {
-              'action_name': 'remove_localized_resources',
-              'outputs': [
-                '<(input_resources_dir)/remove_localized_resources.d.stamp'
-              ],
-              'inputs': [
-                'policy/tools/remove_localized_app_restrictions.py',
-              ],
-              'action': [
-                'python',
-                'policy/tools/remove_localized_app_restrictions.py',
-                '<(input_resources_dir)',
-              ],
-            },
-            {
               'action_name': 'create_resources_zip',
               'inputs': [
                 '<(create_zip_script)',
                 '<(input_resources_dir)/xml-v21/app_restrictions.xml',
                 '<(input_resources_dir)/values-v21/restriction_values.xml',
-                # A dummy stamp file to remove localized resources without
-                # clobbering the build.
-                # TODO(475515): Remove after all build bots have run
-                # 'remove_localized_resources' target.
-                '<(input_resources_dir)/remove_localized_resources.d.stamp',
               ],
               'outputs': [
                 '<(resources_zip)'
@@ -401,7 +382,19 @@
               'dependencies_res_zip_paths': ['<(resources_zip)'],
             },
           },
-        }
+        },
+        {
+          # GN: //components/policy/android:policy_java
+          'target_name': 'policy_java',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'variables': {
+            'java_in_dir': 'policy/android/java',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
       ],
     }],
     ['OS=="win" and target_arch=="ia32" and configuration_policy==1', {

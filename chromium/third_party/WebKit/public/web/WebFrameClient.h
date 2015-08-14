@@ -41,6 +41,7 @@
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
+#include "WebNavigatorContentUtilsClient.h"
 #include "WebSandboxFlags.h"
 #include "WebTextDirection.h"
 #include "public/platform/WebCommon.h"
@@ -55,6 +56,7 @@
 
 namespace blink {
 
+enum class WebTreeScopeType;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebAppBannerClient;
@@ -71,6 +73,7 @@ class WebFormElement;
 class WebGeolocationClient;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
+class WebMediaPlayerEncryptedMediaClient;
 class WebMIDIClient;
 class WebNotificationPermissionCallback;
 class WebPermissionClient;
@@ -94,7 +97,6 @@ struct WebContextMenuData;
 struct WebPluginParams;
 struct WebPopupMenuInfo;
 struct WebRect;
-struct WebTransitionElementData;
 struct WebURLError;
 
 class WebFrameClient {
@@ -107,9 +109,12 @@ public:
     // May return null.
     virtual WebPlugin* createPlugin(WebLocalFrame*, const WebPluginParams&) { return 0; }
 
+    // TODO(srirama): Remove this method once chromium updated.
+    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebContentDecryptionModule*) { return 0; }
+
     // May return null.
     // WebContentDecryptionModule* may be null if one has not yet been set.
-    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebContentDecryptionModule*) { return 0; }
+    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebMediaPlayerEncryptedMediaClient*, WebContentDecryptionModule*) { return 0; }
 
     // May return null.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) { return 0; }
@@ -149,14 +154,17 @@ public:
     // until frameDetached() is called on it.
     // Note: If you override this, you should almost certainly be overriding
     // frameDetached().
-    virtual WebFrame* createChildFrame(WebLocalFrame* parent, const WebString& frameName, WebSandboxFlags sandboxFlags) { return nullptr; }
+    virtual WebFrame* createChildFrame(WebLocalFrame* parent, WebTreeScopeType, const WebString& frameName, WebSandboxFlags sandboxFlags) { return nullptr; }
 
     // This frame set its opener to null, disowning it.
     // See http://html.spec.whatwg.org/#dom-opener.
     virtual void didDisownOpener(WebLocalFrame*) { }
 
+    // Specifies the reason for the detachment.
+    enum class DetachType { Remove, Swap };
+
     // This frame has been detached from the view, but has not been closed yet.
-    virtual void frameDetached(WebFrame*) { }
+    virtual void frameDetached(WebFrame*, DetachType) { }
 
     // This frame has become focused..
     virtual void frameFocused() { }
@@ -209,7 +217,6 @@ public:
         WebNavigationType navigationType;
         WebNavigationPolicy defaultPolicy;
         bool isRedirect;
-        bool isTransitionNavigation;
 
         NavigationPolicyInfo(WebURLRequest& urlRequest)
             : frame(0)
@@ -217,8 +224,7 @@ public:
             , urlRequest(urlRequest)
             , navigationType(WebNavigationTypeOther)
             , defaultPolicy(WebNavigationPolicyIgnore)
-            , isRedirect(false)
-            , isTransitionNavigation(false) { }
+            , isRedirect(false) { }
     };
 
     virtual WebNavigationPolicy decidePolicyForNavigation(const NavigationPolicyInfo& info)
@@ -259,8 +265,7 @@ public:
     virtual void didCreateDataSource(WebLocalFrame*, WebDataSource*) { }
 
     // A new provisional load has been started.
-    virtual void didStartProvisionalLoad(WebLocalFrame* localFrame, bool isTransitionNavigation,
-        double triggeringEventTime) { }
+    virtual void didStartProvisionalLoad(WebLocalFrame* localFrame, double triggeringEventTime) { }
 
     // The provisional load was redirected via a HTTP 3xx response.
     virtual void didReceiveServerRedirectForProvisionalLoad(WebLocalFrame*) { }
@@ -327,12 +332,6 @@ public:
     // Called to dispatch a load event for this frame in the FrameOwner of an
     // out-of-process parent frame.
     virtual void dispatchLoad() { }
-
-
-    // Transition navigations -----------------------------------------------
-
-    // Provides serialized markup of transition elements for use in the following navigation.
-    virtual void addNavigationTransitionData(const WebTransitionElementData&) { }
 
     // Web Notifications ---------------------------------------------------
 
@@ -651,6 +650,22 @@ public:
 
     // App Banners ---------------------------------------------------------
     virtual WebAppBannerClient* appBannerClient() { return 0; }
+
+    // Navigator Content Utils  --------------------------------------------
+
+    // Registers a new URL handler for the given protocol.
+    virtual void registerProtocolHandler(const WebString& scheme,
+        const WebURL& url,
+        const WebString& title) { }
+
+    // Unregisters a given URL handler for the given protocol.
+    virtual void unregisterProtocolHandler(const WebString& scheme, const WebURL& url) { }
+
+    // Check if a given URL handler is registered for the given protocol.
+    virtual WebCustomHandlersState isProtocolHandlerRegistered(const WebString& scheme, const WebURL& url)
+    {
+        return WebCustomHandlersNew;
+    }
 
 protected:
     virtual ~WebFrameClient() { }

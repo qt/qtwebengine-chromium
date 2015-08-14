@@ -19,6 +19,7 @@
 #include "content/common/plugin_process_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/child_process_host.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -91,9 +92,14 @@ class PluginDataRemoverImpl::Context
     std::vector<WebPluginInfo> plugins;
     plugin_service->GetPluginInfoArray(
         GURL(), mime_type, false, &plugins, NULL);
-    base::FilePath plugin_path;
-    if (!plugins.empty())  // May be empty for some tests.
-      plugin_path = plugins[0].path;
+
+    if (plugins.empty()) {
+      // May be empty for some tests and on the CrOS login OOBE screen.
+      event_->Signal();
+      return;
+    }
+
+    base::FilePath plugin_path = plugins[0].path;
 
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     remove_start_time_ = base::Time::Now();
@@ -221,7 +227,8 @@ class PluginDataRemoverImpl::Context
       return;
 
     DCHECK(!channel_.get());
-    channel_ = IPC::Channel::CreateClient(handle, this);
+    channel_ = IPC::Channel::CreateClient(
+        handle, this, content::ChildProcessHost::GetAttachmentBroker());
     if (!channel_->Connect()) {
       NOTREACHED() << "Couldn't connect to plugin";
       SignalDone();

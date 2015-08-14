@@ -70,7 +70,6 @@ extern "C" {
 #define HAS_ARGBSHUFFLEROW_SSSE3
 #define HAS_ARGBTOARGB1555ROW_SSE2
 #define HAS_ARGBTOARGB4444ROW_SSE2
-#define HAS_ARGBTOBAYERGGROW_SSE2
 #define HAS_ARGBTORAWROW_SSSE3
 #define HAS_ARGBTORGB24ROW_SSSE3
 #define HAS_ARGBTORGB565ROW_SSE2
@@ -159,8 +158,9 @@ extern "C" {
 #define HAS_SOBELYROW_SSE2
 #endif
 
-// The following are available on x64 Visual C:
-#if !defined(LIBYUV_DISABLE_X86) && defined (_M_X64) && !defined(__clang__)
+// The following are available on x64 Visual C and clangcl.
+#if !defined(LIBYUV_DISABLE_X86) && defined (_M_X64) && \
+    (!defined(__clang__) || defined(__SSSE3__))
 #define HAS_I422TOARGBROW_SSSE3
 #endif
 
@@ -271,7 +271,6 @@ extern "C" {
 #define HAS_ARGB4444TOYROW_NEON
 #define HAS_ARGBTOARGB1555ROW_NEON
 #define HAS_ARGBTOARGB4444ROW_NEON
-#define HAS_ARGBTOBAYERGGROW_NEON
 #define HAS_ARGBTORAWROW_NEON
 #define HAS_ARGBTORGB24ROW_NEON
 #define HAS_ARGBTORGB565ROW_NEON
@@ -367,7 +366,7 @@ extern "C" {
 #endif
 #endif
 
-#if defined(_MSC_VER) && !defined(__clang__) && !defined(__CLR_VER)
+#if defined(_MSC_VER) && !defined(__CLR_VER)
 #define SIMD_ALIGNED(var) __declspec(align(16)) var
 #define SIMD_ALIGNED32(var) __declspec(align(64)) var
 typedef __declspec(align(16)) int16 vec16[8];
@@ -382,7 +381,7 @@ typedef __declspec(align(32)) int8 lvec8[32];
 typedef __declspec(align(32)) uint16 ulvec16[16];
 typedef __declspec(align(32)) uint32 ulvec32[8];
 typedef __declspec(align(32)) uint8 ulvec8[32];
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__GNUC__)
 // Caveat GCC 4.2 to 4.7 have a known issue using vectors with const.
 #define SIMD_ALIGNED(var) var __attribute__((aligned(16)))
 #define SIMD_ALIGNED32(var) var __attribute__((aligned(64)))
@@ -1632,17 +1631,6 @@ void UYVYToUVRow_Any_NEON(const uint8* src_uyvy, int stride_uyvy,
 void UYVYToUV422Row_Any_NEON(const uint8* src_uyvy,
                              uint8* dst_u, uint8* dst_v, int pix);
 
-void ARGBToBayerGGRow_C(const uint8* src_argb, uint8* dst_bayer,
-                        uint32 /* selector */, int pix);
-void ARGBToBayerGGRow_SSE2(const uint8* src_argb, uint8* dst_bayer,
-                           uint32 /* selector */, int pix);
-void ARGBToBayerGGRow_NEON(const uint8* src_argb, uint8* dst_bayer,
-                           uint32 /* selector */, int pix);
-void ARGBToBayerGGRow_Any_SSE2(const uint8* src_argb, uint8* dst_bayer,
-                               uint32 /* selector */, int pix);
-void ARGBToBayerGGRow_Any_NEON(const uint8* src_argb, uint8* dst_bayer,
-                               uint32 /* selector */, int pix);
-
 void I422ToYUY2Row_C(const uint8* src_y,
                      const uint8* src_u,
                      const uint8* src_v,
@@ -1832,6 +1820,18 @@ void SobelXYRow_SSE2(const uint8* src_sobelx, const uint8* src_sobely,
                      uint8* dst_argb, int width);
 void SobelXYRow_NEON(const uint8* src_sobelx, const uint8* src_sobely,
                      uint8* dst_argb, int width);
+void SobelRow_Any_SSE2(const uint8* src_sobelx, const uint8* src_sobely,
+                       uint8* dst_argb, int width);
+void SobelRow_Any_NEON(const uint8* src_sobelx, const uint8* src_sobely,
+                       uint8* dst_argb, int width);
+void SobelToPlaneRow_Any_SSE2(const uint8* src_sobelx, const uint8* src_sobely,
+                              uint8* dst_y, int width);
+void SobelToPlaneRow_Any_NEON(const uint8* src_sobelx, const uint8* src_sobely,
+                              uint8* dst_y, int width);
+void SobelXYRow_Any_SSE2(const uint8* src_sobelx, const uint8* src_sobely,
+                         uint8* dst_argb, int width);
+void SobelXYRow_Any_NEON(const uint8* src_sobelx, const uint8* src_sobely,
+                         uint8* dst_argb, int width);
 
 void ARGBPolynomialRow_C(const uint8* src_argb,
                          uint8* dst_argb, const float* poly,

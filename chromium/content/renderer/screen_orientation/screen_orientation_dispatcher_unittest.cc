@@ -12,7 +12,7 @@
 #include "content/public/test/test_utils.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebLockOrientationCallback.h"
+#include "third_party/WebKit/public/platform/modules/screen_orientation/WebLockOrientationCallback.h"
 
 namespace content {
 
@@ -74,9 +74,9 @@ class ScreenOrientationDispatcherTest : public testing::Test {
         ScreenOrientationHostMsg_LockRequest::ID);
     EXPECT_TRUE(msg != NULL);
 
-    Tuple<blink::WebScreenOrientationLockType,int> params;
+    base::Tuple<blink::WebScreenOrientationLockType, int> params;
     ScreenOrientationHostMsg_LockRequest::Read(msg, &params);
-    return get<1>(params);
+    return base::get<1>(params);
   }
 
   IPC::TestSink& sink() {

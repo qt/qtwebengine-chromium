@@ -74,7 +74,8 @@ class DecryptingDemuxerStreamTest : public testing::Test {
  public:
   DecryptingDemuxerStreamTest()
       : demuxer_stream_(new DecryptingDemuxerStream(
-            message_loop_.message_loop_proxy(),
+            message_loop_.task_runner(),
+            new MediaLog(),
             base::Bind(
                 &DecryptingDemuxerStreamTest::RequestDecryptorNotification,
                 base::Unretained(this)),
@@ -88,8 +89,7 @@ class DecryptingDemuxerStreamTest : public testing::Test {
             new StrictMock<MockDemuxerStream>(DemuxerStream::VIDEO)),
         clear_buffer_(CreateFakeEncryptedStreamBuffer(true)),
         encrypted_buffer_(CreateFakeEncryptedStreamBuffer(false)),
-        decrypted_buffer_(new DecoderBuffer(kFakeBufferSize)) {
-  }
+        decrypted_buffer_(new DecoderBuffer(kFakeBufferSize)) {}
 
   virtual ~DecryptingDemuxerStreamTest() {
     if (is_decryptor_set_)

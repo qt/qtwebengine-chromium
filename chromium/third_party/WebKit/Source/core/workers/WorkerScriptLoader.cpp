@@ -32,7 +32,7 @@
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/WorkerThreadableLoader.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerScriptLoaderClient.h"
+#include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 #include "platform/network/ResourceResponse.h"
 #include "public/platform/WebURLRequest.h"
 
@@ -42,16 +42,24 @@
 namespace blink {
 
 WorkerScriptLoader::WorkerScriptLoader()
-    : m_client(nullptr)
+    : m_responseCallback(nullptr)
+    , m_finishedCallback(nullptr)
     , m_failed(false)
+    , m_needToCancel(false)
     , m_identifier(0)
-    , m_finishing(false)
+    , m_appCacheID(0)
     , m_requestContext(WebURLRequest::RequestContextWorker)
 {
 }
 
 WorkerScriptLoader::~WorkerScriptLoader()
 {
+    // If |m_threadableLoader| is still working, we have to cancel it here.
+    // Otherwise WorkerScriptLoader::didFail() of the deleted |this| will be
+    // called from DocumentThreadableLoader::notifyFinished() when the frame
+    // will be destroyed.
+    if (m_needToCancel)
+        cancel();
 }
 
 void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy)
@@ -75,10 +83,11 @@ void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, c
     WorkerThreadableLoader::loadResourceSynchronously(toWorkerGlobalScope(executionContext), *request, *this, options, resourceLoaderOptions);
 }
 
-void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, WorkerScriptLoaderClient* client)
+void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, PassOwnPtr<Closure> responseCallback, PassOwnPtr<Closure> finishedCallback)
 {
-    ASSERT(client);
-    m_client = client;
+    ASSERT(responseCallback || finishedCallback);
+    m_responseCallback = responseCallback;
+    m_finishedCallback = finishedCallback;
     m_url = url;
 
     OwnPtr<ResourceRequest> request(createResourceRequest());
@@ -91,9 +100,11 @@ void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, 
     ResourceLoaderOptions resourceLoaderOptions;
     resourceLoaderOptions.allowCredentials = AllowStoredCredentials;
 
-    // During create, callbacks may happen which remove the last reference to this object.
-    RefPtr<WorkerScriptLoader> protect(this);
+    m_needToCancel = true;
     m_threadableLoader = ThreadableLoader::create(executionContext, this, *request, options, resourceLoaderOptions);
+    if (m_failed)
+        notifyFinished();
+    // Do nothing here since notifyFinished() could delete |this|.
 }
 
 const KURL& WorkerScriptLoader::responseURL() const
@@ -114,13 +125,16 @@ void WorkerScriptLoader::didReceiveResponse(unsigned long identifier, const Reso
 {
     ASSERT_UNUSED(handle, !handle);
     if (response.httpStatusCode() / 100 != 2 && response.httpStatusCode()) {
-        m_failed = true;
+        notifyError();
         return;
     }
+    m_identifier = identifier;
     m_responseURL = response.url();
     m_responseEncoding = response.textEncodingName();
-    if (m_client)
-        m_client->didReceiveResponse(identifier, response);
+    m_appCacheID = response.appCacheID();
+    processContentSecurityPolicy(response);
+    if (m_responseCallback)
+        (*m_responseCallback)();
 }
 
 void WorkerScriptLoader::didReceiveData(const char* data, unsigned len)
@@ -149,36 +163,29 @@ void WorkerScriptLoader::didReceiveCachedMetadata(const char* data, int size)
 
 void WorkerScriptLoader::didFinishLoading(unsigned long identifier, double)
 {
-    if (m_failed) {
-        notifyError();
-        return;
-    }
-
-    if (m_decoder)
+    m_needToCancel = false;
+    if (!m_failed && m_decoder)
         m_script.append(m_decoder->flush());
 
-    m_identifier = identifier;
     notifyFinished();
 }
 
 void WorkerScriptLoader::didFail(const ResourceError&)
 {
+    m_needToCancel = false;
     notifyError();
 }
 
 void WorkerScriptLoader::didFailRedirectCheck()
 {
+    // When didFailRedirectCheck() is called, the ResourceLoader for the script
+    // is not canceled yet. So we don't reset |m_needToCancel| here.
     notifyError();
-}
-
-void WorkerScriptLoader::notifyError()
-{
-    m_failed = true;
-    notifyFinished();
 }
 
 void WorkerScriptLoader::cancel()
 {
+    m_needToCancel = false;
     if (m_threadableLoader)
         m_threadableLoader->cancel();
 }
@@ -188,13 +195,40 @@ String WorkerScriptLoader::script()
     return m_script.toString();
 }
 
+void WorkerScriptLoader::notifyError()
+{
+    m_failed = true;
+    // notifyError() could be called before ThreadableLoader::create() returns
+    // e.g. from didFail(), and in that case m_threadableLoader is not yet set
+    // (i.e. still null).
+    // Since the callback invocation in notifyFinished() potentially delete
+    // |this| object, the callback invocation should be postponed until the
+    // create() call returns. See loadAsynchronously() for the postponed call.
+    if (m_threadableLoader)
+        notifyFinished();
+}
+
 void WorkerScriptLoader::notifyFinished()
 {
-    if (!m_client || m_finishing)
+    if (!m_finishedCallback)
         return;
 
-    m_finishing = true;
-    m_client->notifyFinished();
+    OwnPtr<Closure> callback = m_finishedCallback.release();
+    (*callback)();
+}
+
+void WorkerScriptLoader::processContentSecurityPolicy(const ResourceResponse& response)
+{
+    // Per http://www.w3.org/TR/CSP2/#processing-model-workers, if the Worker's
+    // URL is not a GUID, then it grabs its CSP from the response headers
+    // directly.  Otherwise, the Worker inherits the policy from the parent
+    // document (which is implemented in WorkerMessagingProxy, and
+    // m_contentSecurityPolicy should be left as nullptr to inherit the policy).
+    if (!response.url().protocolIs("blob") && !response.url().protocolIs("file") && !response.url().protocolIs("filesystem")) {
+        m_contentSecurityPolicy = ContentSecurityPolicy::create();
+        m_contentSecurityPolicy->setOverrideURLForSelf(response.url());
+        m_contentSecurityPolicy->didReceiveHeaders(ContentSecurityPolicyResponseHeaders(response));
+    }
 }
 
 } // namespace blink

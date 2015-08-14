@@ -40,14 +40,14 @@ class SourceBuffer;
 class GenericEventQueue;
 
 class SourceBufferList final : public RefCountedGarbageCollectedEventTargetWithInlineData<SourceBufferList> {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SourceBufferList>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(SourceBufferList);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static SourceBufferList* create(ExecutionContext* context, GenericEventQueue* asyncEventQueue)
     {
         return new SourceBufferList(context, asyncEventQueue);
     }
-    virtual ~SourceBufferList();
+    ~SourceBufferList() override;
 
     unsigned length() const { return m_list.size(); }
     SourceBuffer* item(unsigned index) const { return (index < m_list.size()) ? m_list[index].get() : 0; }
@@ -60,8 +60,8 @@ public:
     void clear();
 
     // EventTarget interface
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     DECLARE_VIRTUAL_TRACE();
 

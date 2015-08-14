@@ -44,8 +44,7 @@
 
     /**
      * Called when prefs in the underlying Chrome pref store are changed.
-     * @param {!Array<!chrome.settingsPrivate.PrefObject>} prefs The prefs that
-     *     changed.
+     * @param {!Array<!PrefObject>} prefs The prefs that changed.
      * @private
      */
     onPrefsChanged_: function(prefs) {
@@ -54,7 +53,7 @@
 
     /**
      * Called when prefs are fetched from settingsPrivate.
-     * @param {!Array<!chrome.settingsPrivate.PrefObject>} prefs
+     * @param {!Array<!PrefObject>} prefs
      * @private
      */
     onPrefsFetched_: function(prefs) {
@@ -67,9 +66,9 @@
 
     /**
      * Updates the settings model with the given prefs.
-     * @param {!Array<!chrome.settingsPrivate.PrefObject>} prefs
-     * @param {boolean} shouldObserve Whether to add an ObjectObserver for each
-     *     of the prefs.
+     * @param {!Array<!PrefObject>} prefs
+     * @param {boolean} shouldObserve Whether each of the prefs should be
+     *     observed.
      * @private
      */
     updatePrefs_: function(prefs, shouldObserve) {
@@ -84,53 +83,79 @@
 
           if (!root.hasOwnProperty(token)) {
             let path = 'prefStore.' + tokens.slice(0, i + 1).join('.');
-            this.setPathValue(path, {});
+            this.set(path, {});
           }
           root = root[token];
         }
 
         // NOTE: Do this copy rather than just a re-assignment, so that the
-        // ObjectObserver fires.
+        // observer fires.
         for (let objKey in prefObj) {
           let path = 'prefStore.' + prefObj.key + '.' + objKey;
-          this.setPathValue(path, prefObj[objKey]);
+
+          // Handle lists specially. We don't want to call this.set()
+          // unconditionally upon updating a list value, since even its contents
+          // are the same as the old list, doing this set() may cause an
+          // infinite update cycle (http://crbug.com/498586).
+          if (objKey == 'value' &&
+              prefObj.type == chrome.settingsPrivate.PrefType.LIST &&
+              !this.shouldUpdateListPrefValue_(root, prefObj['value'])) {
+            continue;
+          }
+
+          this.set(path, prefObj[objKey]);
         }
 
         if (shouldObserve) {
-          let keyObserver = new ObjectObserver(root);
-          keyObserver.open(
-              this.propertyChangeCallback_.bind(this, prefObj.key));
+          Object.observe(root, this.propertyChangeCallback_, ['update']);
         }
       }, this);
     },
 
+
+    /**
+     * @param {Object} root The root object for a pref that contains a list
+     *     value.
+     * @param {!Array} newValue The new list value.
+     * @return {boolean} Whether the new value is different from the one in
+     *     root, thus necessitating a pref update.
+     */
+    shouldUpdateListPrefValue_: function(root, newValue) {
+      if (root.value == null ||
+          root.value.length != newValue.length) {
+        return true;
+      }
+
+      for (let i = 0; i < newValue.length; i++) {
+        if (root.value != null && root.value[i] != newValue[i]) {
+          return true;
+        }
+      }
+
+      return false;
+    },
+
     /**
      * Called when a property of a pref changes.
-     * @param {string} propertyPath The path before the property names.
-     * @param {!Array<string>} added An array of keys which were added.
-     * @param {!Array<string>} removed An array of keys which were removed.
-     * @param {!Array<string>} changed An array of keys of properties whose
-     *     values changed.
-     * @param {function(string) : *} getOldValueFn A function which takes a
-     *     property name and returns the old value for that property.
+     * @param {!Array<!Object>} changes An array of objects describing changes.
+     *     @see http://www.html5rocks.com/en/tutorials/es7/observe/
      * @private
      */
-    propertyChangeCallback_: function(
-        propertyPath, added, removed, changed, getOldValueFn) {
-      for (let property in changed) {
+    propertyChangeCallback_: function(changes) {
+      changes.forEach(function(change) {
         // UI should only be able to change the value of a setting for now, not
         // disabled, etc.
-        assert(property == 'value');
+        assert(change.name == 'value');
 
-        let newValue = changed[property];
+        let newValue = change.object[change.name];
         assert(newValue !== undefined);
 
         chrome.settingsPrivate.setPref(
-            propertyPath,
+            change.object['key'],
             newValue,
             /* pageId */ '',
             /* callback */ function() {});
-      }
+      });
     },
   });
 })();

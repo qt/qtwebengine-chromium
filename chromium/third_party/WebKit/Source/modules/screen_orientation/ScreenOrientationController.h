@@ -10,9 +10,9 @@
 #include "modules/ModulesExport.h"
 #include "platform/Supplementable.h"
 #include "platform/Timer.h"
-#include "public/platform/WebLockOrientationCallback.h"
-#include "public/platform/WebScreenOrientationLockType.h"
-#include "public/platform/WebScreenOrientationType.h"
+#include "public/platform/modules/screen_orientation/WebLockOrientationCallback.h"
+#include "public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
+#include "public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 
 namespace blink {
 
@@ -28,13 +28,16 @@ class MODULES_EXPORT ScreenOrientationController final
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
     WTF_MAKE_NONCOPYABLE(ScreenOrientationController);
 public:
-    virtual ~ScreenOrientationController();
+    ~ScreenOrientationController() override;
 
     void setOrientation(ScreenOrientation*);
     void notifyOrientationChanged();
 
     void lock(WebScreenOrientationLockType, WebLockOrientationCallback*);
     void unlock();
+
+    void setOverride(WebScreenOrientationType, unsigned short angle);
+    void clearOverride();
 
     static void provideTo(LocalFrame&, WebScreenOrientationClient*);
     static ScreenOrientationController* from(LocalFrame&);
@@ -45,17 +48,20 @@ public:
 private:
     ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
 
-    static WebScreenOrientationType computeOrientation(Chrome&);
+    static WebScreenOrientationType computeOrientation(const IntRect&, uint16_t);
 
     // Inherited from PlatformEventController.
-    virtual void didUpdateData() override;
-    virtual void registerWithDispatcher() override;
-    virtual void unregisterWithDispatcher() override;
-    virtual bool hasLastData() override;
-    virtual void pageVisibilityChanged() override;
+    void didUpdateData() override;
+    void registerWithDispatcher() override;
+    void unregisterWithDispatcher() override;
+    bool hasLastData() override;
+    void pageVisibilityChanged() override;
 
     // Inherited from LocalFrameLifecycleObserver.
-    virtual void willDetachFrameHost() override;
+    void willDetachFrameHost() override;
+
+    unsigned short effectiveAngle(ChromeClient&);
+    WebScreenOrientationType effectiveType(ChromeClient&);
 
     void notifyDispatcher();
 
@@ -68,6 +74,9 @@ private:
     PersistentWillBeMember<ScreenOrientation> m_orientation;
     WebScreenOrientationClient* m_client;
     Timer<ScreenOrientationController> m_dispatchEventTimer;
+    bool m_override;
+    WebScreenOrientationType m_overrideType;
+    unsigned short m_overrideAngle;
 };
 
 } // namespace blink

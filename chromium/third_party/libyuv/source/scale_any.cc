@@ -55,7 +55,6 @@ CANY(ScaleARGBFilterCols_Any_NEON, ScaleARGBFilterCols_NEON,
                      dst_ptr + n * BPP, r);                                    \
     }
 
-
 #ifdef HAS_SCALEROWDOWN2_SSE2
 SDANY(ScaleRowDown2_Any_SSE2, ScaleRowDown2_SSE2, ScaleRowDown2_C, 2, 1, 15)
 SDANY(ScaleRowDown2Linear_Any_SSE2, ScaleRowDown2Linear_SSE2,
@@ -82,67 +81,111 @@ SDANY(ScaleRowDown4_Any_SSE2, ScaleRowDown4_SSE2, ScaleRowDown4_C, 4, 1, 7)
 SDANY(ScaleRowDown4Box_Any_SSE2, ScaleRowDown4Box_SSE2, ScaleRowDown4Box_C,
       4, 1, 7)
 #endif
+#ifdef HAS_SCALEROWDOWN4_AVX2
+SDANY(ScaleRowDown4_Any_AVX2, ScaleRowDown4_AVX2, ScaleRowDown4_C, 4, 1, 15)
+SDANY(ScaleRowDown4Box_Any_AVX2, ScaleRowDown4Box_AVX2, ScaleRowDown4Box_C,
+      4, 1, 15)
+#endif
 #ifdef HAS_SCALEROWDOWN4_NEON
 SDANY(ScaleRowDown4_Any_NEON, ScaleRowDown4_NEON, ScaleRowDown4_C, 4, 1, 7)
 SDANY(ScaleRowDown4Box_Any_NEON, ScaleRowDown4Box_NEON, ScaleRowDown4Box_C,
       4, 1, 7)
 #endif
-
-
 #ifdef HAS_SCALEROWDOWN34_SSSE3
-SDANY(ScaleRowDown34_Any_SSSE3, ScaleRowDown34_SSSE3, ScaleRowDown34_C,
-      3 / 4, 1, 23)
+SDANY(ScaleRowDown34_Any_SSSE3, ScaleRowDown34_SSSE3,
+      ScaleRowDown34_C, 4 / 3, 1, 23)
 SDANY(ScaleRowDown34_0_Box_Any_SSSE3, ScaleRowDown34_0_Box_SSSE3,
-      ScaleRowDown34_0_Box_C, 3 / 4, 1, 23)
+      ScaleRowDown34_0_Box_C, 4 / 3, 1, 23)
 SDANY(ScaleRowDown34_1_Box_Any_SSSE3, ScaleRowDown34_1_Box_SSSE3,
-      ScaleRowDown34_1_Box_C, 3 / 4, 1, 23)
+      ScaleRowDown34_1_Box_C, 4 / 3, 1, 23)
 #endif
 #ifdef HAS_SCALEROWDOWN34_NEON
-SDANY(ScaleRowDown34_Any_NEON, ScaleRowDown34_NEON, ScaleRowDown34_C,
-      3 / 4, 1, 23)
+SDANY(ScaleRowDown34_Any_NEON, ScaleRowDown34_NEON,
+      ScaleRowDown34_C, 4 / 3, 1, 23)
 SDANY(ScaleRowDown34_0_Box_Any_NEON, ScaleRowDown34_0_Box_NEON,
-      ScaleRowDown34_0_Box_C, 3 / 4, 1, 23)
+      ScaleRowDown34_0_Box_C, 4 / 3, 1, 23)
 SDANY(ScaleRowDown34_1_Box_Any_NEON, ScaleRowDown34_1_Box_NEON,
-      ScaleRowDown34_1_Box_C, 3 / 4, 1, 23)
+      ScaleRowDown34_1_Box_C, 4 / 3, 1, 23)
 #endif
 #ifdef HAS_SCALEROWDOWN38_SSSE3
-SDANY(ScaleRowDown38_Any_SSSE3, ScaleRowDown38_SSSE3, ScaleRowDown38_C,
-      3 / 4, 1, 11)
+SDANY(ScaleRowDown38_Any_SSSE3, ScaleRowDown38_SSSE3,
+      ScaleRowDown38_C, 8 / 3, 1, 11)
 SDANY(ScaleRowDown38_3_Box_Any_SSSE3, ScaleRowDown38_3_Box_SSSE3,
-      ScaleRowDown38_3_Box_C, 3 / 4, 1, 5)
+      ScaleRowDown38_3_Box_C, 8 / 3, 1, 5)
 SDANY(ScaleRowDown38_2_Box_Any_SSSE3, ScaleRowDown38_2_Box_SSSE3,
-      ScaleRowDown38_2_Box_C, 3 / 4, 1, 5)
+      ScaleRowDown38_2_Box_C, 8 / 3, 1, 5)
 #endif
 #ifdef HAS_SCALEROWDOWN38_NEON
-SDANY(ScaleRowDown38_Any_NEON, ScaleRowDown38_NEON, ScaleRowDown38_C,
-      3 / 4, 1, 11)
+SDANY(ScaleRowDown38_Any_NEON, ScaleRowDown38_NEON,
+      ScaleRowDown38_C, 8 / 3, 1, 11)
 SDANY(ScaleRowDown38_3_Box_Any_NEON, ScaleRowDown38_3_Box_NEON,
-      ScaleRowDown38_3_Box_C, 3 / 4, 1, 11)
+      ScaleRowDown38_3_Box_C, 8 / 3, 1, 11)
 SDANY(ScaleRowDown38_2_Box_Any_NEON, ScaleRowDown38_2_Box_NEON,
-      ScaleRowDown38_2_Box_C, 3 / 4, 1, 11)
+      ScaleRowDown38_2_Box_C, 8 / 3, 1, 11)
+#endif
+
+#ifdef HAS_SCALEARGBROWDOWN2_SSE2
+SDANY(ScaleARGBRowDown2_Any_SSE2, ScaleARGBRowDown2_SSE2,
+      ScaleARGBRowDown2_C, 2, 4, 3)
+SDANY(ScaleARGBRowDown2Linear_Any_SSE2, ScaleARGBRowDown2Linear_SSE2,
+      ScaleARGBRowDown2Linear_C, 2, 4, 3)
+SDANY(ScaleARGBRowDown2Box_Any_SSE2, ScaleARGBRowDown2Box_SSE2,
+      ScaleARGBRowDown2Box_C, 2, 4, 3)
+#endif
+#ifdef HAS_SCALEARGBROWDOWN2_NEON
+SDANY(ScaleARGBRowDown2_Any_NEON, ScaleARGBRowDown2_NEON,
+      ScaleARGBRowDown2_C, 2, 4, 7)
+SDANY(ScaleARGBRowDown2Linear_Any_NEON, ScaleARGBRowDown2Linear_NEON,
+      ScaleARGBRowDown2Linear_C, 2, 4, 7)
+SDANY(ScaleARGBRowDown2Box_Any_NEON, ScaleARGBRowDown2Box_NEON,
+      ScaleARGBRowDown2Box_C, 2, 4, 7)
 #endif
 #undef SDANY
 
-// Fixed scale down.
-#define SAANY(NAMEANY, SCALEADDROWS_SIMD, SCALEADDROWS_C, MASK)                \
-  void NAMEANY(const uint8* src_ptr, ptrdiff_t src_stride,                     \
-               uint16* dst_ptr, int src_width, int src_height) {               \
-      int n = src_width & ~MASK;                                               \
+// Scale down by even scale factor.
+#define SDAANY(NAMEANY, SCALEROWDOWN_SIMD, SCALEROWDOWN_C, BPP, MASK)          \
+    void NAMEANY(const uint8* src_ptr, ptrdiff_t src_stride, int src_stepx,    \
+                 uint8* dst_ptr, int dst_width) {                              \
+      int r = (int)((unsigned int)dst_width % (MASK + 1));                     \
+      int n = dst_width - r;                                                   \
       if (n > 0) {                                                             \
-        SCALEADDROWS_SIMD(src_ptr, src_stride, dst_ptr, n, src_height);        \
+        SCALEROWDOWN_SIMD(src_ptr, src_stride, src_stepx, dst_ptr, n);         \
       }                                                                        \
-      SCALEADDROWS_C(src_ptr + n, src_stride,                                  \
-                     dst_ptr + n, src_width & MASK, src_height);               \
+      SCALEROWDOWN_C(src_ptr + (n * src_stepx) * BPP, src_stride,              \
+                     src_stepx, dst_ptr + n * BPP, r);                         \
     }
 
-#ifdef HAS_SCALEADDROWS_SSE2
-SAANY(ScaleAddRows_Any_SSE2, ScaleAddRows_SSE2, ScaleAddRows_C, 15)
+#ifdef HAS_SCALEARGBROWDOWNEVEN_SSE2
+SDAANY(ScaleARGBRowDownEven_Any_SSE2, ScaleARGBRowDownEven_SSE2,
+       ScaleARGBRowDownEven_C, 4, 3)
+SDAANY(ScaleARGBRowDownEvenBox_Any_SSE2, ScaleARGBRowDownEvenBox_SSE2,
+       ScaleARGBRowDownEvenBox_C, 4, 3)
 #endif
-#ifdef HAS_SCALEADDROWS_AVX2
-SAANY(ScaleAddRows_Any_AVX2, ScaleAddRows_AVX2, ScaleAddRows_C, 31)
+#ifdef HAS_SCALEARGBROWDOWNEVEN_NEON
+SDAANY(ScaleARGBRowDownEven_Any_NEON, ScaleARGBRowDownEven_NEON,
+       ScaleARGBRowDownEven_C, 4, 3)
+SDAANY(ScaleARGBRowDownEvenBox_Any_NEON, ScaleARGBRowDownEvenBox_NEON,
+       ScaleARGBRowDownEvenBox_C, 4, 3)
 #endif
-#ifdef HAS_SCALEADDROWS_NEON
-SAANY(ScaleAddRows_Any_NEON, ScaleAddRows_NEON, ScaleAddRows_C, 15)
+
+// Add rows box filter scale down.
+#define SAANY(NAMEANY, SCALEADDROW_SIMD, SCALEADDROW_C, MASK)                  \
+  void NAMEANY(const uint8* src_ptr, uint16* dst_ptr, int src_width) {         \
+      int n = src_width & ~MASK;                                               \
+      if (n > 0) {                                                             \
+        SCALEADDROW_SIMD(src_ptr, dst_ptr, n);                                 \
+      }                                                                        \
+      SCALEADDROW_C(src_ptr + n, dst_ptr + n, src_width & MASK);               \
+    }
+
+#ifdef HAS_SCALEADDROW_SSE2
+SAANY(ScaleAddRow_Any_SSE2, ScaleAddRow_SSE2, ScaleAddRow_C, 15)
+#endif
+#ifdef HAS_SCALEADDROW_AVX2
+SAANY(ScaleAddRow_Any_AVX2, ScaleAddRow_AVX2, ScaleAddRow_C, 31)
+#endif
+#ifdef HAS_SCALEADDROW_NEON
+SAANY(ScaleAddRow_Any_NEON, ScaleAddRow_NEON, ScaleAddRow_C, 15)
 #endif
 #undef SAANY
 

@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/trace_event/trace_event.h"
 #include "base/win/windows_version.h"
-#include "ui/gfx/frame_time.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
@@ -38,9 +37,9 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   bool Initialize() override;
   void Destroy() override;
   bool IsOffscreen() override;
-  bool SwapBuffers() override;
+  gfx::SwapResult SwapBuffers() override;
   bool SupportsPostSubBuffer() override;
-  bool PostSubBuffer(int x, int y, int width, int height) override;
+  gfx::SwapResult PostSubBuffer(int x, int y, int width, int height) override;
 
  private:
   ~NativeViewGLSurfaceOSMesa() override;
@@ -89,10 +88,10 @@ class WinVSyncProvider : public VSyncProvider {
               timing_info.rateRefresh.uiNumerator);
         }
 
-        if (gfx::FrameTime::TimestampsAreHighRes()) {
+        if (base::TimeTicks::IsHighResolution()) {
           // qpcRefreshPeriod is very accurate but noisy, and must be used with
           // a high resolution timebase to avoid frequently missing Vsync.
-          timebase = gfx::FrameTime::FromQPCValue(
+          timebase = base::TimeTicks::FromQPCValue(
               static_cast<LONGLONG>(timing_info.qpcVBlank));
           interval = base::TimeDelta::FromQPCValue(
               static_cast<LONGLONG>(timing_info.qpcRefreshPeriod));
@@ -209,7 +208,7 @@ bool NativeViewGLSurfaceOSMesa::IsOffscreen() {
   return false;
 }
 
-bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
+gfx::SwapResult NativeViewGLSurfaceOSMesa::SwapBuffers() {
   DCHECK(device_context_);
 
   gfx::Size size = GetSize();
@@ -242,15 +241,17 @@ bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
                 DIB_RGB_COLORS,
                 SRCCOPY);
 
-  return true;
+  return gfx::SwapResult::SWAP_ACK;
 }
 
 bool NativeViewGLSurfaceOSMesa::SupportsPostSubBuffer() {
   return true;
 }
 
-bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
-    int x, int y, int width, int height) {
+gfx::SwapResult NativeViewGLSurfaceOSMesa::PostSubBuffer(int x,
+                                                         int y,
+                                                         int width,
+                                                         int height) {
   DCHECK(device_context_);
 
   gfx::Size size = GetSize();
@@ -283,7 +284,7 @@ bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
                 DIB_RGB_COLORS,
                 SRCCOPY);
 
-  return true;
+  return gfx::SwapResult::SWAP_ACK;
 }
 
 scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(

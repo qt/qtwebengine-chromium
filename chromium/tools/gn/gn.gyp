@@ -34,6 +34,7 @@
         'command_gen.cc',
         'command_help.cc',
         'command_ls.cc',
+        'command_path.cc',
         'command_refs.cc',
         'commands.cc',
         'commands.h',
@@ -241,6 +242,7 @@
         'scope_per_file_provider_unittest.cc',
         'scope_unittest.cc',
         'source_dir_unittest.cc',
+        'source_file_unittest.cc',
         'string_utils_unittest.cc',
         'substitution_pattern_unittest.cc',
         'substitution_writer_unittest.cc',
@@ -271,5 +273,20 @@
         '../../base/base.gyp:base',
       ],
     }
+  ],
+  'conditions': [
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'gn_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'gn_unittests',
+          ],
+          'includes': [ '../../build/isolate.gypi' ],
+          'sources': [ 'gn_unittests.isolate' ],
+        },
+      ],
+    }],
   ],
 }

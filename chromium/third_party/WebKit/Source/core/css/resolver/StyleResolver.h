@@ -22,6 +22,7 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
+#include "core/CoreExport.h"
 #include "core/animation/PropertyHandle.h"
 #include "core/css/ElementRuleCollector.h"
 #include "core/css/PseudoStyleRequest.h"
@@ -33,6 +34,7 @@
 #include "core/css/resolver/CSSPropertyPriority.h"
 #include "core/css/resolver/MatchedPropertiesCache.h"
 #include "core/css/resolver/StyleBuilder.h"
+#include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/StyleResourceLoader.h"
 #include "core/style/AuthorStyleInfo.h"
 #include "core/style/CachedUAStyle.h"
@@ -54,17 +56,12 @@ class ContainerNode;
 class Document;
 class Element;
 class Interpolation;
+class MatchResult;
 class MediaQueryEvaluator;
-class RuleData;
 class ScopedStyleResolver;
 class StylePropertySet;
-class StyleResolverStats;
 class StyleRule;
-class StyleRuleKeyframe;
-class StyleRulePage;
 class ViewportStyleResolver;
-
-class MatchResult;
 
 enum StyleSharingBehavior {
     AllowStyleSharing,
@@ -81,7 +78,7 @@ const unsigned styleSharingMaxDepth = 32;
 typedef WillBeHeapDeque<RawPtrWillBeMember<Element>, styleSharingListSize> StyleSharingList;
 
 // This class selects a ComputedStyle for a given element based on a collection of stylesheets.
-class StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
+class CORE_EXPORT StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleResolver);
 public:
     explicit StyleResolver(Document&);
@@ -97,7 +94,6 @@ public:
     PassRefPtr<ComputedStyle> styleForElement(Element*, const ComputedStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules);
 
-    PassRefPtr<ComputedStyle> styleForKeyframe(Element&, const ComputedStyle&, const ComputedStyle* parentStyle, const StyleRuleKeyframe*, const AtomicString& animationName);
     static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, const ComputedStyle* baseStyle, CSSPropertyID, CSSValue*);
     static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue*);
 
@@ -173,11 +169,7 @@ public:
     void clearStyleSharingList();
 
     StyleResolverStats* stats() { return m_styleResolverStats.get(); }
-    StyleResolverStats* statsTotals() { return m_styleResolverStatsTotals.get(); }
-    enum StatsReportType { ReportDefaultStats, ReportSlowStats };
-    void enableStats(StatsReportType = ReportDefaultStats);
-    void disableStats();
-    void printStats();
+    void setStatsEnabled(bool);
 
     unsigned accessCount() const { return m_accessCount; }
     void didAccess() { ++m_accessCount; }
@@ -194,7 +186,7 @@ public:
 private:
     PassRefPtr<ComputedStyle> initialStyleForElement();
 
-    void initWatchedSelectorRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRule>>& watchedSelectors);
+    void initWatchedSelectorRules();
 
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
@@ -205,7 +197,6 @@ private:
     void adjustComputedStyle(StyleResolverState&, Element*);
 
     void appendCSSStyleSheet(CSSStyleSheet&);
-    void addRulesFromSheet(CSSStyleSheet&, TreeScope*, unsigned);
 
     void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchRuleSet(ElementRuleCollector&, RuleSet*);
@@ -215,29 +206,18 @@ private:
     void collectFeatures();
     void resetRuleFeatures();
 
-    bool fastRejectSelector(const RuleData&) const;
-
     void applyMatchedProperties(StyleResolverState&, const MatchResult&);
     bool applyAnimatedProperties(StyleResolverState&, const Element* animatingElement);
     void applyCallbackSelectors(StyleResolverState&);
 
     template <CSSPropertyPriority priority>
-    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
+    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, unsigned startIndex, unsigned endIndex, bool inheritedOnly);
     template <CSSPropertyPriority priority>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <CSSPropertyPriority priority>
     void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>&);
     template <CSSPropertyPriority priority>
     void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly);
-
-    void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
-    void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>&, bool isLeftPage, bool isFirstPage, const String& pageName);
-    void collectViewportRules();
-
-    bool isLeftPage(int pageIndex) const;
-    bool isRightPage(int pageIndex) const { return !isLeftPage(pageIndex); }
-    bool isFirstPage(int pageIndex) const;
-    String pageName(int pageIndex) const;
 
     bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, const ComputedStyle* parentStyle, StyleResolverState&);
 
@@ -246,8 +226,6 @@ private:
     Document& document() { return *m_document; }
 
     static ComputedStyle* s_styleNotYetAvailable;
-
-    void cacheBorderAndBackground();
 
     MatchedPropertiesCache m_matchedPropertiesCache;
 
@@ -278,8 +256,6 @@ private:
     WillBeHeapVector<OwnPtrWillBeMember<StyleSharingList>, styleSharingMaxDepth> m_styleSharingLists;
 
     OwnPtr<StyleResolverStats> m_styleResolverStats;
-    OwnPtr<StyleResolverStats> m_styleResolverStatsTotals;
-    unsigned m_styleResolverStatsSequence;
 
     // Use only for Internals::updateStyleAndReturnAffectedElementCount.
     unsigned m_accessCount;

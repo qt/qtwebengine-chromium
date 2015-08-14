@@ -24,6 +24,13 @@ cvox.ChromeMathJax = function() {
   goog.base(this);
 
   /**
+   * Set to when the bridge is initialized.
+   * @type {boolean}
+   * @private
+   */
+  this.initialized_ = false;
+
+  /**
    * The port to communicate with the content script.
    * @type {Port}
    */
@@ -95,7 +102,7 @@ cvox.ChromeMathJax.prototype.init = function() {
       'chromevox/injected/mathjax_external_util.js'));
   scripts.push(cvox.ChromeVox.host.getFileSrc('chromevox/injected/mathjax.js'));
   scripts.push(cvox.ApiImplementation.siteSpecificScriptLoader);
-  cvox.ScriptInstaller.installScript(
+  this.initialized_ = cvox.ScriptInstaller.installScript(
       scripts, 'mathjax', undefined,
       cvox.ApiImplementation.siteSpecificScriptBase);
 };
@@ -105,7 +112,7 @@ cvox.ChromeMathJax.prototype.init = function() {
  * Destructive Retrieval of a callback function from the mapping.
  * @param {string} data The command to be sent to the content script.
  * @param {Function} callback A callback function.
- * @param {Object<string, *>=} args Object of arguments.
+ * @param {Object<*>=} args Object of arguments.
  */
 cvox.ChromeMathJax.prototype.postMsg = function(data, callback, args) {
   args = args || {};
@@ -136,7 +143,7 @@ cvox.ChromeMathJax.prototype.portSetup = function(event) {
 
 /**
  * Call the appropriate Cvox function dealing with MathJax return values.
- * @param {{cmd: string, id: string, args: Object<string, string>}} message A
+ * @param {{cmd: string, id: string, args: Object<string>}} message A
  * message object.
  */
 cvox.ChromeMathJax.prototype.dispatchMessage = function(message) {
@@ -181,6 +188,11 @@ cvox.ChromeMathJax.prototype.applyBoolean = function(
  * @override
  */
 cvox.ChromeMathJax.prototype.isMathjaxActive = function(callback) {
+  if (!this.initialized_) {
+    callback(false);
+    return;
+  }
+
   var retries = 0;
 
   var fetch = goog.bind(function() {

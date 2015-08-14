@@ -30,11 +30,11 @@ gfx::AcceleratedWidget WindowTreeHostOzone::GetAcceleratedWidget() {
   return widget_;
 }
 
-void WindowTreeHostOzone::Show() {
+void WindowTreeHostOzone::ShowImpl() {
   platform_window_->Show();
 }
 
-void WindowTreeHostOzone::Hide() {
+void WindowTreeHostOzone::HideImpl() {
   platform_window_->Hide();
 }
 
@@ -101,16 +101,13 @@ void WindowTreeHostOzone::OnLostCapture() {
 }
 
 void WindowTreeHostOzone::OnAcceleratedWidgetAvailable(
-    gfx::AcceleratedWidget widget) {
+    gfx::AcceleratedWidget widget,
+    float device_pixel_ratio) {
   widget_ = widget;
   CreateCompositor(widget_);
 }
 
 void WindowTreeHostOzone::OnActivationChanged(bool active) {
-}
-
-ui::EventProcessor* WindowTreeHostOzone::GetEventProcessor() {
-  return dispatcher();
 }
 
 // static

@@ -60,7 +60,7 @@ void AcceleratorFilter::OnKeyEvent(ui::KeyEvent* event) {
     return;
   }
 
-  ui::Accelerator accelerator = CreateAcceleratorFromKeyEvent(*event);
+  ui::Accelerator accelerator(*event);
   accelerator_history_->StoreCurrentAccelerator(accelerator);
 
   AcceleratorDelegate::KeyType key_type =
@@ -69,18 +69,6 @@ void AcceleratorFilter::OnKeyEvent(ui::KeyEvent* event) {
 
   if (delegate_->ProcessAccelerator(*event, accelerator, key_type))
     event->StopPropagation();
-}
-
-ui::Accelerator CreateAcceleratorFromKeyEvent(const ui::KeyEvent& key_event) {
-  const int kModifierFlagMask =
-      (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN);
-
-  ui::Accelerator accelerator(key_event.key_code(),
-                              key_event.flags() & kModifierFlagMask);
-  if (key_event.type() == ui::ET_KEY_RELEASED)
-    accelerator.set_type(ui::ET_KEY_RELEASED);
-  accelerator.set_is_repeat(key_event.IsRepeat());
-  return accelerator;
 }
 
 }  // namespace wm

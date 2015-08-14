@@ -66,13 +66,20 @@ class GL_EXPORT RealGLApi : public GLApiBase {
   const GLubyte* glGetStringFn(GLenum name) override;
   const GLubyte* glGetStringiFn(GLenum name, GLuint index) override;
 
+  void InitializeFilteredExtensions();
+
  private:
   void glFinishFn() override;
   void glFlushFn() override;
 
   // Filtered GL_EXTENSIONS we return to glGetString(i) calls.
+  std::vector<std::string> disabled_exts_;
   std::vector<std::string> filtered_exts_;
   std::string filtered_exts_str_;
+
+#if DCHECK_IS_ON()
+  bool filtered_exts_initialized_;
+#endif
 };
 
 // Inserts a TRACE for every GL call.

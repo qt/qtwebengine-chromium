@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <string>
 #include <vector>
 
+#include "base/single_thread_task_runner.h"
+#include "content/public/renderer/media_stream_audio_renderer.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/audio_message_filter.h"
-#include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
@@ -39,6 +41,10 @@ class MockAudioOutputIPC : public media::AudioOutputIPC {
   MOCK_METHOD0(PauseStream, void());
   MOCK_METHOD0(CloseStream, void());
   MOCK_METHOD1(SetVolume, void(double volume));
+  MOCK_METHOD3(SwitchOutputDevice,
+               void(const std::string& device_id,
+                    const GURL& security_origin,
+                    int request_id));
 };
 
 class FakeAudioOutputDevice
@@ -54,6 +60,10 @@ class FakeAudioOutputDevice
   MOCK_METHOD0(Pause, void());
   MOCK_METHOD0(Play, void());
   MOCK_METHOD1(SetVolume, bool(double volume));
+  MOCK_METHOD3(SwitchOutputDevice,
+               void(const std::string&,
+                    const GURL& security_origin,
+                    const media::SwitchOutputDeviceCB& callback));
 
  protected:
   virtual ~FakeAudioOutputDevice() {}
@@ -87,11 +97,11 @@ class WebRtcAudioRendererTest : public testing::Test {
         mock_ipc_(new MockAudioOutputIPC()),
         mock_output_device_(new FakeAudioOutputDevice(
             scoped_ptr<media::AudioOutputIPC>(mock_ipc_),
-            message_loop_->message_loop_proxy())),
+            message_loop_->task_runner())),
         factory_(new MockAudioDeviceFactory()),
         source_(new MockAudioRendererSource()),
         stream_(new rtc::RefCountedObject<MockMediaStream>("label")),
-        renderer_(new WebRtcAudioRenderer(message_loop_->message_loop_proxy(),
+        renderer_(new WebRtcAudioRenderer(message_loop_->task_runner(),
                                           stream_,
                                           1,
                                           1,

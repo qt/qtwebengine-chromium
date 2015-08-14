@@ -14,7 +14,6 @@
 #include "base/strings/string16.h"
 #include "grit/keyboard_resources.h"
 #include "grit/keyboard_resources_map.h"
-#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
@@ -36,9 +35,9 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::DomCode::NONE, ui::EF_NONE,
-                     ui::DomKey::PROCESS, 0, ui::EventTimeForNow());
-  event.SetTranslated(true);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::DomCode::NONE,
+                     ui::EF_IS_SYNTHESIZED, ui::DomKey::PROCESS, 0,
+                     ui::EventTimeForNow());
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
   CHECK(!details.dispatcher_destroyed);
@@ -177,6 +176,13 @@ bool IsGestureEditingEnabled() {
   return keyboard_switch == switches::kGestureEditingEnabled;
 }
 
+bool IsSmartDeployEnabled() {
+  std::string keyboard_switch =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kSmartVirtualKeyboard);
+  return keyboard_switch != switches::kSmartVirtualKeyboardDisabled;
+}
+
 bool IsMaterialDesignEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableNewMDInputView);
@@ -284,12 +290,11 @@ bool SendKeyEvent(const std::string type,
 
   ui::KeyboardCode code = static_cast<ui::KeyboardCode>(key_code);
 
+  ui::InputMethod* input_method = host->GetInputMethod();
   if (code == ui::VKEY_UNKNOWN) {
     // Handling of special printable characters (e.g. accented characters) for
     // which there is no key code.
     if (event_type == ui::ET_KEY_RELEASED) {
-      ui::InputMethod* input_method = host->window()->GetProperty(
-          aura::client::kRootWindowInputMethodKey);
       if (!input_method)
         return false;
 
@@ -326,9 +331,13 @@ bool SendKeyEvent(const std::string type,
         code,
         dom_code,
         modifiers);
-    ui::EventDispatchDetails details =
-        host->event_processor()->OnEventFromSource(&event);
-    CHECK(!details.dispatcher_destroyed);
+    if (input_method) {
+      input_method->DispatchKeyEvent(event);
+    } else {
+      ui::EventDispatchDetails details =
+          host->event_processor()->OnEventFromSource(&event);
+      CHECK(!details.dispatcher_destroyed);
+    }
   }
   return true;
 }

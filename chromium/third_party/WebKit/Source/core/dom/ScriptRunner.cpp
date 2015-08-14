@@ -50,6 +50,9 @@ ScriptRunner::ScriptRunner(Document* document)
     , m_executeScriptsTaskFactory(WTF::bind(&ScriptRunner::executeScripts, this))
 {
     ASSERT(document);
+#if ENABLE(LAZY_SWEEPING) && defined(ADDRESS_SANITIZER)
+    m_executeScriptsTaskFactory.setUnpoisonBeforeUpdate();
+#endif
 }
 
 ScriptRunner::~ScriptRunner()
@@ -225,7 +228,7 @@ void ScriptRunner::postTaskIfOneIsNotAlreadyInFlight()
         return;
 
     // FIXME: Rename task() so that it's obvious it cancels any pending task.
-    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_executeScriptsTaskFactory.task());
+    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_executeScriptsTaskFactory.cancelAndCreate());
 }
 
 DEFINE_TRACE(ScriptRunner)

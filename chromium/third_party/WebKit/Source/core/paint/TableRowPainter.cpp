@@ -7,7 +7,6 @@
 
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutTableRow.h"
-#include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/PaintInfo.h"
@@ -18,7 +17,6 @@ namespace blink {
 void TableRowPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     ASSERT(m_layoutTableRow.hasSelfPaintingLayer());
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutTableRow);
 
     paintOutlineForRowIfNeeded(paintInfo, paintOffset);
     for (LayoutTableCell* cell = m_layoutTableRow.firstCell(); cell; cell = cell->nextCell()) {
@@ -26,9 +24,10 @@ void TableRowPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paint
         if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground) {
             if (m_layoutTableRow.hasBackground()) {
                 TableCellPainter tableCellPainter(*cell);
-                LayoutObjectDrawingRecorder recorder(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent));
-                if (!recorder.canUseCachedDrawing())
+                if (!LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow)) {
+                    LayoutObjectDrawingRecorder recorder(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent));
                     tableCellPainter.paintBackgroundsBehindCell(paintInfo, paintOffset, &m_layoutTableRow);
+                }
             }
         }
 

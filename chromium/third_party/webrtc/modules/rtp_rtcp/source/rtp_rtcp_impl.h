@@ -122,9 +122,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   // less than |bytes|.
   size_t TimeToSendPadding(size_t bytes) override;
 
-  bool GetSendSideDelay(int* avg_send_delay_ms,
-                        int* max_send_delay_ms) const override;
-
   // RTCP part.
 
   // Get RTCP status.
@@ -134,7 +131,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   void SetRTCPStatus(RTCPMethod method) override;
 
   // Set RTCP CName.
-  int32_t SetCNAME(const char c_name[RTCP_CNAME_SIZE]) override;
+  int32_t SetCNAME(const char* c_name) override;
 
   // Get remote CName.
   int32_t RemoteCNAME(uint32_t remote_ssrc,
@@ -147,8 +144,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
                     uint32_t* rtcp_arrival_time_frac,
                     uint32_t* rtcp_timestamp) const override;
 
-  int32_t AddMixedCNAME(uint32_t ssrc,
-                        const char c_name[RTCP_CNAME_SIZE]) override;
+  int32_t AddMixedCNAME(uint32_t ssrc, const char* c_name) override;
 
   int32_t RemoveMixedCNAME(uint32_t ssrc) override;
 
@@ -166,8 +162,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   int32_t SendCompoundRTCP(
       const std::set<RTCPPacketType>& rtcpPacketTypes) override;
 
-  int32_t ResetSendDataCountersRTP() override;
-
   // Statistics of the amount of data sent and received.
   int32_t DataCountersRTP(size_t* bytes_sent,
                           uint32_t* packets_sent) const override;
@@ -182,12 +176,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   // Get received RTCP report, report block.
   int32_t RemoteRTCPStat(
       std::vector<RTCPReportBlock>* receive_blocks) const override;
-
-  // Set received RTCP report block.
-  int32_t AddRTCPReportBlock(uint32_t ssrc,
-                             const RTCPReportBlock* receive_block) override;
-
-  int32_t RemoveRTCPReportBlock(uint32_t ssrc) override;
 
   // (REMB) Receiver Estimated Max Bitrate.
   bool REMB() const override;

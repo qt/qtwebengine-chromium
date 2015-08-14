@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_SCHEDULER_CHILD_WORKER_SCHEDULER_IMPL_H_
 #define COMPONENTS_SCHEDULER_CHILD_WORKER_SCHEDULER_IMPL_H_
 
+#include "components/scheduler/child/idle_helper.h"
 #include "components/scheduler/child/scheduler_helper.h"
 #include "components/scheduler/child/worker_scheduler.h"
 #include "components/scheduler/scheduler_export.h"
@@ -19,16 +20,15 @@ namespace scheduler {
 
 class NestableSingleThreadTaskRunner;
 
-class SCHEDULER_EXPORT WorkerSchedulerImpl
-    : public WorkerScheduler,
-      public SchedulerHelper::SchedulerHelperDelegate {
+class SCHEDULER_EXPORT WorkerSchedulerImpl : public WorkerScheduler,
+                                             public IdleHelper::Delegate {
  public:
   explicit WorkerSchedulerImpl(
       scoped_refptr<NestableSingleThreadTaskRunner> main_task_runner);
   ~WorkerSchedulerImpl() override;
 
   // WorkerScheduler implementation:
-  scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
+  scoped_refptr<TaskQueue> DefaultTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
   bool CanExceedIdleDeadlineIfRequired() const override;
   bool ShouldYieldForHighPriorityWork() override;
@@ -42,16 +42,25 @@ class SCHEDULER_EXPORT WorkerSchedulerImpl
   base::TimeTicks CurrentIdleTaskDeadlineForTesting() const;
 
  protected:
-  // SchedulerHelperDelegate implementation:
+  // IdleHelper::Delegate implementation:
   bool CanEnterLongIdlePeriod(
       base::TimeTicks now,
       base::TimeDelta* next_long_idle_period_delay_out) override;
   void IsNotQuiescent() override {}
+  void OnIdlePeriodStarted() override {}
+  void OnIdlePeriodEnded() override {}
 
  private:
+  enum QueueId {
+    IDLE_TASK_QUEUE = SchedulerHelper::TASK_QUEUE_COUNT,
+    // Must be the last entry.
+    TASK_QUEUE_COUNT,
+  };
+
   void MaybeStartLongIdlePeriod();
 
   SchedulerHelper helper_;
+  IdleHelper idle_helper_;
   bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkerSchedulerImpl);

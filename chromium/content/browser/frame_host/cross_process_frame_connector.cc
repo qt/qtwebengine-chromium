@@ -4,10 +4,16 @@
 
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 
+#include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_manager.h"
+#include "content/browser/compositor/surface_utils.h"
+#include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -37,6 +43,8 @@ bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_ForwardInputEvent, OnForwardInputEvent)
     IPC_MESSAGE_HANDLER(FrameHostMsg_InitializeChildFrame,
                         OnInitializeChildFrame)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_SatisfySequence, OnSatisfySequence)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_RequireSequence, OnRequireSequence)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -78,6 +86,36 @@ void CrossProcessFrameConnector::ChildFrameCompositorFrameSwapped(
       frame_proxy_in_parent_renderer_->GetRoutingID(), params));
 }
 
+void CrossProcessFrameConnector::SetChildFrameSurface(
+    const cc::SurfaceId& surface_id,
+    const gfx::Size& frame_size,
+    float scale_factor,
+    const cc::SurfaceSequence& sequence) {
+  frame_proxy_in_parent_renderer_->Send(new FrameMsg_SetChildFrameSurface(
+      frame_proxy_in_parent_renderer_->GetRoutingID(), surface_id, frame_size,
+      scale_factor, sequence));
+}
+
+void CrossProcessFrameConnector::OnSatisfySequence(
+    const cc::SurfaceSequence& sequence) {
+  std::vector<uint32_t> sequences;
+  sequences.push_back(sequence.sequence);
+  cc::SurfaceManager* manager = GetSurfaceManager();
+  manager->DidSatisfySequences(sequence.id_namespace, &sequences);
+}
+
+void CrossProcessFrameConnector::OnRequireSequence(
+    const cc::SurfaceId& id,
+    const cc::SurfaceSequence& sequence) {
+  cc::SurfaceManager* manager = GetSurfaceManager();
+  cc::Surface* surface = manager->GetSurfaceForId(id);
+  if (!surface) {
+    LOG(ERROR) << "Attempting to require callback on nonexistent surface";
+    return;
+  }
+  surface->AddDestructionDependency(sequence);
+}
+
 void CrossProcessFrameConnector::OnCompositorFrameSwappedACK(
     const FrameHostMsg_CompositorFrameSwappedACK_Params& params) {
   RenderWidgetHostImpl::SendSwapCompositorFrameAck(params.producing_route_id,
@@ -107,6 +145,22 @@ gfx::Rect CrossProcessFrameConnector::ChildFrameRect() {
   return child_frame_rect_;
 }
 
+void CrossProcessFrameConnector::GetScreenInfo(blink::WebScreenInfo* results) {
+  // Inner WebContents's root FrameTreeNode does not have a parent(), so
+  // GetRenderWidgetHostView() call below will fail.
+  // TODO(lazyboy): Fix this.
+  if (frame_proxy_in_parent_renderer_->frame_tree_node()
+          ->render_manager()
+          ->ForInnerDelegate()) {
+    return;
+  }
+
+  RenderWidgetHostView* rwhv =
+      frame_proxy_in_parent_renderer_->GetRenderWidgetHostView();
+  if (rwhv)
+    static_cast<RenderWidgetHostViewBase*>(rwhv)->GetScreenInfo(results);
+}
+
 void CrossProcessFrameConnector::OnForwardInputEvent(
     const blink::WebInputEvent* event) {
   if (!view_)
@@ -114,8 +168,12 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
 
   RenderWidgetHostImpl* child_widget =
       RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
+  RenderFrameHostManager* manager =
+      frame_proxy_in_parent_renderer_->frame_tree_node()->render_manager();
   RenderWidgetHostImpl* parent_widget =
-      frame_proxy_in_parent_renderer_->GetRenderViewHost();
+      manager->ForInnerDelegate()
+          ? manager->GetOuterRenderWidgetHostForKeyboardInput()
+          : frame_proxy_in_parent_renderer_->GetRenderViewHost();
 
   if (blink::WebInputEvent::isKeyboardEventType(event->type)) {
     if (!parent_widget->GetLastKeyboardEvent())

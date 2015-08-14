@@ -76,8 +76,9 @@ public:
     unsigned long long domComplete() const;
     unsigned long long loadEventStart() const;
     unsigned long long loadEventEnd() const;
+    unsigned long long firstLayout() const;
 
-    ScriptValue toJSONForBinding(ScriptState*);
+    ScriptValue toJSONForBinding(ScriptState*) const;
 
     DECLARE_VIRTUAL_TRACE();
 

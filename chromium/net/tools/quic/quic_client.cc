@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "base/logging.h"
+#include "net/base/net_util.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_data_reader.h"
@@ -76,26 +77,26 @@ QuicClient::QuicClient(IPEndPoint server_address,
 
 QuicClient::~QuicClient() {
   if (connected()) {
-    session()->connection()->SendConnectionClosePacket(
-        QUIC_PEER_GOING_AWAY, "");
+    session()->connection()->SendConnectionClose(QUIC_PEER_GOING_AWAY);
   }
 
-  CleanUpUDPSocket();
+  CleanUpUDPSocketImpl();
 }
 
 bool QuicClient::Initialize() {
   DCHECK(!initialized_);
 
   // If an initial flow control window has not explicitly been set, then use the
-  // same value that Chrome uses: 10 Mb.
-  const uint32 kInitialFlowControlWindow = 10 * 1024 * 1024;  // 10 Mb
+  // same values that Chrome uses.
+  const uint32 kSessionMaxRecvWindowSize = 15 * 1024 * 1024;  // 15 MB
+  const uint32 kStreamMaxRecvWindowSize = 6 * 1024 * 1024;    //  6 MB
   if (config_.GetInitialStreamFlowControlWindowToSend() ==
       kMinimumFlowControlSendWindow) {
-    config_.SetInitialStreamFlowControlWindowToSend(kInitialFlowControlWindow);
+    config_.SetInitialStreamFlowControlWindowToSend(kStreamMaxRecvWindowSize);
   }
   if (config_.GetInitialSessionFlowControlWindowToSend() ==
       kMinimumFlowControlSendWindow) {
-    config_.SetInitialSessionFlowControlWindowToSend(kInitialFlowControlWindow);
+    config_.SetInitialSessionFlowControlWindowToSend(kSessionMaxRecvWindowSize);
   }
 
   epoll_server_->set_timeout_in_us(50 * 1000);
@@ -194,6 +195,14 @@ bool QuicClient::Connect() {
   return session_->connection()->connected();
 }
 
+QuicClientSession* QuicClient::CreateQuicClientSession(
+    const QuicConfig& config,
+    QuicConnection* connection,
+    const QuicServerId& server_id,
+    QuicCryptoClientConfig* crypto_config) {
+  return new QuicClientSession(config, connection, server_id_, &crypto_config_);
+}
+
 void QuicClient::StartConnect() {
   DCHECK(initialized_);
   DCHECK(!connected());
@@ -202,19 +211,20 @@ void QuicClient::StartConnect() {
 
   DummyPacketWriterFactory factory(writer);
 
-  session_.reset(new QuicClientSession(
+  session_.reset(CreateQuicClientSession(
       config_,
       new QuicConnection(GenerateConnectionId(), server_address_, helper_.get(),
                          factory,
                          /* owns_writer= */ false, Perspective::IS_CLIENT,
-                         server_id_.is_https(), supported_versions_)));
+                         server_id_.is_https(), supported_versions_),
+      server_id_, &crypto_config_));
 
   // Reset |writer_| after |session_| so that the old writer outlives the old
   // session.
   if (writer_.get() != writer) {
     writer_.reset(writer);
   }
-  session_->InitializeSession(server_id_, &crypto_config_);
+  session_->Initialize();
   session_->CryptoConnect();
 }
 
@@ -236,9 +246,14 @@ void QuicClient::Disconnect() {
 }
 
 void QuicClient::CleanUpUDPSocket() {
+  CleanUpUDPSocketImpl();
+}
+
+void QuicClient::CleanUpUDPSocketImpl() {
   if (fd_ > -1) {
     epoll_server_->UnregisterFD(fd_);
-    close(fd_);
+    int rc = close(fd_);
+    DCHECK_EQ(0, rc);
     fd_ = -1;
   }
 }
@@ -280,7 +295,7 @@ QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
     return nullptr;
   }
 
-  return session_->CreateOutgoingDataStream();
+  return session_->CreateOutgoingDynamicStream();
 }
 
 void QuicClient::WaitForStreamToClose(QuicStreamId id) {

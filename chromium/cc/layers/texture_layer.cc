@@ -19,12 +19,14 @@
 namespace cc {
 
 scoped_refptr<TextureLayer> TextureLayer::CreateForMailbox(
+    const LayerSettings& settings,
     TextureLayerClient* client) {
-  return scoped_refptr<TextureLayer>(new TextureLayer(client));
+  return scoped_refptr<TextureLayer>(new TextureLayer(settings, client));
 }
 
-TextureLayer::TextureLayer(TextureLayerClient* client)
-    : Layer(),
+TextureLayer::TextureLayer(const LayerSettings& settings,
+                           TextureLayerClient* client)
+    : Layer(settings),
       client_(client),
       flipped_(true),
       nearest_neighbor_(false),
@@ -214,9 +216,8 @@ bool TextureLayer::HasDrawableContent() const {
   return (client_ || holder_ref_) && Layer::HasDrawableContent();
 }
 
-bool TextureLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker<Layer>* occlusion) {
-  bool updated = Layer::Update(queue, occlusion);
+bool TextureLayer::Update() {
+  bool updated = Layer::Update();
   if (client_) {
     TextureMailbox mailbox;
     scoped_ptr<SingleReleaseCallback> release_callback;
@@ -264,16 +265,6 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
                                      release_callback_impl.Pass());
     needs_set_mailbox_ = false;
   }
-}
-
-SimpleEnclosedRegion TextureLayer::VisibleContentOpaqueRegion() const {
-  if (contents_opaque())
-    return SimpleEnclosedRegion(visible_content_rect());
-
-  if (blend_background_color_ && (SkColorGetA(background_color()) == 0xFF))
-    return SimpleEnclosedRegion(visible_content_rect());
-
-  return SimpleEnclosedRegion();
 }
 
 TextureLayer::TextureMailboxHolder::MainThreadReference::MainThreadReference(

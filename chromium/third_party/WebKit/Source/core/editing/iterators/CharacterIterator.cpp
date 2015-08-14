@@ -33,7 +33,7 @@
 #include "platform/text/TextBoundaries.h"
 #include "platform/text/TextBreakIteratorInternalICU.h"
 #include "platform/text/UnicodeUtilities.h"
-#include "wtf/unicode/CharacterNames.h"
+#include "wtf/text/CharacterNames.h"
 #include <unicode/usearch.h>
 
 namespace blink {
@@ -83,17 +83,8 @@ private:
     mutable Vector<UChar> m_normalizedMatch;
 };
 
-
-CharacterIterator::CharacterIterator(const Range* range, TextIteratorBehaviorFlags behavior)
-    : m_offset(0)
-    , m_runOffset(0)
-    , m_atBreak(true)
-    , m_textIterator(range->startPosition(), range->endPosition(), behavior)
-{
-    initialize();
-}
-
-CharacterIterator::CharacterIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags behavior)
+template <typename Strategy>
+CharacterIteratorAlgorithm<Strategy>::CharacterIteratorAlgorithm(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, TextIteratorBehaviorFlags behavior)
     : m_offset(0)
     , m_runOffset(0)
     , m_atBreak(true)
@@ -102,40 +93,47 @@ CharacterIterator::CharacterIterator(const Position& start, const Position& end,
     initialize();
 }
 
-void CharacterIterator::initialize()
+template <typename Strategy>
+CharacterIteratorAlgorithm<Strategy>::CharacterIteratorAlgorithm(const EphemeralRangeTemplate<Strategy>& range, TextIteratorBehaviorFlags behavior)
+    : CharacterIterator(range.startPosition(), range.endPosition(), behavior)
+{
+}
+
+template <typename Strategy>
+void CharacterIteratorAlgorithm<Strategy>::initialize()
 {
     while (!atEnd() && !m_textIterator.length())
         m_textIterator.advance();
 }
 
-PassRefPtrWillBeRawPtr<Range> CharacterIterator::createRange() const
+template <typename Strategy>
+EphemeralRangeTemplate<Strategy> CharacterIteratorAlgorithm<Strategy>::range() const
 {
-    RefPtrWillBeRawPtr<Range> r = m_textIterator.createRange();
-    if (!m_textIterator.atEnd()) {
-        if (m_textIterator.length() <= 1) {
-            ASSERT(!m_runOffset);
-        } else {
-            Node* n = r->startContainer();
-            ASSERT(n == r->endContainer());
-            int offset = r->startOffset() + m_runOffset;
-            r->setStart(n, offset, ASSERT_NO_EXCEPTION);
-            r->setEnd(n, offset + 1, ASSERT_NO_EXCEPTION);
-        }
-    }
-    return r.release();
+    EphemeralRangeTemplate<Strategy> range(m_textIterator.range());
+    if (m_textIterator.atEnd() || m_textIterator.length() <= 1)
+        return range;
+    PositionAlgorithm<Strategy> startPosition = range.startPosition().parentAnchoredEquivalent();
+    PositionAlgorithm<Strategy> endPosition = range.endPosition().parentAnchoredEquivalent();
+    Node* node = startPosition.containerNode();
+    ASSERT(node == endPosition.containerNode());
+    int offset = startPosition.offsetInContainerNode() + m_runOffset;
+    return EphemeralRangeTemplate<Strategy>(PositionAlgorithm<Strategy>(node, offset), PositionAlgorithm<Strategy>(node, offset + 1));
 }
 
-Document* CharacterIterator::ownerDocument() const
+template <typename Strategy>
+Document* CharacterIteratorAlgorithm<Strategy>::ownerDocument() const
 {
     return m_textIterator.ownerDocument();
 }
 
-Node* CharacterIterator::currentContainer() const
+template <typename Strategy>
+Node* CharacterIteratorAlgorithm<Strategy>::currentContainer() const
 {
     return m_textIterator.currentContainer();
 }
 
-int CharacterIterator::startOffset() const
+template <typename Strategy>
+int CharacterIteratorAlgorithm<Strategy>::startOffset() const
 {
     if (!m_textIterator.atEnd()) {
         if (m_textIterator.length() > 1)
@@ -145,7 +143,8 @@ int CharacterIterator::startOffset() const
     return m_textIterator.startOffsetInCurrentContainer();
 }
 
-int CharacterIterator::endOffset() const
+template <typename Strategy>
+int CharacterIteratorAlgorithm<Strategy>::endOffset() const
 {
     if (!m_textIterator.atEnd()) {
         if (m_textIterator.length() > 1)
@@ -155,33 +154,36 @@ int CharacterIterator::endOffset() const
     return m_textIterator.endOffsetInCurrentContainer();
 }
 
-Position CharacterIterator::startPosition() const
+template <typename Strategy>
+PositionAlgorithm<Strategy> CharacterIteratorAlgorithm<Strategy>::startPosition() const
 {
     if (!m_textIterator.atEnd()) {
         if (m_textIterator.length() > 1) {
             Node* n = m_textIterator.currentContainer();
             int offset = m_textIterator.startOffsetInCurrentContainer() + m_runOffset;
-            return createLegacyEditingPosition(n, offset);
+            return PositionAlgorithm<Strategy>::createLegacyEditingPosition(n, offset);
         }
         ASSERT(!m_runOffset);
     }
     return m_textIterator.startPositionInCurrentContainer();
 }
 
-Position CharacterIterator::endPosition() const
+template <typename Strategy>
+PositionAlgorithm<Strategy> CharacterIteratorAlgorithm<Strategy>::endPosition() const
 {
     if (!m_textIterator.atEnd()) {
         if (m_textIterator.length() > 1) {
             Node* n = m_textIterator.currentContainer();
             int offset = m_textIterator.startOffsetInCurrentContainer() + m_runOffset;
-            return createLegacyEditingPosition(n, offset + 1);
+            return PositionAlgorithm<Strategy>::createLegacyEditingPosition(n, offset + 1);
         }
         ASSERT(!m_runOffset);
     }
     return m_textIterator.endPositionInCurrentContainer();
 }
 
-void CharacterIterator::advance(int count)
+template <typename Strategy>
+void CharacterIteratorAlgorithm<Strategy>::advance(int count)
 {
     if (count <= 0) {
         ASSERT(!count);
@@ -226,14 +228,15 @@ void CharacterIterator::advance(int count)
     m_runOffset = 0;
 }
 
-void CharacterIterator::calculateCharacterSubrange(int offset, int length, Position& startPos, Position& endPos)
+template <typename Strategy>
+EphemeralRangeTemplate<Strategy> CharacterIteratorAlgorithm<Strategy>::calculateCharacterSubrange(int offset, int length)
 {
     advance(offset);
-    startPos = startPosition();
+    const PositionAlgorithm<Strategy> startPos = startPosition();
 
     if (length > 1)
         advance(length - 1);
-    endPos = endPosition();
+    return EphemeralRangeTemplate<Strategy>(startPos, endPosition());
 }
 
 static const size_t minimumSearchBufferSize = 8192;
@@ -547,13 +550,6 @@ nextMatch:
     return matchedLength;
 }
 
-static PassRefPtrWillBeRawPtr<Range> collapsedToBoundary(const Range* range, bool forward)
-{
-    RefPtrWillBeRawPtr<Range> result = range->cloneRange();
-    result->collapse(!forward);
-    return result.release();
-}
-
 // Check if there's any unpaird surrogate code point.
 // Non-character code points are not checked.
 static bool isValidUTF16(const String& s)
@@ -583,9 +579,7 @@ static size_t findPlainTextInternal(CharacterIterator& it, const String& target,
     SearchBuffer buffer(target, options);
 
     if (buffer.needsMoreContext()) {
-        RefPtrWillBeRawPtr<Range> beforeStartRange = it.ownerDocument()->createRange();
-        beforeStartRange->setEnd(it.currentContainer(), it.startOffset(), IGNORE_EXCEPTION);
-        for (SimplifiedBackwardsTextIterator backwardsIterator(beforeStartRange.get()); !backwardsIterator.atEnd(); backwardsIterator.advance()) {
+        for (SimplifiedBackwardsTextIterator backwardsIterator(Position::firstPositionInNode(it.ownerDocument()), Position(it.currentContainer(), it.startOffset())); !backwardsIterator.atEnd(); backwardsIterator.advance()) {
             Vector<UChar, 1024> characters;
             backwardsIterator.prependTextTo(characters);
             buffer.prependContext(characters.data(), characters.size());
@@ -622,51 +616,30 @@ tryAgain:
 
 static const TextIteratorBehaviorFlags iteratorFlagsForFindPlainText = TextIteratorEntersTextControls | TextIteratorEntersOpenShadowRoots | TextIteratorDoesNotBreakAtReplacedElement;
 
-PassRefPtrWillBeRawPtr<Range> findPlainText(const Range* range, const String& target, FindOptions options)
+EphemeralRange findPlainText(const EphemeralRange& inputRange, const String& target, FindOptions options)
 {
-    // First, find the text.
-    size_t matchStart;
-    size_t matchLength;
-    {
-        CharacterIterator findIterator(range, iteratorFlagsForFindPlainText);
-        matchLength = findPlainTextInternal(findIterator, target, options, matchStart);
-        if (!matchLength)
-            return collapsedToBoundary(range, !(options & Backwards));
-    }
-
-    // Then, find the document position of the start and the end of the text.
-    CharacterIterator computeRangeIterator(range, iteratorFlagsForFindPlainText);
-    Position resultStart;
-    Position resultEnd;
-    computeRangeIterator.calculateCharacterSubrange(matchStart, matchLength, resultStart, resultEnd);
-    return Range::create(range->ownerDocument(), resultStart, resultEnd);
-}
-
-void findPlainText(const Position& inputStart, const Position& inputEnd, const String& target, FindOptions options, Position& resultStart, Position& resultEnd)
-{
-    resultStart.clear();
-    resultEnd.clear();
     // CharacterIterator requires layoutObjects to be up-to-date.
-    if (!inputStart.inDocument())
-        return;
-    ASSERT(inputStart.document() == inputEnd.document());
+    if (!inputRange.startPosition().inDocument())
+        return EphemeralRange();
+    ASSERT(inputRange.startPosition().document() == inputRange.endPosition().document());
 
     // FIXME: Reduce the code duplication with above (but how?).
     size_t matchStart;
     size_t matchLength;
     {
-        CharacterIterator findIterator(inputStart, inputEnd, iteratorFlagsForFindPlainText);
+        TextIteratorBehaviorFlags behavior = iteratorFlagsForFindPlainText;
+        if (options & FindAPICall)
+            behavior |= TextIteratorForWindowFind;
+        CharacterIterator findIterator(inputRange, behavior);
         matchLength = findPlainTextInternal(findIterator, target, options, matchStart);
-        if (!matchLength) {
-            const Position& collapseTo = options & Backwards ? inputStart : inputEnd;
-            resultStart = collapseTo;
-            resultEnd = collapseTo;
-            return;
-        }
+        if (!matchLength)
+            return EphemeralRange(options & Backwards ? inputRange.startPosition() : inputRange.endPosition());
     }
 
-    CharacterIterator computeRangeIterator(inputStart, inputEnd, iteratorFlagsForFindPlainText);
-    computeRangeIterator.calculateCharacterSubrange(matchStart, matchLength, resultStart, resultEnd);
+    CharacterIterator computeRangeIterator(inputRange, iteratorFlagsForFindPlainText);
+    return computeRangeIterator.calculateCharacterSubrange(matchStart, matchLength);
 }
+
+template class CORE_TEMPLATE_EXPORT CharacterIteratorAlgorithm<EditingStrategy>;
 
 } // namespace blink

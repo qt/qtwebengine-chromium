@@ -39,22 +39,22 @@ class AXObjectCacheImpl;
 class AXTableHeaderContainer final : public AXMockObject {
 
 private:
-    explicit AXTableHeaderContainer(AXObjectCacheImpl*);
+    explicit AXTableHeaderContainer(AXObjectCacheImpl&);
 
 public:
-    static PassRefPtr<AXTableHeaderContainer> create(AXObjectCacheImpl*);
-    virtual ~AXTableHeaderContainer();
+    static PassRefPtrWillBeRawPtr<AXTableHeaderContainer> create(AXObjectCacheImpl&);
+    ~AXTableHeaderContainer() override;
 
-    virtual AccessibilityRole roleValue() const override { return TableHeaderContainerRole; }
+    AccessibilityRole roleValue() const override { return TableHeaderContainerRole; }
 
-    virtual void addChildren() override;
+    void addChildren() override;
 
-    virtual LayoutRect elementRect() const override;
+    LayoutRect elementRect() const override;
 
 private:
     LayoutRect m_headerRect;
 
-    virtual bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
+    bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
 };
 
 } // namespace blink

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "webrtc/base/format_macros.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
@@ -26,7 +27,6 @@
 #include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
@@ -99,7 +99,7 @@ void SetAudioFrameActivityAndType(bool vad_enabled,
         // not active. However, if post-decoding VAD has been active then
         // disabled, we might be here for couple of frames.
         audio_frame->speech_type_ = AudioFrame::kNormalSpeech;
-        LOG_F(LS_WARNING) << "Post-decoding VAD is disabled but output is "
+        LOG(WARNING) << "Post-decoding VAD is disabled but output is "
             << "labeled VAD-passive";
         break;
       }
@@ -156,7 +156,7 @@ AcmReceiver::~AcmReceiver() {
 int AcmReceiver::SetMinimumDelay(int delay_ms) {
   if (neteq_->SetMinimumDelay(delay_ms))
     return 0;
-  LOG_FERR1(LS_ERROR, "AcmReceiver::SetExtraDelay", delay_ms);
+  LOG(LERROR) << "AcmReceiver::SetExtraDelay " << delay_ms;
   return -1;
 }
 
@@ -199,7 +199,7 @@ int AcmReceiver::SetInitialDelay(int delay_ms) {
 int AcmReceiver::SetMaximumDelay(int delay_ms) {
   if (neteq_->SetMaximumDelay(delay_ms))
     return 0;
-  LOG_FERR1(LS_ERROR, "AcmReceiver::SetExtraDelay", delay_ms);
+  LOG(LERROR) << "AcmReceiver::SetExtraDelay " << delay_ms;
   return -1;
 }
 
@@ -334,9 +334,9 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
 
   if (neteq_->InsertPacket(rtp_header, incoming_payload, length_payload,
                            receive_timestamp) < 0) {
-    LOG_FERR1(LS_ERROR, "AcmReceiver::InsertPacket",
-              static_cast<int>(header->payloadType))
-        << " Failed to insert packet";
+    LOG(LERROR) << "AcmReceiver::InsertPacket "
+                << static_cast<int>(header->payloadType)
+                << " Failed to insert packet";
     return -1;
   }
   return 0;
@@ -379,7 +379,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
                        &samples_per_channel,
                        &num_channels,
                        &type) != NetEq::kOK) {
-    LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "NetEq Failed.";
+    LOG(LERROR) << "AcmReceiver::GetAudio - NetEq Failed.";
     return -1;
   }
 
@@ -411,8 +411,8 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
                                   AudioFrame::kMaxDataSizeSamples,
                                   temp_output);
     if (samples_per_channel < 0) {
-      LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio")
-          << "Resampling last_audio_buffer_ failed.";
+      LOG(LERROR) << "AcmReceiver::GetAudio - "
+                     "Resampling last_audio_buffer_ failed.";
       return -1;
     }
   }
@@ -430,8 +430,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
                                   AudioFrame::kMaxDataSizeSamples,
                                   audio_frame->data_);
     if (samples_per_channel < 0) {
-      LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio")
-          << "Resampling audio_buffer_ failed.";
+      LOG(LERROR) << "AcmReceiver::GetAudio - Resampling audio_buffer_ failed.";
       return -1;
     }
     resampled_last_output_frame_ = true;
@@ -462,8 +461,8 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   // |audio_frame|.
   uint32_t playout_timestamp = 0;
   if (GetPlayoutTimestamp(&playout_timestamp)) {
-    audio_frame->timestamp_ =
-        playout_timestamp - audio_frame->samples_per_channel_;
+    audio_frame->timestamp_ = playout_timestamp -
+        static_cast<uint32_t>(audio_frame->samples_per_channel_);
   } else {
     // Remain 0 until we have a valid |playout_timestamp|.
     audio_frame->timestamp_ = 0;
@@ -475,6 +474,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
 int32_t AcmReceiver::AddCodec(int acm_codec_id,
                               uint8_t payload_type,
                               int channels,
+                              int sample_rate_hz,
                               AudioDecoder* audio_decoder) {
   assert(acm_codec_id >= 0);
   NetEqDecoder neteq_decoder = ACMCodecDB::neteq_decoders_[acm_codec_id];
@@ -491,7 +491,8 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
   auto it = decoders_.find(payload_type);
   if (it != decoders_.end()) {
     const Decoder& decoder = it->second;
-    if (decoder.acm_codec_id == acm_codec_id && decoder.channels == channels) {
+    if (decoder.acm_codec_id == acm_codec_id && decoder.channels == channels &&
+        decoder.sample_rate_hz == sample_rate_hz) {
       // Re-registering the same codec. Do nothing and return.
       return 0;
     }
@@ -499,8 +500,7 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
     // Changing codec or number of channels. First unregister the old codec,
     // then register the new one.
     if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK) {
-      LOG_F(LS_ERROR) << "Cannot remove payload "
-                      << static_cast<int>(payload_type);
+      LOG(LERROR) << "Cannot remove payload " << static_cast<int>(payload_type);
       return -1;
     }
 
@@ -511,12 +511,13 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
   if (!audio_decoder) {
     ret_val = neteq_->RegisterPayloadType(neteq_decoder, payload_type);
   } else {
-    ret_val = neteq_->RegisterExternalDecoder(
-        audio_decoder, neteq_decoder, payload_type);
+    ret_val = neteq_->RegisterExternalDecoder(audio_decoder, neteq_decoder,
+                                              payload_type, sample_rate_hz);
   }
   if (ret_val != NetEq::kOK) {
-    LOG_FERR3(LS_ERROR, "AcmReceiver::AddCodec", acm_codec_id,
-              static_cast<int>(payload_type), channels);
+    LOG(LERROR) << "AcmReceiver::AddCodec " << acm_codec_id
+                << static_cast<int>(payload_type)
+                << " channels: " << channels;
     return -1;
   }
 
@@ -524,6 +525,7 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
   decoder.acm_codec_id = acm_codec_id;
   decoder.payload_type = payload_type;
   decoder.channels = channels;
+  decoder.sample_rate_hz = sample_rate_hz;
   decoders_[payload_type] = decoder;
   return 0;
 }
@@ -573,8 +575,7 @@ int AcmReceiver::RemoveCodec(uint8_t payload_type) {
     return 0;
   }
   if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK) {
-    LOG_FERR1(LS_ERROR, "AcmReceiver::RemoveCodec",
-              static_cast<int>(payload_type));
+    LOG(LERROR) << "AcmReceiver::RemoveCodec" << static_cast<int>(payload_type);
     return -1;
   }
   if (last_audio_decoder_ == &it->second)
@@ -612,7 +613,7 @@ int AcmReceiver::RedPayloadType() const {
         return decoder.payload_type;
     }
   }
-  LOG_F(LS_WARNING) << "RED is not registered.";
+  LOG(WARNING) << "RED is not registered.";
   return -1;
 }
 
@@ -625,6 +626,7 @@ int AcmReceiver::LastAudioCodec(CodecInst* codec) const {
          sizeof(CodecInst));
   codec->pltype = last_audio_decoder_->payload_type;
   codec->channels = last_audio_decoder_->channels;
+  codec->plfreq = last_audio_decoder_->sample_rate_hz;
   return 0;
 }
 
@@ -677,8 +679,8 @@ int AcmReceiver::DecoderByPayloadType(uint8_t payload_type,
   CriticalSectionScoped lock(crit_sect_.get());
   auto it = decoders_.find(payload_type);
   if (it == decoders_.end()) {
-    LOG_FERR1(LS_ERROR, "AcmReceiver::DecoderByPayloadType",
-              static_cast<int>(payload_type));
+    LOG(LERROR) << "AcmReceiver::DecoderByPayloadType "
+                << static_cast<int>(payload_type);
     return -1;
   }
   const Decoder& decoder = it->second;
@@ -686,6 +688,7 @@ int AcmReceiver::DecoderByPayloadType(uint8_t payload_type,
          sizeof(CodecInst));
   codec->pltype = decoder.payload_type;
   codec->channels = decoder.channels;
+  codec->plfreq = decoder.sample_rate_hz;
   return 0;
 }
 

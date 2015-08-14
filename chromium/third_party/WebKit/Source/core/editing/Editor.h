@@ -31,6 +31,7 @@
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FindOptions.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleSelection.h"
@@ -42,6 +43,7 @@
 namespace blink {
 
 class CompositeEditCommand;
+class DummyPageHolder;
 class EditCommandComposition;
 class EditorClient;
 class EditorInternalCommand;
@@ -92,8 +94,6 @@ public:
     void copyImage(const HitTestResult&);
 
     void transpose();
-
-    bool shouldDeleteRange(Range*) const;
 
     void respondToChangedContents(const VisibleSelection& endingSelection);
 
@@ -190,9 +190,12 @@ public:
 
     EditingBehavior behavior() const;
 
-    PassRefPtrWillBeRawPtr<Range> selectedRange();
+    EphemeralRange selectedRange();
 
+    // TODO(yosin) We should get rid of |addToKillRing()| with |Range| for
+    // Oilpan.
     void addToKillRing(Range*, bool prepend);
+    void addToKillRing(const EphemeralRange&, bool prepend);
 
     void pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
@@ -254,7 +257,8 @@ private:
         return *m_frame;
     }
 
-    bool canDeleteRange(Range*) const;
+    bool canDeleteRange(const EphemeralRange&) const;
+    bool shouldDeleteRange(const EphemeralRange&) const;
 
     UndoStack* undoStack() const;
 
@@ -274,7 +278,7 @@ private:
 
     Element* findEventTargetFromSelection() const;
 
-    PassRefPtrWillBeRawPtr<Range> rangeOfString(const String&, Range*, FindOptions);
+    PassRefPtrWillBeRawPtr<Range> findRangeOfString(const String&, Range*, FindOptions);
 
     SpellChecker& spellChecker() const;
 

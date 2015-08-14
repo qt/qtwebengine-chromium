@@ -12,10 +12,13 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/devtools_agent_host_client.h"
 #include "url/gurl.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace net {
 class ServerSocket;
@@ -86,7 +89,7 @@ class CONTENT_EXPORT DevToolsAgentHost
   // Creates DevToolsAgentHost for the browser, which works with browser-wide
   // debugging protocol.
   static scoped_refptr<DevToolsAgentHost> CreateForBrowser(
-      scoped_refptr<base::MessageLoopProxy> tethering_message_loop,
+      scoped_refptr<base::SingleThreadTaskRunner> tethering_task_runner,
       const CreateServerSocketCallback& socket_callback);
 
   static bool IsDebuggerAttached(WebContents* web_contents);

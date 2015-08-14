@@ -108,7 +108,7 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
 
   {
     gpu::TransferBufferManager* manager = new gpu::TransferBufferManager();
-    transfer_buffer_manager_.reset(manager);
+    transfer_buffer_manager_ = manager;
     manager->Initialize();
   }
   scoped_ptr<gpu::CommandBufferService> command_buffer(
@@ -337,6 +337,11 @@ uint32 Display::CreateStreamTexture(uint32 texture_id) {
 
 void Display::SetLock(base::Lock*) {
   NOTIMPLEMENTED();
+}
+
+bool Display::IsGpuChannelLost() {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 }  // namespace egl

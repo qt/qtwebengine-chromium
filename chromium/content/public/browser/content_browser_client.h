@@ -53,6 +53,10 @@ namespace gfx {
 class ImageSkia;
 }
 
+namespace mojo {
+class ApplicationDelegate;
+}
+
 namespace net {
 class CookieOptions;
 class NetLog;
@@ -348,6 +352,15 @@ class CONTENT_EXPORT ContentBrowserClient {
       ResourceContext* context,
       const std::vector<std::pair<int, int> >& render_frames);
 
+#if defined(ENABLE_WEBRTC)
+  // Allow the embedder to control if WebRTC identities are allowed to be cached
+  // and potentially reused for future requests (within the same origin).
+  // This is called on the IO thread.
+  virtual bool AllowWebRTCIdentityCache(const GURL& url,
+                                        const GURL& first_party_url,
+                                        ResourceContext* context);
+#endif  // defined(ENABLE_WEBRTC)
+
   // Allow the embedder to override the request context based on the URL for
   // certain operations, like cookie access. Returns nullptr to indicate the
   // regular request context should be used.
@@ -455,7 +468,8 @@ class CONTENT_EXPORT ContentBrowserClient {
                                bool opener_suppressed,
                                ResourceContext* context,
                                int render_process_id,
-                               int opener_id,
+                               int opener_render_view_id,
+                               int opener_render_frame_id,
                                bool* no_javascript_access);
 
   // Notifies the embedder that the ResourceDispatcherHost has been created.
@@ -557,6 +571,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // It's valid to return nullptr.
   virtual TracingDelegate* GetTracingDelegate();
 
+  // Returns true if NPAPI plugins are enabled.
+  virtual bool IsNPAPIEnabled();
+
   // Returns true if plugin referred to by the url can use
   // pp::FileIO::RequestOSFileHandle.
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
@@ -573,10 +590,17 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void OverrideRenderProcessMojoServices(ServiceRegistry* registry) {}
 
   // Allows to override browser Mojo services exposed through the
-  // RenderFrameHost.
-  virtual void OverrideRenderFrameMojoServices(
+  // FrameMojoShell.
+  virtual void OverrideFrameMojoShellServices(
       ServiceRegistry* registry,
       RenderFrameHost* render_frame_host) {}
+
+  using StaticMojoApplicationMap =
+      std::map<GURL, base::Callback<scoped_ptr<mojo::ApplicationDelegate>()>>;
+
+  // Registers in-process Mojo application loaders with the browser's global
+  // Mojo shell.
+  virtual void RegisterMojoApplications(StaticMojoApplicationMap* apps) {}
 
   // Registers additional navigator.connect service factories available in a
   // particular NavigatorConnectContext.
@@ -604,14 +628,20 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows the embedder to record |metric| for a specific |url|.
   virtual void RecordURLMetric(const std::string& metric, const GURL& url) {}
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
+#if defined(OS_ANDROID)
   virtual void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
-      FileDescriptorInfo* mappings) {}
-#endif
+      content::FileDescriptorInfo* mappings,
+      std::map<int, base::MemoryMappedFile::Region>* regions) {}
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
+  virtual void GetAdditionalMappedFilesForChildProcess(
+      const base::CommandLine& command_line,
+      int child_process_id,
+      content::FileDescriptorInfo* mappings) {}
+#endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN)
   // Returns the name of the dll that contains cursors and other resources.
@@ -622,6 +652,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // policy.
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) {}
+
+  // Returns the AppContainer SID for the specified sandboxed process type, or
+  // empty string if this sandboxed process type does not support living inside
+  // an AppContainer.
+  virtual base::string16 GetAppContainerSidForSandboxType(
+      int sandbox_type) const;
 #endif
 
 #if defined(VIDEO_HOLE)

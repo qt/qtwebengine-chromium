@@ -14,6 +14,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/process/process_handle.h"
 
+namespace base {
+
 class Pickle;
 
 class BASE_EXPORT UnixDomainSocket {
@@ -40,7 +42,7 @@ class BASE_EXPORT UnixDomainSocket {
   static ssize_t RecvMsg(int fd,
                          void* msg,
                          size_t length,
-                         ScopedVector<base::ScopedFD>* fds);
+                         ScopedVector<ScopedFD>* fds);
 
   // Same as RecvMsg above, but also returns the sender's process ID (as seen
   // from the caller's namespace).  However, before using this function to
@@ -49,8 +51,8 @@ class BASE_EXPORT UnixDomainSocket {
   static ssize_t RecvMsgWithPid(int fd,
                                 void* msg,
                                 size_t length,
-                                ScopedVector<base::ScopedFD>* fds,
-                                base::ProcessId* pid);
+                                ScopedVector<ScopedFD>* fds,
+                                ProcessId* pid);
 
 #if !defined(OS_NACL_NONSFI)
   // Perform a sendmsg/recvmsg pair.
@@ -92,8 +94,10 @@ class BASE_EXPORT UnixDomainSocket {
                                   void* msg,
                                   size_t length,
                                   int flags,
-                                  ScopedVector<base::ScopedFD>* fds,
-                                  base::ProcessId* pid);
+                                  ScopedVector<ScopedFD>* fds,
+                                  ProcessId* pid);
 };
+
+}  // namespace base
 
 #endif  // BASE_POSIX_UNIX_DOMAIN_SOCKET_LINUX_H_

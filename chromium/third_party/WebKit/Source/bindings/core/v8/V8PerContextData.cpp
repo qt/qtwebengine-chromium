@@ -34,6 +34,7 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8ObjectConstructor.h"
+#include "core/inspector/InstanceCounters.h"
 #include "wtf/StringExtras.h"
 
 #include <stdlib.h>
@@ -56,10 +57,15 @@ V8PerContextData::V8PerContextData(v8::Local<v8::Context> context)
     v8::Local<v8::Value> objectValue = context->Global()->Get(context, v8AtomicString(m_isolate, "Error")).ToLocalChecked();
     v8::Local<v8::Value> prototypeValue = objectValue.As<v8::Object>()->Get(context, v8AtomicString(m_isolate, "prototype")).ToLocalChecked();
     m_errorPrototype.set(m_isolate, prototypeValue);
+
+    if (isMainThread())
+        InstanceCounters::incrementCounter(InstanceCounters::V8PerContextDataCounter);
 }
 
 V8PerContextData::~V8PerContextData()
 {
+    if (isMainThread())
+        InstanceCounters::decrementCounter(InstanceCounters::V8PerContextDataCounter);
 }
 
 PassOwnPtr<V8PerContextData> V8PerContextData::create(v8::Local<v8::Context> context)
@@ -93,7 +99,7 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(const Wrapp
 
     v8::Local<v8::Context> currentContext = context();
     v8::Context::Scope scope(currentContext);
-    // We shouldn't reach this point for the types that are implemented in v8 suche as typed arrays and
+    // We shouldn't reach this point for the types that are implemented in v8 such as typed arrays and
     // hence don't have domTemplateFunction.
     ASSERT(type->domTemplateFunction);
     v8::Local<v8::FunctionTemplate> functionTemplate = type->domTemplate(m_isolate);
@@ -114,7 +120,7 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(const Wrapp
     if (prototypeObject->InternalFieldCount() == v8PrototypeInternalFieldcount
         && type->wrapperTypePrototype == WrapperTypeInfo::WrapperTypeObjectPrototype)
         prototypeObject->SetAlignedPointerInInternalField(v8PrototypeTypeIndex, const_cast<WrapperTypeInfo*>(type));
-    type->preparePrototypeObject(m_isolate, prototypeObject);
+    type->preparePrototypeObject(m_isolate, prototypeObject, functionTemplate);
     if (type->wrapperTypePrototype == WrapperTypeInfo::WrapperTypeExceptionPrototype) {
         if (!v8CallBoolean(prototypeObject->SetPrototype(currentContext, m_errorPrototype.newLocal(m_isolate))))
             return v8::Local<v8::Function>();

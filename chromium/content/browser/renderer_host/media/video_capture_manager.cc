@@ -9,11 +9,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/media/capture/web_contents_video_capture_device.h"
 #include "content/browser/media/media_internals.h"
@@ -23,6 +26,7 @@
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/common/media_stream_request.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/media_switches.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_device_factory.h"
 
@@ -74,7 +78,9 @@ void ConsolidateCaptureFormats(media::VideoCaptureFormats* formats) {
 // The maximum number of buffers in the capture pipeline. See
 // VideoCaptureController ctor comments for more details.
 const int kMaxNumberOfBuffers = 3;
-const int kMaxNumberOfBuffersForTabCapture = 5;
+// TODO(miu): The value for tab capture should be determined programmatically.
+// http://crbug.com/460318
+const int kMaxNumberOfBuffersForTabCapture = 10;
 
 // Used for logging capture events.
 // Elements in this enum should not be deleted or rearranged; the only
@@ -224,9 +230,9 @@ int VideoCaptureManager::Open(const StreamDeviceInfo& device_info) {
   // Notify our listener asynchronously; this ensures that we return
   // |capture_session_id| to the caller of this function before using that same
   // id in a listener event.
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&VideoCaptureManager::OnOpened, this,
-                 device_info.device.type, capture_session_id));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&VideoCaptureManager::OnOpened, this,
+                            device_info.device.type, capture_session_id));
   return capture_session_id;
 }
 
@@ -255,9 +261,9 @@ void VideoCaptureManager::Close(int capture_session_id) {
   }
 
   // Notify listeners asynchronously, and forget the session.
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&VideoCaptureManager::OnClosed, this, session_it->second.type,
-                 capture_session_id));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&VideoCaptureManager::OnClosed, this,
+                            session_it->second.type, capture_session_id));
   sessions_.erase(session_it);
 }
 
@@ -319,6 +325,11 @@ void VideoCaptureManager::HandleQueuedStartRequest() {
   DCHECK(entry_it != devices_.end());
   DeviceEntry* entry =  (*entry_it);
 
+  media::VideoCaptureParams params = request->params();
+  params.use_gpu_memory_buffers =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseGpuMemoryBuffersForCapture);
+
   DVLOG(3) << "HandleQueuedStartRequest, Post start to device thread, device = "
            << entry->id << " start id = " << entry->serial_id;
   base::PostTaskAndReplyWithResult(
@@ -330,7 +341,7 @@ void VideoCaptureManager::HandleQueuedStartRequest() {
           request->session_id(),
           entry->id,
           entry->stream_type,
-          request->params(),
+          params,
           base::Passed(entry->video_capture_controller()->NewDeviceClient(
               device_task_runner_))),
       base::Bind(&VideoCaptureManager::OnDeviceStarted, this,
@@ -445,9 +456,9 @@ void VideoCaptureManager::StartCaptureForClient(
     VideoCaptureControllerEventHandler* client_handler,
     const DoneCB& done_cb) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DVLOG(1) << "VideoCaptureManager::StartCaptureForClient, "
-           << params.requested_format.frame_size.ToString() << ", "
-           << params.requested_format.frame_rate << ", #" << session_id << ")";
+  DVLOG(1) << "VideoCaptureManager::StartCaptureForClient #" << session_id
+           << ", request: "
+           << media::VideoCaptureFormat::ToString(params.requested_format);
 
   DeviceEntry* entry = GetOrCreateDeviceEntry(session_id);
   if (!entry) {

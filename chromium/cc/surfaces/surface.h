@@ -67,10 +67,18 @@ class CC_SURFACES_EXPORT Surface {
   // Satisfy all destruction dependencies that are contained in sequences, and
   // remove them from sequences.
   void SatisfyDestructionDependencies(
-      base::hash_set<SurfaceSequence>* sequences);
+      base::hash_set<SurfaceSequence>* sequences,
+      base::hash_set<uint32_t>* valid_id_namespaces);
   size_t GetDestructionDependencyCount() const {
     return destruction_dependencies_.size();
   }
+
+  const std::vector<SurfaceId>& referenced_surfaces() const {
+    return referenced_surfaces_;
+  }
+
+  bool destroyed() const { return destroyed_; }
+  void set_destroyed(bool destroyed) { destroyed_ = destroyed; }
 
  private:
   void ClearCopyRequests();
@@ -80,7 +88,10 @@ class CC_SURFACES_EXPORT Surface {
   // TODO(jamesr): Support multiple frames in flight.
   scoped_ptr<CompositorFrame> current_frame_;
   int frame_index_;
+  bool destroyed_;
   std::vector<SurfaceSequence> destruction_dependencies_;
+
+  std::vector<SurfaceId> referenced_surfaces_;
 
   DrawCallback draw_callback_;
 

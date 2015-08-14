@@ -97,6 +97,8 @@ public:
     void close();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(rejectionhandled);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(unhandledrejection);
 
     // WorkerUtils
     virtual void importScripts(const Vector<String>& urls, ExceptionState&);
@@ -111,7 +113,7 @@ public:
 
     // ExecutionContextClient
     WorkerEventQueue* eventQueue() const override final;
-    const SecurityContext& securityContext() const override final { return *this; }
+    SecurityContext& securityContext() override final { return *this; }
 
     bool isContextThread() const override final;
     bool isJSExecutionForbidden() const override final;
@@ -143,7 +145,7 @@ public:
 
 protected:
     WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
-    void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
+    void applyContentSecurityPolicyFromVector(const Vector<CSPHeaderAndType>& headers);
 
     void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
     void addMessageToWorkerConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>);

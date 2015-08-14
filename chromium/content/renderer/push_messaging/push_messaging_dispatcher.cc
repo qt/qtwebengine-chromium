@@ -19,15 +19,7 @@
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "url/gurl.h"
 
-using blink::WebString;
-
 namespace content {
-
-const char kManifestDeprecationWarning[] =
-    "The 'gcm_user_visible_only' manifest key is deprecated and will be "
-    "removed in Chrome 45, around August 2015. Use pushManager.subscribe({"
-    "userVisibleOnly: true}) instead. See https://goo.gl/RHFwWx for more "
-    "details.";
 
 PushMessagingDispatcher::PushMessagingDispatcher(RenderFrame* render_frame)
     : RenderFrameObserver(render_frame) {
@@ -38,10 +30,10 @@ PushMessagingDispatcher::~PushMessagingDispatcher() {}
 bool PushMessagingDispatcher::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PushMessagingDispatcher, message)
-    IPC_MESSAGE_HANDLER(PushMessagingMsg_RegisterFromDocumentSuccess,
-                        OnRegisterFromDocumentSuccess)
-    IPC_MESSAGE_HANDLER(PushMessagingMsg_RegisterFromDocumentError,
-                        OnRegisterFromDocumentError)
+    IPC_MESSAGE_HANDLER(PushMessagingMsg_SubscribeFromDocumentSuccess,
+                        OnSubscribeFromDocumentSuccess)
+    IPC_MESSAGE_HANDLER(PushMessagingMsg_SubscribeFromDocumentError,
+                        OnSubscribeFromDocumentError)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -77,51 +69,34 @@ void PushMessagingDispatcher::DoSubscribe(
           ? std::string()
           : base::UTF16ToUTF8(manifest.gcm_sender_id.string());
   if (sender_id.empty()) {
-    OnRegisterFromDocumentError(request_id,
-                                PUSH_REGISTRATION_STATUS_NO_SENDER_ID);
+    OnSubscribeFromDocumentError(request_id,
+                                 PUSH_REGISTRATION_STATUS_NO_SENDER_ID);
     return;
   }
 
-  // Support for the "gcm_user_visible_only" Manifest key has been deprecated
-  // in favor of the userVisibleOnly subscription option, and will be removed
-  // in a future Chrome release. Inform developers of this deprecation.
-  if (manifest.gcm_user_visible_only && !options.userVisibleOnly) {
-    blink::WebConsoleMessage message(
-        blink::WebConsoleMessage::LevelWarning,
-        blink::WebString::fromUTF8(kManifestDeprecationWarning));
-
-    render_frame()->GetWebFrame()->addMessageToConsole(message);
-  }
-
-  const bool user_visible = manifest.gcm_user_visible_only ||
-                            options.userVisibleOnly;
-
-  Send(new PushMessagingHostMsg_RegisterFromDocument(
+  Send(new PushMessagingHostMsg_SubscribeFromDocument(
       routing_id(), request_id,
       manifest.gcm_sender_id.is_null()
           ? std::string()
           : base::UTF16ToUTF8(manifest.gcm_sender_id.string()),
-      user_visible, service_worker_registration_id));
+      options.userVisibleOnly, service_worker_registration_id));
 }
 
-void PushMessagingDispatcher::OnRegisterFromDocumentSuccess(
+void PushMessagingDispatcher::OnSubscribeFromDocumentSuccess(
     int32_t request_id,
-    const GURL& endpoint,
-    const std::string& registration_id) {
+    const GURL& endpoint) {
   blink::WebPushSubscriptionCallbacks* callbacks =
       subscription_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
 
   scoped_ptr<blink::WebPushSubscription> subscription(
-      new blink::WebPushSubscription(
-          WebString::fromUTF8(endpoint.spec()),
-          WebString::fromUTF8(registration_id)));
+      new blink::WebPushSubscription(endpoint));
   callbacks->onSuccess(subscription.release());
 
   subscription_callbacks_.Remove(request_id);
 }
 
-void PushMessagingDispatcher::OnRegisterFromDocumentError(
+void PushMessagingDispatcher::OnSubscribeFromDocumentError(
     int32_t request_id,
     PushRegistrationStatus status) {
   blink::WebPushSubscriptionCallbacks* callbacks =
@@ -130,7 +105,7 @@ void PushMessagingDispatcher::OnRegisterFromDocumentError(
 
   scoped_ptr<blink::WebPushError> error(new blink::WebPushError(
       blink::WebPushError::ErrorTypeAbort,
-      WebString::fromUTF8(PushRegistrationStatusToString(status))));
+      blink::WebString::fromUTF8(PushRegistrationStatusToString(status))));
   callbacks->onError(error.release());
 
   subscription_callbacks_.Remove(request_id);

@@ -5,9 +5,12 @@
 #include "net/proxy/proxy_script_fetcher_impl.h"
 
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/data_url.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -40,7 +43,7 @@ bool IsPacMimeType(const std::string& mime_type) {
     "application/x-javascript-config",
   };
   for (size_t i = 0; i < arraysize(kSupportedPacMimeTypes); ++i) {
-    if (LowerCaseEqualsASCII(mime_type, kSupportedPacMimeTypes[i]))
+    if (base::LowerCaseEqualsASCII(mime_type, kSupportedPacMimeTypes[i]))
       return true;
   }
   return false;
@@ -131,6 +134,9 @@ int ProxyScriptFetcherImpl::Fetch(
     return OK;
   }
 
+  DCHECK(fetch_start_time_.is_null());
+  fetch_start_time_ = base::Time::Now();
+
   cur_request_ =
       url_request_context_->CreateRequest(url, DEFAULT_PRIORITY, this);
   cur_request_->set_method("GET");
@@ -156,11 +162,9 @@ int ProxyScriptFetcherImpl::Fetch(
   // Post a task to timeout this request if it takes too long.
   cur_request_id_ = ++next_id_;
 
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&ProxyScriptFetcherImpl::OnTimeout,
-                 weak_factory_.GetWeakPtr(),
-                 cur_request_id_),
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::Bind(&ProxyScriptFetcherImpl::OnTimeout,
+                            weak_factory_.GetWeakPtr(), cur_request_id_),
       max_duration_);
 
   // Start the request.
@@ -282,6 +286,11 @@ bool ProxyScriptFetcherImpl::ConsumeBytesRead(URLRequest* request,
 
 void ProxyScriptFetcherImpl::FetchCompleted() {
   if (result_code_ == OK) {
+    // Calculate duration of time for proxy script fetch to complete.
+    DCHECK(!fetch_start_time_.is_null());
+    UMA_HISTOGRAM_TIMES("Net.ProxyScriptFetcher.SuccessDuration",
+                        base::Time::Now() - fetch_start_time_);
+
     // The caller expects the response to be encoded as UTF16.
     std::string charset;
     cur_request_->GetCharset(&charset);
@@ -305,6 +314,7 @@ void ProxyScriptFetcherImpl::ResetCurRequestState() {
   callback_.Reset();
   result_code_ = OK;
   result_text_ = NULL;
+  fetch_start_time_ = base::Time();
 }
 
 void ProxyScriptFetcherImpl::OnTimeout(int id) {

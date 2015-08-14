@@ -92,7 +92,7 @@ public:
     String name() const { return m_keyframesRule->name(); }
     void setName(const String&);
 
-    CSSRuleList* cssRules();
+    CSSRuleList* cssRules() const override;
 
     void appendRule(const String& rule);
     void deleteRule(const String& key);
@@ -101,6 +101,7 @@ public:
     // For IndexedGetter and CSSRuleList.
     unsigned length() const;
     CSSKeyframeRule* item(unsigned index) const;
+    CSSKeyframeRule* anonymousIndexedGetter(unsigned index) const;
 
     bool isVendorPrefixed() const { return m_isPrefixed; }
     void setVendorPrefixed(bool isPrefixed) { m_isPrefixed = isPrefixed; }

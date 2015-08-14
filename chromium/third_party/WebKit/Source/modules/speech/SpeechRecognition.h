@@ -46,12 +46,12 @@ class SpeechRecognitionController;
 class SpeechRecognitionError;
 
 class MODULES_EXPORT SpeechRecognition final : public RefCountedGarbageCollectedEventTargetWithInlineData<SpeechRecognition>, public PageLifecycleObserver, public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechRecognition>);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(SpeechRecognition);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognition);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static SpeechRecognition* create(ExecutionContext*);
-    virtual ~SpeechRecognition();
+    ~SpeechRecognition() override;
 
     // SpeechRecognition.idl implemementation.
     // Attributes.
@@ -89,12 +89,12 @@ public:
     void didEnd();
 
     // EventTarget.
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject.
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audiostart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(soundstart);
@@ -111,7 +111,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
     // PageLifecycleObserver
-    virtual void contextDestroyed() override;
+    void contextDestroyed() override;
 
 private:
     SpeechRecognition(Page*, ExecutionContext*);

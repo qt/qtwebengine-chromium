@@ -15,10 +15,13 @@
 #include "base/memory/scoped_vector.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "components/devtools_service/public/cpp/switches.h"
+#include "components/devtools_service/public/interfaces/devtools_service.mojom.h"
 #include "mojo/application/public/cpp/application_connection.h"
 #include "mojo/application/public/cpp/application_delegate.h"
 #include "mojo/application/public/cpp/application_impl.h"
@@ -59,23 +62,25 @@ bool ConfigureURLMappings(const base::CommandLine& command_line,
 
   // Configure the resolution of unknown mojo: URLs.
   GURL base_url;
-  if (command_line.HasSwitch(switches::kOrigin))
+  if (command_line.HasSwitch(switches::kOrigin)) {
     base_url = GURL(command_line.GetSwitchValueASCII(switches::kOrigin));
-  else
+  } else if (!command_line.HasSwitch(switches::kUseUpdater)) {
     // Use the shell's file root if the base was not specified.
     base_url = context->ResolveShellFileURL("");
+  }
 
-  if (!base_url.is_valid())
-    return false;
+  if (base_url.is_valid())
+    resolver->SetMojoBaseURL(base_url);
 
-  resolver->SetMojoBaseURL(base_url);
-
-  // The network service must be loaded from the filesystem.
+  // The network service and updater must be loaded from the filesystem.
   // This mapping is done before the command line URL mapping are processed, so
   // that it can be overridden.
+  resolver->AddURLMapping(GURL("mojo:network_service"),
+                          context->ResolveShellFileURL(
+                              "file:network_service/network_service.mojo"));
   resolver->AddURLMapping(
-      GURL("mojo:network_service"),
-      context->ResolveShellFileURL("file:network_service.mojo"));
+      GURL("mojo:updater"),
+      context->ResolveShellFileURL("file:updater/updater.mojo"));
 
   // Command line URL mapping.
   std::vector<URLResolver::OriginMapping> origin_mappings =
@@ -126,7 +131,7 @@ void InitContentHandlers(shell::ApplicationManager* manager,
   //     (to embed a comma into a string escape it using "\,")
   // Whatever takes 'parameters' and constructs a CommandLine is failing to
   // un-escape the commas, we need to move this fix to that file.
-  ReplaceSubstringsAfterOffset(&handlers_spec, 0, "\\,", ",");
+  base::ReplaceSubstringsAfterOffset(&handlers_spec, 0, "\\,", ",");
 #endif
 
   std::vector<std::string> parts;
@@ -168,6 +173,35 @@ void InitNativeOptions(shell::ApplicationManager* manager,
     options.force_in_process = true;
     manager->SetNativeOptionsForURL(options, gurl);
   }
+}
+
+void InitDevToolsServiceIfNeeded(shell::ApplicationManager* manager,
+                                 const base::CommandLine& command_line) {
+  if (!command_line.HasSwitch(devtools_service::kRemoteDebuggingPort))
+    return;
+
+  std::string port_str =
+      command_line.GetSwitchValueASCII(devtools_service::kRemoteDebuggingPort);
+  unsigned port;
+  if (!base::StringToUint(port_str, &port) || port > 65535) {
+    LOG(ERROR) << "Invalid value for switch "
+               << devtools_service::kRemoteDebuggingPort << ": '" << port_str
+               << "' is not a valid port number.";
+    return;
+  }
+
+  ServiceProviderPtr devtools_service_provider;
+  URLRequestPtr request(URLRequest::New());
+  request->url = "mojo:devtools_service";
+  manager->ConnectToApplication(
+      request.Pass(), std::string(), GURL("mojo:shell"),
+      GetProxy(&devtools_service_provider), nullptr, base::Closure());
+
+  devtools_service::DevToolsCoordinatorPtr devtools_coordinator;
+  devtools_service_provider->ConnectToService(
+      devtools_service::DevToolsCoordinator::Name_,
+      GetProxy(&devtools_coordinator).PassMessagePipe());
+  devtools_coordinator->Initialize(static_cast<uint16_t>(port));
 }
 
 class TracingServiceProvider : public ServiceProvider {
@@ -242,7 +276,7 @@ bool Context::Init() {
 
   EnsureEmbedderIsInitialized();
   task_runners_.reset(
-      new TaskRunners(base::MessageLoop::current()->message_loop_proxy()));
+      new TaskRunners(base::MessageLoop::current()->task_runner()));
 
   // TODO(vtl): Probably these failures should be checked before |Init()|, and
   // this function simply shouldn't fail.
@@ -272,9 +306,13 @@ bool Context::Init() {
 
   ServiceProviderPtr tracing_service_provider_ptr;
   new TracingServiceProvider(GetProxy(&tracing_service_provider_ptr));
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From("mojo:tracing");
   application_manager_.ConnectToApplication(
-      GURL("mojo:tracing"), GURL(""), nullptr,
+      request.Pass(), std::string(), GURL(""), nullptr,
       tracing_service_provider_ptr.Pass(), base::Closure());
+
+  InitDevToolsServiceIfNeeded(&application_manager_, command_line);
 
   return true;
 }
@@ -313,24 +351,24 @@ void Context::Run(const GURL& url) {
   ServiceProviderPtr exposed_services;
 
   app_urls_.insert(url);
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = mojo::String::From(url.spec());
   application_manager_.ConnectToApplication(
-      url, GURL(), GetProxy(&services), exposed_services.Pass(),
+      request.Pass(), std::string(), GURL(), GetProxy(&services),
+      exposed_services.Pass(),
       base::Bind(&Context::OnApplicationEnd, base::Unretained(this), url));
 }
 
 void Context::RunCommandLineApplication() {
-  // If an app isn't specified (i.e. for an apptest), run the window manager.
-  GURL app_url("mojo:window_manager");
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   base::CommandLine::StringVector args = command_line->GetArgs();
   for (size_t i = 0; i < args.size(); ++i) {
     GURL possible_app(args[i]);
     if (possible_app.SchemeIs("mojo")) {
-      app_url = possible_app;
+      Run(possible_app);
       break;
     }
   }
-  Run(app_url);
 }
 
 void Context::OnApplicationEnd(const GURL& url) {

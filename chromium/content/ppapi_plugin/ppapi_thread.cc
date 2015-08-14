@@ -175,8 +175,8 @@ void PpapiThread::OnChannelConnected(int32 peer_pid) {
 #endif
 }
 
-base::MessageLoopProxy* PpapiThread::GetIPCMessageLoop() {
-  return ChildProcess::current()->io_message_loop_proxy();
+base::SingleThreadTaskRunner* PpapiThread::GetIPCTaskRunner() {
+  return ChildProcess::current()->io_task_runner();
 }
 
 base::WaitableEvent* PpapiThread::GetShutdownEvent() {
@@ -199,6 +199,29 @@ IPC::PlatformFileForTransit PpapiThread::ShareHandleWithRemote(
   return BrokerGetFileHandleForProcess(handle, peer_pid, should_close_source);
 }
 
+base::SharedMemoryHandle PpapiThread::ShareSharedMemoryHandleWithRemote(
+    const base::SharedMemoryHandle& handle,
+    base::ProcessId remote_pid) {
+#if defined(OS_WIN)
+  if (peer_handle_.IsValid()) {
+    DCHECK(is_broker_);
+    return IPC::GetFileHandleForProcess(handle, peer_handle_.Get(), false);
+  }
+#endif
+
+  DCHECK(remote_pid != base::kNullProcessId);
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  base::SharedMemoryHandle duped_handle;
+  bool success =
+      BrokerDuplicateSharedMemoryHandle(handle, remote_pid, &duped_handle);
+  if (success)
+    return duped_handle;
+  return base::SharedMemory::NULLHandle();
+#else
+  return base::SharedMemory::DuplicateHandle(handle);
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
+}
+
 std::set<PP_Instance>* PpapiThread::GetGloballySeenInstanceIDSet() {
   return &globally_seen_instance_ids_;
 }
@@ -212,7 +235,7 @@ std::string PpapiThread::GetUILanguage() {
   return command_line->GetSwitchValueASCII(switches::kLang);
 }
 
-void PpapiThread::PreCacheFont(const void* logfontw) {
+void PpapiThread::PreCacheFontForFlash(const void* logfontw) {
 #if defined(OS_WIN)
   ChildThreadImpl::PreCacheFont(*static_cast<const LOGFONTW*>(logfontw));
 #endif

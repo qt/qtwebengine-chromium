@@ -65,13 +65,19 @@ class CrasInputStreamTest : public testing::Test {
 
   CrasInputStream* CreateStream(ChannelLayout layout,
                                 int32 samples_per_packet) {
+    return CreateStream(layout, samples_per_packet,
+                        AudioManagerBase::kDefaultDeviceId);
+  }
+
+  CrasInputStream* CreateStream(ChannelLayout layout,
+                                int32 samples_per_packet,
+                                const std::string& device_id) {
     AudioParameters params(kTestFormat,
                            layout,
                            kTestSampleRate,
                            kTestBitsPerSample,
                            samples_per_packet);
-    return new CrasInputStream(params, mock_manager_.get(),
-                               AudioManagerBase::kDefaultDeviceId);
+    return new CrasInputStream(params, mock_manager_.get(), device_id);
   }
 
   void CaptureSomeFrames(const AudioParameters &params,
@@ -145,19 +151,6 @@ TEST_F(CrasInputStreamTest, BadBitsPerSample) {
   test_stream->Close();
 }
 
-TEST_F(CrasInputStreamTest, BadFormat) {
-  AudioParameters bad_format_params(AudioParameters::AUDIO_LAST_FORMAT,
-                                    kTestChannelLayout,
-                                    kTestSampleRate,
-                                    kTestBitsPerSample,
-                                    kTestFramesPerPacket);
-  CrasInputStream* test_stream = new CrasInputStream(
-      bad_format_params, mock_manager_.get(),
-      AudioManagerBase::kDefaultDeviceId);
-  EXPECT_FALSE(test_stream->Open());
-  test_stream->Close();
-}
-
 TEST_F(CrasInputStreamTest, BadSampleRate) {
   AudioParameters bad_rate_params(kTestFormat,
                                   kTestChannelLayout,
@@ -210,6 +203,15 @@ TEST_F(CrasInputStreamTest, CaptureFrames) {
                                   kTestFramesPerPacket);
     CaptureSomeFrames(params_stereo, kTestCaptureDurationMs);
   }
+}
+
+TEST_F(CrasInputStreamTest, CaptureLoopback) {
+  CrasInputStream* test_stream = CreateStream(
+      CHANNEL_LAYOUT_STEREO,
+      kTestFramesPerPacket,
+      AudioManagerBase::kLoopbackInputDeviceId);
+  EXPECT_TRUE(test_stream->Open());
+  test_stream->Close();
 }
 
 }  // namespace media

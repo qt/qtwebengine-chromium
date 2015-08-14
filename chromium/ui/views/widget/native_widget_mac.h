@@ -10,6 +10,7 @@
 
 namespace views {
 namespace test {
+class HitTestNativeWidgetMac;
 class MockNativeWidgetMac;
 }
 
@@ -24,6 +25,10 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
   // the supplied handle has no associated Widget.
   static BridgedNativeWidget* GetBridgeForNativeWindow(
       gfx::NativeWindow window);
+
+  // Return true if the delegate's modal type is window-modal. These display as
+  // a native window "sheet", and have a different lifetime to regular windows.
+  bool IsWindowModalSheet() const;
 
   // Deletes |bridge_| and informs |delegate_| that the native widget is
   // destroyed.
@@ -52,9 +57,7 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
   void SetCapture() override;
   void ReleaseCapture() override;
   bool HasCapture() const override;
-  InputMethod* CreateInputMethod() override;
-  internal::InputMethodDelegate* GetInputMethodDelegate() override;
-  ui::InputMethod* GetHostInputMethod() override;
+  ui::InputMethod* GetInputMethod() override;
   void CenterWindow(const gfx::Size& size) override;
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const override;
@@ -70,7 +73,7 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
   void StackAbove(gfx::NativeView native_view) override;
   void StackAtTop() override;
   void StackBelow(gfx::NativeView native_view) override;
-  void SetShape(gfx::NativeRegion shape) override;
+  void SetShape(SkRegion* shape) override;
   void Close() override;
   void CloseNow() override;
   void Show() override;
@@ -128,6 +131,7 @@ class VIEWS_EXPORT NativeWidgetMac : public internal::NativeWidgetPrivate {
 
  private:
   friend class test::MockNativeWidgetMac;
+  friend class test::HitTestNativeWidgetMac;
 
   internal::NativeWidgetDelegate* delegate_;
   scoped_ptr<BridgedNativeWidget> bridge_;

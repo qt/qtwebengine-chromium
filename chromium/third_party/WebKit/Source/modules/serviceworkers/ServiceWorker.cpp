@@ -47,10 +47,10 @@ const AtomicString& ServiceWorker::interfaceName() const
     return EventTargetNames::ServiceWorker;
 }
 
-void ServiceWorker::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void ServiceWorker::postMessage(ExecutionContext* context, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(context, ports, exceptionState);
     if (exceptionState.hadException())
         return;
     if (m_outerWorker->state() == WebServiceWorkerStateRedundant) {
@@ -61,11 +61,6 @@ void ServiceWorker::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptVa
     WebString messageString = message->toWireString();
     OwnPtr<WebMessagePortChannelArray> webChannels = MessagePort::toWebMessagePortChannelArray(channels.release());
     m_outerWorker->postMessage(messageString, webChannels.leakPtr());
-}
-
-void ServiceWorker::terminate(ExceptionState& exceptionState)
-{
-    exceptionState.throwDOMException(InvalidAccessError, "Not supported.");
 }
 
 void ServiceWorker::internalsTerminate()
@@ -150,33 +145,12 @@ ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<WebS
     , m_outerWorker(worker)
     , m_wasStopped(false)
 {
-#if ENABLE(OILPAN)
-    ThreadState::current()->registerPreFinalizer(*this);
-#endif
     ASSERT(m_outerWorker);
     m_outerWorker->setProxy(this);
 }
 
 ServiceWorker::~ServiceWorker()
 {
-#if ENABLE(OILPAN)
-    ASSERT(!m_outerWorker);
-#endif
-}
-
-void ServiceWorker::dispose()
-{
-    // With Oilpan enabled, the observable lifetime of a ServiceWorker
-    // must not extend beyond when it has been deemed to be unreachable
-    // by the garbage collector. The embedder must be detached before
-    // it is eventually (lazily) swept, so as to prevent that. Otherwise
-    // the embedder might risk accessing a to-be-finalized object that
-    // is not in a valid state.
-    //
-    // The dispose() method is hooked up to the garbage collector by
-    // way of a "pre finalizer", a method that is run after marking
-    // has completed, but before any sweeping takes place.
-    m_outerWorker.clear();
 }
 
 } // namespace blink

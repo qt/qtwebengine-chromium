@@ -350,7 +350,7 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
 
 void GetResourcePixels(ResourceProvider* resource_provider,
                        ResourceProviderContext* context,
-                       ResourceProvider::ResourceId id,
+                       ResourceId id,
                        const gfx::Size& size,
                        ResourceFormat format,
                        uint8_t* pixels) {
@@ -418,22 +418,14 @@ class ResourceProviderTest
     shared_bitmap_manager_.reset(new TestSharedBitmapManager);
     gpu_memory_buffer_manager_.reset(new TestGpuMemoryBufferManager);
 
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(),
-                                 shared_bitmap_manager_.get(),
-                                 gpu_memory_buffer_manager_.get(),
-                                 main_thread_task_runner_.get(),
-                                 0,
-                                 false,
-                                 1);
-    child_resource_provider_ =
-        ResourceProvider::Create(child_output_surface_.get(),
-                                 shared_bitmap_manager_.get(),
-                                 gpu_memory_buffer_manager_.get(),
-                                 main_thread_task_runner_.get(),
-                                 0,
-                                 false,
-                                 1);
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get(),
+        gpu_memory_buffer_manager_.get(), main_thread_task_runner_.get(), 0,
+        false, 1, false);
+    child_resource_provider_ = ResourceProvider::Create(
+        child_output_surface_.get(), shared_bitmap_manager_.get(),
+        gpu_memory_buffer_manager_.get(), main_thread_task_runner_.get(), 0,
+        false, 1, false);
   }
 
   ResourceProviderTest() : ResourceProviderTest(true) {}
@@ -449,7 +441,7 @@ class ResourceProviderTest
   }
 
   static void SetResourceFilter(ResourceProvider* resource_provider,
-                                ResourceProvider::ResourceId id,
+                                ResourceId id,
                                 GLenum filter) {
     ResourceProvider::ScopedSamplerGL sampler(
         resource_provider, id, GL_TEXTURE_2D, filter);
@@ -457,10 +449,10 @@ class ResourceProviderTest
 
   ResourceProviderContext* context() { return context3d_; }
 
-  ResourceProvider::ResourceId CreateChildMailbox(uint32* release_sync_point,
-                                                  bool* lost_resource,
-                                                  bool* release_called,
-                                                  uint32* sync_point) {
+  ResourceId CreateChildMailbox(uint32* release_sync_point,
+                                bool* lost_resource,
+                                bool* release_called,
+                                uint32* sync_point) {
     if (GetParam() == ResourceProvider::RESOURCE_TYPE_GL_TEXTURE) {
       unsigned texture = child_context_->createTexture();
       gpu::Mailbox gpu_mailbox;
@@ -518,7 +510,7 @@ void CheckCreateResource(ResourceProvider::ResourceType expected_default_type,
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id = resource_provider->CreateResource(
+  ResourceId id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   EXPECT_EQ(1, static_cast<int>(resource_provider->num_resources()));
   if (expected_default_type == ResourceProvider::RESOURCE_TYPE_GL_TEXTURE)
@@ -543,80 +535,13 @@ TEST_P(ResourceProviderTest, Basic) {
   CheckCreateResource(GetParam(), resource_provider_.get(), context());
 }
 
-TEST_P(ResourceProviderTest, Upload) {
-  gfx::Size size(2, 2);
-  ResourceFormat format = RGBA_8888;
-  size_t pixel_size = TextureSizeBytes(size, format);
-  ASSERT_EQ(16U, pixel_size);
-
-  ResourceProvider::ResourceId id = resource_provider_->CreateResource(
-      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
-
-  uint8_t image[16] = { 0 };
-  gfx::Rect image_rect(size);
-  resource_provider_->SetPixels(
-      id, image, image_rect, image_rect, gfx::Vector2d());
-
-  for (uint8_t i = 0; i < pixel_size; ++i)
-    image[i] = i;
-
-  uint8_t result[16] = { 0 };
-  {
-    gfx::Rect source_rect(0, 0, 1, 1);
-    gfx::Vector2d dest_offset(0, 0);
-    resource_provider_->SetPixels(
-        id, image, image_rect, source_rect, dest_offset);
-
-    uint8_t expected[16] = { 0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    GetResourcePixels(
-        resource_provider_.get(), context(), id, size, format, result);
-    EXPECT_EQ(0, memcmp(expected, result, pixel_size));
-  }
-  {
-    gfx::Rect source_rect(0, 0, 1, 1);
-    gfx::Vector2d dest_offset(1, 1);
-    resource_provider_->SetPixels(
-        id, image, image_rect, source_rect, dest_offset);
-
-    uint8_t expected[16] = { 0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3 };
-    GetResourcePixels(
-        resource_provider_.get(), context(), id, size, format, result);
-    EXPECT_EQ(0, memcmp(expected, result, pixel_size));
-  }
-  {
-    gfx::Rect source_rect(1, 0, 1, 1);
-    gfx::Vector2d dest_offset(0, 1);
-    resource_provider_->SetPixels(
-        id, image, image_rect, source_rect, dest_offset);
-
-    uint8_t expected[16] = { 0, 1, 2, 3, 0, 0, 0, 0, 4, 5, 6, 7, 0, 1, 2, 3 };
-    GetResourcePixels(
-        resource_provider_.get(), context(), id, size, format, result);
-    EXPECT_EQ(0, memcmp(expected, result, pixel_size));
-  }
-  {
-    gfx::Rect offset_image_rect(gfx::Point(100, 100), size);
-    gfx::Rect source_rect(100, 100, 1, 1);
-    gfx::Vector2d dest_offset(1, 0);
-    resource_provider_->SetPixels(
-        id, image, offset_image_rect, source_rect, dest_offset);
-
-    uint8_t expected[16] = { 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3 };
-    GetResourcePixels(
-        resource_provider_.get(), context(), id, size, format, result);
-    EXPECT_EQ(0, memcmp(expected, result, pixel_size));
-  }
-
-  resource_provider_->DeleteResource(id);
-}
-
 TEST_P(ResourceProviderTest, SimpleUpload) {
   gfx::Size size(2, 2);
   ResourceFormat format = RGBA_8888;
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(16U, pixel_size);
 
-  ResourceProvider::ResourceId id = resource_provider_->CreateResource(
+  ResourceId id = resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
 
   uint8_t image[16] = {0};
@@ -650,17 +575,17 @@ TEST_P(ResourceProviderTest, TransferGLResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider_->CopyToResource(id1, data1, size);
 
-  ResourceProvider::ResourceId id2 = child_resource_provider_->CreateResource(
+  ResourceId id2 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data2[4] = { 5, 5, 5, 5 };
   child_resource_provider_->CopyToResource(id2, data2, size);
 
-  ResourceProvider::ResourceId id3 = child_resource_provider_->CreateResource(
+  ResourceId id3 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   {
     ResourceProvider::ScopedWriteLockGpuMemoryBuffer lock(
@@ -675,11 +600,10 @@ TEST_P(ResourceProviderTest, TransferGLResources) {
   child_context_->produceTextureDirectCHROMIUM(
       external_texture_id, GL_TEXTURE_EXTERNAL_OES, external_mailbox.name);
   const GLuint external_sync_point = child_context_->insertSyncPoint();
-  ResourceProvider::ResourceId id4 =
-      child_resource_provider_->CreateResourceFromTextureMailbox(
-          TextureMailbox(
-              external_mailbox, GL_TEXTURE_EXTERNAL_OES, external_sync_point),
-          SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback)));
+  ResourceId id4 = child_resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(external_mailbox, GL_TEXTURE_EXTERNAL_OES,
+                     external_sync_point),
+      SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback)));
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -737,10 +661,10 @@ TEST_P(ResourceProviderTest, TransferGLResources) {
   EXPECT_EQ(4u, resource_provider_->num_resources());
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
-  ResourceProvider::ResourceId mapped_id2 = resource_map[id2];
-  ResourceProvider::ResourceId mapped_id3 = resource_map[id3];
-  ResourceProvider::ResourceId mapped_id4 = resource_map[id4];
+  ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id2 = resource_map[id2];
+  ResourceId mapped_id3 = resource_map[id3];
+  ResourceId mapped_id4 = resource_map[id4];
   EXPECT_NE(0u, mapped_id1);
   EXPECT_NE(0u, mapped_id2);
   EXPECT_NE(0u, mapped_id3);
@@ -909,12 +833,12 @@ TEST_P(ResourceProviderTestNoSyncPoint, TransferGLResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = {1, 2, 3, 4};
   child_resource_provider_->CopyToResource(id1, data1, size);
 
-  ResourceProvider::ResourceId id2 = child_resource_provider_->CreateResource(
+  ResourceId id2 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   {
     // Ensure locking the memory buffer doesn't create an unnecessary sync
@@ -932,11 +856,10 @@ TEST_P(ResourceProviderTestNoSyncPoint, TransferGLResources) {
   child_context_->produceTextureDirectCHROMIUM(
       external_texture_id, GL_TEXTURE_EXTERNAL_OES, external_mailbox.name);
   const GLuint external_sync_point = child_context_->insertSyncPoint();
-  ResourceProvider::ResourceId id3 =
-      child_resource_provider_->CreateResourceFromTextureMailbox(
-          TextureMailbox(external_mailbox, GL_TEXTURE_EXTERNAL_OES,
-                         external_sync_point),
-          SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback)));
+  ResourceId id3 = child_resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(external_mailbox, GL_TEXTURE_EXTERNAL_OES,
+                     external_sync_point),
+      SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback)));
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -976,7 +899,7 @@ TEST_P(ResourceProviderTestNoSyncPoint, TransferGLResources) {
     resource_provider_->DeclareUsedResourcesFromChild(child_id, no_resources);
 
     ASSERT_EQ(3u, returned_to_child.size());
-    std::map<ResourceProvider::ResourceId, unsigned int> returned_sync_points;
+    std::map<ResourceId, unsigned int> returned_sync_points;
     for (const auto& returned : returned_to_child)
       returned_sync_points[returned.id] = returned.sync_point;
 
@@ -1010,7 +933,7 @@ TEST_P(ResourceProviderTest, ReadLockCountStopsReturnToChildOrDelete) {
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = {1, 2, 3, 4};
   child_resource_provider_->CopyToResource(id1, data1, size);
@@ -1055,28 +978,31 @@ TEST_P(ResourceProviderTest, ReadLockCountStopsReturnToChildOrDelete) {
   resource_provider_->DestroyChild(child_id);
 }
 
-TEST_P(ResourceProviderTest, AllowOverlayTransfersToParent) {
-  // Overlays only supported on the GL path.
+class TestFence : public ResourceProvider::Fence {
+ public:
+  TestFence() {}
+
+  void Set() override {}
+  bool HasPassed() override { return passed; }
+  void Wait() override {}
+
+  bool passed = false;
+
+ private:
+  ~TestFence() override {}
+};
+
+TEST_P(ResourceProviderTest, ReadLockFenceStopsReturnToChildOrDelete) {
   if (GetParam() != ResourceProvider::RESOURCE_TYPE_GL_TEXTURE)
     return;
+  gfx::Size size(1, 1);
+  ResourceFormat format = RGBA_8888;
 
-  uint32 sync_point = 0;
-  TextureMailbox mailbox(gpu::Mailbox::Generate(), GL_TEXTURE_2D, sync_point);
-  mailbox.set_allow_overlay(true);
-  scoped_ptr<SingleReleaseCallbackImpl> release_callback =
-      SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback));
-  ResourceProvider::ResourceId id1 =
-      child_resource_provider_->CreateResourceFromTextureMailbox(
-          mailbox, release_callback.Pass());
-
-  TextureMailbox mailbox2(gpu::Mailbox::Generate(), GL_TEXTURE_2D, sync_point);
-  mailbox2.set_allow_overlay(false);
-  scoped_ptr<SingleReleaseCallbackImpl> release_callback2 =
-      SingleReleaseCallbackImpl::Create(base::Bind(&EmptyReleaseCallback));
-  ResourceProvider::ResourceId id2 =
-      child_resource_provider_->CreateResourceFromTextureMailbox(
-          mailbox2, release_callback2.Pass());
-
+  ResourceId id1 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
+  uint8_t data1[4] = {1, 2, 3, 4};
+  child_resource_provider_->CopyToResource(id1, data1, size);
+  child_resource_provider_->EnableReadLockFencesForTesting(id1);
   ReturnedResourceArray returned_to_child;
   int child_id =
       resource_provider_->CreateChild(GetReturnCallback(&returned_to_child));
@@ -1084,26 +1010,156 @@ TEST_P(ResourceProviderTest, AllowOverlayTransfersToParent) {
   // Transfer some resources to the parent.
   ResourceProvider::ResourceIdArray resource_ids_to_transfer;
   resource_ids_to_transfer.push_back(id1);
+  TransferableResourceArray list;
+  child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
+                                                &list);
+  ASSERT_EQ(1u, list.size());
+  EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id1));
+  EXPECT_TRUE(list[0].read_lock_fences_enabled);
+
+  resource_provider_->ReceiveFromChild(child_id, list);
+
+  scoped_refptr<TestFence> fence(new TestFence);
+  resource_provider_->SetReadLockFence(fence.get());
+  {
+    unsigned parent_id = list.front().id;
+    resource_provider_->WaitSyncPointIfNeeded(parent_id);
+    ResourceProvider::ScopedReadLockGL lock(resource_provider_.get(),
+                                            parent_id);
+  }
+  resource_provider_->DeclareUsedResourcesFromChild(
+      child_id, ResourceProvider::ResourceIdSet());
+  EXPECT_EQ(0u, returned_to_child.size());
+
+  resource_provider_->DeclareUsedResourcesFromChild(
+      child_id, ResourceProvider::ResourceIdSet());
+  EXPECT_EQ(0u, returned_to_child.size());
+  fence->passed = true;
+
+  resource_provider_->DeclareUsedResourcesFromChild(
+      child_id, ResourceProvider::ResourceIdSet());
+  EXPECT_EQ(1u, returned_to_child.size());
+
+  child_resource_provider_->ReceiveReturnsFromParent(returned_to_child);
+  child_resource_provider_->DeleteResource(id1);
+  EXPECT_EQ(0u, child_resource_provider_->num_resources());
+}
+
+TEST_P(ResourceProviderTest, ReadLockFenceDestroyChild) {
+  if (GetParam() != ResourceProvider::RESOURCE_TYPE_GL_TEXTURE)
+    return;
+  gfx::Size size(1, 1);
+  ResourceFormat format = RGBA_8888;
+
+  ResourceId id1 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
+  uint8_t data[4] = {1, 2, 3, 4};
+  child_resource_provider_->CopyToResource(id1, data, size);
+  child_resource_provider_->EnableReadLockFencesForTesting(id1);
+
+  ResourceId id2 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
+  child_resource_provider_->CopyToResource(id2, data, size);
+
+  ReturnedResourceArray returned_to_child;
+  int child_id =
+      resource_provider_->CreateChild(GetReturnCallback(&returned_to_child));
+
+  // Transfer resources to the parent.
+  ResourceProvider::ResourceIdArray resource_ids_to_transfer;
+  resource_ids_to_transfer.push_back(id1);
   resource_ids_to_transfer.push_back(id2);
   TransferableResourceArray list;
   child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                 &list);
   ASSERT_EQ(2u, list.size());
+  EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id1));
+  EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id2));
+
   resource_provider_->ReceiveFromChild(child_id, list);
-  EXPECT_TRUE(resource_provider_->AllowOverlay(list[0].id));
-  EXPECT_FALSE(resource_provider_->AllowOverlay(list[1].id));
 
-  resource_provider_->DeclareUsedResourcesFromChild(
-      child_id, ResourceProvider::ResourceIdSet());
+  scoped_refptr<TestFence> fence(new TestFence);
+  resource_provider_->SetReadLockFence(fence.get());
+  {
+    for (size_t i = 0; i < list.size(); i++) {
+      unsigned parent_id = list[i].id;
+      resource_provider_->WaitSyncPointIfNeeded(parent_id);
+      ResourceProvider::ScopedReadLockGL lock(resource_provider_.get(),
+                                              parent_id);
+    }
+  }
+  EXPECT_EQ(0u, returned_to_child.size());
 
+  EXPECT_EQ(2u, resource_provider_->num_resources());
+
+  resource_provider_->DestroyChild(child_id);
+
+  EXPECT_EQ(0u, resource_provider_->num_resources());
   EXPECT_EQ(2u, returned_to_child.size());
-  child_resource_provider_->ReceiveReturnsFromParent(returned_to_child);
 
+  // id1 should be lost and id2 should not.
+  EXPECT_EQ(returned_to_child[0].lost, returned_to_child[0].id == id1);
+  EXPECT_EQ(returned_to_child[1].lost, returned_to_child[1].id == id1);
+
+  child_resource_provider_->ReceiveReturnsFromParent(returned_to_child);
   child_resource_provider_->DeleteResource(id1);
   child_resource_provider_->DeleteResource(id2);
   EXPECT_EQ(0u, child_resource_provider_->num_resources());
+}
 
-  resource_provider_->DestroyChild(child_id);
+TEST_P(ResourceProviderTest, ReadLockFenceContextLost) {
+  if (GetParam() != ResourceProvider::RESOURCE_TYPE_GL_TEXTURE)
+    return;
+  gfx::Size size(1, 1);
+  ResourceFormat format = RGBA_8888;
+
+  ResourceId id1 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
+  uint8_t data[4] = {1, 2, 3, 4};
+  child_resource_provider_->CopyToResource(id1, data, size);
+  child_resource_provider_->EnableReadLockFencesForTesting(id1);
+
+  ResourceId id2 = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
+  child_resource_provider_->CopyToResource(id2, data, size);
+
+  ReturnedResourceArray returned_to_child;
+  int child_id =
+      resource_provider_->CreateChild(GetReturnCallback(&returned_to_child));
+
+  // Transfer resources to the parent.
+  ResourceProvider::ResourceIdArray resource_ids_to_transfer;
+  resource_ids_to_transfer.push_back(id1);
+  resource_ids_to_transfer.push_back(id2);
+  TransferableResourceArray list;
+  child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
+                                                &list);
+  ASSERT_EQ(2u, list.size());
+  EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id1));
+  EXPECT_TRUE(child_resource_provider_->InUseByConsumer(id2));
+
+  resource_provider_->ReceiveFromChild(child_id, list);
+
+  scoped_refptr<TestFence> fence(new TestFence);
+  resource_provider_->SetReadLockFence(fence.get());
+  {
+    for (size_t i = 0; i < list.size(); i++) {
+      unsigned parent_id = list[i].id;
+      resource_provider_->WaitSyncPointIfNeeded(parent_id);
+      ResourceProvider::ScopedReadLockGL lock(resource_provider_.get(),
+                                              parent_id);
+    }
+  }
+  EXPECT_EQ(0u, returned_to_child.size());
+
+  EXPECT_EQ(2u, resource_provider_->num_resources());
+  resource_provider_->DidLoseOutputSurface();
+  resource_provider_ = nullptr;
+
+  EXPECT_EQ(2u, returned_to_child.size());
+
+  EXPECT_TRUE(returned_to_child[0].lost);
+  EXPECT_TRUE(returned_to_child[1].lost);
 }
 
 TEST_P(ResourceProviderTest, TransferSoftwareResources) {
@@ -1115,12 +1171,12 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider_->CopyToResource(id1, data1, size);
 
-  ResourceProvider::ResourceId id2 = child_resource_provider_->CreateResource(
+  ResourceId id2 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data2[4] = { 5, 5, 5, 5 };
   child_resource_provider_->CopyToResource(id2, data2, size);
@@ -1128,11 +1184,10 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   scoped_ptr<SharedBitmap> shared_bitmap(CreateAndFillSharedBitmap(
       shared_bitmap_manager_.get(), gfx::Size(1, 1), 0));
   SharedBitmap* shared_bitmap_ptr = shared_bitmap.get();
-  ResourceProvider::ResourceId id3 =
-      child_resource_provider_->CreateResourceFromTextureMailbox(
-          TextureMailbox(shared_bitmap_ptr, gfx::Size(1, 1)),
-          SingleReleaseCallbackImpl::Create(base::Bind(
-              &SharedBitmapReleaseCallback, base::Passed(&shared_bitmap))));
+  ResourceId id3 = child_resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(shared_bitmap_ptr, gfx::Size(1, 1)),
+      SingleReleaseCallbackImpl::Create(base::Bind(
+          &SharedBitmapReleaseCallback, base::Passed(&shared_bitmap))));
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -1165,9 +1220,9 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   EXPECT_EQ(3u, resource_provider_->num_resources());
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
-  ResourceProvider::ResourceId mapped_id2 = resource_map[id2];
-  ResourceProvider::ResourceId mapped_id3 = resource_map[id3];
+  ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id2 = resource_map[id2];
+  ResourceId mapped_id3 = resource_map[id3];
   EXPECT_NE(0u, mapped_id1);
   EXPECT_NE(0u, mapped_id2);
   EXPECT_NE(0u, mapped_id3);
@@ -1216,11 +1271,11 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
     EXPECT_EQ(0u, returned_to_child[0].sync_point);
     EXPECT_EQ(0u, returned_to_child[1].sync_point);
     EXPECT_EQ(0u, returned_to_child[2].sync_point);
-    std::set<ResourceProvider::ResourceId> expected_ids;
+    std::set<ResourceId> expected_ids;
     expected_ids.insert(id1);
     expected_ids.insert(id2);
     expected_ids.insert(id3);
-    std::set<ResourceProvider::ResourceId> returned_ids;
+    std::set<ResourceId> returned_ids;
     for (unsigned i = 0; i < 3; i++)
       returned_ids.insert(returned_to_child[i].id);
     EXPECT_EQ(expected_ids, returned_ids);
@@ -1285,11 +1340,11 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
   EXPECT_EQ(0u, returned_to_child[0].sync_point);
   EXPECT_EQ(0u, returned_to_child[1].sync_point);
   EXPECT_EQ(0u, returned_to_child[2].sync_point);
-  std::set<ResourceProvider::ResourceId> expected_ids;
+  std::set<ResourceId> expected_ids;
   expected_ids.insert(id1);
   expected_ids.insert(id2);
   expected_ids.insert(id3);
-  std::set<ResourceProvider::ResourceId> returned_ids;
+  std::set<ResourceId> returned_ids;
   for (unsigned i = 0; i < 3; i++)
     returned_ids.insert(returned_to_child[i].id);
   EXPECT_EQ(expected_ids, returned_ids);
@@ -1310,21 +1365,16 @@ TEST_P(ResourceProviderTest, TransferGLToSoftware) {
       FakeOutputSurface::Create3d(child_context_owned.Pass()));
   CHECK(child_output_surface->BindToClient(&child_output_surface_client));
 
-  scoped_ptr<ResourceProvider> child_resource_provider(
-      ResourceProvider::Create(child_output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> child_resource_provider(ResourceProvider::Create(
+      child_output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider->CreateResource(
+  ResourceId id1 = child_resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider->CopyToResource(id1, data1, size);
@@ -1351,7 +1401,7 @@ TEST_P(ResourceProviderTest, TransferGLToSoftware) {
   EXPECT_EQ(returned_to_child[0].id, id1);
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id1 = resource_map[id1];
   EXPECT_EQ(0u, mapped_id1);
 
   resource_provider_->DestroyChild(child_id);
@@ -1370,7 +1420,7 @@ TEST_P(ResourceProviderTest, TransferInvalidSoftware) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider_->CopyToResource(id1, data1, size);
@@ -1396,7 +1446,7 @@ TEST_P(ResourceProviderTest, TransferInvalidSoftware) {
 
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id1 = resource_map[id1];
   EXPECT_NE(0u, mapped_id1);
   {
     ResourceProvider::ScopedReadLockSoftware lock(resource_provider_.get(),
@@ -1417,12 +1467,12 @@ TEST_P(ResourceProviderTest, DeleteExportedResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider_->CopyToResource(id1, data1, size);
 
-  ResourceProvider::ResourceId id2 = child_resource_provider_->CreateResource(
+  ResourceId id2 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data2[4] = {5, 5, 5, 5};
   child_resource_provider_->CopyToResource(id2, data2, size);
@@ -1456,8 +1506,8 @@ TEST_P(ResourceProviderTest, DeleteExportedResources) {
   EXPECT_EQ(2u, resource_provider_->num_resources());
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
-  ResourceProvider::ResourceId mapped_id2 = resource_map[id2];
+  ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id2 = resource_map[id2];
   EXPECT_NE(0u, mapped_id1);
   EXPECT_NE(0u, mapped_id2);
   EXPECT_FALSE(resource_provider_->InUseByConsumer(id1));
@@ -1513,12 +1563,12 @@ TEST_P(ResourceProviderTest, DestroyChildWithExportedResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id1 = child_resource_provider_->CreateResource(
+  ResourceId id1 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = {1, 2, 3, 4};
   child_resource_provider_->CopyToResource(id1, data1, size);
 
-  ResourceProvider::ResourceId id2 = child_resource_provider_->CreateResource(
+  ResourceId id2 = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data2[4] = {5, 5, 5, 5};
   child_resource_provider_->CopyToResource(id2, data2, size);
@@ -1552,8 +1602,8 @@ TEST_P(ResourceProviderTest, DestroyChildWithExportedResources) {
   EXPECT_EQ(2u, resource_provider_->num_resources());
   ResourceProvider::ResourceIdMap resource_map =
       resource_provider_->GetChildToParentMap(child_id);
-  ResourceProvider::ResourceId mapped_id1 = resource_map[id1];
-  ResourceProvider::ResourceId mapped_id2 = resource_map[id2];
+  ResourceId mapped_id1 = resource_map[id1];
+  ResourceId mapped_id2 = resource_map[id2];
   EXPECT_NE(0u, mapped_id1);
   EXPECT_NE(0u, mapped_id2);
   EXPECT_FALSE(resource_provider_->InUseByConsumer(id1));
@@ -1626,7 +1676,7 @@ TEST_P(ResourceProviderTest, DeleteTransferredResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id = child_resource_provider_->CreateResource(
+  ResourceId id = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data[4] = { 1, 2, 3, 4 };
   child_resource_provider_->CopyToResource(id, data, size);
@@ -1677,7 +1727,7 @@ TEST_P(ResourceProviderTest, UnuseTransferredResources) {
   size_t pixel_size = TextureSizeBytes(size, format);
   ASSERT_EQ(4U, pixel_size);
 
-  ResourceProvider::ResourceId id = child_resource_provider_->CreateResource(
+  ResourceId id = child_resource_provider_->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data[4] = {1, 2, 3, 4};
   child_resource_provider_->CopyToResource(id, data, size);
@@ -1705,7 +1755,7 @@ TEST_P(ResourceProviderTest, UnuseTransferredResources) {
   {
     // Parent transfers to top-level.
     ASSERT_TRUE(map.find(id) != map.end());
-    ResourceProvider::ResourceId parent_id = map.find(id)->second;
+    ResourceId parent_id = map.find(id)->second;
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(parent_id);
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
@@ -1743,14 +1793,14 @@ TEST_P(ResourceProviderTest, UnuseTransferredResources) {
     // in the parent.
     EXPECT_TRUE(returned_to_child.empty());
     ASSERT_TRUE(map.find(id) != map.end());
-    ResourceProvider::ResourceId parent_id = map.find(id)->second;
+    ResourceId parent_id = map.find(id)->second;
     EXPECT_FALSE(resource_provider_->InUseByConsumer(parent_id));
   }
   {
     sent_to_top_level.clear();
     // Parent transfers again to top-level.
     ASSERT_TRUE(map.find(id) != map.end());
-    ResourceProvider::ResourceId parent_id = map.find(id)->second;
+    ResourceId parent_id = map.find(id)->second;
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(parent_id);
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
@@ -1766,7 +1816,7 @@ TEST_P(ResourceProviderTest, UnuseTransferredResources) {
     // declared used in the parent.
     EXPECT_TRUE(returned_to_child.empty());
     ASSERT_TRUE(map.find(id) != map.end());
-    ResourceProvider::ResourceId parent_id = map.find(id)->second;
+    ResourceId parent_id = map.find(id)->second;
     EXPECT_FALSE(resource_provider_->InUseByConsumer(parent_id));
   }
   {
@@ -1800,12 +1850,8 @@ class ResourceProviderTestTextureFilters : public ResourceProviderTest {
 
     scoped_ptr<ResourceProvider> child_resource_provider(
         ResourceProvider::Create(child_output_surface.get(),
-                                 shared_bitmap_manager.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 1));
+                                 shared_bitmap_manager.get(), NULL, NULL, 0,
+                                 false, 1, false));
 
     scoped_ptr<TextureStateTrackingContext> parent_context_owned(
         new TextureStateTrackingContext);
@@ -1818,12 +1864,8 @@ class ResourceProviderTestTextureFilters : public ResourceProviderTest {
 
     scoped_ptr<ResourceProvider> parent_resource_provider(
         ResourceProvider::Create(parent_output_surface.get(),
-                                 shared_bitmap_manager.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 1));
+                                 shared_bitmap_manager.get(), NULL, NULL, 0,
+                                 false, 1, false));
 
     gfx::Size size(1, 1);
     ResourceFormat format = RGBA_8888;
@@ -1833,7 +1875,7 @@ class ResourceProviderTestTextureFilters : public ResourceProviderTest {
     size_t pixel_size = TextureSizeBytes(size, format);
     ASSERT_EQ(4U, pixel_size);
 
-    ResourceProvider::ResourceId id = child_resource_provider->CreateResource(
+    ResourceId id = child_resource_provider->CreateResource(
         size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
         format);
 
@@ -1915,7 +1957,7 @@ class ResourceProviderTestTextureFilters : public ResourceProviderTest {
     }
     ResourceProvider::ResourceIdMap resource_map =
         parent_resource_provider->GetChildToParentMap(child_id);
-    ResourceProvider::ResourceId mapped_id = resource_map[id];
+    ResourceId mapped_id = resource_map[id];
     EXPECT_NE(0u, mapped_id);
 
     // The texture is set to |parent_filter| in the parent.
@@ -1997,10 +2039,9 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
                                             &release_sync_point,
                                             &lost_resource,
                                             &main_thread_task_runner);
-  ResourceProvider::ResourceId resource =
-      resource_provider_->CreateResourceFromTextureMailbox(
-          TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
-          SingleReleaseCallbackImpl::Create(callback));
+  ResourceId resource = resource_provider_->CreateResourceFromTextureMailbox(
+      TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
+      SingleReleaseCallbackImpl::Create(callback));
   EXPECT_EQ(1u, context()->NumTextures());
   EXPECT_EQ(0u, release_sync_point);
   {
@@ -2107,10 +2148,8 @@ TEST_P(ResourceProviderTest, TransferMailboxResources) {
 TEST_P(ResourceProviderTest, LostResourceInParent) {
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId resource =
-      child_resource_provider_->CreateResource(
-          size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
-          format);
+  ResourceId resource = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   child_resource_provider_->AllocateForTesting(resource);
   // Expect a GL resource to be lost.
   bool should_lose_resource =
@@ -2164,10 +2203,8 @@ TEST_P(ResourceProviderTest, LostResourceInParent) {
 TEST_P(ResourceProviderTest, LostResourceInGrandParent) {
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId resource =
-      child_resource_provider_->CreateResource(
-          size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
-          format);
+  ResourceId resource = child_resource_provider_->CreateResource(
+      size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   child_resource_provider_->AllocateForTesting(resource);
 
   ReturnedResourceArray returned_to_child;
@@ -2192,7 +2229,7 @@ TEST_P(ResourceProviderTest, LostResourceInGrandParent) {
   {
     ResourceProvider::ResourceIdMap resource_map =
         resource_provider_->GetChildToParentMap(child_id);
-    ResourceProvider::ResourceId parent_resource = resource_map[resource];
+    ResourceId parent_resource = resource_map[resource];
     EXPECT_NE(0u, parent_resource);
 
     // Transfer to a grandparent.
@@ -2245,8 +2282,8 @@ TEST_P(ResourceProviderTest, LostMailboxInParent) {
   bool lost_resource = false;
   bool release_called = false;
   uint32 sync_point = 0;
-  ResourceProvider::ResourceId resource = CreateChildMailbox(
-      &release_sync_point, &lost_resource, &release_called, &sync_point);
+  ResourceId resource = CreateChildMailbox(&release_sync_point, &lost_resource,
+                                           &release_called, &sync_point);
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -2298,8 +2335,8 @@ TEST_P(ResourceProviderTest, LostMailboxInGrandParent) {
   bool lost_resource = false;
   bool release_called = false;
   uint32 sync_point = 0;
-  ResourceProvider::ResourceId resource = CreateChildMailbox(
-      &release_sync_point, &lost_resource, &release_called, &sync_point);
+  ResourceId resource = CreateChildMailbox(&release_sync_point, &lost_resource,
+                                           &release_called, &sync_point);
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -2323,7 +2360,7 @@ TEST_P(ResourceProviderTest, LostMailboxInGrandParent) {
   {
     ResourceProvider::ResourceIdMap resource_map =
         resource_provider_->GetChildToParentMap(child_id);
-    ResourceProvider::ResourceId parent_resource = resource_map[resource];
+    ResourceId parent_resource = resource_map[resource];
     EXPECT_NE(0u, parent_resource);
 
     // Transfer to a grandparent.
@@ -2388,8 +2425,8 @@ TEST_P(ResourceProviderTest, ShutdownWithExportedResource) {
   bool lost_resource = false;
   bool release_called = false;
   uint32 sync_point = 0;
-  ResourceProvider::ResourceId resource = CreateChildMailbox(
-      &release_sync_point, &lost_resource, &release_called, &sync_point);
+  ResourceId resource = CreateChildMailbox(&release_sync_point, &lost_resource,
+                                           &release_called, &sync_point);
 
   // Transfer the resource, so we can't release it properly on shutdown.
   ResourceProvider::ResourceIdArray resource_ids_to_transfer;
@@ -2458,20 +2495,15 @@ TEST_P(ResourceProviderTest, ScopedSampler) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
   int texture_id = 1;
 
-  ResourceProvider::ResourceId id = resource_provider->CreateResource(
+  ResourceId id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
 
   // Check that the texture gets created with the right sampler settings.
@@ -2545,21 +2577,16 @@ TEST_P(ResourceProviderTest, ManagedResource) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
   int texture_id = 1;
 
   // Check that the texture gets created with the right sampler settings.
-  ResourceProvider::ResourceId id = resource_provider->CreateManagedResource(
+  ResourceId id = resource_provider->CreateManagedResource(
       size, GL_TEXTURE_2D, GL_CLAMP_TO_EDGE,
       ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id));
@@ -2597,14 +2624,9 @@ TEST_P(ResourceProviderTest, TextureWrapMode) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
@@ -2613,7 +2635,7 @@ TEST_P(ResourceProviderTest, TextureWrapMode) {
   for (int texture_id = 1; texture_id <= 2; ++texture_id) {
     GLint wrap_mode = texture_id == 1 ? GL_CLAMP_TO_EDGE : GL_REPEAT;
     // Check that the texture gets created with the right sampler settings.
-    ResourceProvider::ResourceId id = resource_provider->CreateGLTexture(
+    ResourceId id = resource_provider->CreateGLTexture(
         size, GL_TEXTURE_2D, texture_pool, wrap_mode,
         ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
     EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id));
@@ -2652,14 +2674,9 @@ TEST_P(ResourceProviderTest, TextureHint) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(1, 1);
   ResourceFormat format = RGBA_8888;
@@ -2673,13 +2690,9 @@ TEST_P(ResourceProviderTest, TextureHint) {
   };
   for (GLuint texture_id = 1; texture_id <= arraysize(hints); ++texture_id) {
     // Check that the texture gets created with the right sampler settings.
-    ResourceProvider::ResourceId id =
-        resource_provider->CreateGLTexture(size,
-                                           GL_TEXTURE_2D,
-                                           texture_pool,
-                                           GL_CLAMP_TO_EDGE,
-                                           hints[texture_id - 1],
-                                           format);
+    ResourceId id = resource_provider->CreateGLTexture(
+        size, GL_TEXTURE_2D, texture_pool, GL_CLAMP_TO_EDGE,
+        hints[texture_id - 1], format);
     EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, texture_id));
     EXPECT_CALL(*context,
                 texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
@@ -2725,14 +2738,10 @@ TEST_P(ResourceProviderTest, TextureMailbox_SharedMemory) {
           new SoftwareOutputDevice)));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               main_thread_task_runner_.get(),
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), main_thread_task_runner_.get(), 0,
+      false, 1, false));
 
   uint32 release_sync_point = 0;
   bool lost_resource = false;
@@ -2744,9 +2753,8 @@ TEST_P(ResourceProviderTest, TextureMailbox_SharedMemory) {
                                                    &main_thread_task_runner));
   TextureMailbox mailbox(shared_bitmap.get(), size);
 
-  ResourceProvider::ResourceId id =
-      resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, callback.Pass());
+  ResourceId id = resource_provider->CreateResourceFromTextureMailbox(
+      mailbox, callback.Pass());
   EXPECT_NE(0u, id);
 
   {
@@ -2780,14 +2788,9 @@ class ResourceProviderTestTextureMailboxGLFilters
         FakeOutputSurface::Create3d(context_owned.Pass()));
     CHECK(output_surface->BindToClient(&output_surface_client));
 
-    scoped_ptr<ResourceProvider> resource_provider(
-        ResourceProvider::Create(output_surface.get(),
-                                 shared_bitmap_manager,
-                                 gpu_memory_buffer_manager,
-                                 main_thread_task_runner,
-                                 0,
-                                 false,
-                                 1));
+    scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+        output_surface.get(), shared_bitmap_manager, gpu_memory_buffer_manager,
+        main_thread_task_runner, 0, false, 1, false));
 
     unsigned texture_id = 1;
     uint32 sync_point = 30;
@@ -2813,9 +2816,8 @@ class ResourceProviderTestTextureMailboxGLFilters
     TextureMailbox mailbox(gpu_mailbox, target, sync_point);
     mailbox.set_nearest_neighbor(mailbox_nearest_neighbor);
 
-    ResourceProvider::ResourceId id =
-        resource_provider->CreateResourceFromTextureMailbox(mailbox,
-                                                            callback.Pass());
+    ResourceId id = resource_provider->CreateResourceFromTextureMailbox(
+        mailbox, callback.Pass());
     EXPECT_NE(0u, id);
 
     Mock::VerifyAndClearExpectations(context);
@@ -2929,14 +2931,9 @@ TEST_P(ResourceProviderTest, TextureMailbox_GLTextureExternalOES) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   uint32 sync_point = 30;
   unsigned target = GL_TEXTURE_EXTERNAL_OES;
@@ -2954,9 +2951,8 @@ TEST_P(ResourceProviderTest, TextureMailbox_GLTextureExternalOES) {
 
   TextureMailbox mailbox(gpu_mailbox, target, sync_point);
 
-  ResourceProvider::ResourceId id =
-      resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, callback.Pass());
+  ResourceId id = resource_provider->CreateResourceFromTextureMailbox(
+      mailbox, callback.Pass());
   EXPECT_NE(0u, id);
 
   Mock::VerifyAndClearExpectations(context);
@@ -3004,14 +3000,9 @@ TEST_P(ResourceProviderTest,
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   uint32 sync_point = 30;
   unsigned target = GL_TEXTURE_2D;
@@ -3029,9 +3020,8 @@ TEST_P(ResourceProviderTest,
 
   TextureMailbox mailbox(gpu_mailbox, target, sync_point);
 
-  ResourceProvider::ResourceId id =
-      resource_provider->CreateResourceFromTextureMailbox(mailbox,
-                                                          callback.Pass());
+  ResourceId id = resource_provider->CreateResourceFromTextureMailbox(
+      mailbox, callback.Pass());
   EXPECT_NE(0u, id);
 
   Mock::VerifyAndClearExpectations(context);
@@ -3063,14 +3053,9 @@ TEST_P(ResourceProviderTest, TextureMailbox_WaitSyncPointIfNeeded_NoSyncPoint) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   uint32 sync_point = 0;
   unsigned target = GL_TEXTURE_2D;
@@ -3088,9 +3073,8 @@ TEST_P(ResourceProviderTest, TextureMailbox_WaitSyncPointIfNeeded_NoSyncPoint) {
 
   TextureMailbox mailbox(gpu_mailbox, target, sync_point);
 
-  ResourceProvider::ResourceId id =
-      resource_provider->CreateResourceFromTextureMailbox(mailbox,
-                                                          callback.Pass());
+  ResourceId id = resource_provider->CreateResourceFromTextureMailbox(
+      mailbox, callback.Pass());
   EXPECT_NE(0u, id);
 
   Mock::VerifyAndClearExpectations(context);
@@ -3189,19 +3173,14 @@ TEST_P(ResourceProviderTest, TextureAllocation) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(2, 2);
   gfx::Vector2d offset(0, 0);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId id = 0;
+  ResourceId id = 0;
   uint8_t pixels[16] = { 0 };
   int texture_id = 123;
 
@@ -3268,14 +3247,9 @@ TEST_P(ResourceProviderTest, TextureAllocationHint) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(2, 2);
 
@@ -3289,7 +3263,7 @@ TEST_P(ResourceProviderTest, TextureAllocationHint) {
   for (size_t i = 0; i < arraysize(formats); ++i) {
     for (GLuint texture_id = 1; texture_id <= arraysize(hints); ++texture_id) {
       // Lazy allocation. Don't allocate when creating the resource.
-      ResourceProvider::ResourceId id = resource_provider->CreateResource(
+      ResourceId id = resource_provider->CreateResource(
           size, GL_CLAMP_TO_EDGE, hints[texture_id - 1], formats[i]);
 
       EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
@@ -3328,14 +3302,9 @@ TEST_P(ResourceProviderTest, TextureAllocationHint_BGRA) {
       FakeOutputSurface::Create3d(context_owned.Pass()));
   CHECK(output_surface->BindToClient(&output_surface_client));
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   gfx::Size size(2, 2);
   const ResourceFormat formats[2] = {RGBA_8888, BGRA_8888};
@@ -3349,7 +3318,7 @@ TEST_P(ResourceProviderTest, TextureAllocationHint_BGRA) {
   for (size_t i = 0; i < arraysize(formats); ++i) {
     for (GLuint texture_id = 1; texture_id <= arraysize(hints); ++texture_id) {
       // Lazy allocation. Don't allocate when creating the resource.
-      ResourceProvider::ResourceId id = resource_provider->CreateResource(
+      ResourceId id = resource_provider->CreateResource(
           size, GL_CLAMP_TO_EDGE, hints[texture_id - 1], formats[i]);
 
       EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
@@ -3384,17 +3353,12 @@ TEST_P(ResourceProviderTest, PixelBuffer_GLTexture) {
 
   gfx::Size size(2, 2);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId id = 0;
+  ResourceId id = 0;
   int texture_id = 123;
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
@@ -3431,17 +3395,12 @@ TEST_P(ResourceProviderTest, ForcingAsyncUploadToComplete) {
 
   gfx::Size size(2, 2);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId id = 0;
+  ResourceId id = 0;
   int texture_id = 123;
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
@@ -3478,17 +3437,12 @@ TEST_P(ResourceProviderTest, PixelBufferLostContext) {
 
   gfx::Size size(2, 2);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId id = 0;
+  ResourceId id = 0;
   int texture_id = 123;
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   EXPECT_CALL(*context, NextTextureId()).WillRepeatedly(Return(texture_id));
 
@@ -3522,22 +3476,23 @@ TEST_P(ResourceProviderTest, Image_GLTexture) {
   const int kHeight = 2;
   gfx::Size size(kWidth, kHeight);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId id = 0;
+  ResourceId id = 0;
   const unsigned kTextureId = 123u;
   const unsigned kImageId = 234u;
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
 
+  EXPECT_CALL(*context, NextTextureId())
+      .WillOnce(Return(kTextureId))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, kTextureId))
+      .Times(1)
+      .RetiresOnSaturation();
   EXPECT_CALL(*context, createImageCHROMIUM(_, kWidth, kHeight, GL_RGBA))
       .WillOnce(Return(kImageId))
       .RetiresOnSaturation();
@@ -3547,11 +3502,8 @@ TEST_P(ResourceProviderTest, Image_GLTexture) {
     EXPECT_TRUE(lock.GetGpuMemoryBuffer());
   }
 
-  EXPECT_CALL(*context, NextTextureId())
-      .WillOnce(Return(kTextureId))
-      .RetiresOnSaturation();
-  // Once in CreateTextureId and once in BindForSampling
-  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, kTextureId)).Times(2)
+  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, kTextureId))
+      .Times(1)
       .RetiresOnSaturation();
   EXPECT_CALL(*context, bindTexImage2DCHROMIUM(GL_TEXTURE_2D, kImageId))
       .Times(1)
@@ -3607,24 +3559,25 @@ TEST_P(ResourceProviderTest, CopyResource_GLTexture) {
   const int kHeight = 2;
   gfx::Size size(kWidth, kHeight);
   ResourceFormat format = RGBA_8888;
-  ResourceProvider::ResourceId source_id = 0;
-  ResourceProvider::ResourceId dest_id = 0;
+  ResourceId source_id = 0;
+  ResourceId dest_id = 0;
   const unsigned kSourceTextureId = 123u;
   const unsigned kDestTextureId = 321u;
   const unsigned kImageId = 234u;
 
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
 
   source_id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
 
+  EXPECT_CALL(*context, NextTextureId())
+      .WillOnce(Return(kSourceTextureId))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, kSourceTextureId))
+      .Times(1)
+      .RetiresOnSaturation();
   EXPECT_CALL(*context, createImageCHROMIUM(_, kWidth, kHeight, GL_RGBA))
       .WillOnce(Return(kImageId))
       .RetiresOnSaturation();
@@ -3648,16 +3601,13 @@ TEST_P(ResourceProviderTest, CopyResource_GLTexture) {
                                    GL_UNSIGNED_BYTE, nullptr))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*context, NextTextureId())
-      .WillOnce(Return(kSourceTextureId))
-      .RetiresOnSaturation();
   EXPECT_CALL(*context, bindTexture(GL_TEXTURE_2D, kSourceTextureId))
-      .Times(2)
+      .Times(1)
       .RetiresOnSaturation();
   EXPECT_CALL(*context, bindTexImage2DCHROMIUM(GL_TEXTURE_2D, kImageId))
       .Times(1)
       .RetiresOnSaturation();
-  resource_provider->CopyResource(source_id, dest_id);
+  resource_provider->CopyResource(source_id, dest_id, gfx::Rect(size));
   Mock::VerifyAndClearExpectations(context);
 
   EXPECT_CALL(*context, destroyImageCHROMIUM(kImageId))
@@ -3688,17 +3638,12 @@ TEST_P(ResourceProviderTest, CompressedTextureETC1Allocate) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   gfx::Size size(4, 4);
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
   int texture_id = 123;
 
-  ResourceProvider::ResourceId id = resource_provider->CreateResource(
+  ResourceId id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, ETC1);
   EXPECT_NE(0u, id);
   EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
@@ -3724,18 +3669,13 @@ TEST_P(ResourceProviderTest, CompressedTextureETC1Upload) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   gfx::Size size(4, 4);
-  scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(),
-                               shared_bitmap_manager_.get(),
-                               gpu_memory_buffer_manager_.get(),
-                               NULL,
-                               0,
-                               false,
-                               1));
+  scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+      output_surface.get(), shared_bitmap_manager_.get(),
+      gpu_memory_buffer_manager_.get(), NULL, 0, false, 1, false));
   int texture_id = 123;
   uint8_t pixels[8];
 
-  ResourceProvider::ResourceId id = resource_provider->CreateResource(
+  ResourceId id = resource_provider->CreateResource(
       size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE, ETC1);
   EXPECT_NE(0u, id);
   EXPECT_CALL(*context, NextTextureId()).WillOnce(Return(texture_id));
@@ -3785,16 +3725,11 @@ TEST(ResourceProviderTest, TextureAllocationChunkSize) {
 
   {
     size_t kTextureAllocationChunkSize = 1;
-    scoped_ptr<ResourceProvider> resource_provider(
-        ResourceProvider::Create(output_surface.get(),
-                                 shared_bitmap_manager.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 kTextureAllocationChunkSize));
+    scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+        output_surface.get(), shared_bitmap_manager.get(), NULL, NULL, 0, false,
+        kTextureAllocationChunkSize, false));
 
-    ResourceProvider::ResourceId id = resource_provider->CreateResource(
+    ResourceId id = resource_provider->CreateResource(
         size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
         format);
     resource_provider->AllocateForTesting(id);
@@ -3806,16 +3741,11 @@ TEST(ResourceProviderTest, TextureAllocationChunkSize) {
 
   {
     size_t kTextureAllocationChunkSize = 8;
-    scoped_ptr<ResourceProvider> resource_provider(
-        ResourceProvider::Create(output_surface.get(),
-                                 shared_bitmap_manager.get(),
-                                 NULL,
-                                 NULL,
-                                 0,
-                                 false,
-                                 kTextureAllocationChunkSize));
+    scoped_ptr<ResourceProvider> resource_provider(ResourceProvider::Create(
+        output_surface.get(), shared_bitmap_manager.get(), NULL, NULL, 0, false,
+        kTextureAllocationChunkSize, false));
 
-    ResourceProvider::ResourceId id = resource_provider->CreateResource(
+    ResourceId id = resource_provider->CreateResource(
         size, GL_CLAMP_TO_EDGE, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
         format);
     resource_provider->AllocateForTesting(id);

@@ -420,13 +420,16 @@ class _Generator(object):
     c.Append('scoped_ptr<base::Value> result;')
     for choice in type_.choices:
       choice_var = 'as_%s' % choice.unix_name
+      # Enums cannot be wrapped with scoped_ptr, but the XXX_NONE enum value
+      # is equal to 0.
       (c.Sblock('if (%s) {' % choice_var)
           .Append('DCHECK(!result) << "Cannot set multiple choices for %s";' %
                       type_.unix_name)
           .Cblock(self._CreateValueFromType('result.reset(%s);',
                                             choice.name,
                                             choice,
-                                            '*%s' % choice_var))
+                                            choice_var,
+                                            True))
         .Eblock('}')
       )
     (c.Append('DCHECK(result) << "Must set at least one choice for %s";' %
@@ -973,7 +976,10 @@ class _Generator(object):
       # This is broken up into all ifs with no else ifs because we get
       # "fatal error C1061: compiler limit : blocks nested too deeply"
       # on Windows.
-      (c.Append('if (enum_string == "%s")' % enum_value.name)
+      name = enum_value.name
+      if 'camel_case_enum_to_string' in self._namespace.compiler_options:
+        name = enum_value.CamelName()
+      (c.Append('if (enum_string == "%s")' % name)
         .Append('  return %s;' %
             self._type_helper.GetEnumValue(type_, enum_value)))
     (c.Append('return %s;' % self._type_helper.GetEnumNoneValue(type_))

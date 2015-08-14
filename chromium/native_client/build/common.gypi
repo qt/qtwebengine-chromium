@@ -41,11 +41,25 @@
         'mac_sdk%': '<!(python <(DEPTH)/native_client/build/mac/find_sdk.py 10.6)',
 
       }],
+      ['OS=="linux" and target_arch!="mipsel" and target_arch!="arm"', {
+        'clang%': 1,
+      }],
+      ['target_arch=="mipsel"', {
+        'mips_arch_variant%': 'r2',
+      }],
       # Set ARM float abi compilation flag.
       ['OS=="android"', {
         'arm_float_abi%': 'softfp',
       }, {
         'arm_float_abi%': 'hard',
+      }],
+      ['nacl_standalone==1 and host_clang==1', {
+        'host_cc': '<(make_clang_dir)/bin/clang',
+        'host_cxx': '<(make_clang_dir)/bin/clang++',
+      }],
+      ['nacl_standalone==1 and host_clang==0', {
+        'host_cc': '<!(which gcc)',
+        'host_cxx': '<!(which g++)',
       }],
     ],
 
@@ -98,6 +112,9 @@
         # non-Official builds).
         'buildtype%': 'Dev',
 
+
+        'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
+
         'conditions': [
           # Compute the architecture that we're building on.
           # This logic needs to be kept in sync with Chrome's common.gypi or
@@ -130,18 +147,18 @@
       'host_arch%': '<(host_arch)',
       'branding%': '<(branding)',
       'buildtype%': '<(buildtype)',
-
-      # By default, build for the architecture that we're building on.
-      'target_arch%': '<(host_arch)',
+      'make_clang_dir%': '<(make_clang_dir)',
 
       'conditions': [
-        # The system root for cross-compiles. Default: none.
-        # If we are building in chrome we want to rely on chrome's default, which
-        # means we can't set a default here.
-        ['nacl_standalone!=0', {
+        ['nacl_standalone==1', {
+          # The system root for cross-compiles. Default: none.
+          # If we are building in chrome we want to rely on chrome's default,
+          # which means we can't set a default here.
           'sysroot%': '',
+          # If this is set clang is used as host compiler, but not as target
+          # compiler. Always do this by default.
+          'host_clang%': 1,
         }],
-        #
         # A flag for POSIX platforms
         ['OS=="win"', {
           'os_posix%': 0,
@@ -150,6 +167,9 @@
         }],
         ['OS=="android"', { # Android target_arch defaults to ARM.
           'target_arch%': 'arm',
+        }, {
+          # By default, build for the architecture that we're building on.
+          'target_arch%': '<(host_arch)',
         }],
       ],
 
@@ -165,6 +185,7 @@
     'branding%': '<(branding)',
     'buildtype%': '<(buildtype)',
     'component%': '<(component)',
+    'make_clang_dir%': '<(make_clang_dir)',
 
     'nacl_strict_warnings%': 1,
 
@@ -356,7 +377,7 @@
               ['_toolset=="target"', {
                 # Copied from chromium build/common.gypi
                 'conditions': [
-                  ['mips_arch_variant=="mips32r2"', {
+                  ['mips_arch_variant=="r2"', {
                     'cflags': ['-mips32r2'],
                   }, {
                     'cflags': ['-mips32'],
@@ -761,12 +782,26 @@
     }],
     ['clang==1 and nacl_standalone==1', {
       'make_global_settings': [
-        ['CC', 'third_party/llvm-build/Release+Asserts/bin/clang'],
-        ['CXX', 'third_party/llvm-build/Release+Asserts/bin/clang++'],
-        ['LINK', '$(CXX)'],
-        ['CC.host', '$(CC)'],
-        ['CXX.host', '$(CXX)'],
-        ['LINK.host', '$(LINK)'],
+        ['CC', '<(make_clang_dir)/bin/clang'],
+        ['CXX', '<(make_clang_dir)/bin/clang++'],
+      ],
+    }],
+    ['OS=="linux" and target_arch=="mipsel" and clang==0 and nacl_standalone==1', {
+      'make_global_settings': [
+        ['CC', '<!(which mipsel-linux-gnu-gcc)'],
+        ['CXX', '<!(which mipsel-linux-gnu-g++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
+      ],
+    }],
+    ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and clang==0 and nacl_standalone==1', {
+      # Set default ARM cross compiling on linux.  These can be overridden
+      # using CC/CXX/etc environment variables.
+      'make_global_settings': [
+        ['CC', '<!(which arm-linux-gnueabihf-gcc)'],
+        ['CXX', '<!(which arm-linux-gnueabihf-g++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
       ],
     }],
     ['OS=="android" and nacl_standalone==1', {

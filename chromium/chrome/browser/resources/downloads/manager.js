@@ -18,12 +18,13 @@ cr.define('downloads', function() {
     /**
      * Sets the search text, updates related UIs, and tells the browser.
      * @param {string} searchText Text we're searching for.
+     * @private
      */
-    setSearchText: function(searchText) {
+    setSearchText_: function(searchText) {
       this.searchText_ = searchText;
 
       $('downloads-summary-text').textContent = this.searchText_ ?
-          loadTimeData.getStringF('searchresultsfor', this.searchText_) : '';
+          loadTimeData.getStringF('searchResultsFor', this.searchText_) : '';
 
       // Split quoted terms (e.g., 'The "lazy" dog' => ['The', 'lazy', 'dog']).
       function trim(s) { return s.trim(); }
@@ -31,35 +32,53 @@ cr.define('downloads', function() {
     },
 
     /**
+     * @return {number} A guess at how many items could be visible at once.
+     * @private
+     */
+    guesstimateNumberOfVisibleItems_: function() {
+      var headerHeight = document.querySelector('header').offsetHeight;
+      var summaryHeight = $('downloads-summary').offsetHeight;
+      var nonItemSpace = headerHeight + summaryHeight;
+      return Math.floor((window.innerHeight - nonItemSpace) / 46) + 1;
+    },
+
+    /**
      * Called when all items need to be updated.
      * @param {!Array<!downloads.Data>} list A list of new download data.
+     * @private
      */
-    updateAll: function(list) {
+    updateAll_: function(list) {
       var oldIdMap = this.idMap_ || {};
 
-      /** @private {!Object<!downloads.Item>} */
+      /** @private {!Object<!downloads.ItemView>} */
       this.idMap_ = {};
 
-      /** @private {!Array<!downloads.Item>} */
+      /** @private {!Array<!downloads.ItemView>} */
       this.items_ = [];
+
+      if (!this.iconLoader_) {
+        var guesstimate = Math.max(this.guesstimateNumberOfVisibleItems_(), 1);
+        /** @private {downloads.ThrottledIconLoader} */
+        this.iconLoader_ = new downloads.ThrottledIconLoader(guesstimate);
+      }
 
       for (var i = 0; i < list.length; ++i) {
         var data = list[i];
         var id = data.id;
 
         // Re-use old items when possible (saves work, preserves focus).
-        var item = oldIdMap[id] || new downloads.Item;
+        var item = oldIdMap[id] || new downloads.ItemView(this.iconLoader_);
 
         this.idMap_[id] = item;  // Associated by ID for fast lookup.
         this.items_.push(item);  // Add to sorted list for order.
 
         // Render |item| but don't actually add to the DOM yet. |this.items_|
         // must be fully created to be able to find the right spot to insert.
-        item.render(data);
+        item.update(data);
 
         // Collapse redundant dates.
         var prev = list[i - 1];
-        item.view.dateContainer.hidden =
+        item.dateContainer.hidden =
             prev && prev.date_string == data.date_string;
 
         delete oldIdMap[id];
@@ -67,45 +86,50 @@ cr.define('downloads', function() {
 
       // Remove stale, previously rendered items from the DOM.
       for (var id in oldIdMap) {
-        oldIdMap[id].unrender();
+        var oldNode = oldIdMap[id].node;
+        if (oldNode.parentNode)
+          oldNode.parentNode.removeChild(oldNode);
         delete oldIdMap[id];
       }
 
       for (var i = 0; i < this.items_.length; ++i) {
         var item = this.items_[i];
-        if (item.view.node.parentNode)  // Already in the DOM; skip.
+        if (item.node.parentNode)  // Already in the DOM; skip.
           continue;
 
         var before = null;
         // Find the next rendered item after this one, and insert before it.
         for (var j = i + 1; !before && j < this.items_.length; ++j) {
-          if (this.items_[j].view.node.parentNode)
-            before = this.items_[j].view.node;
+          if (this.items_[j].node.parentNode)
+            before = this.items_[j].node;
         }
         // If |before| is null, |item| will just get added at the end.
-        this.node_.insertBefore(item.view.node, before);
+        this.node_.insertBefore(item.node, before);
       }
 
       var noDownloadsOrResults = $('no-downloads-or-results');
       noDownloadsOrResults.textContent = loadTimeData.getString(
-          this.searchText_ ? 'no_search_results' : 'no_downloads');
+          this.searchText_ ? 'noSearchResults' : 'noDownloads');
 
-      var hasDownloads = this.size() > 0;
+      var hasDownloads = this.size_() > 0;
       this.node_.hidden = !hasDownloads;
       noDownloadsOrResults.hidden = hasDownloads;
 
-      if (loadTimeData.getBoolean('allow_deleting_history'))
+      if (loadTimeData.getBoolean('allowDeletingHistory'))
         $('clear-all').hidden = !hasDownloads || this.searchText_.length > 0;
 
       this.rebuildFocusGrid_();
     },
 
-    /** @param {!downloads.Data} data Info about the item to update. */
-    updateItem: function(data) {
+    /**
+     * @param {!downloads.Data} data Info about the item to update.
+     * @private
+     */
+    updateItem_: function(data) {
       var activeElement = document.activeElement;
 
       var item = this.idMap_[data.id];
-      item.render(data);
+      item.update(data);
       var focusRow = this.decorateItem_(item);
 
       if (focusRow.contains(activeElement) &&
@@ -138,31 +162,37 @@ cr.define('downloads', function() {
     },
 
     /**
-     * @param {!downloads.Item} item An item to decorate as a FocusRow.
+     * @param {!downloads.ItemView} item An item to decorate as a FocusRow.
      * @return {!downloads.FocusRow} |item| decorated as a FocusRow.
+     * @private
      */
     decorateItem_: function(item) {
-      downloads.FocusRow.decorate(item.view.node, item.view, this.node_);
-      return assertInstanceof(item.view.node, downloads.FocusRow);
+      downloads.FocusRow.decorate(item.node, item, this.node_);
+      return assertInstanceof(item.node, downloads.FocusRow);
     },
 
-    /** @return {number} The number of downloads shown on the page. */
-    size: function() {
+    /**
+     * @return {number} The number of downloads shown on the page.
+     * @private
+     */
+    size_: function() {
       return this.items_.length;
     },
 
-    clearAll: function() {
-      if (loadTimeData.getBoolean('allow_deleting_history')) {
+    /** @private */
+    clearAll_: function() {
+      if (loadTimeData.getBoolean('allowDeletingHistory')) {
         chrome.send('clearAll');
-        this.setSearchText('');
+        this.setSearchText_('');
       }
     },
 
-    onLoad: function() {
+    /** @private */
+    onLoad_: function() {
       this.node_ = $('downloads-display');
 
       $('clear-all').onclick = function() {
-        this.clearAll();
+        this.clearAll_();
       }.bind(this);
 
       $('open-downloads-folder').onclick = function() {
@@ -170,14 +200,14 @@ cr.define('downloads', function() {
       };
 
       $('term').onsearch = function(e) {
-        this.setSearchText($('term').value);
+        this.setSearchText_($('term').value);
       }.bind(this);
 
       cr.ui.decorate('command', cr.ui.Command);
       document.addEventListener('canExecute', this.onCanExecute_.bind(this));
       document.addEventListener('command', this.onCommand_.bind(this));
 
-      this.setSearchText('');
+      this.setSearchText_('');
     },
 
     /**
@@ -186,8 +216,14 @@ cr.define('downloads', function() {
      */
     onCanExecute_: function(e) {
       e = /** @type {cr.ui.CanExecuteEvent} */(e);
-      e.canExecute = e.command.id != 'undo-command' ||
-                     document.activeElement != $('term');
+      switch (e.command.id) {
+        case 'undo-command':
+          e.canExecute = document.activeElement != $('term');
+          break;
+        case 'clear-all-command':
+          e.canExecute = true;
+          break;
+      }
     },
 
     /**
@@ -198,28 +234,28 @@ cr.define('downloads', function() {
       if (e.command.id == 'undo-command')
         chrome.send('undo');
       else if (e.command.id == 'clear-all-command')
-        this.clearAll();
+        this.clearAll_();
     },
   };
 
   Manager.updateAll = function(list) {
-    Manager.getInstance().updateAll(list);
+    Manager.getInstance().updateAll_(list);
   };
 
   Manager.updateItem = function(item) {
-    Manager.getInstance().updateItem(item);
+    Manager.getInstance().updateItem_(item);
   };
 
   Manager.setSearchText = function(searchText) {
-    Manager.getInstance().setSearchText(searchText);
+    Manager.getInstance().setSearchText_(searchText);
   };
 
   Manager.onLoad = function() {
-    Manager.getInstance().onLoad();
+    Manager.getInstance().onLoad_();
   };
 
   Manager.size = function() {
-    return Manager.getInstance().size();
+    return Manager.getInstance().size_();
   };
 
   return {Manager: Manager};

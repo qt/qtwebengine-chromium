@@ -233,7 +233,6 @@ body.bare-minimum #dot-list {
   border: none;
   box-shadow: none;
   color: inherit;
-  cursor: pointer;
   font: inherit;
   /* Leave room for the scrollbar. */
   margin-left: 13px;
@@ -245,6 +244,10 @@ body.bare-minimum #dot-list {
   text-align: right;
   top: 0;
   z-index: 10;
+}
+
+#login-container:not(.signed-in) {
+  cursor: pointer;
 }
 
 html[dir='rtl'] #login-container {
@@ -411,22 +414,6 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
 
 html[dir='rtl'] #chrome-web-store-title {
   background-position-x: left;
-}
-
-#vertical-separator {
-  -webkit-order: 2;
-  background-color: rgb(178, 178, 178);
-  display: none;
-  height: 20px;
-  margin: 0;
-  vertical-align: middle;
-  width: 1px;
-}
-
-/* Show the separator only if one of the menus is visible. */
-.footer-menu-button:not([hidden]) ~ #chrome-web-store-link:not([hidden])
-                                  ~ #vertical-separator {
-  display: inline-block;
 }
 
 /* In trash mode, hide the menus and web store link. */

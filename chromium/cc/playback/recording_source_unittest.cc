@@ -8,7 +8,6 @@
 #include "cc/test/fake_display_list_recording_source.h"
 #include "cc/test/fake_picture_pile.h"
 #include "cc/test/fake_picture_pile_impl.h"
-#include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/skia_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,8 +29,10 @@ template <>
 scoped_ptr<FakeDisplayListRecordingSource> CreateRecordingSource<
     FakeDisplayListRecordingSource>(const gfx::Rect& viewport,
                                     const gfx::Size& grid_cell_size) {
+  gfx::Rect layer_rect(viewport.right(), viewport.bottom());
   scoped_ptr<FakeDisplayListRecordingSource> recording_source =
-      FakeDisplayListRecordingSource::CreateRecordingSource(viewport);
+      FakeDisplayListRecordingSource::CreateRecordingSource(viewport,
+                                                            layer_rect.size());
   recording_source->SetGridCellSize(grid_cell_size);
 
   return recording_source.Pass();

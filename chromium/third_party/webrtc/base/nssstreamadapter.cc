@@ -66,9 +66,18 @@ static const SrtpCipherMapEntry kSrtpCipherMap[] = {
 };
 #endif
 
+// Ciphers to enable to get ECDHE encryption with endpoints that support it.
+static const uint32_t kEnabledCiphers[] = {
+  TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+};
+
 // Default cipher used between NSS stream adapters.
 // This needs to be updated when the default of the SSL library changes.
-static const char kDefaultSslCipher[] = "TLS_RSA_WITH_AES_128_CBC_SHA";
+static const char kDefaultSslCipher10[] =
+    "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA";
+static const char kDefaultSslCipher12[] =
+    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256";
 
 
 // Implementation of NSPR methods
@@ -426,6 +435,15 @@ bool NSSStreamAdapter::Init() {
     return false;
   }
 
+  // Disable reusing of ECDHE keys. By default NSS, when in server mode, uses
+  // the same key for multiple connections, so disable this behaviour to get
+  // ephemeral keys.
+  rv = SSL_OptionSet(ssl_fd, SSL_REUSE_SERVER_ECDHE_KEY, PR_FALSE);
+  if (rv != SECSuccess) {
+    LOG(LS_ERROR) << "Error disabling ECDHE key reuse";
+    return false;
+  }
+
   ssl_fd_ = ssl_fd;
 
   return true;
@@ -501,10 +519,33 @@ int NSSStreamAdapter::BeginSSL() {
 
   // Set the version range.
   SSLVersionRange vrange;
-  vrange.min =  (ssl_mode_ == SSL_MODE_DTLS) ?
-      SSL_LIBRARY_VERSION_TLS_1_1 :
-      SSL_LIBRARY_VERSION_TLS_1_0;
-  vrange.max = SSL_LIBRARY_VERSION_TLS_1_1;
+  if (ssl_mode_ == SSL_MODE_DTLS) {
+    vrange.min = SSL_LIBRARY_VERSION_TLS_1_1;
+    switch (ssl_max_version_) {
+      case SSL_PROTOCOL_DTLS_10:
+        vrange.max = SSL_LIBRARY_VERSION_TLS_1_1;
+        break;
+      case SSL_PROTOCOL_DTLS_12:
+      default:
+        vrange.max = SSL_LIBRARY_VERSION_TLS_1_2;
+        break;
+    }
+  } else {
+    // SSL_MODE_TLS
+    vrange.min = SSL_LIBRARY_VERSION_TLS_1_0;
+    switch (ssl_max_version_) {
+      case SSL_PROTOCOL_TLS_10:
+        vrange.max = SSL_LIBRARY_VERSION_TLS_1_0;
+        break;
+      case SSL_PROTOCOL_TLS_11:
+        vrange.max = SSL_LIBRARY_VERSION_TLS_1_1;
+        break;
+      case SSL_PROTOCOL_TLS_12:
+      default:
+        vrange.max = SSL_LIBRARY_VERSION_TLS_1_2;
+        break;
+    }
+  }
 
   rv = SSL_VersionRangeSet(ssl_fd_, &vrange);
   if (rv != SECSuccess) {
@@ -524,6 +565,15 @@ int NSSStreamAdapter::BeginSSL() {
     }
   }
 #endif
+
+  // Enable additional ciphers.
+  for (size_t i = 0; i < ARRAY_SIZE(kEnabledCiphers); i++) {
+    rv = SSL_CipherPrefSet(ssl_fd_, kEnabledCiphers[i], PR_TRUE);
+    if (rv != SECSuccess) {
+      Error("BeginSSL", -1, false);
+      return -1;
+    }
+  }
 
   // Certificate validation
   rv = SSL_AuthCertificateHook(ssl_fd_, AuthCertificateHook, this);
@@ -1043,8 +1093,15 @@ bool NSSStreamAdapter::HaveExporter() {
   return true;
 }
 
-std::string NSSStreamAdapter::GetDefaultSslCipher() {
-  return kDefaultSslCipher;
+std::string NSSStreamAdapter::GetDefaultSslCipher(SSLProtocolVersion version) {
+  switch (version) {
+    case SSL_PROTOCOL_TLS_10:
+    case SSL_PROTOCOL_TLS_11:
+      return kDefaultSslCipher10;
+    case SSL_PROTOCOL_TLS_12:
+    default:
+      return kDefaultSslCipher12;
+  }
 }
 
 }  // namespace rtc

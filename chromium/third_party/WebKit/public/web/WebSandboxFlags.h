@@ -25,8 +25,20 @@ enum class WebSandboxFlags : int {
     PointerLock = 1 << 8,
     DocumentDomain = 1 << 9,
     OrientationLock = 1 << 10,
+    PropagatesToAuxiliaryBrowsingContexts = 1 << 11,
+    Modals = 1 << 12,
     All = -1
 };
+
+inline WebSandboxFlags operator&(WebSandboxFlags a, WebSandboxFlags b)
+{
+    return static_cast<WebSandboxFlags>(static_cast<int>(a) & static_cast<int>(b));
+}
+
+inline WebSandboxFlags operator~(WebSandboxFlags flags)
+{
+    return static_cast<WebSandboxFlags>(~static_cast<int>(flags));
+}
 
 } // namespace blink
 

@@ -69,6 +69,7 @@ VP9_COMMON_SRCS-yes += common/vp9_common_data.h
 VP9_COMMON_SRCS-yes += common/vp9_scan.c
 VP9_COMMON_SRCS-yes += common/vp9_scan.h
 
+VP9_COMMON_SRCS-$(ARCH_X86)$(ARCH_X86_64) += common/x86/convolve.h
 VP9_COMMON_SRCS-$(ARCH_X86)$(ARCH_X86_64) += common/x86/vp9_asm_stubs.c
 VP9_COMMON_SRCS-$(ARCH_X86)$(ARCH_X86_64) += common/x86/vp9_loopfilter_intrin_sse2.c
 VP9_COMMON_SRCS-$(HAVE_AVX2) += common/x86/vp9_loopfilter_intrin_avx2.c
@@ -131,14 +132,29 @@ VP9_COMMON_SRCS-$(HAVE_DSPR2)  += common/mips/dspr2/vp9_mblpf_vert_loopfilter_ds
 
 # common (msa)
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_macros_msa.h
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_avg_horiz_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_avg_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_avg_vert_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_horiz_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve8_vert_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve_avg_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve_copy_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_convolve_msa.h
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_idct4x4_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_idct8x8_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_idct16x16_msa.c
 VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_idct32x32_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_idct_msa.h
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_intra_predict_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_loopfilter_4_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_loopfilter_8_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_loopfilter_16_msa.c
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_loopfilter_msa.h
+
+ifeq ($(CONFIG_VP9_POSTPROC),yes)
+VP9_COMMON_SRCS-$(HAVE_MSA) += common/mips/msa/vp9_mfqe_msa.c
+endif
 
 VP9_COMMON_SRCS-$(HAVE_SSE2) += common/x86/vp9_idct_intrin_sse2.c
 VP9_COMMON_SRCS-$(HAVE_SSE2) += common/x86/vp9_idct_intrin_sse2.h
@@ -197,8 +213,9 @@ VP9_COMMON_SRCS-yes += common/arm/neon/vp9_loopfilter_4_neon.c
 # TODO(johannkoenig): re-enable when chromium build is fixed
 # # https://code.google.com/p/chromium/issues/detail?id=443839
 #VP9_COMMON_SRCS-yes += common/arm/neon/vp9_loopfilter_8_neon.c
-VP9_COMMON_SRCS-yes += common/arm/neon/vp9_reconintra_neon.c
 endif  # HAVE_NEON
 endif  # HAVE_NEON_ASM
+
+VP9_COMMON_SRCS-$(HAVE_NEON) += common/arm/neon/vp9_reconintra_neon.c
 
 $(eval $(call rtcd_h_template,vp9_rtcd,vp9/common/vp9_rtcd_defs.pl))

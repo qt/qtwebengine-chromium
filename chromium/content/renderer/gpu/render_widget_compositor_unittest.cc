@@ -4,6 +4,9 @@
 
 #include "content/renderer/gpu/render_widget_compositor.h"
 
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/test/failure_output_surface.h"
 #include "cc/trees/layer_tree_host.h"
@@ -139,11 +142,12 @@ class RenderWidgetCompositorOutputSurface : public RenderWidgetCompositor {
           cc::TestWebGraphicsContext3D::Create();
       // Image support required for synchronous compositing.
       context->set_support_image(true);
-      return cc::FakeOutputSurface::Create3d(context.Pass());
+      // Create delegating surface so that max_pending_frames = 1.
+      return cc::FakeOutputSurface::CreateDelegating3d(context.Pass());
     }
     return use_null_output_surface_
                ? nullptr
-               : make_scoped_ptr(new cc::FailureOutputSurface(false));
+               : make_scoped_ptr(new cc::FailureOutputSurface(true));
   }
 
   // Force a new output surface to be created.
@@ -173,7 +177,7 @@ class RenderWidgetCompositorOutputSurface : public RenderWidgetCompositor {
       RenderWidgetCompositor::DidInitializeOutputSurface();
       // Post the synchronous composite task so that it is not called
       // reentrantly as a part of RequestNewOutputSurface.
-      base::MessageLoop::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::Bind(&RenderWidgetCompositorOutputSurface::SynchronousComposite,
                      base::Unretained(this)));
@@ -232,8 +236,6 @@ class RenderWidgetCompositorOutputSurfaceTest : public testing::Test {
   RenderWidgetCompositorOutputSurfaceTest()
       : render_widget_(make_scoped_refptr(new RenderWidgetOutputSurface)),
         compositor_deps_(make_scoped_ptr(new FakeCompositorDependencies)) {
-    // Required in order to call the synchronous LayerTreeHost::Composite.
-    compositor_deps_->set_use_single_thread_scheduler(false);
     render_widget_compositor_.reset(new RenderWidgetCompositorOutputSurface(
         render_widget_.get(), compositor_deps_.get()));
     render_widget_compositor_->Initialize();
@@ -248,7 +250,7 @@ class RenderWidgetCompositorOutputSurfaceTest : public testing::Test {
         use_null_output_surface, num_failures_before_success,
         expected_successes, expected_fallback_succeses);
     render_widget_compositor_->StartCompositor();
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&RenderWidgetCompositorOutputSurface::SynchronousComposite,
                    base::Unretained(render_widget_compositor_.get())));

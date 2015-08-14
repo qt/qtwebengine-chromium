@@ -46,8 +46,7 @@ VCMReceiveCallback* VCMDecodedFrameCallback::UserReceiveCallback()
     return _receiveCallback;
 }
 
-int32_t VCMDecodedFrameCallback::Decoded(I420VideoFrame& decodedImage)
-{
+int32_t VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage) {
     // TODO(holmer): We should improve this so that we can handle multiple
     // callbacks from one call to Decode().
     VCMFrameInformation* frameInfo;
@@ -184,11 +183,6 @@ VCMGenericDecoder::Release()
 int32_t VCMGenericDecoder::Reset()
 {
     return _decoder.Reset();
-}
-
-int32_t VCMGenericDecoder::SetCodecConfigParameters(const uint8_t* buffer, int32_t size)
-{
-    return _decoder.SetCodecConfigParameters(buffer, size);
 }
 
 int32_t VCMGenericDecoder::RegisterDecodeCompleteCallback(VCMDecodedFrameCallback* callback)

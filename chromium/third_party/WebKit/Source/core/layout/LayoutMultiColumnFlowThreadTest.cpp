@@ -33,10 +33,10 @@ LayoutMultiColumnFlowThread* MultiColumnRenderingTest::findFlowThread(const char
 {
     Node* multicol = document().getElementById(id);
     if (!multicol)
-        return 0;
+        return nullptr;
     LayoutBlockFlow* multicolContainer = toLayoutBlockFlow(multicol->layoutObject());
     if (!multicolContainer)
-        return 0;
+        return nullptr;
     return multicolContainer->multiColumnFlowThread();
 }
 
@@ -293,13 +293,12 @@ TEST_F(MultiColumnRenderingTest, columnSetAtBlockOffset)
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(-10000)), firstRow); // negative overflow
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit()), firstRow);
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(499)), firstRow); // bottom of last line in first row.
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(599)), firstRow); // empty content in last column in first row
     LayoutMultiColumnSet* secondRow = firstRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(600)), secondRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(500)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(699)), secondRow);
     LayoutMultiColumnSet* thirdRow = secondRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(800)), thirdRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(899)), thirdRow); // bottom of last row
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(700)), thirdRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), thirdRow); // bottom of last row
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(10000)), thirdRow); // overflow
 }
 
@@ -312,13 +311,12 @@ TEST_F(MultiColumnRenderingTest, columnSetAtBlockOffsetVerticalRl)
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(-10000)), firstRow); // negative overflow
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit()), firstRow);
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(499)), firstRow); // bottom of last line in first row.
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(599)), firstRow); // empty content in last column in first row
     LayoutMultiColumnSet* secondRow = firstRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(600)), secondRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(500)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(699)), secondRow);
     LayoutMultiColumnSet* thirdRow = secondRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(800)), thirdRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(899)), thirdRow); // bottom of last row
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(700)), thirdRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), thirdRow); // bottom of last row
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(10000)), thirdRow); // overflow
 }
 
@@ -331,20 +329,19 @@ TEST_F(MultiColumnRenderingTest, columnSetAtBlockOffsetVerticalLr)
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(-10000)), firstRow); // negative overflow
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit()), firstRow);
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(499)), firstRow); // bottom of last line in first row.
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(599)), firstRow); // empty content in last column in first row
     LayoutMultiColumnSet* secondRow = firstRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(600)), secondRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(500)), secondRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(699)), secondRow);
     LayoutMultiColumnSet* thirdRow = secondRow->nextSiblingMultiColumnSet();
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(800)), thirdRow);
-    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(899)), thirdRow); // bottom of last row
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(700)), thirdRow);
+    EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(799)), thirdRow); // bottom of last row
     EXPECT_EQ(flowThread->columnSetAtBlockOffset(LayoutUnit(10000)), thirdRow); // overflow
 }
 
 class MultiColumnTreeModifyingTest : public MultiColumnRenderingTest {
 public:
     void setMulticolHTML(const char*);
-    void reparentLayoutObject(const char* newParentId, const char* childId, const char* insertBeforeId = 0);
+    void reparentLayoutObject(const char* newParentId, const char* childId, const char* insertBeforeId = nullptr);
     void destroyLayoutObject(LayoutObject* child);
     void destroyLayoutObject(const char* childId);
 };
@@ -360,7 +357,7 @@ void MultiColumnTreeModifyingTest::reparentLayoutObject(const char* newParentId,
 {
     LayoutObject* newParent = document().getElementById(newParentId)->layoutObject();
     LayoutObject* child = document().getElementById(childId)->layoutObject();
-    LayoutObject* insertBefore = insertBeforeId ? document().getElementById(insertBeforeId)->layoutObject() : 0;
+    LayoutObject* insertBefore = insertBeforeId ? document().getElementById(insertBeforeId)->layoutObject() : nullptr;
     child->remove();
     newParent->addChild(child, insertBefore);
 }

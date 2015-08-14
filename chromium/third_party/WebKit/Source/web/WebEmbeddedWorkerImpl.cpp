@@ -44,7 +44,6 @@
 #include "core/workers/WorkerInspectorProxy.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
-#include "core/workers/WorkerScriptLoaderClient.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
@@ -69,62 +68,6 @@
 #include "wtf/Functional.h"
 
 namespace blink {
-
-// A thin wrapper for one-off script loading.
-class WebEmbeddedWorkerImpl::Loader : public WorkerScriptLoaderClient {
-public:
-    static PassOwnPtr<Loader> create()
-    {
-        return adoptPtr(new Loader());
-    }
-
-    virtual ~Loader()
-    {
-        m_scriptLoader->setClient(0);
-    }
-
-    void load(ExecutionContext* loadingContext, const KURL& scriptURL, PassOwnPtr<Closure> callback)
-    {
-        ASSERT(loadingContext);
-        m_callback = callback;
-        m_scriptLoader->setRequestContext(WebURLRequest::RequestContextServiceWorker);
-        m_scriptLoader->loadAsynchronously(
-            *loadingContext, scriptURL, DenyCrossOriginRequests, this);
-    }
-
-    void didReceiveResponse(unsigned long identifier, const ResourceResponse& response) override
-    {
-        m_contentSecurityPolicy = ContentSecurityPolicy::create();
-        m_contentSecurityPolicy->setOverrideURLForSelf(response.url());
-        m_contentSecurityPolicy->didReceiveHeaders(ContentSecurityPolicyResponseHeaders(response));
-    }
-
-    virtual void notifyFinished() override
-    {
-        (*m_callback)();
-    }
-
-    void cancel()
-    {
-        m_scriptLoader->cancel();
-    }
-
-    bool failed() const { return m_scriptLoader->failed(); }
-    const KURL& url() const { return m_scriptLoader->responseURL(); }
-    String script() const { return m_scriptLoader->script(); }
-    const Vector<char>* cachedMetadata() const { return m_scriptLoader->cachedMetadata(); }
-    PassOwnPtr<Vector<char>> releaseCachedMetadata() const { return m_scriptLoader->releaseCachedMetadata(); }
-    PassRefPtr<ContentSecurityPolicy> releaseContentSecurityPolicy() { return m_contentSecurityPolicy.release(); }
-
-private:
-    Loader() : m_scriptLoader(WorkerScriptLoader::create())
-    {
-    }
-
-    RefPtr<WorkerScriptLoader> m_scriptLoader;
-    OwnPtr<Closure> m_callback;
-    RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
-};
 
 WebEmbeddedWorker* WebEmbeddedWorker::create(WebServiceWorkerContextClient* client, WebWorkerContentSettingsClientProxy* contentSettingsClient)
 {
@@ -215,7 +158,7 @@ void WebEmbeddedWorkerImpl::terminateWorkerContext()
         return;
     }
     if (m_workerThread)
-        m_workerThread->stop();
+        m_workerThread->terminate();
     m_workerInspectorProxy->workerThreadTerminated();
 }
 
@@ -306,7 +249,7 @@ void WebEmbeddedWorkerImpl::prepareShadowPageForLoader()
     settings->setStrictMixedContentChecking(true);
     settings->setAllowDisplayOfInsecureContent(false);
     settings->setAllowRunningOfInsecureContent(false);
-    m_mainFrame = toWebLocalFrameImpl(WebLocalFrame::create(this));
+    m_mainFrame = toWebLocalFrameImpl(WebLocalFrame::create(WebTreeScopeType::Document, this));
     m_webView->setMainFrame(m_mainFrame);
     m_mainFrame->setDevToolsAgentClient(this);
 
@@ -354,11 +297,16 @@ void WebEmbeddedWorkerImpl::didFinishDocumentLoad(WebLocalFrame* frame)
     ASSERT(!m_askedToTerminate);
     m_loadingShadowPage = false;
     m_networkProvider = adoptPtr(m_workerContextClient->createServiceWorkerNetworkProvider(frame->dataSource()));
-    m_mainScriptLoader = Loader::create();
-    m_mainScriptLoader->load(
-        m_mainFrame->frame()->document(),
+    m_mainScriptLoader = adoptPtr(new WorkerScriptLoader());
+    m_mainScriptLoader->setRequestContext(WebURLRequest::RequestContextServiceWorker);
+    m_mainScriptLoader->loadAsynchronously(
+        *m_mainFrame->frame()->document(),
         m_workerStartData.scriptURL,
+        DenyCrossOriginRequests,
+        nullptr,
         bind(&WebEmbeddedWorkerImpl::onScriptLoaderFinished, this));
+    // Do nothing here since onScriptLoaderFinished() might have been already
+    // invoked and |this| might have been deleted at this point.
 }
 
 void WebEmbeddedWorkerImpl::sendProtocolMessage(int callId, const WebString& message, const WebString& state)
@@ -425,18 +373,16 @@ void WebEmbeddedWorkerImpl::startWorkerThread()
     document->initContentSecurityPolicy(m_mainScriptLoader->releaseContentSecurityPolicy());
 
     KURL scriptURL = m_mainScriptLoader->url();
-    OwnPtr<WorkerThreadStartupData> startupData =
-        WorkerThreadStartupData::create(
-            scriptURL,
-            m_workerStartData.userAgent,
-            m_mainScriptLoader->script(),
-            m_mainScriptLoader->releaseCachedMetadata(),
-            startMode,
-            document->contentSecurityPolicy()->deprecatedHeader(),
-            document->contentSecurityPolicy()->deprecatedHeaderType(),
-            starterOrigin,
-            workerClients.release(),
-            static_cast<V8CacheOptions>(m_workerStartData.v8CacheOptions));
+    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(
+        scriptURL,
+        m_workerStartData.userAgent,
+        m_mainScriptLoader->script(),
+        m_mainScriptLoader->releaseCachedMetadata(),
+        startMode,
+        document->contentSecurityPolicy()->headers(),
+        starterOrigin,
+        workerClients.release(),
+        static_cast<V8CacheOptions>(m_workerStartData.v8CacheOptions));
 
     m_mainScriptLoader.clear();
 

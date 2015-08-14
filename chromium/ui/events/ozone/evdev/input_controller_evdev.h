@@ -34,6 +34,8 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
   void set_has_mouse(bool has_mouse);
   void set_has_touchpad(bool has_touchpad);
 
+  void SetInputDevicesEnabled(bool enabled);
+
   // InputController:
   bool HasMouse() override;
   bool HasTouchpad() override;
@@ -46,6 +48,7 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
                          const base::TimeDelta& interval) override;
   void GetAutoRepeatRate(base::TimeDelta* delay,
                          base::TimeDelta* interval) override;
+  void SetTouchEventLoggingEnabled(bool enabled) override;
   void SetTouchpadSensitivity(int value) override;
   void SetTapToClick(bool enabled) override;
   void SetThreeFingerClick(bool enabled) override;
@@ -57,11 +60,9 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
   void GetTouchDeviceStatus(const GetTouchDeviceStatusReply& reply) override;
   void GetTouchEventLog(const base::FilePath& out_dir,
                         const GetTouchEventLogReply& reply) override;
-  void DisableInternalTouchpad() override;
-  void EnableInternalTouchpad() override;
-  void DisableInternalKeyboardExceptKeys(
-      scoped_ptr<std::set<DomCode>> excepted_keys) override;
-  void EnableInternalKeyboard() override;
+  void SetInternalTouchpadEnabled(bool enabled) override;
+  void SetInternalKeyboardFilter(bool enable_filter,
+                                 std::vector<DomCode> allowed_keys) override;
 
  private:
   // Post task to update settings.
@@ -77,10 +78,10 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
   InputDeviceSettingsEvdev input_device_settings_;
 
   // Task to update config from input_device_settings_ is pending.
-  bool settings_update_pending_;
+  bool settings_update_pending_ = false;
 
   // Factory for devices. Needed to update device config.
-  InputDeviceFactoryEvdevProxy* input_device_factory_;
+  InputDeviceFactoryEvdevProxy* input_device_factory_ = nullptr;
 
   // Keyboard state.
   KeyboardEvdev* keyboard_;
@@ -89,11 +90,11 @@ class EVENTS_OZONE_EVDEV_EXPORT InputControllerEvdev : public InputController {
   MouseButtonMapEvdev* button_map_;
 
   // Device presence.
-  bool has_mouse_;
-  bool has_touchpad_;
+  bool has_mouse_ = false;
+  bool has_touchpad_ = false;
 
   // LED state.
-  bool caps_lock_led_state_;
+  bool caps_lock_led_state_ = false;
 
   base::WeakPtrFactory<InputControllerEvdev> weak_ptr_factory_;
 

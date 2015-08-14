@@ -5,7 +5,11 @@
 #ifndef NET_SOCKET_SSL_CLIENT_SOCKET_OPENSSL_H_
 #define NET_SOCKET_SSL_CLIENT_SOCKET_OPENSSL_H_
 
+#include <openssl/base.h>
+#include <openssl/ssl.h>
+
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -23,24 +27,13 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_failure_state.h"
 
-// Avoid including misc OpenSSL headers, i.e.:
-// <openssl/bio.h>
-typedef struct bio_st BIO;
-// <openssl/evp.h>
-typedef struct evp_pkey_st EVP_PKEY;
-// <openssl/ssl.h>
-typedef struct ssl_st SSL;
-// <openssl/x509.h>
-typedef struct x509_st X509;
-// <openssl/ossl_type.h>
-typedef struct x509_store_ctx_st X509_STORE_CTX;
-
 namespace net {
 
 class CertVerifier;
 class CTVerifier;
 class SSLCertRequestInfo;
 class SSLInfo;
+class SSLPrivateKey;
 
 // An SSL client socket implemented with OpenSSL.
 class SSLClientSocketOpenSSL : public SSLClientSocket {
@@ -101,11 +94,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int SetReceiveBufferSize(int32 size) override;
   int SetSendBufferSize(int32 size) override;
 
- protected:
-  // SSLClientSocket implementation.
-  scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
-      const override;
-
  private:
   class PeerCertificateChain;
   class SSLContext;
@@ -136,6 +124,11 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int DoWriteLoop();
   int DoPayloadRead();
   int DoPayloadWrite();
+
+  // Called when an asynchronous event completes which may have blocked the
+  // pending Read or Write calls, if any. Retries both state machines and, if
+  // complete, runs the respective callbacks.
+  void PumpReadWriteEvents();
 
   int BufferSend();
   int BufferRecv();
@@ -179,10 +172,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // safe to cache and will be cached.
   void MaybeCacheSession();
 
-  // Callback from the SSL layer when the internal state machine progresses. It
-  // is used to listen for when the handshake completes entirely; |Connect| may
-  // return early if false starting.
-  void InfoCallback(int type, int val);
+  // Called from the SSL layer whenever a new session is established.
+  int NewSessionCallback(SSL_SESSION* session);
 
   // Adds the SignedCertificateTimestamps from ct_verify_result_ to |ssl_info|.
   // SCTs are held in three separate vectors in ct_verify_result, each
@@ -197,6 +188,23 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   // Returns true if renegotiations are allowed.
   bool IsRenegotiationAllowed() const;
+
+  // Callbacks for operations with the private key.
+  int PrivateKeyTypeCallback();
+  int PrivateKeySupportsDigestCallback(const EVP_MD* md);
+  size_t PrivateKeyMaxSignatureLenCallback();
+  ssl_private_key_result_t PrivateKeySignCallback(uint8_t* out,
+                                                  size_t* out_len,
+                                                  size_t max_out,
+                                                  const EVP_MD* md,
+                                                  const uint8_t* in,
+                                                  size_t in_len);
+  ssl_private_key_result_t PrivateKeySignCompleteCallback(uint8_t* out,
+                                                          size_t* out_len,
+                                                          size_t max_out);
+
+  void OnPrivateKeySignComplete(Error error,
+                                const std::vector<uint8_t>& signature);
 
   bool transport_send_busy_;
   bool transport_recv_busy_;
@@ -295,17 +303,22 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   NextProtoStatus npn_status_;
   std::string npn_proto_;
   // Written by the |channel_id_service_|.
-  std::string channel_id_private_key_;
-  std::string channel_id_cert_;
+  scoped_ptr<crypto::ECPrivateKey> channel_id_key_;
   // True if a channel ID was sent.
   bool channel_id_sent_;
-  // True if the initial handshake has completed.
-  bool handshake_completed_;
+  // True if the current session was newly-established, but the certificate had
+  // not yet been verified externally, so it cannot be inserted into the cache
+  // until later.
+  bool session_pending_;
   // True if the initial handshake's certificate has been verified.
   bool certificate_verified_;
   // The request handle for |channel_id_service_|.
-  ChannelIDService::RequestHandle channel_id_request_handle_;
+  ChannelIDService::Request channel_id_request_;
   SSLFailureState ssl_failure_state_;
+
+  scoped_ptr<SSLPrivateKey> private_key_;
+  int signature_result_;
+  std::vector<uint8_t> signature_;
 
   TransportSecurityState* transport_security_state_;
 

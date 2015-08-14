@@ -44,7 +44,6 @@
 #include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/MetadataCallback.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
@@ -130,7 +129,7 @@ private:
             return new ErrorCallbackImpl(helper);
         }
 
-        virtual void handleEvent(FileError* error) override
+        void handleEvent(FileError* error) override
         {
             ASSERT(error);
             m_helper->setError(error->code());

@@ -22,6 +22,7 @@
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/tmmbr_help.h"
@@ -95,9 +96,9 @@ public:
 
  void SetRemoteSSRC(uint32_t ssrc);
 
- int32_t SetCNAME(const char cName[RTCP_CNAME_SIZE]);
+ int32_t SetCNAME(const char* cName);
 
- int32_t AddMixedCNAME(uint32_t SSRC, const char cName[RTCP_CNAME_SIZE]);
+ int32_t AddMixedCNAME(uint32_t SSRC, const char* c_name);
 
  int32_t RemoveMixedCNAME(uint32_t SSRC);
 
@@ -120,11 +121,6 @@ public:
                           const uint16_t* nackList = 0,
                           bool repeat = false,
                           uint64_t pictureID = 0);
-
- int32_t AddExternalReportBlock(uint32_t SSRC,
-                                const RTCPReportBlock* receiveBlock);
-
- int32_t RemoveExternalReportBlock(uint32_t SSRC);
 
  bool REMB() const;
 
@@ -181,24 +177,13 @@ private:
 
  int32_t SendToNetwork(const uint8_t* dataBuffer, size_t length);
 
- RTCPSender::BuildResult WriteAllReportBlocksToBuffer(
-     RtcpContext* context,
-     uint8_t* numberOfReportBlocks)
+ int32_t AddReportBlock(const RTCPReportBlock& report_block)
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
 
- void WriteReportBlocksToBuffer(
-     RtcpContext* context,
-     const std::map<uint32_t, RTCPReportBlock*>& report_blocks);
-
- int32_t AddReportBlock(uint32_t SSRC,
-                        std::map<uint32_t, RTCPReportBlock*>* report_blocks,
-                        const RTCPReportBlock* receiveBlock);
-
  bool PrepareReport(const FeedbackState& feedback_state,
+                    uint32_t ssrc,
                     StreamStatistician* statistician,
-                    RTCPReportBlock* report_block,
-                    uint32_t* ntp_secs,
-                    uint32_t* ntp_frac);
+                    RTCPReportBlock* report_block);
 
  int PrepareRTCP(const FeedbackState& feedback_state,
                  const std::set<RTCPPacketType>& packetTypes,
@@ -215,7 +200,7 @@ private:
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
  BuildResult BuildExtendedJitterReport(RtcpContext* context)
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
- BuildResult BuildSDEC(RtcpContext* context)
+ BuildResult BuildSDES(RtcpContext* context)
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
  BuildResult BuildPLI(RtcpContext* context)
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
@@ -267,15 +252,13 @@ private:
  uint32_t ssrc_ GUARDED_BY(critical_section_rtcp_sender_);
  // SSRC that we receive on our RTP channel
  uint32_t remote_ssrc_ GUARDED_BY(critical_section_rtcp_sender_);
- char cname_[RTCP_CNAME_SIZE] GUARDED_BY(critical_section_rtcp_sender_);
+ std::string cname_ GUARDED_BY(critical_section_rtcp_sender_);
 
  ReceiveStatistics* receive_statistics_
      GUARDED_BY(critical_section_rtcp_sender_);
- std::map<uint32_t, RTCPReportBlock*> internal_report_blocks_
+ std::map<uint32_t, rtcp::ReportBlock> report_blocks_
      GUARDED_BY(critical_section_rtcp_sender_);
- std::map<uint32_t, RTCPReportBlock*> external_report_blocks_
-     GUARDED_BY(critical_section_rtcp_sender_);
- std::map<uint32_t, RTCPUtility::RTCPCnameInformation*> csrc_cnames_
+ std::map<uint32_t, std::string> csrc_cnames_
      GUARDED_BY(critical_section_rtcp_sender_);
 
  // Sent
@@ -345,6 +328,8 @@ private:
 
  typedef BuildResult (RTCPSender::*Builder)(RtcpContext*);
  std::map<RTCPPacketType, Builder> builders_;
+
+ class PacketBuiltCallback;
 };
 }  // namespace webrtc
 

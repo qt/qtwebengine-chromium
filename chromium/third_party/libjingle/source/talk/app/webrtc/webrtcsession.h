@@ -84,6 +84,8 @@ class IceObserver {
  public:
   IceObserver() {}
   // Called any time the IceConnectionState changes
+  // TODO(honghaiz): Change the name to OnIceConnectionStateChange so as to
+  // conform to the w3c standard.
   virtual void OnIceConnectionChange(
       PeerConnectionInterface::IceConnectionState new_state) {}
   // Called any time the IceGatheringState changes
@@ -95,6 +97,9 @@ class IceObserver {
   // TODO(bemasc): Remove this once callers transition to OnIceGatheringChange.
   // (via PeerConnectionObserver)
   virtual void OnIceComplete() {}
+
+  // Called whenever the state changes between receiving and not receiving.
+  virtual void OnIceConnectionReceivingChange(bool receiving) {}
 
  protected:
   ~IceObserver() {}
@@ -253,19 +258,6 @@ class WebRtcSession : public cricket::BaseSession,
     metrics_observer_ = metrics_observer;
   }
 
- protected:
-  // Don't fire a new description.  The only thing it's used for is to
-  // push new media descriptions to the BaseChannels.  But in
-  // WebRtcSession, we just push to the BaseChannels directly, so we
-  // don't need this (and it would cause the descriptions to be pushed
-  // down twice).
-  // TODO(pthatcher): Remove this method and signal completely from
-  // BaseSession once all the subclasses of BaseSession push to
-  // BaseChannels directly rather than relying on the signal, or once
-  // BaseChannel no longer listens to the event and requires
-  // descriptions to be pushed down.
-  virtual void SignalNewDescription() override {}
-
  private:
   // Indicates the type of SessionDescription in a call to SetLocalDescription
   // and SetRemoteDescription.
@@ -298,9 +290,8 @@ class WebRtcSession : public cricket::BaseSession,
       cricket::TransportProxy* proxy,
       const cricket::Candidates& candidates);
   virtual void OnCandidatesAllocationDone();
+  void OnTransportReceiving(cricket::Transport* transport) override;
 
-  // Creates local session description with audio and video contents.
-  bool CreateDefaultLocalDescription();
   // Enables media channels to allow sending of media.
   void EnableChannels();
   // Creates a JsepIceCandidate and adds it to the local session description
@@ -344,6 +335,7 @@ class WebRtcSession : public cricket::BaseSession,
 
   std::string BadStateErrMsg(State state);
   void SetIceConnectionState(PeerConnectionInterface::IceConnectionState state);
+  void SetIceConnectionReceiving(bool receiving);
 
   bool ValidateBundleSettings(const cricket::SessionDescription* desc);
   bool HasRtcpMuxEnabled(const cricket::ContentInfo* content);
@@ -372,7 +364,9 @@ class WebRtcSession : public cricket::BaseSession,
 
   // Invoked when OnTransportCompleted is signaled to gather the usage
   // of IPv4/IPv6 as best connection.
-  void ReportBestConnectionState(cricket::Transport* transport);
+  void ReportBestConnectionState(const cricket::TransportStats& stats);
+
+  void ReportNegotiatedCiphers(const cricket::TransportStats& stats);
 
   rtc::scoped_ptr<cricket::VoiceChannel> voice_channel_;
   rtc::scoped_ptr<cricket::VideoChannel> video_channel_;
@@ -381,6 +375,7 @@ class WebRtcSession : public cricket::BaseSession,
   MediaStreamSignaling* mediastream_signaling_;
   IceObserver* ice_observer_;
   PeerConnectionInterface::IceConnectionState ice_connection_state_;
+  bool ice_connection_receiving_;
   rtc::scoped_ptr<SessionDescriptionInterface> local_desc_;
   rtc::scoped_ptr<SessionDescriptionInterface> remote_desc_;
   // Candidates that arrived before the remote description was set.
@@ -412,6 +407,9 @@ class WebRtcSession : public cricket::BaseSession,
 
   // Declares the bundle policy for the WebRTCSession.
   PeerConnectionInterface::BundlePolicy bundle_policy_;
+
+  // Declares the RTCP mux policy for the WebRTCSession.
+  PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcSession);
 };

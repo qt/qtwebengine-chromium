@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_var.h"
@@ -46,6 +47,7 @@ class RawVarDataTest : public testing::Test {
   }
 
  private:
+  base::MessageLoop message_loop_;  // Required to receive callbacks.
   TestGlobals globals_;
 };
 
@@ -57,7 +59,7 @@ bool WriteAndRead(const PP_Var& var, PP_Var* result) {
     return false;
   IPC::Message m;
   expected_data->Write(&m, base::Bind(&DefaultHandleWriter));
-  PickleIterator iter(m);
+  base::PickleIterator iter(m);
   scoped_ptr<RawVarDataGraph> actual_data(RawVarDataGraph::Read(&m, &iter));
   *result = actual_data->CreatePPVar(dummy_instance);
   return true;

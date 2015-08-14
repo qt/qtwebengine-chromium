@@ -84,13 +84,11 @@ ClearParameters GetClearParameters(const gl::State &state, GLbitfield mask)
 
 }
 
-FramebufferD3D::FramebufferD3D(const gl::Framebuffer::Data &data, RendererD3D *renderer)
+FramebufferD3D::FramebufferD3D(const gl::Framebuffer::Data &data)
     : FramebufferImpl(data),
-      mRenderer(renderer),
       mColorAttachmentsForRender(mData.getColorAttachments().size(), nullptr),
       mInvalidateColorAttachmentCache(true)
 {
-    ASSERT(mRenderer != nullptr);
 }
 
 FramebufferD3D::~FramebufferD3D()
@@ -121,18 +119,6 @@ void FramebufferD3D::setDrawBuffers(size_t, const GLenum *)
 
 void FramebufferD3D::setReadBuffer(GLenum)
 {
-}
-
-gl::Error FramebufferD3D::invalidate(size_t, const GLenum *)
-{
-    // No-op in D3D
-    return gl::Error(GL_NO_ERROR);
-}
-
-gl::Error FramebufferD3D::invalidateSub(size_t, const GLenum *, const gl::Rectangle &)
-{
-    // No-op in D3D
-    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error FramebufferD3D::clear(const gl::Data &data, GLbitfield mask)

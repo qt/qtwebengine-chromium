@@ -54,7 +54,7 @@ enum FetchResourceType {
     FetchSubresource
 };
 
-class CORE_EXPORT FetchContext : public NoBaseWillBeGarbageCollectedFinalized<FetchContext> {
+class CORE_EXPORT FetchContext : public GarbageCollectedFinalized<FetchContext> {
     WTF_MAKE_NONCOPYABLE(FetchContext);
 public:
     static FetchContext& nullInstance();
@@ -63,6 +63,9 @@ public:
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual bool isLiveContext() { return false; }
+    virtual void countClientHintsDPR() { }
+    virtual void countClientHintsResourceWidth() { }
+    virtual void countClientHintsViewportWidth() { }
 
     virtual void addAdditionalRequestHeaders(ResourceRequest&, FetchResourceType);
     virtual void setFirstPartyForCookies(ResourceRequest&);
@@ -84,7 +87,7 @@ public:
     virtual void willStartLoadingResource(ResourceRequest&);
     virtual void didLoadResource();
 
-    virtual void addResourceTiming(ResourceTimingInfo*, bool isMainResource);
+    virtual void addResourceTiming(const ResourceTimingInfo&);
     virtual bool allowImage(bool, const KURL&) const { return false; }
     virtual bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const { return false; }
 
@@ -100,10 +103,10 @@ public:
     virtual void sendImagePing(const KURL&);
     virtual void addConsoleMessage(const String&) const;
     virtual SecurityOrigin* securityOrigin() const { return nullptr; }
-    virtual String charset() const { return String(); }
     virtual void upgradeInsecureRequest(FetchRequest&);
     virtual void addClientHintsIfNecessary(FetchRequest&);
     virtual void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&);
+    virtual bool isLowPriorityIframe() const { return false; }
 
 protected:
     FetchContext() { }

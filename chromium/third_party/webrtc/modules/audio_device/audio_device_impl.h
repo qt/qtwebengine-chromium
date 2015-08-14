@@ -11,6 +11,10 @@
 #ifndef WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_IMPL_H
 #define WEBRTC_AUDIO_DEVICE_AUDIO_DEVICE_IMPL_H
 
+#if defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
+
+#include "webrtc/base/checks.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/audio_device/audio_device_buffer.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 
@@ -18,7 +22,7 @@ namespace webrtc
 {
 
 class AudioDeviceGeneric;
-class AudioDeviceUtility;
+class AudioManager;
 class CriticalSectionWrapper;
 
 class AudioDeviceModuleImpl : public AudioDeviceModule
@@ -192,9 +196,14 @@ public:
 
 public:
     int32_t Id() {return _id;}
-
+#if defined(WEBRTC_ANDROID)
+    // Only use this acccessor for test purposes on Android.
+    AudioManager* GetAndroidAudioManagerForTest() {
+      return _audioManagerAndroid.get();
+    }
+#endif
     AudioDeviceBuffer* GetAudioDeviceBuffer() {
-        return &_audioDeviceBuffer;
+      return &_audioDeviceBuffer;
     }
 
 private:
@@ -202,25 +211,28 @@ private:
     AudioLayer PlatformAudioLayer() const;
 
 private:
-    CriticalSectionWrapper&     _critSect;
-    CriticalSectionWrapper&     _critSectEventCb;
-    CriticalSectionWrapper&     _critSectAudioCb;
+    CriticalSectionWrapper&      _critSect;
+    CriticalSectionWrapper&      _critSectEventCb;
+    CriticalSectionWrapper&      _critSectAudioCb;
 
-    AudioDeviceObserver*        _ptrCbAudioDeviceObserver;
+    AudioDeviceObserver*         _ptrCbAudioDeviceObserver;
 
-    AudioDeviceUtility*         _ptrAudioDeviceUtility;
-    AudioDeviceGeneric*         _ptrAudioDevice;
+    AudioDeviceGeneric*          _ptrAudioDevice;
 
-    AudioDeviceBuffer           _audioDeviceBuffer;
-
-    int32_t               _id;
-    AudioLayer                  _platformAudioLayer;
-    uint32_t              _lastProcessTime;
-    PlatformType                _platformType;
-    bool                        _initialized;
-    mutable ErrorCode           _lastError;
+    AudioDeviceBuffer            _audioDeviceBuffer;
+#if defined(WEBRTC_ANDROID)
+    rtc::scoped_ptr<AudioManager> _audioManagerAndroid;
+#endif
+    int32_t                      _id;
+    AudioLayer                   _platformAudioLayer;
+    int64_t                      _lastProcessTime;
+    PlatformType                 _platformType;
+    bool                         _initialized;
+    mutable ErrorCode            _lastError;
 };
 
 }  // namespace webrtc
+
+#endif  // defined(WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE)
 
 #endif  // WEBRTC_MODULES_INTERFACE_AUDIO_DEVICE_IMPL_H_

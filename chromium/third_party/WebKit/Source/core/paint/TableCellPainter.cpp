@@ -10,6 +10,7 @@
 #include "core/paint/BoxPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace blink {
 
@@ -72,17 +73,6 @@ void TableCellPainter::paintCollapsedBorders(const PaintInfo& paintInfo, const L
     if (!paintInfo.shouldPaintWithinRoot(&m_layoutTableCell) || m_layoutTableCell.style()->visibility() != VISIBLE)
         return;
 
-    LayoutRect paintRect = paintBounds(paintOffset, AddOffsetFromParent);
-
-    LayoutRect drawingCullRect(paintRect);
-    drawingCullRect.expandEdges(m_layoutTableCell.table()->outerBorderTop(), m_layoutTableCell.table()->outerBorderRight(),
-        m_layoutTableCell.table()->outerBorderBottom(), m_layoutTableCell.table()->outerBorderLeft());
-    if (drawingCullRect.y() >= paintInfo.rect.maxY())
-        return;
-
-    if (drawingCullRect.maxY() <= paintInfo.rect.y())
-        return;
-
     const CollapsedBorderValue* tableCurrentBorderValue = m_layoutTableCell.table()->currentBorderValue();
     if (!tableCurrentBorderValue)
         return;
@@ -101,25 +91,28 @@ void TableCellPainter::paintCollapsedBorders(const PaintInfo& paintInfo, const L
     if (!shouldPaintTop && !shouldPaintBottom && !shouldPaintLeft && !shouldPaintRight)
         return;
 
-    GraphicsContext* graphicsContext = paintInfo.context;
-    LayoutObjectDrawingRecorder recorder(*graphicsContext, m_layoutTableCell, paintInfo.phase, drawingCullRect);
-    if (recorder.canUseCachedDrawing())
-        return;
-
-    bool antialias = BoxPainter::shouldAntialiasLines(graphicsContext);
-
     // Adjust our x/y/width/height so that we paint the collapsed borders at the correct location.
     int topWidth = topBorderValue.width();
     int bottomWidth = bottomBorderValue.width();
     int leftWidth = leftBorderValue.width();
     int rightWidth = rightBorderValue.width();
 
+    LayoutRect paintRect = paintBounds(paintOffset, AddOffsetFromParent);
     IntRect borderRect = pixelSnappedIntRect(paintRect.x() - leftWidth / 2,
         paintRect.y() - topWidth / 2,
         paintRect.width() + leftWidth / 2 + (rightWidth + 1) / 2,
         paintRect.height() + topWidth / 2 + (bottomWidth + 1) / 2);
 
+    if (!borderRect.intersects(paintInfo.rect))
+        return;
+
+    GraphicsContext* graphicsContext = paintInfo.context;
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*graphicsContext, m_layoutTableCell, paintInfo.phase))
+        return;
+
+    LayoutObjectDrawingRecorder recorder(*graphicsContext, m_layoutTableCell, paintInfo.phase, borderRect);
     Color cellColor = m_layoutTableCell.resolveColor(CSSPropertyColor);
+    bool antialias = BoxPainter::shouldAntialiasLines(graphicsContext);
 
     // We never paint diagonals at the joins.  We simply let the border with the highest
     // precedence paint on top of borders with lower precedence.
@@ -184,14 +177,18 @@ void TableCellPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, 
     if (!table->collapseBorders() && m_layoutTableCell.style()->emptyCells() == HIDE && !m_layoutTableCell.firstChild())
         return;
 
-    bool needsToPaintBorder = m_layoutTableCell.styleRef().hasBorder() && !table->collapseBorders();
+    bool needsToPaintBorder = m_layoutTableCell.styleRef().hasBorderDecoration() && !table->collapseBorders();
     if (!m_layoutTableCell.hasBackground() && !m_layoutTableCell.styleRef().boxShadow() && !needsToPaintBorder)
         return;
 
-    LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
-    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(paintRect));
-    if (recorder.canUseCachedDrawing())
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground))
         return;
+
+    LayoutRect visualOverflowRect = m_layoutTableCell.visualOverflowRect();
+    visualOverflowRect.moveBy(paintOffset);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(visualOverflowRect));
+
+    LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
 
     BoxPainter::paintBoxShadow(paintInfo, paintRect, m_layoutTableCell.styleRef(), Normal);
 
@@ -215,7 +212,12 @@ void TableCellPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& 
     if (!tableElt->collapseBorders() && m_layoutTableCell.style()->emptyCells() == HIDE && !m_layoutTableCell.firstChild())
         return;
 
-    BoxPainter(m_layoutTableCell).paintMaskImages(paintInfo, paintBounds(paintOffset, DoNotAddOffsetFromParent));
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTableCell, paintInfo.phase))
+        return;
+
+    LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, paintInfo.phase, paintRect);
+    BoxPainter(m_layoutTableCell).paintMaskImages(paintInfo, paintRect);
 }
 
 LayoutRect TableCellPainter::paintBounds(const LayoutPoint& paintOffset, PaintBoundOffsetBehavior paintBoundOffsetBehavior)

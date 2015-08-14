@@ -47,7 +47,7 @@ static v8::Local<v8::Value> cacheState(v8::Local<v8::Object> popStateEvent, v8::
     return state;
 }
 
-void V8PopStateEvent::stateAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
+void V8PopStateEvent::stateAttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     v8::Local<v8::Value> result = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::state(info.GetIsolate()));
 
@@ -59,16 +59,14 @@ void V8PopStateEvent::stateAttributeGetterCustom(const v8::PropertyCallbackInfo<
     PopStateEvent* event = V8PopStateEvent::toImpl(info.Holder());
     History* history = event->history();
     if (!history || !event->serializedState()) {
-        if (!event->serializedState()) {
-            // If we're in an isolated world and the event was created in the main world,
-            // we need to find the 'state' property on the main world wrapper and clone it.
-            v8::Local<v8::Value> mainWorldState = V8HiddenValue::getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenValue::state(info.GetIsolate()));
-            if (!mainWorldState.IsEmpty())
-                event->setSerializedState(SerializedScriptValueFactory::instance().createAndSwallowExceptions(info.GetIsolate(), mainWorldState));
-        }
+        // If the event doesn't have serializedState(), it means that the
+        // event was initialized with PopStateEventInit. In such case, we need
+        // to get a v8 value for the current world from state().
         if (event->serializedState())
             result = event->serializedState()->deserialize();
         else
+            result = event->state().v8ValueFor(ScriptState::current(info.GetIsolate()));
+        if (result.IsEmpty())
             result = v8::Null(info.GetIsolate());
         v8SetReturnValue(info, cacheState(info.Holder(), result, info.GetIsolate()));
         return;

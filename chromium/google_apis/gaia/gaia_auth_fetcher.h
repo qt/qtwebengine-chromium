@@ -97,13 +97,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   void StartIssueAuthTokenForOAuth2(const std::string& oauth2_access_token,
                                     const char* const service);
 
-  // Start a request to exchange an "lso" service token given by |auth_token|
-  // for an OAuthLogin-scoped oauth2 token.
-  //
-  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
-  // called on the consumer on the original thread.
-  void StartLsoForOAuthLoginTokenExchange(const std::string& auth_token);
-
   // Start a request to revoke |auth_token|.
   //
   // OnOAuth2RevokeTokenCompleted will be called on the consumer on the original
@@ -197,6 +190,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // Starts a request to list the accounts in the GAIA cookie.
   void StartListAccounts();
 
+  // Starts a request to log out the accounts in the GAIA cookie.
+  void StartLogOut();
+
   // Starts a request to get the list of URLs to check for connection info.
   // Returns token/URL pairs to check, and the resulting status can be given to
   // /MergeSession requests.
@@ -221,7 +217,7 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   bool HasPendingFetch();
 
   // Stop any URL fetches in progress.
-  void CancelRequest();
+  virtual void CancelRequest();
 
   // From a URLFetcher result, generate an appropriate error.
   // From the API documentation, both IssueAuthToken and ClientLogin have
@@ -229,6 +225,30 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static GoogleServiceAuthError GenerateOAuthLoginError(
       const std::string& data,
       const net::URLRequestStatus& status);
+
+ protected:
+  // Create and start |fetcher_|, used to make all Gaia request.  |body| is
+  // used as the body of the POST request sent to GAIA.  Any strings listed in
+  // |headers| are added as extra HTTP headers in the request.
+  //
+  // |load_flags| are passed to directly to net::URLFetcher::Create() when
+  // creating the URL fetcher.
+  //
+  // HasPendingFetch() should return false before calling this method, and will
+  // return true afterwards.
+  virtual void CreateAndStartGaiaFetcher(const std::string& body,
+                                         const std::string& headers,
+                                         const GURL& gaia_gurl,
+                                         int load_flags);
+
+  // Dispatch the results of a request.
+  void DispatchFetchedRequest(const GURL& url,
+                              const std::string& data,
+                              const net::ResponseCookies& cookies,
+                              const net::URLRequestStatus& status,
+                              int response_code);
+
+  void SetPendingFetch(bool pending_fetch);
 
  private:
   // ClientLogin body constants that don't change
@@ -242,11 +262,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static const char kClientLoginCaptchaFormat[];
   // The format of the POST body for IssueAuthToken.
   static const char kIssueAuthTokenFormat[];
-  // The format of the POST body to get OAuth2 auth code from auth token.
-  static const char kClientLoginToOAuth2BodyFormat[];
-  // The format of the POST body to get OAuth2 auth code from auth token. This
-  // format is used for request annotated with device_id.
-  static const char kClientLoginToOAuth2WithDeviceTypeBodyFormat[];
+  // The format of the query string to get OAuth2 auth code from auth token.
+  static const char kClientLoginToOAuth2URLFormat[];
   // The format of the POST body to get OAuth2 token pair from auth code.
   static const char kOAuth2CodeToTokenPairBodyFormat[];
   // Additional param for the POST body to get OAuth2 token pair from auth code.
@@ -319,6 +336,10 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                              const net::URLRequestStatus& status,
                              int response_code);
 
+  void OnLogOutFetched(const std::string& data,
+                       const net::URLRequestStatus& status,
+                       int response_code);
+
   void OnGetUserInfoFetched(const std::string& data,
                             const net::URLRequestStatus& status,
                             int response_code);
@@ -390,8 +411,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static std::string MakeIssueAuthTokenBody(const std::string& sid,
                                             const std::string& lsid,
                                             const char* const service);
-  // Create body to get OAuth2 auth code.
-  static std::string MakeGetAuthCodeBody(bool include_device_type);
   // Given auth code and device ID (optional), create body to get OAuth2 token
   // pair.
   static std::string MakeGetTokenPairBody(const std::string& auth_code,
@@ -420,20 +439,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                                               const std::string& domain,
                                               const std::string& login_hint);
 
-  // Create a fetcher usable for making any Gaia request.  |body| is used
-  // as the body of the POST request sent to GAIA.  Any strings listed in
-  // |headers| are added as extra HTTP headers in the request.
-  //
-  // |load_flags| are passed to directly to net::URLFetcher::Create() when
-  // creating the URL fetcher.
-  static scoped_ptr<net::URLFetcher> CreateGaiaFetcher(
-      net::URLRequestContextGetter* getter,
-      const std::string& body,
-      const std::string& headers,
-      const GURL& gaia_gurl,
-      int load_flags,
-      net::URLFetcherDelegate* delegate);
-
   // From a URLFetcher result, generate an appropriate error.
   // From the API documentation, both IssueAuthToken and ClientLogin have
   // the same error returns.
@@ -454,6 +459,7 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   const GURL uberauth_token_gurl_;
   const GURL oauth_login_gurl_;
   const GURL list_accounts_gurl_;
+  const GURL logout_gurl_;
   const GURL get_check_connection_info_url_;
   const GURL oauth2_iframe_url_;
 

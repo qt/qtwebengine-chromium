@@ -5,9 +5,11 @@
 #include "content/browser/loader/resource_loader.h"
 
 #include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -40,6 +42,9 @@ using base::TimeTicks;
 namespace content {
 namespace {
 
+// The interval for calls to ResourceLoader::ReportUploadProgress.
+const int kUploadProgressIntervalMsec = 100;
+
 void PopulateResourceResponse(ResourceRequestInfoImpl* info,
                               net::URLRequest* request,
                               ResourceResponse* response) {
@@ -60,14 +65,7 @@ void PopulateResourceResponse(ResourceRequestInfoImpl* info,
   response->head.socket_address = request->GetSocketAddress();
   if (ServiceWorkerRequestHandler* handler =
           ServiceWorkerRequestHandler::GetHandler(request)) {
-    handler->GetExtraResponseInfo(
-        &response->head.was_fetched_via_service_worker,
-        &response->head.was_fallback_required_by_service_worker,
-        &response->head.original_url_via_service_worker,
-        &response->head.response_type_via_service_worker,
-        &response->head.service_worker_fetch_start,
-        &response->head.service_worker_fetch_ready,
-        &response->head.service_worker_fetch_end);
+    handler->GetExtraResponseInfo(&response->head);
   }
   AppCacheInterceptor::GetExtraResponseInfo(
       request,
@@ -89,6 +87,9 @@ ResourceLoader::ResourceLoader(scoped_ptr<net::URLRequest> request,
       last_upload_position_(0),
       waiting_for_upload_progress_ack_(false),
       is_transferring_(false),
+      times_cancelled_before_request_start_(0),
+      started_request_(false),
+      times_cancelled_after_request_start_(0),
       weak_ptr_factory_(this) {
   request_->set_delegate(this);
   handler_->SetController(this);
@@ -139,6 +140,8 @@ void ResourceLoader::CancelWithError(int error_code) {
 }
 
 void ResourceLoader::ReportUploadProgress() {
+  DCHECK(GetRequestInfo()->is_upload_progress_enabled());
+
   if (waiting_for_upload_progress_ack_)
     return;  // Send one progress event at a time.
 
@@ -161,11 +164,8 @@ void ResourceLoader::ReportUploadProgress() {
   bool too_much_time_passed = time_since_last > kOneSecond;
 
   if (is_finished || enough_new_progress || too_much_time_passed) {
-    ResourceRequestInfoImpl* info = GetRequestInfo();
-    if (info->is_upload_progress_enabled()) {
-      handler_->OnUploadProgress(progress.position(), progress.size());
-      waiting_for_upload_progress_ack_ = true;
-    }
+    handler_->OnUploadProgress(progress.position(), progress.size());
+    waiting_for_upload_progress_ack_ = true;
     last_upload_ticks_ = TimeTicks::Now();
     last_upload_position_ = progress.position();
   }
@@ -187,8 +187,8 @@ void ResourceLoader::MarkAsTransferring() {
 void ResourceLoader::CompleteTransfer() {
   // Although CrossSiteResourceHandler defers at OnResponseStarted
   // (DEFERRED_READ), it may be seeing a replay of events via
-  // BufferedResourceHandler, and so the request itself is actually deferred at
-  // a later read stage.
+  // MimeTypeResourceHandler, and so the request itself is actually deferred
+  // at a later read stage.
   DCHECK(DEFERRED_READ == deferred_stage_ ||
          DEFERRED_RESPONSE_COMPLETE == deferred_stage_);
   DCHECK(is_transferring_);
@@ -225,7 +225,7 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
                                         bool* defer) {
   DCHECK_EQ(request_.get(), unused);
 
-  VLOG(1) << "OnReceivedRedirect: " << request_->url().spec();
+  DVLOG(1) << "OnReceivedRedirect: " << request_->url().spec();
   DCHECK(request_->status().is_success());
 
   ResourceRequestInfoImpl* info = GetRequestInfo();
@@ -233,8 +233,8 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
   if (info->GetProcessType() != PROCESS_TYPE_PLUGIN &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->
           CanRequestURL(info->GetChildID(), redirect_info.new_url)) {
-    VLOG(1) << "Denied unauthorized request for "
-            << redirect_info.new_url.possibly_invalid_spec();
+    DVLOG(1) << "Denied unauthorized request for "
+             << redirect_info.new_url.possibly_invalid_spec();
 
     // Tell the renderer that this request was disallowed.
     Cancel();
@@ -332,7 +332,9 @@ void ResourceLoader::OnBeforeNetworkStart(net::URLRequest* unused,
 void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
   DCHECK_EQ(request_.get(), unused);
 
-  VLOG(1) << "OnResponseStarted: " << request_->url().spec();
+  DVLOG(1) << "OnResponseStarted: " << request_->url().spec();
+
+  progress_timer_.Stop();
 
   // The CanLoadPage check should take place after any server redirects have
   // finished, at the point in time that we know a page will commit in the
@@ -355,8 +357,10 @@ void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
   // We want to send a final upload progress message prior to sending the
   // response complete message even if we're waiting for an ack to to a
   // previous upload progress message.
-  waiting_for_upload_progress_ack_ = false;
-  ReportUploadProgress();
+  if (info->is_upload_progress_enabled()) {
+    waiting_for_upload_progress_ack_ = false;
+    ReportUploadProgress();
+  }
 
   CompleteResponseStarted();
 
@@ -371,8 +375,8 @@ void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
 
 void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
   DCHECK_EQ(request_.get(), unused);
-  VLOG(1) << "OnReadCompleted: \"" << request_->url().spec() << "\""
-          << " bytes_read = " << bytes_read;
+  DVLOG(1) << "OnReadCompleted: \"" << request_->url().spec() << "\""
+           << " bytes_read = " << bytes_read;
 
   // bytes_read == -1 always implies an error.
   if (bytes_read == -1 || !request_->status().is_success()) {
@@ -461,23 +465,20 @@ void ResourceLoader::Resume() {
       request_->FollowDeferredRedirect();
       break;
     case DEFERRED_READ:
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&ResourceLoader::ResumeReading,
-                     weak_ptr_factory_.GetWeakPtr()));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&ResourceLoader::ResumeReading,
+                                weak_ptr_factory_.GetWeakPtr()));
       break;
     case DEFERRED_RESPONSE_COMPLETE:
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&ResourceLoader::ResponseCompleted,
-                     weak_ptr_factory_.GetWeakPtr()));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&ResourceLoader::ResponseCompleted,
+                                weak_ptr_factory_.GetWeakPtr()));
       break;
     case DEFERRED_FINISH:
       // Delay self-destruction since we don't know how we were reached.
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&ResourceLoader::CallDidFinishLoading,
-                     weak_ptr_factory_.GetWeakPtr()));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&ResourceLoader::CallDidFinishLoading,
+                                weak_ptr_factory_.GetWeakPtr()));
       break;
   }
 }
@@ -493,13 +494,23 @@ void ResourceLoader::StartRequestInternal() {
     return;
   }
 
+  started_request_ = true;
   request_->Start();
 
   delegate_->DidStartRequest(this);
+
+  if (GetRequestInfo()->is_upload_progress_enabled() &&
+      request_->has_upload()) {
+    progress_timer_.Start(
+        FROM_HERE,
+        base::TimeDelta::FromMilliseconds(kUploadProgressIntervalMsec),
+        this,
+        &ResourceLoader::ReportUploadProgress);
+  }
 }
 
 void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
-  VLOG(1) << "CancelRequestInternal: " << request_->url().spec();
+  DVLOG(1) << "CancelRequestInternal: " << request_->url().spec();
 
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
@@ -526,16 +537,21 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   }
   ssl_client_auth_handler_.reset();
 
+  if (!started_request_) {
+    times_cancelled_before_request_start_++;
+  } else {
+    times_cancelled_after_request_start_++;
+  }
+
   request_->CancelWithError(error);
 
   if (!was_pending) {
     // If the request isn't in flight, then we won't get an asynchronous
     // notification from the request, so we have to signal ourselves to finish
     // this request.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ResourceLoader::ResponseCompleted,
-                   weak_ptr_factory_.GetWeakPtr()));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&ResourceLoader::ResponseCompleted,
+                              weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
@@ -610,12 +626,10 @@ void ResourceLoader::StartReading(bool is_continuation) {
   } else {
     // Else, trigger OnReadCompleted asynchronously to avoid starving the IO
     // thread in case the URLRequest can provide data synchronously.
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&ResourceLoader::OnReadCompleted,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   request_.get(),
-                   bytes_read));
+                   weak_ptr_factory_.GetWeakPtr(), request_.get(), bytes_read));
   }
 }
 
@@ -685,7 +699,7 @@ void ResourceLoader::CompleteRead(int bytes_read) {
 }
 
 void ResourceLoader::ResponseCompleted() {
-  VLOG(1) << "ResponseCompleted: " << request_->url().spec();
+  DVLOG(1) << "ResponseCompleted: " << request_->url().spec();
   RecordHistograms();
   ResourceRequestInfoImpl* info = GetRequestInfo();
 

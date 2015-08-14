@@ -29,6 +29,7 @@
 #define LocalFrame_h
 
 #include "core/CoreExport.h"
+#include "core/dom/WeakIdentifierMap.h"
 #include "core/frame/Frame.h"
 #include "core/frame/LocalFrameLifecycleNotifier.h"
 #include "core/frame/LocalFrameLifecycleObserver.h"
@@ -83,16 +84,18 @@ namespace blink {
         // Frame overrides:
         virtual ~LocalFrame();
         DECLARE_VIRTUAL_TRACE();
-        virtual bool isLocalFrame() const override { return true; }
-        virtual DOMWindow* domWindow() const override;
+        bool isLocalFrame() const override { return true; }
+        DOMWindow* domWindow() const override;
         WindowProxy* windowProxy(DOMWrapperWorld&) override;
-        virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
-        virtual void reload(ReloadPolicy, ClientRedirectPolicy) override;
-        virtual void detach() override;
-        virtual void disconnectOwnerElement() override;
-        virtual SecurityContext* securityContext() const override;
+        void navigate(Document& originDocument, const KURL&, bool lockBackForwardList, UserGestureStatus) override;
+        void navigate(const FrameLoadRequest&) override;
+        void reload(FrameLoadType, ClientRedirectPolicy) override;
+        void detach(FrameDetachType) override;
+        void disconnectOwnerElement() override;
+        bool shouldClose() override;
+        SecurityContext* securityContext() const override;
         void printNavigationErrorMessage(const Frame&, const char* reason) override;
-        bool isLoadingAsChild() const override;
+        bool prepareForCommit() override;
 
         void willDetachFrameHost();
 
@@ -126,8 +129,6 @@ namespace blink {
         InstrumentingAgents* instrumentingAgents() const { return m_instrumentingAgents.get(); }
 
     // ======== All public functions below this point are candidates to move out of LocalFrame into another class. ========
-
-        bool inScope(TreeScope*) const;
 
         // See GraphicsLayerClient.h for accepted flags.
         String layerTreeAsText(unsigned flags = 0) const;
@@ -164,7 +165,7 @@ namespace blink {
 
         // FIXME: once scroll customization is enabled everywhere
         // (crbug.com/416862), this should take a ScrollState object.
-        bool applyScrollDelta(const FloatSize& delta, bool isScrollBegin);
+        ScrollResult applyScrollDelta(const FloatSize& delta, bool isScrollBegin);
         bool shouldScrollTopControls(const FloatSize& delta) const;
 
 #if ENABLE(OILPAN)
@@ -303,6 +304,7 @@ namespace blink {
 
     DEFINE_TYPE_CASTS(LocalFrame, Frame, localFrame, localFrame->isLocalFrame(), localFrame.isLocalFrame());
 
+    DECLARE_WEAK_IDENTIFIER_MAP(LocalFrame);
 } // namespace blink
 
 // During refactoring, there are some places where we need to do type conversions that

@@ -83,12 +83,11 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest {
   void StartTracing() {
     CHECK(trace_log_ == NULL) << "Can only can start tracing once";
     trace_log_ = base::trace_event::TraceLog::GetInstance();
-    base::trace_event::TraceOptions trace_options(
-        base::trace_event::RECORD_UNTIL_FULL);
-    trace_options.enable_sampling = true;
-    trace_log_->SetEnabled(base::trace_event::CategoryFilter("video"),
-                           base::trace_event::TraceLog::RECORDING_MODE,
-                           trace_options);
+    base::trace_event::TraceConfig trace_config(
+        "video", base::trace_event::RECORD_UNTIL_FULL);
+    trace_config.EnableSampling();
+    trace_log_->SetEnabled(trace_config,
+                           base::trace_event::TraceLog::RECORDING_MODE);
     // Check that we are indeed recording.
     EXPECT_EQ(trace_log_->GetNumTracesRecorded(), 1);
   }
@@ -200,10 +199,9 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest {
     int error_code;
     std::string error_message;
     scoped_ptr<base::Value> value(
-        base::JSONReader::ReadAndReturnError(devices_as_json,
-                                             base::JSON_ALLOW_TRAILING_COMMAS,
-                                             &error_code,
-                                             &error_message));
+        base::JSONReader::DeprecatedReadAndReturnError(
+            devices_as_json, base::JSON_ALLOW_TRAILING_COMMAS, &error_code,
+            &error_message));
 
     ASSERT_TRUE(value.get() != NULL) << error_message;
     EXPECT_EQ(value->GetType(), base::Value::TYPE_LIST);

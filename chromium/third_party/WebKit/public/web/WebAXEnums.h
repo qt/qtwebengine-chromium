@@ -119,6 +119,7 @@ enum WebAXRole {
     WebAXRoleImageMap,
     WebAXRoleImage,
     WebAXRoleInlineTextBox,
+    WebAXRoleInputTime,
     WebAXRoleLabel,
     WebAXRoleLegend,
     WebAXRoleLink,
@@ -129,6 +130,7 @@ enum WebAXRole {
     WebAXRoleList,
     WebAXRoleLog,
     WebAXRoleMain,
+    WebAXRoleMark,
     WebAXRoleMarquee,
     WebAXRoleMath,
     WebAXRoleMenuBar,
@@ -241,15 +243,6 @@ enum WebAXExpanded {
     WebAXExpandedUndefined = 0,
     WebAXExpandedCollapsed,
     WebAXExpandedExpanded
-};
-
-// Attribute definition values.
-// These values must match blink::AccessibilityOptionalBool values.
-// Enforced in AssertMatchingEnums.cpp.
-enum WebAXOptionalBool {
-    WebAXOptionalBoolUndefined = 0,
-    WebAXOptionalBoolTrue,
-    WebAXOptionalBoolFalse
 };
 
 // These values must match blink::AccessibilityOrientation values.

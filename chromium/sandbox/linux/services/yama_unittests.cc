@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_util.h"
@@ -30,7 +31,7 @@ bool HasLinux32Bug() {
   bool is_kernel_64bit =
       base::SysInfo::OperatingSystemArchitecture() == "x86_64";
   bool is_linux = base::SysInfo::OperatingSystemName() == "Linux";
-  bool is_3_dot_2 = StartsWithASCII(
+  bool is_3_dot_2 = base::StartsWithASCII(
       base::SysInfo::OperatingSystemVersion(), "3.2", /*case_sensitive=*/false);
   if (is_kernel_64bit && is_linux && is_3_dot_2)
     return true;
@@ -151,14 +152,12 @@ TEST(Yama, RestrictPtraceWorks) {
   }
 }
 
-void DoNothing() {}
-
 SANDBOX_TEST(Yama, RestrictPtraceIsDefault) {
   if (!Yama::IsPresent() || HasLinux32Bug())
     return;
 
   CHECK(Yama::DisableYamaRestrictions());
-  ScopedProcess process1(base::Bind(&DoNothing));
+  ScopedProcess process1(base::Bind(&base::DoNothing));
 
   if (Yama::IsEnforcing()) {
     // Check that process1 is protected by Yama, even though it has

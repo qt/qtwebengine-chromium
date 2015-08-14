@@ -172,6 +172,8 @@ int HMAC_Final(HMAC_CTX *ctx, uint8_t *out, unsigned int *out_len) {
   unsigned int i;
   uint8_t buf[EVP_MAX_MD_SIZE];
 
+  /* TODO(davidben): The only thing that can officially fail here is
+   * |EVP_MD_CTX_copy_ex|, but even that should be impossible in this case. */
   if (!EVP_DigestFinal_ex(&ctx->md_ctx, buf, &i) ||
       !EVP_MD_CTX_copy_ex(&ctx->md_ctx, &ctx->o_ctx) ||
       !EVP_DigestUpdate(&ctx->md_ctx, buf, i) ||
@@ -196,12 +198,6 @@ int HMAC_CTX_copy_ex(HMAC_CTX *dest, const HMAC_CTX *src) {
 
   dest->md = src->md;
   return 1;
-}
-
-void HMAC_CTX_set_flags(HMAC_CTX *ctx, unsigned long flags) {
-  EVP_MD_CTX_set_flags(&ctx->i_ctx, flags);
-  EVP_MD_CTX_set_flags(&ctx->o_ctx, flags);
-  EVP_MD_CTX_set_flags(&ctx->md_ctx, flags);
 }
 
 int HMAC_Init(HMAC_CTX *ctx, const void *key, int key_len, const EVP_MD *md) {

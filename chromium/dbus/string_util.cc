@@ -14,7 +14,7 @@ bool IsValidObjectPath(const std::string& value) {
   const bool kCaseSensitive = true;
 
   // A valid object path begins with '/'.
-  if (!StartsWithASCII(value, "/", kCaseSensitive))
+  if (!base::StartsWithASCII(value, "/", kCaseSensitive))
     return false;
 
   // Elements are pieces delimited by '/'. For instance, "org", "chromium",
@@ -39,7 +39,7 @@ bool IsValidObjectPath(const std::string& value) {
   }
 
   // A trailing '/' character is not allowed unless the path is the root path.
-  if (value.size() > 1 && EndsWith(value, "/", kCaseSensitive))
+  if (value.size() > 1 && base::EndsWith(value, "/", kCaseSensitive))
     return false;
 
   return true;

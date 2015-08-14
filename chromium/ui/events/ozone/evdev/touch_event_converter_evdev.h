@@ -15,6 +15,7 @@
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 #include "ui/events/ozone/evdev/event_device_info.h"
 #include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
+#include "ui/events/ozone/evdev/touch_evdev_debug_buffer.h"
 
 namespace ui {
 
@@ -38,7 +39,13 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   bool HasTouchscreen() const override;
   gfx::Size GetTouchscreenSize() const override;
   int GetTouchPoints() const override;
-  void OnStopped() override;
+  void OnEnabled() override;
+  void OnDisabled() override;
+
+  void DumpTouchEventLog(const char* filename) override;
+
+  // Update touch event logging state
+  void SetTouchEventLoggingEnabled(bool enabled) override;
 
   // Unsafe part of initialization.
   virtual void Initialize(const EventDeviceInfo& info);
@@ -49,7 +56,7 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   // Overidden from base::MessagePumpLibevent::Watcher.
   void OnFileCanReadWithoutBlocking(int fd) override;
 
-  virtual bool Reinitialize();
+  virtual void Reinitialize();
 
   void ProcessMultitouchEvent(const input_event& input);
   void EmulateMultitouchEvent(const input_event& input);
@@ -77,11 +84,11 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   // Dispatcher for events.
   DeviceEventDispatcherEvdev* dispatcher_;
 
-  // Set if we have seen a SYN_DROPPED and not yet re-synced with the device.
-  bool syn_dropped_;
+  // Set if we drop events in kernel (SYN_DROPPED) or in process.
+  bool dropped_events_ = false;
 
   // Device has multitouch capability.
-  bool has_mt_;
+  bool has_mt_ = false;
 
   // Use BTN_LEFT instead of BT_TOUCH.
   bool quirk_left_mouse_button_ = false;
@@ -99,19 +106,25 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   float y_num_tuxels_;
 
   // Number of touch points reported by driver
-  int touch_points_;
+  int touch_points_ = 0;
 
   // Tracking id counter.
-  int next_tracking_id_;
+  int next_tracking_id_ = 0;
 
   // Touch point currently being updated from the /dev/input/event* stream.
-  size_t current_slot_;
+  size_t current_slot_ = 0;
+
+  // Flag that indicates if the touch logging enabled or not.
+  bool touch_logging_enabled_ = true;
 
   // In-progress touch points.
   std::vector<InProgressTouchEvdev> events_;
 
   // Finds touch noise.
   scoped_ptr<TouchNoiseFinder> touch_noise_finder_;
+
+  // Records the recent touch events. It is used to fill the feedback reports
+  TouchEventLogEvdev touch_evdev_debug_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEventConverterEvdev);
 };

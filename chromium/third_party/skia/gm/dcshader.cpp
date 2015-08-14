@@ -34,7 +34,7 @@ public:
     }
 
     bool asFragmentProcessor(GrContext*, const SkPaint& paint, const SkMatrix& viewM,
-                             const SkMatrix* localMatrix, GrColor* color,
+                             const SkMatrix* localMatrix, GrColor* color, GrProcessorDataManager*,
                              GrFragmentProcessor** fp) const override;
 
 #ifndef SK_IGNORE_TO_STRING
@@ -55,7 +55,7 @@ SkFlattenable* DCShader::CreateProc(SkReadBuffer& buf) {
 
 class DCFP : public GrFragmentProcessor {
 public:
-    DCFP(const SkMatrix& m) : fDeviceTransform(kDevice_GrCoordSet, m) {
+    DCFP(GrProcessorDataManager*, const SkMatrix& m) : fDeviceTransform(kDevice_GrCoordSet, m) {
         this->addCoordTransform(&fDeviceTransform);
         this->initClassID<DCFP>();
     }
@@ -101,8 +101,9 @@ private:
 
 bool DCShader::asFragmentProcessor(GrContext*, const SkPaint& paint, const SkMatrix& viewM,
                                    const SkMatrix* localMatrix, GrColor* color,
+                                   GrProcessorDataManager* procDataManager,
                                    GrFragmentProcessor** fp) const {
-    *fp = SkNEW_ARGS(DCFP, (fDeviceMatrix));
+    *fp = SkNEW_ARGS(DCFP, (procDataManager, fDeviceMatrix));
     *color = GrColorPackA4(paint.getAlpha());
     return true;
 }
@@ -110,7 +111,7 @@ bool DCShader::asFragmentProcessor(GrContext*, const SkPaint& paint, const SkMat
 class DCShaderGM : public GM {
 public:
     DCShaderGM() {
-        this->setBGColor(0xFFAABBCC);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFAABBCC));
     }
 
     ~DCShaderGM() override {
@@ -210,7 +211,7 @@ protected:
             }
 
             virtual void setFont(SkPaint* paint) {
-                sk_tool_utils::set_portable_typeface(paint);
+                sk_tool_utils::set_portable_typeface_always(paint);
             }
 
             virtual const char* text() const { return "Hello, Skia!"; }

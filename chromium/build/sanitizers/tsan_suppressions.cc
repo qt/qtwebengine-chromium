@@ -141,9 +141,6 @@ char kTSanDefaultSuppressions[] =
 // http://crbug.com/285242
 "race:media::PulseAudioOutputStream::SetVolume\n"
 
-// http://crbug.com/296883
-"race:net::URLFetcherCore::Stop\n"
-
 // http://crbug.com/308590
 "race:CustomThreadWatcher::~CustomThreadWatcher\n"
 
@@ -273,9 +270,6 @@ char kTSanDefaultSuppressions[] =
 "race:g_next_user_script_id\n"
 
 // http://crbug.com/389098
-"race:webrtc::RtpToNtpMs\n"
-"race:webrtc::UpdateRtcpList\n"
-"race:webrtc::RemoteNtpTimeEstimator::Estimate\n"
 "race:webrtc::voe::TransmitMixer::EnableStereoChannelSwapping\n"
 
 // http://crbug.com/397022
@@ -285,8 +279,8 @@ char kTSanDefaultSuppressions[] =
 // http://crbug.com/415472
 "deadlock:base::trace_event::TraceLog::GetCategoryGroupEnabled\n"
 
-// http://crbug.com/425057
-"deadlock:webrtc::ViEChannelManagerScoped::ViEChannelManagerScoped\n"
+// http://crbug.com/490856
+"deadlock:content::TracingControllerImpl::SetEnabledOnFileThread\n"
 
 // http://crbug.com/417193
 // Suppressing both AudioContext.{cpp,h}.

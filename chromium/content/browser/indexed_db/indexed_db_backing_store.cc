@@ -958,7 +958,7 @@ bool IndexedDBBackingStore::RecordCorruptionInfo(
   base::DictionaryValue root_dict;
   root_dict.SetString("message", message);
   std::string output_js;
-  base::JSONWriter::Write(&root_dict, &output_js);
+  base::JSONWriter::Write(root_dict, &output_js);
 
   base::File file(info_path,
                   base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
@@ -3174,6 +3174,20 @@ bool IndexedDBBackingStore::Cursor::Continue(const IndexedDBKey* key,
                                              const IndexedDBKey* primary_key,
                                              IteratorState next_state,
                                              leveldb::Status* s) {
+  DCHECK(!key || next_state == SEEK);
+
+  if (cursor_options_.forward)
+    return ContinueNext(key, primary_key, next_state, s);
+  else
+    return ContinuePrevious(key, primary_key, next_state, s);
+}
+
+bool IndexedDBBackingStore::Cursor::ContinueNext(
+    const IndexedDBKey* key,
+    const IndexedDBKey* primary_key,
+    IteratorState next_state,
+    leveldb::Status* s) {
+  DCHECK(cursor_options_.forward);
   DCHECK(!key || key->IsValid());
   DCHECK(!primary_key || primary_key->IsValid());
   *s = leveldb::Status::OK();
@@ -3181,116 +3195,166 @@ bool IndexedDBBackingStore::Cursor::Continue(const IndexedDBKey* key,
   // TODO(alecflett): avoid a copy here?
   IndexedDBKey previous_key = current_key_ ? *current_key_ : IndexedDBKey();
 
-  // When iterating with PrevNoDuplicate, spec requires that the
-  // value we yield for each key is the first duplicate in forwards
-  // order.
-  IndexedDBKey last_duplicate_key;
+  // If seeking to a particular key (or key and primary key), skip the cursor
+  // forward rather than iterating it.
+  if (next_state == SEEK && key) {
+    std::string leveldb_key =
+        primary_key ? EncodeKey(*key, *primary_key) : EncodeKey(*key);
+    *s = iterator_->Seek(leveldb_key);
+    if (!s->ok())
+      return false;
+    // Cursor is at the next value already; don't advance it again below.
+    next_state = READY;
+  }
 
-  bool forward = cursor_options_.forward;
-  bool first_iteration_forward = forward;
-  bool flipped = false;
+  for (;;) {
+    // Only advance the cursor if it was not set to position already, either
+    // because it is newly opened (and positioned at start of range) or
+    // skipped forward by continue with a specific key.
+    if (next_state == SEEK) {
+      *s = iterator_->Next();
+      if (!s->ok())
+        return false;
+    } else {
+      next_state = SEEK;
+    }
+
+    // Fail if we've run out of data or gone past the cursor's bounds.
+    if (!iterator_->IsValid() || IsPastBounds())
+      return false;
+
+    // TODO(jsbell): Document why this might be false. When do we ever not
+    // seek into the range before starting cursor iteration?
+    if (!HaveEnteredRange())
+      continue;
+
+    // The row may not load because there's a stale entry in the index. If no
+    // error then not fatal.
+    if (!LoadCurrentRow(s)) {
+      if (!s->ok())
+        return false;
+      continue;
+    }
+
+    // Cursor is now positioned at a non-stale record in range.
+
+    // "Unique" cursors should continue seeking until a new key value is seen.
+    if (cursor_options_.unique && previous_key.IsValid() &&
+        current_key_->Equals(previous_key)) {
+      continue;
+    }
+
+    break;
+  }
+
+  return true;
+}
+
+bool IndexedDBBackingStore::Cursor::ContinuePrevious(
+    const IndexedDBKey* key,
+    const IndexedDBKey* primary_key,
+    IteratorState next_state,
+    leveldb::Status* s) {
+  DCHECK(!cursor_options_.forward);
+  DCHECK(!key || key->IsValid());
+  DCHECK(!primary_key || primary_key->IsValid());
+  *s = leveldb::Status::OK();
+
+  // TODO(alecflett): avoid a copy here?
+  IndexedDBKey previous_key = current_key_ ? *current_key_ : IndexedDBKey();
+
+  // When iterating with PrevNoDuplicate, spec requires that the value we
+  // yield for each key is the *first* duplicate in forwards order. We do this
+  // by remembering the duplicate key (implicitly, the first record seen with
+  // a new key), keeping track of the earliest duplicate seen, and continuing
+  // until yet another new key is seen, at which point the earliest duplicate
+  // is the correct cursor position.
+  IndexedDBKey duplicate_key;
+  std::string earliest_duplicate;
+
+  // TODO(jsbell): Optimize continuing to a specific key (or key and primary
+  // key) for reverse cursors as well. See Seek() optimization at the start of
+  // ContinueNext() for an example.
 
   for (;;) {
     if (next_state == SEEK) {
-      // TODO(jsbell): Optimize seeking for reverse cursors as well.
-      if (first_iteration_forward && key) {
-        first_iteration_forward = false;
-        std::string leveldb_key;
-        if (primary_key) {
-          leveldb_key = EncodeKey(*key, *primary_key);
-        } else {
-          leveldb_key = EncodeKey(*key);
-        }
-        *s = iterator_->Seek(leveldb_key);
-      } else if (forward) {
-        *s = iterator_->Next();
-      } else {
-        *s = iterator_->Prev();
-      }
+      *s = iterator_->Prev();
       if (!s->ok())
         return false;
     } else {
       next_state = SEEK;  // for subsequent iterations
     }
 
-    if (!iterator_->IsValid()) {
-      if (!forward && last_duplicate_key.IsValid()) {
-        // We need to walk forward because we hit the end of
-        // the data.
-        forward = true;
-        flipped = true;
-        continue;
-      }
-
+    // If we've run out of data or gone past the cursor's bounds.
+    if (!iterator_->IsValid() || IsPastBounds()) {
+      if (duplicate_key.IsValid())
+        break;
       return false;
     }
 
-    if (IsPastBounds()) {
-      if (!forward && last_duplicate_key.IsValid()) {
-        // We need to walk forward because now we're beyond the
-        // bounds defined by the cursor.
-        forward = true;
-        flipped = true;
-        continue;
-      }
-
-      return false;
-    }
-
+    // TODO(jsbell): Document why this might be false. When do we ever not
+    // seek into the range before starting cursor iteration?
     if (!HaveEnteredRange())
       continue;
 
-    // The row may not load because there's a stale entry in the
-    // index. This is not fatal.
-    if (!LoadCurrentRow())
+    // The row may not load because there's a stale entry in the index. If no
+    // error then not fatal.
+    if (!LoadCurrentRow(s)) {
+      if (!s->ok())
+        return false;
       continue;
-
-    if (key) {
-      if (forward) {
-        if (primary_key && current_key_->Equals(*key) &&
-            this->primary_key().IsLessThan(*primary_key))
-          continue;
-        if (!flipped && current_key_->IsLessThan(*key))
-          continue;
-      } else {
-        if (primary_key && key->Equals(*current_key_) &&
-            primary_key->IsLessThan(this->primary_key()))
-          continue;
-        if (key->IsLessThan(*current_key_))
-          continue;
-      }
     }
+
+    // If seeking to a key (or key and primary key), continue until found.
+    // TODO(jsbell): If Seek() optimization is added above, remove this.
+    if (key) {
+      if (primary_key && key->Equals(*current_key_) &&
+          primary_key->IsLessThan(this->primary_key()))
+        continue;
+      if (key->IsLessThan(*current_key_))
+        continue;
+    }
+
+    // Cursor is now positioned at a non-stale record in range.
 
     if (cursor_options_.unique) {
-      if (previous_key.IsValid() && current_key_->Equals(previous_key)) {
-        // We should never be able to walk forward all the way
-        // to the previous key.
-        DCHECK(!last_duplicate_key.IsValid());
+      // If entry is a duplicate of the previous, keep going. Although the
+      // cursor should be positioned at the first duplicate already, new
+      // duplicates may have been inserted since the cursor was last iterated,
+      // and should be skipped to maintain "unique" iteration.
+      if (previous_key.IsValid() && current_key_->Equals(previous_key))
+        continue;
+
+      // If we've found a new key, remember it and keep going.
+      if (!duplicate_key.IsValid()) {
+        duplicate_key = *current_key_;
+        earliest_duplicate = iterator_->Key().as_string();
         continue;
       }
 
-      if (!forward) {
-        if (!last_duplicate_key.IsValid()) {
-          last_duplicate_key = *current_key_;
-          continue;
-        }
-
-        // We need to walk forward because we hit the boundary
-        // between key ranges.
-        if (!last_duplicate_key.Equals(*current_key_)) {
-          forward = true;
-          flipped = true;
-          continue;
-        }
-
+      // If we're still seeing duplicates, keep going.
+      if (duplicate_key.Equals(*current_key_)) {
+        earliest_duplicate = iterator_->Key().as_string();
         continue;
       }
     }
+
     break;
   }
 
-  DCHECK(!last_duplicate_key.IsValid() ||
-         (forward && last_duplicate_key.Equals(*current_key_)));
+  if (cursor_options_.unique) {
+    DCHECK(duplicate_key.IsValid());
+    DCHECK(!earliest_duplicate.empty());
+
+    *s = iterator_->Seek(earliest_duplicate);
+    if (!s->ok())
+      return false;
+    if (!LoadCurrentRow(s)) {
+      DCHECK(!s->ok());
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -3352,7 +3416,7 @@ class ObjectStoreKeyCursorImpl : public IndexedDBBackingStore::Cursor {
     NOTREACHED();
     return NULL;
   }
-  bool LoadCurrentRow() override;
+  bool LoadCurrentRow(leveldb::Status* s) override;
 
  protected:
   std::string EncodeKey(const IndexedDBKey& key) override {
@@ -3372,11 +3436,12 @@ class ObjectStoreKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   DISALLOW_COPY_AND_ASSIGN(ObjectStoreKeyCursorImpl);
 };
 
-bool ObjectStoreKeyCursorImpl::LoadCurrentRow() {
+bool ObjectStoreKeyCursorImpl::LoadCurrentRow(leveldb::Status* s) {
   StringPiece slice(iterator_->Key());
   ObjectStoreDataKey object_store_data_key;
   if (!ObjectStoreDataKey::Decode(&slice, &object_store_data_key)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InvalidDBKeyStatus();
     return false;
   }
 
@@ -3386,6 +3451,7 @@ bool ObjectStoreKeyCursorImpl::LoadCurrentRow() {
   slice = StringPiece(iterator_->Value());
   if (!DecodeVarInt(&slice, &version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
@@ -3413,7 +3479,7 @@ class ObjectStoreCursorImpl : public IndexedDBBackingStore::Cursor {
 
   // IndexedDBBackingStore::Cursor
   IndexedDBValue* value() override { return &current_value_; }
-  bool LoadCurrentRow() override;
+  bool LoadCurrentRow(leveldb::Status* s) override;
 
  protected:
   std::string EncodeKey(const IndexedDBKey& key) override {
@@ -3436,11 +3502,12 @@ class ObjectStoreCursorImpl : public IndexedDBBackingStore::Cursor {
   DISALLOW_COPY_AND_ASSIGN(ObjectStoreCursorImpl);
 };
 
-bool ObjectStoreCursorImpl::LoadCurrentRow() {
+bool ObjectStoreCursorImpl::LoadCurrentRow(leveldb::Status* s) {
   StringPiece key_slice(iterator_->Key());
   ObjectStoreDataKey object_store_data_key;
   if (!ObjectStoreDataKey::Decode(&key_slice, &object_store_data_key)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InvalidDBKeyStatus();
     return false;
   }
 
@@ -3450,6 +3517,7 @@ bool ObjectStoreCursorImpl::LoadCurrentRow() {
   StringPiece value_slice = StringPiece(iterator_->Value());
   if (!DecodeVarInt(&value_slice, &version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
@@ -3458,11 +3526,11 @@ bool ObjectStoreCursorImpl::LoadCurrentRow() {
   EncodeIDBKey(*current_key_, &encoded_key);
   record_identifier_.Reset(encoded_key, version);
 
-  if (!transaction_->GetBlobInfoForRecord(database_id_,
-                                          iterator_->Key().as_string(),
-                                          &current_value_).ok()) {
+  *s = transaction_->GetBlobInfoForRecord(
+      database_id_, iterator_->Key().as_string(), &current_value_);
+  if (!s->ok())
     return false;
-  }
+
   current_value_.bits = value_slice.as_string();
   return true;
 }
@@ -3492,7 +3560,7 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
     NOTREACHED();
     return record_identifier_;
   }
-  bool LoadCurrentRow() override;
+  bool LoadCurrentRow(leveldb::Status* s) override;
 
  protected:
   std::string EncodeKey(const IndexedDBKey& key) override {
@@ -3520,11 +3588,12 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   DISALLOW_COPY_AND_ASSIGN(IndexKeyCursorImpl);
 };
 
-bool IndexKeyCursorImpl::LoadCurrentRow() {
+bool IndexKeyCursorImpl::LoadCurrentRow(leveldb::Status* s) {
   StringPiece slice(iterator_->Key());
   IndexDataKey index_data_key;
   if (!IndexDataKey::Decode(&slice, &index_data_key)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InvalidDBKeyStatus();
     return false;
   }
 
@@ -3535,11 +3604,13 @@ bool IndexKeyCursorImpl::LoadCurrentRow() {
   int64 index_data_version;
   if (!DecodeVarInt(&slice, &index_data_version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
   if (!DecodeIDBKey(&slice, &primary_key_) || !slice.empty()) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
@@ -3550,9 +3621,8 @@ bool IndexKeyCursorImpl::LoadCurrentRow() {
 
   std::string result;
   bool found = false;
-  leveldb::Status s =
-      transaction_->transaction()->Get(primary_leveldb_key, &result, &found);
-  if (!s.ok()) {
+  *s = transaction_->transaction()->Get(primary_leveldb_key, &result, &found);
+  if (!s->ok()) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
     return false;
   }
@@ -3569,6 +3639,7 @@ bool IndexKeyCursorImpl::LoadCurrentRow() {
   slice = StringPiece(result);
   if (!DecodeVarInt(&slice, &object_store_data_version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
@@ -3602,7 +3673,7 @@ class IndexCursorImpl : public IndexedDBBackingStore::Cursor {
     NOTREACHED();
     return record_identifier_;
   }
-  bool LoadCurrentRow() override;
+  bool LoadCurrentRow(leveldb::Status* s) override;
 
  protected:
   std::string EncodeKey(const IndexedDBKey& key) override {
@@ -3634,11 +3705,12 @@ class IndexCursorImpl : public IndexedDBBackingStore::Cursor {
   DISALLOW_COPY_AND_ASSIGN(IndexCursorImpl);
 };
 
-bool IndexCursorImpl::LoadCurrentRow() {
+bool IndexCursorImpl::LoadCurrentRow(leveldb::Status* s) {
   StringPiece slice(iterator_->Key());
   IndexDataKey index_data_key;
   if (!IndexDataKey::Decode(&slice, &index_data_key)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InvalidDBKeyStatus();
     return false;
   }
 
@@ -3649,10 +3721,12 @@ bool IndexCursorImpl::LoadCurrentRow() {
   int64 index_data_version;
   if (!DecodeVarInt(&slice, &index_data_version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
   if (!DecodeIDBKey(&slice, &primary_key_)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InvalidDBKeyStatus();
     return false;
   }
 
@@ -3664,9 +3738,8 @@ bool IndexCursorImpl::LoadCurrentRow() {
 
   std::string result;
   bool found = false;
-  leveldb::Status s =
-      transaction_->transaction()->Get(primary_leveldb_key_, &result, &found);
-  if (!s.ok()) {
+  *s = transaction_->transaction()->Get(primary_leveldb_key_, &result, &found);
+  if (!s->ok()) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
     return false;
   }
@@ -3683,6 +3756,7 @@ bool IndexCursorImpl::LoadCurrentRow() {
   slice = StringPiece(result);
   if (!DecodeVarInt(&slice, &object_store_data_version)) {
     INTERNAL_READ_ERROR_UNTESTED(LOAD_CURRENT_ROW);
+    *s = InternalInconsistencyStatus();
     return false;
   }
 
@@ -3692,9 +3766,9 @@ bool IndexCursorImpl::LoadCurrentRow() {
   }
 
   current_value_.bits = slice.as_string();
-  return transaction_->GetBlobInfoForRecord(database_id_,
-                                            primary_leveldb_key_,
-                                            &current_value_).ok();
+  *s = transaction_->GetBlobInfoForRecord(database_id_, primary_leveldb_key_,
+                                          &current_value_);
+  return s->ok();
 }
 
 bool ObjectStoreCursorOptions(

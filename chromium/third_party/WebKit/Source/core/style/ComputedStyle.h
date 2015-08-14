@@ -55,6 +55,7 @@
 #include "core/style/StyleRareInheritedData.h"
 #include "core/style/StyleRareNonInheritedData.h"
 #include "core/style/StyleReflection.h"
+#include "core/style/StyleScrollSnapData.h"
 #include "core/style/StyleSelfAlignmentData.h"
 #include "core/style/StyleSurroundData.h"
 #include "core/style/StyleTransformData.h"
@@ -74,6 +75,7 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextDirection.h"
+#include "platform/text/TextRun.h"
 #include "platform/text/UnicodeBidi.h"
 #include "platform/transforms/TransformOperations.h"
 #include "public/platform/WebScrollBlocksOn.h"
@@ -109,11 +111,14 @@ struct BorderEdge;
 class CounterContent;
 class Font;
 class FontMetrics;
+class RotateTransformOperation;
+class ScaleTransformOperation;
 class ShadowList;
 class StyleImage;
 class StyleInheritedData;
 class StyleResolver;
 class TransformationMatrix;
+class TranslateTransformOperation;
 
 class ContentData;
 
@@ -390,7 +395,9 @@ public:
     bool operator!=(const ComputedStyle& other) const { return !(*this == other); }
     bool isFloating() const { return noninherited_flags.floating != NoFloat; }
     bool hasMargin() const { return surround->margin.nonZero(); }
+    bool hasBorderFill() const { return surround->border.hasBorderFill(); }
     bool hasBorder() const { return surround->border.hasBorder(); }
+    bool hasBorderDecoration() const { return hasBorder() || hasBorderFill(); }
     bool hasPadding() const { return surround->padding.nonZero(); }
     bool hasMarginBeforeQuirk() const { return marginBefore().quirk(); }
     bool hasMarginAfterQuirk() const { return marginAfter().quirk(); }
@@ -501,26 +508,22 @@ public:
     const LengthSize& borderBottomRightRadius() const { return surround->border.bottomRight(); }
     bool hasBorderRadius() const { return surround->border.hasBorderRadius(); }
 
-    unsigned borderLeftWidth() const { return surround->border.borderLeftWidth(); }
+    int borderLeftWidth() const { return surround->border.borderLeftWidth(); }
     EBorderStyle borderLeftStyle() const { return surround->border.left().style(); }
-    bool borderLeftIsTransparent() const { return surround->border.left().isTransparent(); }
-    unsigned borderRightWidth() const { return surround->border.borderRightWidth(); }
+    int borderRightWidth() const { return surround->border.borderRightWidth(); }
     EBorderStyle borderRightStyle() const { return surround->border.right().style(); }
-    bool borderRightIsTransparent() const { return surround->border.right().isTransparent(); }
-    unsigned borderTopWidth() const { return surround->border.borderTopWidth(); }
+    int borderTopWidth() const { return surround->border.borderTopWidth(); }
     EBorderStyle borderTopStyle() const { return surround->border.top().style(); }
-    bool borderTopIsTransparent() const { return surround->border.top().isTransparent(); }
-    unsigned borderBottomWidth() const { return surround->border.borderBottomWidth(); }
+    int borderBottomWidth() const { return surround->border.borderBottomWidth(); }
     EBorderStyle borderBottomStyle() const { return surround->border.bottom().style(); }
-    bool borderBottomIsTransparent() const { return surround->border.bottom().isTransparent(); }
 
-    unsigned short borderBeforeWidth() const;
-    unsigned short borderAfterWidth() const;
-    unsigned short borderStartWidth() const;
-    unsigned short borderEndWidth() const;
+    int borderBeforeWidth() const;
+    int borderAfterWidth() const;
+    int borderStartWidth() const;
+    int borderEndWidth() const;
 
-    unsigned short outlineSize() const { return max(0, outlineWidth() + outlineOffset()); }
-    unsigned short outlineWidth() const
+    int outlineSize() const { return max(0, outlineWidth() + outlineOffset()); }
+    int outlineWidth() const
     {
         if (m_background->outline().style() == BNONE)
             return 0;
@@ -529,6 +532,7 @@ public:
     bool hasOutline() const { return outlineWidth() > 0 && outlineStyle() > BHIDDEN; }
     EBorderStyle outlineStyle() const { return m_background->outline().style(); }
     OutlineIsAuto outlineStyleIsAuto() const { return static_cast<OutlineIsAuto>(m_background->outline().isAuto()); }
+    int outlineOutset() const;
 
     EOverflow overflowX() const { return static_cast<EOverflow>(noninherited_flags.overflowX); }
     EOverflow overflowY() const { return static_cast<EOverflow>(noninherited_flags.overflowY); }
@@ -842,8 +846,13 @@ public:
     const TransformOrigin& transformOrigin() const { return rareNonInheritedData->m_transform->m_origin; }
     const Length& transformOriginX() const { return transformOrigin().x(); }
     const Length& transformOriginY() const { return transformOrigin().y(); }
+    TranslateTransformOperation* translate() const { return rareNonInheritedData->m_transform->m_translate.get(); }
+    RotateTransformOperation* rotate() const { return rareNonInheritedData->m_transform->m_rotate.get(); }
+    ScaleTransformOperation* scale() const { return rareNonInheritedData->m_transform->m_scale.get(); }
     float transformOriginZ() const { return transformOrigin().z(); }
-    bool hasTransform() const { return hasTransformOperations() || hasMotionPath() || hasCurrentTransformAnimation(); }
+    bool has3DTransform() const { return rareNonInheritedData->m_transform->has3DTransform(); }
+    bool hasTransform() const { return hasTransformOperations() || hasMotionPath() || hasCurrentTransformAnimation() || translate() || rotate() || scale(); }
+    bool hasTransformOperations() const { return !rareNonInheritedData->m_transform->m_operations.operations().isEmpty(); }
     bool transformDataEquivalent(const ComputedStyle& otherStyle) const { return rareNonInheritedData->m_transform == otherStyle.rareNonInheritedData->m_transform; }
 
     StyleMotionPath* motionPath() const { return rareNonInheritedData->m_transform->m_motion.m_path.get(); }
@@ -871,12 +880,12 @@ public:
 
     enum ApplyTransformOrigin { IncludeTransformOrigin, ExcludeTransformOrigin };
     enum ApplyMotionPath { IncludeMotionPath, ExcludeMotionPath };
-    void applyTransform(TransformationMatrix&, const LayoutSize& borderBoxSize, ApplyTransformOrigin = IncludeTransformOrigin, ApplyMotionPath = IncludeMotionPath) const;
-    void applyTransform(TransformationMatrix&, const FloatRect& boundingBox, ApplyTransformOrigin = IncludeTransformOrigin, ApplyMotionPath = IncludeMotionPath) const;
-
+    enum ApplyIndependentTransformProperties { IncludeIndependentTransformProperties , ExcludeIndependentTransformProperties };
+    void applyTransform(TransformationMatrix&, const LayoutSize& borderBoxSize, ApplyTransformOrigin, ApplyMotionPath, ApplyIndependentTransformProperties) const;
+    void applyTransform(TransformationMatrix&, const FloatRect& boundingBox, ApplyTransformOrigin, ApplyMotionPath, ApplyIndependentTransformProperties) const;
     bool hasMask() const { return rareNonInheritedData->m_mask.hasImage() || rareNonInheritedData->m_maskBoxImage.hasImage(); }
 
-    TextCombine textCombine() const { return static_cast<TextCombine>(rareNonInheritedData->m_textCombine); }
+    TextCombine textCombine() const { return static_cast<TextCombine>(rareInheritedData->m_textCombine); }
     bool hasTextCombine() const { return textCombine() != TextCombineNone; }
 
     TabSize tabSize() const { return rareInheritedData->m_tabSize; }
@@ -946,6 +955,12 @@ public:
     ScrollBehavior scrollBehavior() const { return static_cast<ScrollBehavior>(rareNonInheritedData->m_scrollBehavior); }
     WebScrollBlocksOn scrollBlocksOn() const { return static_cast<WebScrollBlocksOn>(rareNonInheritedData->m_scrollBlocksOn); }
     bool hasScrollBlocksOn() const { return scrollBlocksOn() != WebScrollBlocksOnNone; }
+
+    ScrollSnapType scrollSnapType() const { return static_cast<ScrollSnapType>(rareNonInheritedData->m_scrollSnapType); }
+    ScrollSnapPoints scrollSnapPointsX() const { return rareNonInheritedData->m_scrollSnap->m_xPoints; }
+    ScrollSnapPoints scrollSnapPointsY() const { return rareNonInheritedData->m_scrollSnap->m_yPoints; }
+    Vector<LengthPoint> scrollSnapCoordinate() const { return rareNonInheritedData->m_scrollSnap->m_coordinates; }
+    LengthPoint scrollSnapDestination() const { return rareNonInheritedData->m_scrollSnap->m_destination; }
 
     const Vector<CSSPropertyID>& willChangeProperties() const { return rareNonInheritedData->m_willChange->m_properties; }
     bool willChangeContents() const { return rareNonInheritedData->m_willChange->m_contents; }
@@ -1094,6 +1109,7 @@ public:
     void setTableLayout(ETableLayout v) { noninherited_flags.tableLayout = v; }
 
     bool setFontDescription(const FontDescription&);
+    void setFont(const Font&);
 
     void setTextAutosizingMultiplier(float);
 
@@ -1195,6 +1211,22 @@ public:
     PrintColorAdjust printColorAdjust() const { return static_cast<PrintColorAdjust>(inherited_flags.m_printColorAdjust); }
     void setPrintColorAdjust(PrintColorAdjust value) { inherited_flags.m_printColorAdjust = value; }
 
+    // A stacking context is painted atomically and defines a stacking order, whereas
+    // a containing stacking context defines in which order the stacking contexts
+    // below are painted. In Blink, a stacking context is defined by non-auto
+    // z-index'. This invariant is enforced by the logic in StyleAdjuster
+    // See CSS 2.1, Appendix E for more details.
+    bool isStackingContext() const { return !hasAutoZIndex(); }
+
+    // Some elements are "treated as if they create a new stacking context" for the purpose
+    // of painting and hit testing. However they don't determine the stacking of the stacking
+    // context underneath them. That means that they are painted atomically.
+    bool isTreatedAsStackingContextForPainting() const
+    {
+        // FIXME: Floating objects are also considered stacking contexts for painting.
+        return isStackingContext() || position() != StaticPosition;
+    }
+
     bool hasAutoZIndex() const { return m_box->hasAutoZIndex(); }
     void setHasAutoZIndex() { SET_VAR(m_box, m_hasAutoZIndex, true); SET_VAR(m_box, m_zIndex, 0); }
     int zIndex() const { return m_box->zIndex(); }
@@ -1295,7 +1327,7 @@ public:
     void setColumnWidth(float f) { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_autoWidth, false); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_width, f); }
     void setHasAutoColumnWidth() { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_autoWidth, true); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_width, 0); }
     void setColumnCount(unsigned short c) { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_autoCount, false); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_count, c); }
-    void setHasAutoColumnCount() { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_autoCount, true); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_count, 0); }
+    void setHasAutoColumnCount() { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_autoCount, true); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_count, initialColumnCount()); }
     void setColumnFill(ColumnFill columnFill) { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_fill, columnFill); }
     void setColumnGap(float f) { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_normalGap, false); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_gap, f); }
     void setHasNormalColumnGap() { SET_VAR(rareNonInheritedData.access()->m_multiCol, m_normalGap, true); SET_VAR(rareNonInheritedData.access()->m_multiCol, m_gap, 0); }
@@ -1315,8 +1347,12 @@ public:
     void setTransformOriginY(const Length& v) { setTransformOrigin(TransformOrigin(transformOriginX(), v, transformOriginZ())); }
     void setTransformOriginZ(float f) { setTransformOrigin(TransformOrigin(transformOriginX(), transformOriginY(), f)); }
     void setTransformOrigin(const TransformOrigin& o) { SET_VAR(rareNonInheritedData.access()->m_transform, m_origin, o); }
+    void setTranslate(PassRefPtr<TranslateTransformOperation> v) { rareNonInheritedData.access()->m_transform.access()->m_translate = v; }
+    void setRotate(PassRefPtr<RotateTransformOperation> v) { rareNonInheritedData.access()->m_transform.access()->m_rotate = v; }
+    void setScale(PassRefPtr<ScaleTransformOperation> v) { rareNonInheritedData.access()->m_transform.access()->m_scale = v; }
+
     void setSpeak(ESpeak s) { SET_VAR(rareInheritedData, speak, s); }
-    void setTextCombine(TextCombine v) { SET_VAR(rareNonInheritedData, m_textCombine, v); }
+    void setTextCombine(TextCombine v) { SET_VAR(rareInheritedData, m_textCombine, v); }
     void setTextDecorationColor(const StyleColor& c) { SET_VAR(rareNonInheritedData, m_textDecorationColor, c); }
     void setTextEmphasisColor(const StyleColor& c) { SET_VAR_WITH_SETTER(rareInheritedData, textEmphasisColor, setTextEmphasisColor, c); }
     void setTextEmphasisFill(TextEmphasisFill fill) { SET_VAR(rareInheritedData, textEmphasisFill, fill); }
@@ -1374,6 +1410,12 @@ public:
 
     void setScrollBehavior(ScrollBehavior b) { SET_VAR(rareNonInheritedData, m_scrollBehavior, b); }
     void setScrollBlocksOn(WebScrollBlocksOn b) { SET_VAR(rareNonInheritedData, m_scrollBlocksOn, b); }
+
+    void setScrollSnapType(ScrollSnapType b) { SET_VAR(rareNonInheritedData, m_scrollSnapType, b); }
+    void setScrollSnapPointsX(const ScrollSnapPoints& b) { SET_VAR(rareNonInheritedData.access()->m_scrollSnap, m_xPoints, b); }
+    void setScrollSnapPointsY(const ScrollSnapPoints& b) { SET_VAR(rareNonInheritedData.access()->m_scrollSnap, m_yPoints, b); }
+    void setScrollSnapDestination(const LengthPoint& b) { SET_VAR(rareNonInheritedData.access()->m_scrollSnap, m_destination, b); }
+    void setScrollSnapCoordinate(const Vector<LengthPoint>& b) { SET_VAR(rareNonInheritedData.access()->m_scrollSnap, m_coordinates, b); }
 
     void setWillChangeProperties(const Vector<CSSPropertyID>& properties) { SET_VAR(rareNonInheritedData.access()->m_willChange, m_properties, properties); }
     void setWillChangeContents(bool b) { SET_VAR(rareNonInheritedData.access()->m_willChange, m_contents, b); }
@@ -1509,7 +1551,10 @@ public:
     void setHasExplicitlyInheritedProperties() { noninherited_flags.explicitInheritance = true; }
     bool hasExplicitlyInheritedProperties() const { return noninherited_flags.explicitInheritance; }
 
-    bool hasBoxDecorations() const { return hasBorder() || hasBorderRadius() || hasOutline() || hasAppearance() || boxShadow() || hasFilter() || resize() != RESIZE_NONE; }
+    bool hasChildDependentFlags() const { return emptyState() || hasExplicitlyInheritedProperties(); }
+    void copyChildDependentFlagsFrom(const ComputedStyle&);
+
+    bool hasBoxDecorations() const { return hasBorderDecoration() || hasBorderRadius() || hasOutline() || hasAppearance() || boxShadow() || hasFilter() || resize() != RESIZE_NONE; }
 
     bool borderObscuresBackground() const;
     void getBorderEdgeInfo(BorderEdge edges[], bool includeLogicalLeftEdge = true, bool includeLogicalRightEdge = true) const;
@@ -1614,6 +1659,9 @@ public:
     static ColumnFill initialColumnFill() { return ColumnFillBalance; }
     static ColumnSpan initialColumnSpan() { return ColumnSpanNone; }
     static const TransformOperations& initialTransform() { DEFINE_STATIC_LOCAL(TransformOperations, ops, ()); return ops; }
+    static PassRefPtr<TranslateTransformOperation> initialTranslate() { return TranslateTransformOperation::create(Length(0, Fixed), Length(0, Fixed), 0, TransformOperation::Translate3D); }
+    static PassRefPtr<RotateTransformOperation> initialRotate() { return RotateTransformOperation::create(0, 0, 1, 0, TransformOperation::Rotate3D); }
+    static PassRefPtr<ScaleTransformOperation> initialScale() { return ScaleTransformOperation::create(1, 1, 1, TransformOperation::Scale3D); }
     static Length initialTransformOriginX() { return Length(50.0, Percent); }
     static Length initialTransformOriginY() { return Length(50.0, Percent); }
     static float initialTransformOriginZ() { return 0; }
@@ -1649,6 +1697,11 @@ public:
     static ShadowList* initialTextShadow() { return 0; }
     static ScrollBehavior initialScrollBehavior() { return ScrollBehaviorAuto; }
     static WebScrollBlocksOn initialScrollBlocksOn() { return WebScrollBlocksOnNone; }
+    static ScrollSnapType initialScrollSnapType() { return ScrollSnapTypeNone; }
+    static ScrollSnapPoints initialScrollSnapPointsX() { return ScrollSnapPoints(); }
+    static ScrollSnapPoints initialScrollSnapPointsY() { return ScrollSnapPoints(); }
+    static LengthPoint initialScrollSnapDestination() { return LengthPoint(Length(0, Fixed), Length(0, Fixed)); }
+    static Vector<LengthPoint> initialScrollSnapCoordinate() { return Vector<LengthPoint>(); }
 
     // The initial value is 'none' for grid tracks.
     static Vector<GridTrackSize> initialGridTemplateColumns() { return Vector<GridTrackSize>(); }
@@ -1765,14 +1818,15 @@ private:
 
     void appendContent(PassOwnPtr<ContentData>);
     void addAppliedTextDecoration(const AppliedTextDecoration&);
-    bool hasTransformOperations() const { return !rareNonInheritedData->m_transform->m_operations.operations().isEmpty(); }
-    void applyMotionPathTransform(TransformationMatrix&) const;
+    void applyMotionPathTransform(float originX, float originY, TransformationMatrix&) const;
 
     bool diffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle& other) const;
     bool diffNeedsFullLayout(const ComputedStyle& other) const;
     bool diffNeedsPaintInvalidationLayer(const ComputedStyle& other) const;
     bool diffNeedsPaintInvalidationObject(const ComputedStyle& other) const;
     void updatePropertySpecificDifferences(const ComputedStyle& other, StyleDifference&) const;
+
+    bool requireTransformOrigin(ApplyTransformOrigin applyOrigin, ApplyMotionPath) const;
 };
 
 // FIXME: Reduce/remove the dependency on zoom adjusted int values.
@@ -1834,9 +1888,12 @@ inline bool ComputedStyle::setZoom(float f)
 
 inline bool ComputedStyle::setEffectiveZoom(float f)
 {
-    if (compareEqual(rareInheritedData->m_effectiveZoom, f))
+    // Clamp the effective zoom value to a smaller (but hopeful still large
+    // enough) range, to avoid overflow in derived computations.
+    float clampedEffectiveZoom = clampTo<float>(f, 1e-6, 1e6);
+    if (compareEqual(rareInheritedData->m_effectiveZoom, clampedEffectiveZoom))
         return false;
-    rareInheritedData.access()->m_effectiveZoom = f;
+    rareInheritedData.access()->m_effectiveZoom = clampedEffectiveZoom;
     return true;
 }
 

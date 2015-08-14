@@ -11,7 +11,7 @@
 namespace gfx {
 
 // Base interface for WGL surfaces.
-class GLSurfaceWGL : public GLSurface {
+class GL_EXPORT GLSurfaceWGL : public GLSurface {
  public:
   GLSurfaceWGL();
 
@@ -19,6 +19,7 @@ class GLSurfaceWGL : public GLSurface {
   void* GetDisplay() override;
 
   static bool InitializeOneOff();
+  static void InitializeOneOffForTesting();
   static HDC GetDisplayDC();
 
  protected:
@@ -37,7 +38,7 @@ class NativeViewGLSurfaceWGL : public GLSurfaceWGL {
   bool Initialize() override;
   void Destroy() override;
   bool IsOffscreen() override;
-  bool SwapBuffers() override;
+  gfx::SwapResult SwapBuffers() override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
 
@@ -61,7 +62,7 @@ class PbufferGLSurfaceWGL : public GLSurfaceWGL {
   bool Initialize() override;
   void Destroy() override;
   bool IsOffscreen() override;
-  bool SwapBuffers() override;
+  gfx::SwapResult SwapBuffers() override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
 

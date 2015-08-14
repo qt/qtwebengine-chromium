@@ -7,12 +7,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_math.h"
 #include "base/pickle.h"
 #include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/appcache/appcache_storage.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -29,16 +31,16 @@ enum { kResponseInfoIndex, kResponseContentIndex, kResponseMetadataIndex };
 // pickle is transfered to the WrappedPickleIOBuffer object.
 class WrappedPickleIOBuffer : public net::WrappedIOBuffer {
  public:
-  explicit WrappedPickleIOBuffer(const Pickle* pickle) :
-      net::WrappedIOBuffer(reinterpret_cast<const char*>(pickle->data())),
-      pickle_(pickle) {
+  explicit WrappedPickleIOBuffer(const base::Pickle* pickle)
+      : net::WrappedIOBuffer(reinterpret_cast<const char*>(pickle->data())),
+        pickle_(pickle) {
     DCHECK(pickle->data());
   }
 
  private:
   ~WrappedPickleIOBuffer() override {}
 
-  scoped_ptr<const Pickle> pickle_;
+  scoped_ptr<const base::Pickle> pickle_;
 };
 
 }  // anon namespace
@@ -90,7 +92,7 @@ AppCacheResponseIO::~AppCacheResponseIO() {
 }
 
 void AppCacheResponseIO::ScheduleIOCompletionCallback(int result) {
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&AppCacheResponseIO::OnIOComplete,
                             weak_factory_.GetWeakPtr(), result));
 }
@@ -254,7 +256,7 @@ void AppCacheResponseReader::OnIOComplete(int result) {
       reading_metadata_size_ = 0;
     } else if (info_buffer_.get()) {
       // Deserialize the http info structure, ensuring we got headers.
-      Pickle pickle(buffer_->data(), result);
+      base::Pickle pickle(buffer_->data(), result);
       scoped_ptr<net::HttpResponseInfo> info(new net::HttpResponseInfo);
       bool response_truncated = false;
       if (!info->InitFromPickle(pickle, &response_truncated) ||
@@ -336,7 +338,7 @@ void AppCacheResponseWriter::ContinueWriteInfo() {
 
   const bool kSkipTransientHeaders = true;
   const bool kTruncated = false;
-  Pickle* pickle = new Pickle;
+  base::Pickle* pickle = new base::Pickle;
   info_buffer_->http_info->Persist(pickle, kSkipTransientHeaders, kTruncated);
   write_amount_ = static_cast<int>(pickle->size());
   buffer_ = new WrappedPickleIOBuffer(pickle);  // takes ownership of pickle

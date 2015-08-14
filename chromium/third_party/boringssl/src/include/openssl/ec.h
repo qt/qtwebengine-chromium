@@ -220,7 +220,7 @@ OPENSSL_EXPORT int EC_POINT_get_affine_coordinates_GFp(const EC_GROUP *group,
                                                        BIGNUM *x, BIGNUM *y,
                                                        BN_CTX *ctx);
 
-/* EC_POINT_set_affine_coordinates sets the value of |p| to be (|x|, |y|). The
+/* EC_POINT_set_affine_coordinates_GFp sets the value of |p| to be (|x|, |y|). The
  * |ctx| argument may be used if not NULL. */
 OPENSSL_EXPORT int EC_POINT_set_affine_coordinates_GFp(const EC_GROUP *group,
                                                        EC_POINT *point,
@@ -265,7 +265,7 @@ OPENSSL_EXPORT int EC_POINT_add(const EC_GROUP *group, EC_POINT *r,
 OPENSSL_EXPORT int EC_POINT_dbl(const EC_GROUP *group, EC_POINT *r,
                                 const EC_POINT *a, BN_CTX *ctx);
 
-/* EC_POINT_dbl sets |a| equal to minus |a|. It returns one on success and zero
+/* EC_POINT_invert sets |a| equal to minus |a|. It returns one on success and zero
  * otherwise. If |ctx| is not NULL, it may be used. */
 OPENSSL_EXPORT int EC_POINT_invert(const EC_GROUP *group, EC_POINT *a,
                                    BN_CTX *ctx);
@@ -285,6 +285,25 @@ OPENSSL_EXPORT int EC_POINTs_mul(const EC_GROUP *group, EC_POINT *r,
 
 
 /* Deprecated functions. */
+
+/* EC_GROUP_new_curve_GFp creates a new, arbitrary elliptic curve group based
+ * on the equation y² = x³ + a·x + b. It returns the new group or NULL on
+ * error.
+ *
+ * |EC_GROUP|s returned by this function will always compare as unequal via
+ * |EC_GROUP_cmp| (even to themselves). |EC_GROUP_get_curve_name| will always
+ * return |NID_undef|. */
+OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p,
+                                                const BIGNUM *a,
+                                                const BIGNUM *b, BN_CTX *ctx);
+
+/* EC_GROUP_set_generator sets the generator for |group| to |generator|, which
+ * must have the given order and cofactor. This should only be used with
+ * |EC_GROUP| objects returned by |EC_GROUP_new_curve_GFp|. */
+OPENSSL_EXPORT int EC_GROUP_set_generator(EC_GROUP *group,
+                                          const EC_POINT *generator,
+                                          const BIGNUM *order,
+                                          const BIGNUM *cofactor);
 
 /* EC_GROUP_set_asn1_flag does nothing. */
 OPENSSL_EXPORT void EC_GROUP_set_asn1_flag(EC_GROUP *group, int flag);
@@ -381,6 +400,7 @@ OPENSSL_EXPORT void EC_GROUP_set_point_conversion_form(
 #define EC_F_ec_group_copy 163
 #define EC_F_nistp256_pre_comp_new 164
 #define EC_F_EC_KEY_new_by_curve_name 165
+#define EC_F_EC_GROUP_new_curve_GFp 166
 #define EC_R_BUFFER_TOO_SMALL 100
 #define EC_R_COORDINATES_OUT_OF_RANGE 101
 #define EC_R_D2I_ECPKPARAMETERS_FAILURE 102

@@ -24,7 +24,6 @@
 #define LayoutBlock_h
 
 #include "core/CoreExport.h"
-#include "core/layout/ColumnInfo.h"
 #include "core/layout/FloatingObjects.h"
 #include "core/layout/GapRects.h"
 #include "core/layout/LayoutBox.h"
@@ -32,7 +31,6 @@
 #include "core/layout/line/RootInlineBox.h"
 #include "core/style/ShapeValue.h"
 #include "platform/text/TextBreakIterator.h"
-#include "platform/text/TextRun.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
 
@@ -96,7 +94,7 @@ public:
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
     virtual void deleteLineBoxTree();
 
-    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = 0) override;
+    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
     virtual void removeChild(LayoutObject*) override;
 
     virtual void layoutBlock(bool relayoutChildren);
@@ -149,12 +147,6 @@ public:
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
-    // Block flows subclass availableWidth to handle multi column layout (shrinking the width available to children when laying out.)
-    virtual LayoutUnit availableLogicalWidth() const override final;
-
-    LayoutPoint flipForWritingModeIncludingColumns(const LayoutPoint&) const;
-    void adjustStartEdgeForWritingModeIncludingColumns(LayoutRect&) const;
-
     LayoutUnit blockDirectionOffset(const LayoutSize& offsetFromBlock) const;
     LayoutUnit inlineDirectionOffset(const LayoutSize& offsetFromBlock) const;
 
@@ -166,44 +158,25 @@ public:
 
     // Helper methods for computing line counts and heights for line counts.
     RootInlineBox* lineAtIndex(int) const;
-    int lineCount(const RootInlineBox* = 0, bool* = 0) const;
+    int lineCount(const RootInlineBox* = nullptr, bool* = nullptr) const;
     int heightForLineCount(int);
     void clearTruncation();
-
-    void adjustRectForColumns(LayoutRect&) const;
-    virtual LayoutSize columnOffset(const LayoutPoint&) const override;
-    void adjustForColumnRect(LayoutSize& offset, const LayoutPoint& locationInContainer) const;
 
     void addContinuationWithOutline(LayoutInline*);
 
     virtual LayoutBoxModelObject* virtualContinuation() const override final { return continuation(); }
     bool isAnonymousBlockContinuation() const { return continuation() && isAnonymousBlock(); }
     LayoutInline* inlineElementContinuation() const;
-    LayoutBlock* blockElementContinuation() const;
 
     using LayoutBoxModelObject::continuation;
     using LayoutBoxModelObject::setContinuation;
 
     static LayoutBlock* createAnonymousWithParentAndDisplay(const LayoutObject*, EDisplay = BLOCK);
-    static LayoutBlockFlow* createAnonymousColumnsWithParent(const LayoutObject*);
-    static LayoutBlockFlow* createAnonymousColumnSpanWithParent(const LayoutObject*);
     LayoutBlock* createAnonymousBlock(EDisplay display = BLOCK) const { return createAnonymousWithParentAndDisplay(this, display); }
-    LayoutBlockFlow* createAnonymousColumnsBlock() const { return createAnonymousColumnsWithParent(this); }
-    LayoutBlockFlow* createAnonymousColumnSpanBlock() const { return createAnonymousColumnSpanWithParent(this); }
 
     virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override;
 
-    ColumnInfo* columnInfo() const;
     int columnGap() const;
-
-    // These two functions take the ColumnInfo* to avoid repeated lookups of the info in the global HashMap.
-    unsigned columnCount(ColumnInfo*) const;
-    LayoutRect columnRectAt(ColumnInfo*, unsigned) const;
-
-    // The page logical offset is the object's offset from the top of the page in the page progression
-    // direction (so an x-offset in vertical text and a y-offset for horizontal text).
-    LayoutUnit pageLogicalOffset() const { return m_pageLogicalOffset; }
-    void setPageLogicalOffset(LayoutUnit offset) { m_pageLogicalOffset = offset; }
 
     // Accessors for logical width/height and margins in the containing block's block-flow direction.
     LayoutUnit logicalWidthForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size().width() : child.size().height(); }
@@ -239,7 +212,7 @@ public:
     bool paintsContinuationOutline(LayoutInline* flow);
 #endif
 #ifndef NDEBUG
-    void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const LayoutObject* = 0) const;
+    void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr) const;
 #endif
 
     bool recalcChildOverflowAfterStyleChange();
@@ -268,7 +241,7 @@ protected:
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 public:
-    virtual void paintObject(const PaintInfo&, const LayoutPoint&) override;
+    virtual void paintObject(const PaintInfo&, const LayoutPoint&);
     virtual void paintChildren(const PaintInfo&, const LayoutPoint&);
 
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
@@ -276,11 +249,10 @@ public:
     virtual void paintSelection(const PaintInfo&, const LayoutPoint&) { }
 
 protected:
-    virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, float& /* logicalLeft */, float& /* logicalWidth */) const { }
+    virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, LayoutUnit& /* logicalLeft */, LayoutUnit& /* logicalWidth */) const { }
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
     virtual void computePreferredLogicalWidths() override;
-    void adjustIntrinsicLogicalWidthsForColumns(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
 
     virtual int firstLineBoxBaseline() const override;
     virtual int inlineBlockBaseline(LineDirectionMode) const override;
@@ -306,8 +278,6 @@ protected:
     bool simplifiedLayout();
     virtual void simplifiedNormalFlowLayout();
 
-    void setDesiredColumnCountAndWidth(int, LayoutUnit);
-
 public:
     virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool = false);
 protected:
@@ -332,7 +302,7 @@ private:
 
     virtual bool isLayoutBlock() const override final { return true; }
 
-    void makeChildrenNonInline(LayoutObject* insertionPoint = 0);
+    void makeChildrenNonInline(LayoutObject* insertionPoint = nullptr);
 
     // Promote all children and make them siblings that come right after this block.
     void promoteAllChildrenAndInsertAfter();
@@ -343,11 +313,7 @@ private:
 
     virtual void dirtyLinesFromChangedChild(LayoutObject* child) override final { m_lineBoxes.dirtyLinesFromChangedChild(this, child); }
 
-    void addChildToContinuation(LayoutObject* newChild, LayoutObject* beforeChild);
     virtual void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild) override;
-    void addChildToAnonymousColumnBlocks(LayoutObject* newChild, LayoutObject* beforeChild);
-
-    void addChildIgnoringAnonymousColumnBlocks(LayoutObject* newChild, LayoutObject* beforeChild = 0);
 
     virtual bool isSelfCollapsingBlock() const override;
 
@@ -362,7 +328,6 @@ private:
 
     virtual bool avoidsFloats() const override { return true; }
 
-    bool hitTestColumns(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
     bool hitTestContents(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
     virtual bool hitTestFloats(HitTestResult&, const HitTestLocation&, const LayoutPoint&) { return false; }
@@ -375,7 +340,7 @@ private:
     // children.
     virtual LayoutBlock* firstLineBlock() const override;
 
-    virtual LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = 0) const override final;
+    virtual LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = nullptr) const override final;
 
     virtual LayoutObject* hoverAncestor() const override final;
     virtual void updateDragState(bool dragOn) override final;
@@ -386,30 +351,14 @@ private:
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
 
-    LayoutUnit desiredColumnWidth() const;
-
 private:
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override final;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override final;
     bool isInlineBoxWrapperActuallyChild() const;
 
-    void adjustPointToColumnContents(LayoutPoint&) const;
-
-    void markLinesDirtyInBlockRange(LayoutUnit logicalTop, LayoutUnit logicalBottom, RootInlineBox* highest = 0);
+    void markLinesDirtyInBlockRange(LayoutUnit logicalTop, LayoutUnit logicalBottom, RootInlineBox* highest = nullptr);
 
     Position positionForBox(InlineBox*, bool start = true) const;
     PositionWithAffinity positionForPointWithInlineChildren(const LayoutPoint&);
-
-    void calcColumnWidth();
-    void makeChildrenAnonymousColumnBlocks(LayoutObject* beforeChild, LayoutBlockFlow* newBlockBox, LayoutObject* newChild);
-
-    void splitBlocks(LayoutBlock* fromBlock, LayoutBlock* toBlock, LayoutBlock* middleBlock,
-        LayoutObject* beforeChild, LayoutBoxModelObject* oldCont);
-    void splitFlow(LayoutObject* beforeChild, LayoutBlock* newBlockBox,
-        LayoutObject* newChild, LayoutBoxModelObject* oldCont);
-    LayoutBlock* clone() const;
-    LayoutBlock* continuationBefore(LayoutObject* beforeChild);
-    LayoutBlockFlow* containingColumnsBlock(bool allowAnonymousColumnBlock = true);
-    LayoutBlockFlow* columnsBlockForSpanningElement(LayoutObject* newChild);
 
     // End helper functions and structs used by layoutBlockChildren.
 
@@ -417,6 +366,8 @@ private:
     bool widthAvailableToChildrenHasChanged();
 
 protected:
+    bool isPageLogicalHeightKnown(LayoutUnit logicalOffset) const { return pageLogicalHeightForOffset(logicalOffset); }
+
     // Returns the logicalOffset at the top of the next page. If the offset passed in is already at the top of the current page,
     // then nextPageLogicalTop with ExcludePageBoundary will still move to the top of the next page. nextPageLogicalTop with
     // IncludePageBoundary set will not.
@@ -443,20 +394,12 @@ protected:
     // Adjust from painting offsets to the local coords of this layoutObject
     void offsetForContents(LayoutPoint&) const;
 
-    bool requiresColumns(int desiredColumnCount) const;
-
     virtual bool updateLogicalWidthAndColumnWidth();
 
     virtual bool canCollapseAnonymousBlockChild() const { return true; }
 
-public:
-    virtual LayoutUnit offsetFromLogicalTopOfFirstPage() const override final;
-
-protected:
     LayoutObjectChildList m_children;
     LineBoxList m_lineBoxes; // All of the root line boxes created for this block flow.  For example, <div>Hello<br>world.</div> will have two total lines for the <div>.
-
-    LayoutUnit m_pageLogicalOffset;
 
     unsigned m_hasMarginBeforeQuirk : 1; // Note these quirk values can't be put in LayoutBlockRareData since they are set too frequently.
     unsigned m_hasMarginAfterQuirk : 1;

@@ -12,7 +12,6 @@
 #include "ui/gfx/geometry/rect_f.h"
 
 class SkCanvas;
-class SkDrawPictureCallback;
 
 namespace cc {
 
@@ -23,7 +22,9 @@ class CC_EXPORT FilterDisplayItem : public DisplayItem {
 
   void SetNew(const FilterOperations& filters, const gfx::RectF& bounds);
 
-  void Raster(SkCanvas* canvas, SkDrawPictureCallback* callback) const override;
+  void Raster(SkCanvas* canvas,
+              const gfx::Rect& canvas_target_playback_rect,
+              SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
 
  private:
@@ -40,7 +41,9 @@ class CC_EXPORT EndFilterDisplayItem : public DisplayItem {
     return make_scoped_ptr(new EndFilterDisplayItem());
   }
 
-  void Raster(SkCanvas* canvas, SkDrawPictureCallback* callback) const override;
+  void Raster(SkCanvas* canvas,
+              const gfx::Rect& canvas_target_playback_rect,
+              SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
 };
 

@@ -32,7 +32,7 @@
 
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/Resource.h"
-#include "core/fetch/ResourceLoaderHost.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
 #include "platform/Logging.h"
 #include "platform/SharedBuffer.h"
@@ -51,17 +51,18 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<ResourceLoader> ResourceLoader::create(ResourceLoaderHost* host, Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
+ResourceLoader* ResourceLoader::create(ResourceFetcher* fetcher, Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
 {
-    RefPtrWillBeRawPtr<ResourceLoader> loader(adoptRefWillBeNoop(new ResourceLoader(host, resource, options)));
+    ResourceLoader* loader = new ResourceLoader(fetcher, resource, options);
     loader->init(request);
-    return loader.release();
+    return loader;
 }
 
-ResourceLoader::ResourceLoader(ResourceLoaderHost* host, Resource* resource, const ResourceLoaderOptions& options)
-    : m_host(host)
+ResourceLoader::ResourceLoader(ResourceFetcher* fetcher, Resource* resource, const ResourceLoaderOptions& options)
+    : m_fetcher(fetcher)
     , m_notifiedLoadComplete(false)
-    , m_defersLoading(host->defersLoading())
+    , m_defersLoading(fetcher->defersLoading())
+    , m_loadingMultipartContent(false)
     , m_options(options)
     , m_resource(resource)
     , m_state(Initialized)
@@ -76,7 +77,7 @@ ResourceLoader::~ResourceLoader()
 
 DEFINE_TRACE(ResourceLoader)
 {
-    visitor->trace(m_host);
+    visitor->trace(m_fetcher);
     visitor->trace(m_resource);
 }
 
@@ -84,7 +85,7 @@ void ResourceLoader::releaseResources()
 {
     ASSERT(m_state != Terminated);
     ASSERT(m_notifiedLoadComplete);
-    m_host->didLoadResource();
+    m_fetcher->didLoadResource();
     if (m_state == Terminated)
         return;
     m_resource->clearLoader();
@@ -99,20 +100,20 @@ void ResourceLoader::releaseResources()
         m_loader.clear();
     }
     m_deferredRequest = ResourceRequest();
-    m_host.clear();
+    m_fetcher.clear();
 }
 
 void ResourceLoader::init(const ResourceRequest& passedRequest)
 {
     ASSERT(m_state != Terminated);
     ResourceRequest request(passedRequest);
-    m_host->willSendRequest(m_resource->identifier(), request, ResourceResponse(), m_options.initiatorInfo);
+    m_fetcher->willSendRequest(m_resource->identifier(), request, ResourceResponse(), m_options.initiatorInfo);
     ASSERT(m_state != Terminated);
     ASSERT(!request.isNull());
     m_originalRequest = m_request = applyOptions(request);
     m_resource->updateRequest(request);
     ASSERT(m_state != Terminated);
-    m_host->didInitializeResourceLoader(this);
+    m_fetcher->didInitializeResourceLoader(this);
 }
 
 void ResourceLoader::start()
@@ -121,12 +122,12 @@ void ResourceLoader::start()
     ASSERT(!m_request.isNull());
     ASSERT(m_deferredRequest.isNull());
 
-    if (responseNeedsAccessControlCheck() && m_host->isControlledByServiceWorker()) {
+    if (responseNeedsAccessControlCheck() && m_fetcher->isControlledByServiceWorker()) {
         m_fallbackRequestForServiceWorker = adoptPtr(new ResourceRequest(m_request));
         m_fallbackRequestForServiceWorker->setSkipServiceWorker(true);
     }
 
-    m_host->willStartLoadingResource(m_resource, m_request);
+    m_fetcher->willStartLoadingResource(m_resource, m_request);
 
     if (m_options.synchronousPolicy == RequestSynchronously) {
         requestSynchronously();
@@ -188,9 +189,8 @@ void ResourceLoader::attachThreadedDataReceiver(PassRefPtrWillBeRawPtr<ThreadedD
 void ResourceLoader::didDownloadData(WebURLLoader*, int length, int encodedDataLength)
 {
     ASSERT(m_state != Terminated);
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
     RELEASE_ASSERT(m_connectionState == ConnectionStateReceivedResponse);
-    m_host->didDownloadData(m_resource, length, encodedDataLength);
+    m_fetcher->didDownloadData(m_resource, length, encodedDataLength);
     if (m_state == Terminated)
         return;
     m_resource->didDownloadData(length);
@@ -206,13 +206,13 @@ void ResourceLoader::didFinishLoadingOnePart(double finishTime, int64_t encodedD
     if (m_notifiedLoadComplete)
         return;
     m_notifiedLoadComplete = true;
-    m_host->didFinishLoading(m_resource, finishTime, encodedDataLength);
+    m_fetcher->didFinishLoading(m_resource, finishTime, encodedDataLength);
 }
 
 void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority, int intraPriorityValue)
 {
     if (m_loader) {
-        m_host->didChangeLoadingPriority(m_resource, loadPriority, intraPriorityValue);
+        m_fetcher->didChangeLoadingPriority(m_resource, loadPriority, intraPriorityValue);
         ASSERT(m_state != Terminated);
         m_loader->didChangePriority(static_cast<WebURLRequest::Priority>(loadPriority), intraPriorityValue);
     }
@@ -242,10 +242,6 @@ void ResourceLoader::cancel(const ResourceError& error)
 
     ResourceError nonNullError = error.isNull() ? ResourceError::cancelledError(m_request.url()) : error;
 
-    // This function calls out to clients at several points that might do
-    // something that causes the last reference to this object to go away.
-    RefPtrWillBeRawPtr<ResourceLoader> protector(this);
-
     WTF_LOG(ResourceLoading, "Cancelled load of '%s'.\n", m_resource->url().string().latin1().data());
     if (m_state == Initialized)
         m_state = Finishing;
@@ -259,7 +255,7 @@ void ResourceLoader::cancel(const ResourceError& error)
 
     if (!m_notifiedLoadComplete) {
         m_notifiedLoadComplete = true;
-        m_host->didFailLoading(m_resource, nonNullError);
+        m_fetcher->didFailLoading(m_resource, nonNullError);
     }
 
     if (m_state == Finishing)
@@ -271,7 +267,6 @@ void ResourceLoader::cancel(const ResourceError& error)
 void ResourceLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewRequest, const WebURLResponse& passedRedirectResponse)
 {
     ASSERT(m_state != Terminated);
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
 
     ResourceRequest& newRequest(applyOptions(passedNewRequest.toMutableResourceRequest()));
 
@@ -279,20 +274,20 @@ void ResourceLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewRequ
     const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
     ASSERT(!redirectResponse.isNull());
     newRequest.setFollowedRedirect(true);
-    if (!m_host->canAccessRedirect(m_resource, newRequest, redirectResponse, m_options)) {
+    if (!m_fetcher->canAccessRedirect(m_resource, newRequest, redirectResponse, m_options)) {
         cancel(ResourceError::cancelledDueToAccessCheckError(newRequest.url()));
         return;
     }
     ASSERT(m_state != Terminated);
 
     applyOptions(newRequest); // canAccessRedirect() can modify m_options so we should re-apply it.
-    m_host->redirectReceived(m_resource, redirectResponse);
+    m_fetcher->redirectReceived(m_resource, redirectResponse);
     ASSERT(m_state != Terminated);
     m_resource->willFollowRedirect(newRequest, redirectResponse);
     if (newRequest.isNull() || m_state == Terminated)
         return;
 
-    m_host->willSendRequest(m_resource->identifier(), newRequest, redirectResponse, m_options.initiatorInfo);
+    m_fetcher->willSendRequest(m_resource->identifier(), newRequest, redirectResponse, m_options.initiatorInfo);
     ASSERT(m_state != Terminated);
     ASSERT(!newRequest.isNull());
     m_resource->updateRequest(newRequest);
@@ -356,34 +351,34 @@ void ResourceLoader::didReceiveResponse(WebURLLoader*, const WebURLResponse& res
                 resource = m_resource->resourceToRevalidate();
             else
                 m_resource->setResponse(resourceResponse);
-            if (!m_host->canAccessResource(resource, m_options.securityOrigin.get(), response.url(), ResourceLoaderHost::ShouldLogAccessControlErrors)) {
-                m_host->didReceiveResponse(m_resource, resourceResponse);
+            if (!m_fetcher->canAccessResource(resource, m_options.securityOrigin.get(), response.url(), ResourceFetcher::ShouldLogAccessControlErrors)) {
+                m_fetcher->didReceiveResponse(m_resource, resourceResponse);
                 cancel(ResourceError::cancelledDueToAccessCheckError(KURL(response.url())));
                 return;
             }
         }
     }
 
-    // Reference the object in this method since the additional processing can do
-    // anything including removing the last reference to this object.
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
     m_resource->responseReceived(resourceResponse, handle.release());
     if (m_state == Terminated)
         return;
 
-    m_host->didReceiveResponse(m_resource, resourceResponse);
+    m_fetcher->didReceiveResponse(m_resource, resourceResponse);
     if (m_state == Terminated)
         return;
 
     if (response.toResourceResponse().isMultipart()) {
-        if (!m_resource->isImage()) {
+        // We only support multipart for images, though the image may be loaded
+        // as a main resource that we end up displaying through an ImageDocument.
+        if (!m_resource->isImage() && m_resource->type() != Resource::MainResource) {
             cancel();
             return;
         }
+        m_loadingMultipartContent = true;
     } else if (isMultipartPayload) {
         // Since a subresource loader does not load multipart sections progressively, data was delivered to the loader all at once.
         // After the first multipart section is complete, signal to delegates that this load is "finished"
-        m_host->subresourceLoaderFinishedLoadingOnePart(this);
+        m_fetcher->subresourceLoaderFinishedLoadingOnePart(this);
         didFinishLoadingOnePart(0, WebURLLoaderClient::kUnknownEncodedDataLength);
     }
     if (m_state == Terminated)
@@ -395,7 +390,7 @@ void ResourceLoader::didReceiveResponse(WebURLLoader*, const WebURLResponse& res
 
     if (!m_notifiedLoadComplete) {
         m_notifiedLoadComplete = true;
-        m_host->didFailLoading(m_resource, ResourceError::cancelledError(m_request.url()));
+        m_fetcher->didFailLoading(m_resource, ResourceError::cancelledError(m_request.url()));
     }
 
     ASSERT(m_state != Terminated);
@@ -420,14 +415,10 @@ void ResourceLoader::didReceiveData(WebURLLoader*, const char* data, int length,
         return;
     ASSERT(m_state == Initialized);
 
-    // Reference the object in this method since the additional processing can do
-    // anything including removing the last reference to this object.
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
-
     // FIXME: If we get a resource with more than 2B bytes, this code won't do the right thing.
     // However, with today's computers and networking speeds, this won't happen in practice.
     // Could be an issue with a giant local file.
-    m_host->didReceiveData(m_resource, data, length, encodedDataLength);
+    m_fetcher->didReceiveData(m_resource, data, length, encodedDataLength);
     if (m_state == Terminated)
         return;
     RELEASE_ASSERT(length >= 0);
@@ -443,7 +434,6 @@ void ResourceLoader::didFinishLoading(WebURLLoader*, double finishTime, int64_t 
     ASSERT(m_state != Terminated);
     WTF_LOG(ResourceLoading, "Received '%s'.", m_resource->url().string().latin1().data());
 
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
     ResourcePtr<Resource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->setLoadFinishTime(finishTime);
@@ -465,15 +455,13 @@ void ResourceLoader::didFail(WebURLLoader*, const WebURLError& error)
     ASSERT(m_state != Terminated);
     WTF_LOG(ResourceLoading, "Failed to load '%s'.\n", m_resource->url().string().latin1().data());
 
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
-    RefPtrWillBeRawPtr<ResourceLoaderHost> protectHost(m_host.get());
     ResourcePtr<Resource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->setResourceError(error);
 
     if (!m_notifiedLoadComplete) {
         m_notifiedLoadComplete = true;
-        m_host->didFailLoading(m_resource, error);
+        m_fetcher->didFailLoading(m_resource, error);
     }
     if (m_state == Terminated)
         return;
@@ -486,9 +474,9 @@ void ResourceLoader::didFail(WebURLLoader*, const WebURLError& error)
     releaseResources();
 }
 
-bool ResourceLoader::isLoadedBy(ResourceLoaderHost* loader) const
+bool ResourceLoader::isLoadedBy(ResourceFetcher* loader) const
 {
-    return m_host->isLoadedBy(loader);
+    return m_fetcher->isLoadedBy(loader);
 }
 
 void ResourceLoader::requestSynchronously()
@@ -499,8 +487,6 @@ void ResourceLoader::requestSynchronously()
     // downloadToFile is not supported for synchronous requests.
     ASSERT(!m_request.downloadToFile());
 
-    RefPtrWillBeRawPtr<ResourceLoader> protect(this);
-    RefPtrWillBeRawPtr<ResourceLoaderHost> protectHost(m_host.get());
     ResourcePtr<Resource> protectResource(m_resource);
 
     RELEASE_ASSERT(m_connectionState == ConnectionStateNew);
@@ -527,7 +513,7 @@ void ResourceLoader::requestSynchronously()
         return;
     RefPtr<ResourceLoadInfo> resourceLoadInfo = responseOut.toResourceResponse().resourceLoadInfo();
     int64_t encodedDataLength = resourceLoadInfo ? resourceLoadInfo->encodedDataLength : WebURLLoaderClient::kUnknownEncodedDataLength;
-    m_host->didReceiveData(m_resource, dataOut.data(), dataOut.size(), encodedDataLength);
+    m_fetcher->didReceiveData(m_resource, dataOut.data(), dataOut.size(), encodedDataLength);
     m_resource->setResourceBuffer(dataOut);
     didFinishLoading(0, monotonicallyIncreasingTime(), encodedDataLength);
 }

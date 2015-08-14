@@ -33,9 +33,9 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/InspectorPageAgent.h"
-#include "core/page/Chrome.h"
-#include "core/page/EventHandler.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/JSONValues.h"
 #include "platform/PlatformTouchEvent.h"
@@ -50,7 +50,7 @@ namespace {
 
 class SyntheticInspectorTouchPoint : public blink::PlatformTouchPoint {
 public:
-    SyntheticInspectorTouchPoint(unsigned id, State state, const blink::IntPoint& screenPos, const blink::IntPoint& pos, int radiusX, int radiusY, double rotationAngle, double force)
+    SyntheticInspectorTouchPoint(int id, State state, const blink::IntPoint& screenPos, const blink::IntPoint& pos, int radiusX, int radiusY, double rotationAngle, double force)
     {
         m_id = id;
         m_screenPos = screenPos;
@@ -80,7 +80,7 @@ public:
 void ConvertInspectorPoint(blink::LocalFrame* frame, const blink::IntPoint& point, blink::IntPoint* convertedPoint, blink::IntPoint* globalPoint)
 {
     *convertedPoint = frame->view()->convertToContainingWindow(point);
-    *globalPoint = frame->page()->chrome().viewportToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
+    *globalPoint = frame->page()->chromeClient().viewportToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
 }
 
 } // namespace

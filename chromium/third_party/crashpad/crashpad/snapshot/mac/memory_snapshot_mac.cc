@@ -14,6 +14,7 @@
 
 #include "snapshot/mac/memory_snapshot_mac.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "util/mach/task_memory.h"
 
 namespace crashpad {

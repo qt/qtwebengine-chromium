@@ -304,7 +304,7 @@ static CounterNode* makeCounterNode(LayoutObject& object, const AtomicString& id
     bool isReset = false;
     int value = 0;
     if (!planCounter(object, identifier, isReset, value) && !alwaysCreateCounter)
-        return 0;
+        return nullptr;
 
     RefPtr<CounterNode> newParent = nullptr;
     RefPtr<CounterNode> newPreviousSibling = nullptr;
@@ -347,8 +347,8 @@ static CounterNode* makeCounterNode(LayoutObject& object, const AtomicString& id
 LayoutCounter::LayoutCounter(Document* node, const CounterContent& counter)
     : LayoutText(node, StringImpl::empty())
     , m_counter(counter)
-    , m_counterNode(0)
-    , m_nextForSameCounter(0)
+    , m_counterNode(nullptr)
+    , m_nextForSameCounter(nullptr)
 {
     view()->addLayoutCounter();
 }
@@ -357,17 +357,12 @@ LayoutCounter::~LayoutCounter()
 {
 }
 
-void LayoutCounter::destroy()
+void LayoutCounter::willBeDestroyed()
 {
     if (m_counterNode) {
         m_counterNode->removeLayoutObject(this);
         ASSERT(!m_counterNode);
     }
-    LayoutText::destroy();
-}
-
-void LayoutCounter::willBeDestroyed()
-{
     if (view())
         view()->removeLayoutCounter();
     LayoutText::willBeDestroyed();
@@ -473,7 +468,7 @@ void LayoutCounter::destroyCounterNode(LayoutObject& owner, const AtomicString& 
     // map associated with a layoutObject, so there is no risk in leaking the map.
 }
 
-void LayoutCounter::layoutObjectRemovedFromTree(LayoutObject* layoutObject)
+void LayoutCounter::layoutObjectSubtreeWillBeDetached(LayoutObject* layoutObject)
 {
     ASSERT(layoutObject->view());
     if (!layoutObject->view()->hasLayoutCounters())
@@ -574,6 +569,8 @@ void LayoutCounter::layoutObjectStyleChanged(LayoutObject& layoutObject, const C
                 LayoutCounter::destroyCounterNodes(layoutObject);
         }
     } else if (newCounterDirectives) {
+        if (layoutObject.hasCounterNodeMap())
+            LayoutCounter::destroyCounterNodes(layoutObject);
         CounterDirectiveMap::const_iterator newMapEnd = newCounterDirectives->end();
         for (CounterDirectiveMap::const_iterator it = newCounterDirectives->begin(); it != newMapEnd; ++it) {
             // We must create this node here, because the added node may be a node with no display such as

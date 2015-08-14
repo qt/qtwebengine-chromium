@@ -43,6 +43,7 @@
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/inspector/MainThreadDebugger.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
 
@@ -52,17 +53,16 @@ using blink::TypeBuilder::Runtime::RemoteObject;
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<PageDebuggerAgent> PageDebuggerAgent::create(MainThreadDebugger* MainThreadDebugger, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, int debuggerId)
+PassOwnPtrWillBeRawPtr<PageDebuggerAgent> PageDebuggerAgent::create(MainThreadDebugger* MainThreadDebugger, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
 {
-    return adoptPtrWillBeNoop(new PageDebuggerAgent(MainThreadDebugger, pageAgent, injectedScriptManager, overlay, debuggerId));
+    return adoptPtrWillBeNoop(new PageDebuggerAgent(MainThreadDebugger, pageAgent, injectedScriptManager, overlay));
 }
 
-PageDebuggerAgent::PageDebuggerAgent(MainThreadDebugger* MainThreadDebugger, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, int debuggerId)
-    : InspectorDebuggerAgent(injectedScriptManager, MainThreadDebugger->scriptDebugServer()->isolate())
+PageDebuggerAgent::PageDebuggerAgent(MainThreadDebugger* MainThreadDebugger, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+    : InspectorDebuggerAgent(injectedScriptManager, MainThreadDebugger->debugger()->isolate())
     , m_mainThreadDebugger(MainThreadDebugger)
     , m_pageAgent(pageAgent)
     , m_overlay(overlay)
-    , m_debuggerId(debuggerId)
 {
     m_overlay->setListener(this);
 }
@@ -94,6 +94,12 @@ void PageDebuggerAgent::enable(ErrorString* errorString)
     InspectorDebuggerAgent::enable(errorString);
 }
 
+void PageDebuggerAgent::restore()
+{
+    if (canExecuteScripts())
+        InspectorDebuggerAgent::restore();
+}
+
 void PageDebuggerAgent::enable()
 {
     ASSERT(canExecuteScripts());
@@ -108,19 +114,19 @@ void PageDebuggerAgent::disable()
     m_compiledScriptURLs.clear();
 }
 
-void PageDebuggerAgent::startListeningScriptDebugServer()
+void PageDebuggerAgent::startListeningV8Debugger()
 {
-    m_mainThreadDebugger->addListener(this, m_pageAgent->inspectedFrame(), m_debuggerId);
+    m_mainThreadDebugger->addListener(this, m_pageAgent->inspectedFrame());
 }
 
-void PageDebuggerAgent::stopListeningScriptDebugServer()
+void PageDebuggerAgent::stopListeningV8Debugger()
 {
     m_mainThreadDebugger->removeListener(this, m_pageAgent->inspectedFrame());
 }
 
-ScriptDebugServer& PageDebuggerAgent::scriptDebugServer()
+V8Debugger& PageDebuggerAgent::debugger()
 {
-    return *(m_mainThreadDebugger->scriptDebugServer());
+    return *(m_mainThreadDebugger->debugger());
 }
 
 void PageDebuggerAgent::muteConsole()
@@ -210,7 +216,7 @@ void PageDebuggerAgent::runScript(ErrorString* errorString, const ScriptId& scri
 
     String sourceURL = m_compiledScriptURLs.take(scriptId);
     LocalFrame* frame = toDocument(executionContext)->frame();
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt()));
+    TRACE_EVENT1("devtools.timeline", "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt()));
     InspectorInstrumentationCookie cookie;
     if (frame)
         cookie = InspectorInstrumentation::willEvaluateScript(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt());

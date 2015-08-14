@@ -35,8 +35,8 @@ void VerifyStateChangedMessage(int expected_handle_id,
   ServiceWorkerMsg_ServiceWorkerStateChanged::Param param;
   ASSERT_TRUE(ServiceWorkerMsg_ServiceWorkerStateChanged::Read(
       message, &param));
-  EXPECT_EQ(expected_handle_id, get<1>(param));
-  EXPECT_EQ(expected_state, get<2>(param));
+  EXPECT_EQ(expected_handle_id, base::get<1>(param));
+  EXPECT_EQ(expected_state, base::get<2>(param));
 }
 
 }  // namespace
@@ -56,7 +56,7 @@ class TestingServiceWorkerDispatcherHost : public ServiceWorkerDispatcherHost {
 
   bool Send(IPC::Message* message) override { return helper_->Send(message); }
 
-  void BadMessageReceived() override { ++bad_message_received_count_; }
+  void ShutdownForBadMessage() override { ++bad_message_received_count_; }
 
   int bad_message_received_count_;
 

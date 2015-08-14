@@ -9,6 +9,7 @@
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
+#import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #import "ui/base/cocoa/window_size_constants.h"
 #include "ui/gfx/font_list.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
@@ -18,7 +19,20 @@
 #import "ui/views/cocoa/bridged_native_widget.h"
 #import "ui/views/cocoa/native_widget_mac_nswindow.h"
 #import "ui/views/cocoa/views_nswindow_delegate.h"
+#include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/native_frame_view.h"
+
+// Self-owning animation delegate that starts a hide animation, then calls
+// -[NSWindow close] when the animation ends, releasing itself.
+@interface ViewsNSWindowCloseAnimator : NSObject<NSAnimationDelegate> {
+ @private
+  base::scoped_nsobject<NSWindow> window_;
+  base::scoped_nsobject<NSAnimation> animation_;
+}
+
++ (void)closeWindowWithAnimation:(NSWindow*)window;
+
+@end
 
 namespace views {
 namespace {
@@ -30,7 +44,8 @@ NSInteger StyleMaskForParams(const Widget::InitParams& params) {
 
   if (params.type == Widget::InitParams::TYPE_WINDOW) {
     return NSTitledWindowMask | NSClosableWindowMask |
-           NSMiniaturizableWindowMask | NSResizableWindowMask;
+           NSMiniaturizableWindowMask | NSResizableWindowMask |
+           NSTexturedBackgroundWindowMask;
   }
   return NSBorderlessWindowMask;
 }
@@ -63,6 +78,11 @@ BridgedNativeWidget* NativeWidgetMac::GetBridgeForNativeWindow(
     return [delegate nativeWidgetMac]->bridge_.get();
   }
   return nullptr;  // Not created by NativeWidgetMac.
+}
+
+bool NativeWidgetMac::IsWindowModalSheet() const {
+  return GetWidget()->widget_delegate()->GetModalType() ==
+         ui::MODAL_TYPE_WINDOW;
 }
 
 void NativeWidgetMac::OnWindowWillClose() {
@@ -173,8 +193,10 @@ void* NativeWidgetMac::GetNativeWindowProperty(const char* name) const {
 }
 
 TooltipManager* NativeWidgetMac::GetTooltipManager() const {
-  NOTIMPLEMENTED();
-  return NULL;
+  if (bridge_)
+    return bridge_->tooltip_manager();
+
+  return nullptr;
 }
 
 void NativeWidgetMac::SetCapture() {
@@ -191,16 +213,8 @@ bool NativeWidgetMac::HasCapture() const {
   return bridge_ && bridge_->HasCapture();
 }
 
-InputMethod* NativeWidgetMac::CreateInputMethod() {
-  return bridge_ ? bridge_->CreateInputMethod() : NULL;
-}
-
-internal::InputMethodDelegate* NativeWidgetMac::GetInputMethodDelegate() {
-  return bridge_.get();
-}
-
-ui::InputMethod* NativeWidgetMac::GetHostInputMethod() {
-  return bridge_ ? bridge_->GetHostInputMethod() : NULL;
+ui::InputMethod* NativeWidgetMac::GetInputMethod() {
+  return bridge_ ? bridge_->GetInputMethod() : NULL;
 }
 
 void NativeWidgetMac::CenterWindow(const gfx::Size& size) {
@@ -287,7 +301,7 @@ void NativeWidgetMac::StackBelow(gfx::NativeView native_view) {
   NOTIMPLEMENTED();
 }
 
-void NativeWidgetMac::SetShape(gfx::NativeRegion shape) {
+void NativeWidgetMac::SetShape(SkRegion* shape) {
   NOTIMPLEMENTED();
 }
 
@@ -295,21 +309,25 @@ void NativeWidgetMac::Close() {
   if (!bridge_)
     return;
 
-  if (delegate_->IsModal()) {
+  NSWindow* window = GetNativeWindow();
+  if (IsWindowModalSheet()) {
     // Sheets can't be closed normally. This starts the sheet closing. Once the
     // sheet has finished animating, it will call sheetDidEnd: on the parent
     // window's delegate. Note it still needs to be asynchronous, since code
     // calling Widget::Close() doesn't expect things to be deleted upon return.
-    [NSApp performSelector:@selector(endSheet:)
-                withObject:GetNativeWindow()
-                afterDelay:0];
+    [NSApp performSelector:@selector(endSheet:) withObject:window afterDelay:0];
+    return;
+  }
+
+  // For other modal types, animate the close.
+  if (delegate_->IsModal()) {
+    [ViewsNSWindowCloseAnimator closeWindowWithAnimation:window];
     return;
   }
 
   // Clear the view early to suppress repaints.
   bridge_->SetRootView(NULL);
 
-  NSWindow* window = GetNativeWindow();
   // Calling performClose: will momentarily highlight the close button, but
   // AppKit will reject it if there is no close button.
   SEL close_selector = ([window styleMask] & NSClosableWindowMask)
@@ -419,6 +437,7 @@ bool NativeWidgetMac::IsMinimized() const {
 }
 
 void NativeWidgetMac::Restore() {
+  SetFullscreen(false);
   [GetNativeWindow() deminiaturize:nil];
 }
 
@@ -467,7 +486,9 @@ void NativeWidgetMac::SetCursor(gfx::NativeCursor cursor) {
 }
 
 bool NativeWidgetMac::IsMouseEventsEnabled() const {
-  NOTIMPLEMENTED();
+  // On platforms with touch, mouse events get disabled and calls to this method
+  // can affect hover states. Since there is no touch on desktop Mac, this is
+  // always true. Touch on Mac is tracked in http://crbug.com/445520.
   return true;
 }
 
@@ -539,7 +560,7 @@ NSWindow* NativeWidgetMac::CreateNSWindow(const Widget::InitParams& params) {
       initWithContentRect:ui::kWindowSizeDeterminedLater
                 styleMask:StyleMaskForParams(params)
                   backing:NSBackingStoreBuffered
-                    defer:YES] autorelease];
+                    defer:NO] autorelease];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -645,3 +666,29 @@ gfx::FontList NativeWidgetPrivate::GetWindowTitleFontList() {
 
 }  // namespace internal
 }  // namespace views
+
+@implementation ViewsNSWindowCloseAnimator
+
+- (id)initWithWindow:(NSWindow*)window {
+  if ((self = [super init])) {
+    window_.reset([window retain]);
+    animation_.reset(
+        [[ConstrainedWindowAnimationHide alloc] initWithWindow:window]);
+    [animation_ setDelegate:self];
+    [animation_ setAnimationBlockingMode:NSAnimationNonblocking];
+    [animation_ startAnimation];
+  }
+  return self;
+}
+
++ (void)closeWindowWithAnimation:(NSWindow*)window {
+  [[ViewsNSWindowCloseAnimator alloc] initWithWindow:window];
+}
+
+- (void)animationDidEnd:(NSAnimation*)animation {
+  [window_ close];
+  [animation_ setDelegate:nil];
+  [self release];
+}
+
+@end

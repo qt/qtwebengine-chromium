@@ -28,6 +28,7 @@ class SkImage;
 class SkMetaData;
 class SkPicture;
 class SkRRect;
+struct SkRSXform;
 class SkSurface;
 class SkSurface_Base;
 class SkTextBlob;
@@ -53,8 +54,6 @@ class SkCanvasState;
 */
 class SK_API SkCanvas : public SkRefCnt {
 public:
-    SK_DECLARE_INST_COUNT(SkCanvas)
-
     /**
      *  Attempt to allocate raster canvas, matching the ImageInfo, that will draw directly into the
      *  specified pixels. To access the pixels after drawing to them, the caller should call
@@ -148,6 +147,9 @@ protected:  // Can we make this private?
 #endif
     SkBaseDevice* getDevice() const;
 public:
+    SkBaseDevice* getDevice_just_for_deprecated_compatibility_testing() const {
+        return this->getDevice();
+    }
 
     /**
      *  saveLayer() can create another device (which is later drawn onto
@@ -788,6 +790,23 @@ public:
     void drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
                        const SkPaint* paint = NULL);
 
+    /**
+     *  Draw the image stretched differentially to fit into dst.
+     *  center is a rect within the image, and logically divides the image
+     *  into 9 sections (3x3). For example, if the middle pixel of a [5x5]
+     *  image is the "center", then the center-rect should be [2, 2, 3, 3].
+     *
+     *  If the dst is >= the image size, then...
+     *  - The 4 corners are not stretched at all.
+     *  - The sides are stretched in only one axis.
+     *  - The center is stretched in both axes.
+     * Else, for each axis where dst < image,
+     *  - The corners shrink proportionally
+     *  - The sides (along the shrink axis) and center are not drawn
+     */
+    void drawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,
+                        const SkPaint* paint = NULL);
+
     /** Draw the specified bitmap, with its top/left corner at (x,y), using the
         specified paint, transformed by the current matrix. Note: if the paint
         contains a maskfilter that generates a mask which extends beyond the
@@ -1021,6 +1040,32 @@ public:
                    const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint);
 
     /**
+     *  Draw a set of sprites from the atlas. Each is specified by a tex rectangle in the
+     *  coordinate space of the atlas, and a corresponding xform which transforms the tex rectangle
+     *  into a quad.
+     *
+     *      xform maps [0, 0, tex.width, tex.height] -> quad
+     *
+     *  The color array is optional. When specified, each color modulates the pixels in its
+     *  corresponding quad (via the specified SkXfermode::Mode).
+     *
+     *  The cullRect is optional. When specified, it must be a conservative bounds of all of the
+     *  resulting transformed quads, allowing the canvas to skip drawing if the cullRect does not
+     *  intersect the current clip.
+     *
+     *  The paint is optional. If specified, its antialiasing, alpha, color-filter, image-filter
+     *  and xfermode are used to affect each of the quads.
+     */
+    void drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[],
+                   const SkColor colors[], int count, SkXfermode::Mode, const SkRect* cullRect,
+                   const SkPaint* paint);
+
+    void drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[], int count,
+                   const SkRect* cullRect, const SkPaint* paint) {
+        this->drawAtlas(atlas, xform, tex, NULL, count, SkXfermode::kDst_Mode, cullRect, paint);
+    }
+
+    /**
      *  Draw the contents of this drawable into the canvas. If the canvas is async
      *  (e.g. it is recording into a picture) then the drawable will be referenced instead,
      *  to have its draw() method called when the picture is finalized.
@@ -1028,21 +1073,8 @@ public:
      *  If the intent is to force the contents of the drawable into this canvas immediately,
      *  then drawable->draw(canvas) may be called.
      */
-    void drawDrawable(SkDrawable* drawable);
-
-    /** Add comments. beginCommentGroup/endCommentGroup open/close a new group.
-        Each comment added via addComment is notionally attached to its
-        enclosing group. Top-level comments simply belong to no group.
-     */
-    virtual void beginCommentGroup(const char* /*description*/) {
-        // do nothing. Subclasses may do something
-    }
-    virtual void addComment(const char* /*kywd*/, const char* /*value*/) {
-        // do nothing. Subclasses may do something
-    }
-    virtual void endCommentGroup() {
-        // do nothing. Subclasses may do something
-    }
+    void drawDrawable(SkDrawable* drawable, const SkMatrix* = NULL);
+    void drawDrawable(SkDrawable*, SkScalar x, SkScalar y);
 
     //////////////////////////////////////////////////////////////////////////
 
@@ -1156,8 +1188,8 @@ protected:
     virtual SkSurface* onNewSurface(const SkImageInfo&, const SkSurfaceProps&);
 
     // default impl defers to its device
-    virtual const void* onPeekPixels(SkImageInfo*, size_t* rowBytes);
-    virtual void* onAccessTopLayerPixels(SkImageInfo*, size_t* rowBytes);
+    virtual bool onPeekPixels(SkPixmap*);
+    virtual bool onAccessTopLayerPixels(SkPixmap*);
 
     // Subclass save/restore notifiers.
     // Overriders should call the corresponding INHERITED method up the inheritance chain.
@@ -1198,7 +1230,7 @@ protected:
     virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                            const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint);
 
-    virtual void onDrawDrawable(SkDrawable*);
+    virtual void onDrawDrawable(SkDrawable*, const SkMatrix*);
 
     virtual void onDrawPaint(const SkPaint&);
     virtual void onDrawRect(const SkRect&, const SkPaint&);
@@ -1208,9 +1240,15 @@ protected:
     virtual void onDrawVertices(VertexMode, int vertexCount, const SkPoint vertices[],
                                 const SkPoint texs[], const SkColor colors[], SkXfermode*,
                                 const uint16_t indices[], int indexCount, const SkPaint&);
+
+    virtual void onDrawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[],
+                             int count, SkXfermode::Mode, const SkRect* cull, const SkPaint*);
     virtual void onDrawPath(const SkPath&, const SkPaint&);
     virtual void onDrawImage(const SkImage*, SkScalar dx, SkScalar dy, const SkPaint*);
     virtual void onDrawImageRect(const SkImage*, const SkRect*, const SkRect&, const SkPaint*);
+    virtual void onDrawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,
+                                 const SkPaint*);
+
     virtual void onDrawBitmap(const SkBitmap&, SkScalar dx, SkScalar dy, const SkPaint*);
     virtual void onDrawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint*,
                                   DrawBitmapRectFlags);
@@ -1301,7 +1339,7 @@ private:
         kConservativeRasterClip_InitFlag    = 1 << 0,
     };
     SkCanvas(const SkIRect& bounds, InitFlags);
-    SkCanvas(SkBaseDevice*, const SkSurfaceProps*, InitFlags);
+    SkCanvas(SkBaseDevice* device, InitFlags);
 
     void resetForNextPicture(const SkIRect& bounds);
 
@@ -1328,8 +1366,6 @@ private:
     void internalDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src,
                                 const SkRect& dst, const SkPaint* paint,
                                 DrawBitmapRectFlags flags);
-    void internalDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,
-                                const SkRect& dst, const SkPaint* paint);
     void internalDrawPaint(const SkPaint& paint);
     void internalSaveLayer(const SkRect* bounds, const SkPaint*, SaveFlags, SaveLayerStrategy);
     void internalDrawDevice(SkBaseDevice*, int x, int y, const SkPaint*, bool isBitmapDevice);
@@ -1421,28 +1457,6 @@ private:
     int         fSaveCount;
 };
 #define SkAutoCanvasRestore(...) SK_REQUIRE_LOCAL_VAR(SkAutoCanvasRestore)
-
-/** Stack helper class to automatically open and close a comment block
- */
-class SkAutoCommentBlock : SkNoncopyable {
-public:
-    SkAutoCommentBlock(SkCanvas* canvas, const char* description) {
-        fCanvas = canvas;
-        if (fCanvas) {
-            fCanvas->beginCommentGroup(description);
-        }
-    }
-
-    ~SkAutoCommentBlock() {
-        if (fCanvas) {
-            fCanvas->endCommentGroup();
-        }
-    }
-
-private:
-    SkCanvas* fCanvas;
-};
-#define SkAutoCommentBlock(...) SK_REQUIRE_LOCAL_VAR(SkAutoCommentBlock)
 
 /**
  *  If the caller wants read-only access to the pixels in a canvas, it can just

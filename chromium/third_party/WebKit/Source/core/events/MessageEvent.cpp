@@ -39,10 +39,6 @@ static inline bool isValidSource(EventTarget* source)
     return !source || source->toDOMWindow() || source->toMessagePort();
 }
 
-MessageEventInit::MessageEventInit()
-{
-}
-
 MessageEvent::MessageEvent()
     : m_dataType(DataTypeScriptValue)
 {
@@ -51,15 +47,22 @@ MessageEvent::MessageEvent()
 MessageEvent::MessageEvent(const AtomicString& type, const MessageEventInit& initializer)
     : Event(type, initializer)
     , m_dataType(DataTypeScriptValue)
-    , m_origin(initializer.origin)
-    , m_lastEventId(initializer.lastEventId)
-    , m_source(isValidSource(initializer.source.get()) ? initializer.source : nullptr)
-    , m_ports(adoptPtrWillBeNoop(new MessagePortArray(initializer.ports)))
+    , m_source(nullptr)
 {
+    if (initializer.hasData())
+        m_dataAsScriptValue = initializer.data();
+    if (initializer.hasOrigin())
+        m_origin = initializer.origin();
+    if (initializer.hasLastEventId())
+        m_lastEventId = initializer.lastEventId();
+    if (initializer.hasSource() && isValidSource(initializer.source().get()))
+        m_source = initializer.source();
+    if (initializer.hasPorts())
+        m_ports = new MessagePortArray(initializer.ports());
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, MessagePortArray* ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeScriptValue)
     , m_origin(origin)
@@ -70,7 +73,7 @@ MessageEvent::MessageEvent(const String& origin, const String& lastEventId, Pass
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, MessagePortArray* ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeSerializedScriptValue)
     , m_dataAsSerializedScriptValue(data)
@@ -128,14 +131,14 @@ MessageEvent::~MessageEvent()
 
 PassRefPtrWillBeRawPtr<MessageEvent> MessageEvent::create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState& exceptionState)
 {
-    if (initializer.source.get() && !isValidSource(initializer.source.get())) {
+    if (initializer.source().get() && !isValidSource(initializer.source().get())) {
         exceptionState.throwTypeError("The optional 'source' property is neither a Window nor MessagePort.");
         return nullptr;
     }
     return adoptRefWillBeNoop(new MessageEvent(type, initializer));
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, ScriptValue data, const String& origin, const String& lastEventId, DOMWindow* source, MessagePortArray* ports)
 {
     if (dispatched())
         return;
@@ -143,13 +146,14 @@ void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bo
     initEvent(type, canBubble, cancelable);
 
     m_dataType = DataTypeScriptValue;
+    m_dataAsScriptValue = data;
     m_origin = origin;
     m_lastEventId = lastEventId;
     m_source = source;
     m_ports = ports;
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, MessagePortArray* ports)
 {
     if (dispatched())
         return;
@@ -172,6 +176,26 @@ const AtomicString& MessageEvent::interfaceName() const
     return EventNames::MessageEvent;
 }
 
+MessagePortArray MessageEvent::ports(bool& isNull) const
+{
+    // TODO(bashi): Currently we return a copied array because the binding
+    // layer could modify the content of the array while executing JS callbacks.
+    // Avoid copying once we can make sure that the binding layer won't
+    // modify the content.
+    if (m_ports) {
+        isNull = false;
+        return *m_ports;
+    }
+    isNull = true;
+    return MessagePortArray();
+}
+
+MessagePortArray MessageEvent::ports() const
+{
+    bool unused;
+    return ports(unused);
+}
+
 void MessageEvent::entangleMessagePorts(ExecutionContext* context)
 {
     m_ports = MessagePort::entanglePorts(*context, m_channels.release());
@@ -189,7 +213,7 @@ DEFINE_TRACE(MessageEvent)
 
 v8::Local<v8::Object> MessageEvent::associateWithWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperType, v8::Local<v8::Object> wrapper)
 {
-    Event::associateWithWrapper(isolate, wrapperType, wrapper);
+    wrapper = Event::associateWithWrapper(isolate, wrapperType, wrapper);
 
     // Ensures a wrapper is created for the data to return now so that V8 knows how
     // much memory is used via the wrapper. To keep the wrapper alive, it's set to

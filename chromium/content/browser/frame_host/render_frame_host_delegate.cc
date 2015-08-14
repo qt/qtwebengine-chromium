@@ -23,10 +23,6 @@ const GURL& RenderFrameHostDelegate::GetMainFrameLastCommittedURL() const {
   return GURL::EmptyGURL();
 }
 
-bool RenderFrameHostDelegate::WillHandleDeferAfterResponseStarted() {
-  return false;
-}
-
 bool RenderFrameHostDelegate::AddMessageToConsole(
     int32 level, const base::string16& message, int32 line_no,
     const base::string16& source_id) {
@@ -74,11 +70,6 @@ bool RenderFrameHostDelegate::ShouldRouteMessageEvent(
     RenderFrameHost* target_rfh,
     SiteInstance* source_site_instance) const {
   return false;
-}
-
-int RenderFrameHostDelegate::EnsureOpenerRenderViewsExist(
-    RenderFrameHost* source_rfh) {
-  return MSG_ROUTING_NONE;
 }
 
 #if defined(OS_WIN)

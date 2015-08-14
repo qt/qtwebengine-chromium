@@ -23,6 +23,10 @@
 #include "ui/compositor/layer_owner_delegate.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 
+namespace base {
+class TickClock;
+}
+
 namespace cc {
 class SurfaceFactory;
 enum class SurfaceDrawStatus;
@@ -115,11 +119,14 @@ class CONTENT_EXPORT DelegatedFrameHost
   bool CanCopyToBitmap() const;
 
   // Public interface exposed to RenderWidgetHostView.
+
+  // Note: |satisfies_sequences| is cleared in calls to this function.
   void SwapDelegatedFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::DelegatedFrameData> frame_data,
       float frame_device_scale_factor,
-      const std::vector<ui::LatencyInfo>& latency_info);
+      const std::vector<ui::LatencyInfo>& latency_info,
+      std::vector<uint32_t>* satifies_sequences);
   void WasHidden();
   void WasShown(const ui::LatencyInfo& latency_info);
   void WasResized();
@@ -127,6 +134,8 @@ class CONTENT_EXPORT DelegatedFrameHost
   gfx::Size GetRequestedRendererSize() const;
   void SetCompositor(ui::Compositor* compositor);
   void ResetCompositor();
+  void SetVSyncParameters(const base::TimeTicks& timebase,
+                          const base::TimeDelta& interval);
   // Note: |src_subset| is specified in DIP dimensions while |output_size|
   // expects pixels.
   void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
@@ -163,12 +172,11 @@ class CONTENT_EXPORT DelegatedFrameHost
 
  private:
   friend class DelegatedFrameHostClient;
+  friend class RenderWidgetHostViewAuraCopyRequestTest;
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            SkippedDelegatedFrames);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            DiscardDelegatedFramesWithLocking);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
-                           DestroyedAfterCopyRequest);
 
   RenderWidgetHostViewFrameSubscriber* frame_subscriber() const {
     return frame_subscriber_.get();
@@ -248,9 +256,12 @@ class CONTENT_EXPORT DelegatedFrameHost
   scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
 
   // The current VSync timebase and interval. These are zero until the first
-  // call to OnUpdateVSyncParameters().
+  // call to SetVSyncParameters().
   base::TimeTicks vsync_timebase_;
   base::TimeDelta vsync_interval_;
+
+  // Overridable tick clock used for testing functions using current time.
+  scoped_ptr<base::TickClock> tick_clock_;
 
   // With delegated renderer, this is the last output surface, used to
   // disambiguate resources with the same id coming from different output

@@ -150,14 +150,12 @@
 #include <openssl/hmac.h>
 #include <openssl/lhash.h>
 #include <openssl/pem.h>
+#include <openssl/thread.h>
 #include <openssl/x509.h>
 
 #if !defined(OPENSSL_WINDOWS)
 #include <sys/time.h>
 #endif
-
-/* Some code expected to get the threading functions by including ssl.h. */
-#include <openssl/thread.h>
 
 /* wpa_supplicant expects to get the version functions from ssl.h */
 #include <openssl/crypto.h>
@@ -179,28 +177,6 @@ extern "C" {
 
 /* SSL_library_init initializes the crypto and SSL libraries and returns one. */
 OPENSSL_EXPORT int SSL_library_init(void);
-
-
-/* Protocol version constants */
-
-#define SSL3_VERSION 0x0300
-#define SSL3_VERSION_MAJOR 0x03
-#define SSL3_VERSION_MINOR 0x00
-
-#define TLS1_2_VERSION 0x0303
-#define TLS1_2_VERSION_MAJOR 0x03
-#define TLS1_2_VERSION_MINOR 0x03
-
-#define TLS1_1_VERSION 0x0302
-#define TLS1_1_VERSION_MAJOR 0x03
-#define TLS1_1_VERSION_MINOR 0x02
-
-#define TLS1_VERSION 0x0301
-#define TLS1_VERSION_MAJOR 0x03
-#define TLS1_VERSION_MINOR 0x01
-
-#define DTLS1_VERSION 0xFEFF
-#define DTLS1_2_VERSION 0xFEFD
 
 
 /* Cipher suites. */
@@ -263,8 +239,9 @@ OPENSSL_EXPORT const char *SSL_CIPHER_get_name(const SSL_CIPHER *cipher);
 OPENSSL_EXPORT const char *SSL_CIPHER_get_kx_name(const SSL_CIPHER *cipher);
 
 /* SSL_CIPHER_get_rfc_name returns a newly-allocated string with the standard
- * name for |cipher|. For example, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256". The
- * caller is responsible for calling |OPENSSL_free| on the result. */
+ * name for |cipher| or NULL on error. For example,
+ * "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256". The caller is responsible for
+ * calling |OPENSSL_free| on the result. */
 OPENSSL_EXPORT char *SSL_CIPHER_get_rfc_name(const SSL_CIPHER *cipher);
 
 /* SSL_CIPHER_get_bits returns the strength, in bits, of |cipher|. If
@@ -272,6 +249,382 @@ OPENSSL_EXPORT char *SSL_CIPHER_get_rfc_name(const SSL_CIPHER *cipher);
  * symmetric algorithm to |*out_alg_bits|. */
 OPENSSL_EXPORT int SSL_CIPHER_get_bits(const SSL_CIPHER *cipher,
                                        int *out_alg_bits);
+
+
+/* SSL contexts. */
+
+/* An SSL_METHOD selects whether to use TLS or DTLS. */
+typedef struct ssl_method_st SSL_METHOD;
+
+/* TLS_method is the |SSL_METHOD| used for TLS (and SSLv3) connections. */
+OPENSSL_EXPORT const SSL_METHOD *TLS_method(void);
+
+/* DTLS_method is the |SSL_METHOD| used for DTLS connections. */
+OPENSSL_EXPORT const SSL_METHOD *DTLS_method(void);
+
+/* SSL_CTX_new returns a newly-allocated |SSL_CTX| with default settings or NULL
+ * on error. An |SSL_CTX| manages shared state and configuration between
+ * multiple TLS or DTLS connections. */
+OPENSSL_EXPORT SSL_CTX *SSL_CTX_new(const SSL_METHOD *method);
+
+/* SSL_CTX_free releases memory associated with |ctx|. */
+OPENSSL_EXPORT void SSL_CTX_free(SSL_CTX *ctx);
+
+
+/* SSL connections. */
+
+/* SSL_new returns a newly-allocated |SSL| using |ctx| or NULL on error. An
+ * |SSL| object represents a single TLS or DTLS connection. It inherits settings
+ * from |ctx| at the time of creation. Settings may also be individually
+ * configured on the connection.
+ *
+ * On creation, an |SSL| is not configured to be either a client or server. Call
+ * |SSL_set_connect_state| or |SSL_set_accept_state| to set this. */
+OPENSSL_EXPORT SSL *SSL_new(SSL_CTX *ctx);
+
+/* SSL_free releases memory associated with |ssl|. */
+OPENSSL_EXPORT void SSL_free(SSL *ssl);
+
+/* SSL_set_connect_state configures |ssl| to be a client. */
+OPENSSL_EXPORT void SSL_set_connect_state(SSL *ssl);
+
+/* SSL_set_accept_state configures |ssl| to be a server. */
+OPENSSL_EXPORT void SSL_set_accept_state(SSL *ssl);
+
+
+/* Protocol versions. */
+
+#define SSL3_VERSION_MAJOR 0x03
+
+#define SSL3_VERSION 0x0300
+#define TLS1_VERSION 0x0301
+#define TLS1_1_VERSION 0x0302
+#define TLS1_2_VERSION 0x0303
+
+#define DTLS1_VERSION 0xfeff
+#define DTLS1_2_VERSION 0xfefd
+
+/* SSL_CTX_set_min_version sets the minimum protocol version for |ctx| to
+ * |version|. */
+OPENSSL_EXPORT void SSL_CTX_set_min_version(SSL_CTX *ctx, uint16_t version);
+
+/* SSL_CTX_set_max_version sets the maximum protocol version for |ctx| to
+ * |version|. */
+OPENSSL_EXPORT void SSL_CTX_set_max_version(SSL_CTX *ctx, uint16_t version);
+
+/* SSL_set_min_version sets the minimum protocol version for |ssl| to
+ * |version|. */
+OPENSSL_EXPORT void SSL_set_min_version(SSL *ssl, uint16_t version);
+
+/* SSL_set_max_version sets the maximum protocol version for |ssl| to
+ * |version|. */
+OPENSSL_EXPORT void SSL_set_max_version(SSL *ssl, uint16_t version);
+
+
+/* Options.
+ *
+ * Options configure protocol behavior. */
+
+/* SSL_OP_LEGACY_SERVER_CONNECT allows initial connections to servers that don't
+ * support the renegotiation_info extension (RFC 5746). It is on by default. */
+#define SSL_OP_LEGACY_SERVER_CONNECT 0x00000004L
+
+/* SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER allows for record sizes |SSL3_RT_MAX_EXTRA|
+ * bytes above the maximum record size. */
+#define SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER 0x00000020L
+
+/* SSL_OP_TLS_D5_BUG accepts an RSAClientKeyExchange in TLS encoded as in SSL3
+ * (i.e. without a length prefix). */
+#define SSL_OP_TLS_D5_BUG 0x00000100L
+
+/* SSL_OP_ALL enables the above bug workarounds that are enabled by many
+ * consumers.
+ * TODO(davidben): Determine which of the remaining may be removed now. */
+#define SSL_OP_ALL 0x00000BFFL
+
+/* SSL_OP_NO_QUERY_MTU, in DTLS, disables querying the MTU from the underlying
+ * |BIO|. Instead, the MTU is configured with |SSL_set_mtu|. */
+#define SSL_OP_NO_QUERY_MTU 0x00001000L
+
+/* SSL_OP_NO_TICKET disables session ticket support (RFC 4507). */
+#define SSL_OP_NO_TICKET 0x00004000L
+
+/* SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION permits unsafe legacy renegotiation
+ * without renegotiation_info (RFC 5746) support. */
+#define SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION 0x00040000L
+
+/* SSL_OP_CIPHER_SERVER_PREFERENCE configures servers to select ciphers and
+ * ECDHE curves according to the server's preferences instead of the
+ * client's. */
+#define SSL_OP_CIPHER_SERVER_PREFERENCE 0x00400000L
+
+/* The following flags toggle individual protocol versions. This is deprecated.
+ * Use |SSL_CTX_set_min_version| and |SSL_CTX_set_max_version| instead. */
+#define SSL_OP_NO_SSLv3 0x02000000L
+#define SSL_OP_NO_TLSv1 0x04000000L
+#define SSL_OP_NO_TLSv1_2 0x08000000L
+#define SSL_OP_NO_TLSv1_1 0x10000000L
+#define SSL_OP_NO_DTLSv1 SSL_OP_NO_TLSv1
+#define SSL_OP_NO_DTLSv1_2 SSL_OP_NO_TLSv1_2
+
+/* The following flags do nothing and are included only to make it easier to
+ * compile code with BoringSSL. */
+#define SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS 0
+#define SSL_OP_MICROSOFT_SESS_ID_BUG 0
+#define SSL_OP_NETSCAPE_CHALLENGE_BUG 0
+#define SSL_OP_NO_COMPRESSION 0
+#define SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION 0
+#define SSL_OP_NO_SSLv2 0
+#define SSL_OP_SINGLE_DH_USE 0
+#define SSL_OP_SINGLE_ECDH_USE 0
+#define SSL_OP_SSLREF2_REUSE_CERT_TYPE_BUG 0
+#define SSL_OP_TLS_BLOCK_PADDING_BUG 0
+#define SSL_OP_TLS_ROLLBACK_BUG 0
+
+/* SSL_CTX_set_options enables all options set in |options| (which should be one
+ * or more of the |SSL_OP_*| values, ORed together) in |ctx|. It returns a
+ * bitmask representing the resulting enabled options. */
+OPENSSL_EXPORT uint32_t SSL_CTX_set_options(SSL_CTX *ctx, uint32_t options);
+
+/* SSL_CTX_clear_options disables all options set in |options| (which should be
+ * one or more of the |SSL_OP_*| values, ORed together) in |ctx|. It returns a
+ * bitmask representing the resulting enabled options. */
+OPENSSL_EXPORT uint32_t SSL_CTX_clear_options(SSL_CTX *ctx, uint32_t options);
+
+/* SSL_CTX_get_options returns a bitmask of |SSL_OP_*| values that represent all
+ * the options enabled for |ctx|. */
+OPENSSL_EXPORT uint32_t SSL_CTX_get_options(const SSL_CTX *ctx);
+
+/* SSL_set_options enables all options set in |options| (which should be one or
+ * more of the |SSL_OP_*| values, ORed together) in |ssl|. It returns a bitmask
+ * representing the resulting enabled options. */
+OPENSSL_EXPORT uint32_t SSL_set_options(SSL *ssl, uint32_t options);
+
+/* SSL_clear_options disables all options set in |options| (which should be one
+ * or more of the |SSL_OP_*| values, ORed together) in |ssl|. It returns a
+ * bitmask representing the resulting enabled options. */
+OPENSSL_EXPORT uint32_t SSL_clear_options(SSL *ssl, uint32_t options);
+
+/* SSL_get_options returns a bitmask of |SSL_OP_*| values that represent all the
+ * options enabled for |ssl|. */
+OPENSSL_EXPORT uint32_t SSL_get_options(const SSL *ssl);
+
+
+/* Modes.
+ *
+ * Modes configure API behavior. */
+
+/* SSL_MODE_ENABLE_PARTIAL_WRITE allows |SSL_write| to complete with a partial
+ * result when the only part of the input was written in a single record. */
+#define SSL_MODE_ENABLE_PARTIAL_WRITE 0x00000001L
+
+/* SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER allows retrying an incomplete |SSL_write|
+ * with a different buffer. However, |SSL_write| still assumes the buffer
+ * contents are unchanged. This is not the default to avoid the misconception
+ * that non-blocking |SSL_write| behaves like non-blocking |write|. */
+#define SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER 0x00000002L
+
+/* SSL_MODE_NO_AUTO_CHAIN disables automatically building a certificate chain
+ * before sending certificates to the peer.
+ * TODO(davidben): Remove this behavior. https://crbug.com/486295. */
+#define SSL_MODE_NO_AUTO_CHAIN 0x00000008L
+
+/* SSL_MODE_ENABLE_FALSE_START allows clients to send application data before
+ * receipt of CCS and Finished. This mode enables full-handshakes to 'complete'
+ * in one RTT. See draft-bmoeller-tls-falsestart-01. */
+#define SSL_MODE_ENABLE_FALSE_START 0x00000080L
+
+/* Deprecated: SSL_MODE_HANDSHAKE_CUTTHROUGH is the same as
+ * SSL_MODE_ENABLE_FALSE_START. */
+#define SSL_MODE_HANDSHAKE_CUTTHROUGH SSL_MODE_ENABLE_FALSE_START
+
+/* SSL_MODE_CBC_RECORD_SPLITTING causes multi-byte CBC records in SSL 3.0 and
+ * TLS 1.0 to be split in two: the first record will contain a single byte and
+ * the second will contain the remainder. This effectively randomises the IV and
+ * prevents BEAST attacks. */
+#define SSL_MODE_CBC_RECORD_SPLITTING 0x00000100L
+
+/* SSL_MODE_NO_SESSION_CREATION will cause any attempts to create a session to
+ * fail with SSL_R_SESSION_MAY_NOT_BE_CREATED. This can be used to enforce that
+ * session resumption is used for a given SSL*. */
+#define SSL_MODE_NO_SESSION_CREATION 0x00000200L
+
+/* SSL_MODE_SEND_FALLBACK_SCSV sends TLS_FALLBACK_SCSV in the ClientHello.
+ * To be set only by applications that reconnect with a downgraded protocol
+ * version; see https://tools.ietf.org/html/draft-ietf-tls-downgrade-scsv-05
+ * for details.
+ *
+ * DO NOT ENABLE THIS if your application attempts a normal handshake. Only use
+ * this in explicit fallback retries, following the guidance in
+ * draft-ietf-tls-downgrade-scsv-05. */
+#define SSL_MODE_SEND_FALLBACK_SCSV 0x00000400L
+
+/* The following flags do nothing and are included only to make it easier to
+ * compile code with BoringSSL. */
+#define SSL_MODE_AUTO_RETRY 0
+#define SSL_MODE_RELEASE_BUFFERS 0
+#define SSL_MODE_SEND_CLIENTHELLO_TIME 0
+#define SSL_MODE_SEND_SERVERHELLO_TIME 0
+
+/* SSL_CTX_set_mode enables all modes set in |mode| (which should be one or more
+ * of the |SSL_MODE_*| values, ORed together) in |ctx|. It returns a bitmask
+ * representing the resulting enabled modes. */
+OPENSSL_EXPORT uint32_t SSL_CTX_set_mode(SSL_CTX *ctx, uint32_t mode);
+
+/* SSL_CTX_clear_mode disables all modes set in |mode| (which should be one or
+ * more of the |SSL_MODE_*| values, ORed together) in |ctx|. It returns a
+ * bitmask representing the resulting enabled modes. */
+OPENSSL_EXPORT uint32_t SSL_CTX_clear_mode(SSL_CTX *ctx, uint32_t mode);
+
+/* SSL_CTX_get_mode returns a bitmask of |SSL_MODE_*| values that represent all
+ * the modes enabled for |ssl|. */
+OPENSSL_EXPORT uint32_t SSL_CTX_get_mode(const SSL_CTX *ctx);
+
+/* SSL_set_mode enables all modes set in |mode| (which should be one or more of
+ * the |SSL_MODE_*| values, ORed together) in |ssl|. It returns a bitmask
+ * representing the resulting enabled modes. */
+OPENSSL_EXPORT uint32_t SSL_set_mode(SSL *ssl, uint32_t mode);
+
+/* SSL_clear_mode disables all modes set in |mode| (which should be one or more
+ * of the |SSL_MODE_*| values, ORed together) in |ssl|. It returns a bitmask
+ * representing the resulting enabled modes. */
+OPENSSL_EXPORT uint32_t SSL_clear_mode(SSL *ssl, uint32_t mode);
+
+/* SSL_get_mode returns a bitmask of |SSL_MODE_*| values that represent all the
+ * modes enabled for |ssl|. */
+OPENSSL_EXPORT uint32_t SSL_get_mode(const SSL *ssl);
+
+
+/* Configuring certificates and private keys.
+ *
+ * TODO(davidben): Move the other, more conventional, certificate and key
+ * configuration functions here, possibly after simplifying the multiple slots
+ * machinery first. https://crbug.com/486295. */
+
+enum ssl_private_key_result_t {
+  ssl_private_key_success,
+  ssl_private_key_retry,
+  ssl_private_key_failure,
+};
+
+/* SSL_PRIVATE_KEY_METHOD describes private key hooks. This is used to off-load
+ * signing operations to a custom, potentially asynchronous, backend. */
+typedef struct ssl_private_key_method_st {
+  /* type returns either |EVP_PKEY_RSA| or |EVP_PKEY_EC| to denote the type of
+   * key used by |ssl|. */
+  int (*type)(SSL *ssl);
+
+  /* supports_digest returns one if the key used by |ssl| supports signing
+   * digests of type |md| and zero otherwise. */
+  int (*supports_digest)(SSL *ssl, const EVP_MD *md);
+
+  /* max_signature_len returns the maximum length of a signature signed by the
+   * key used by |ssl|. This must be a constant value for a given |ssl|. */
+  size_t (*max_signature_len)(SSL *ssl);
+
+  /* sign signs |in_len| bytes of digest from |in|. |md| is the hash function
+   * used to calculate |in|. On success, it returns |ssl_private_key_success|
+   * and writes at most |max_out| bytes of signature data to |out|. On failure,
+   * it returns |ssl_private_key_failure|. If the operation has not completed,
+   * it returns |ssl_private_key_retry|. |sign| should arrange for the
+   * high-level operation on |ssl| to be retried when the operation is
+   * completed. This will result in a call to |sign_complete|.
+   *
+   * If the key is an RSA key, implementations must use PKCS#1 padding. |in| is
+   * the digest itself, so the DigestInfo prefix, if any, must be prepended by
+   * |sign|. If |md| is |EVP_md5_sha1|, there is no prefix.
+   *
+   * It is an error to call |sign| while another private key operation is in
+   * progress on |ssl|. */
+  enum ssl_private_key_result_t (*sign)(SSL *ssl, uint8_t *out, size_t *out_len,
+                                        size_t max_out, const EVP_MD *md,
+                                        const uint8_t *in, size_t in_len);
+
+  /* sign_complete completes a pending |sign| operation. If the operation has
+   * completed, it returns |ssl_private_key_success| and writes the result to
+   * |out| as in |sign|. Otherwise, it returns |ssl_private_key_failure| on
+   * failure and |ssl_private_key_retry| if the operation is still in progress.
+   *
+   * |sign_complete| may be called arbitrarily many times before completion, but
+   * it is an error to call |sign_complete| if there is no pending |sign|
+   * operation in progress on |ssl|. */
+  enum ssl_private_key_result_t (*sign_complete)(SSL *ssl, uint8_t *out,
+                                                 size_t *out_len, size_t max_out);
+} SSL_PRIVATE_KEY_METHOD;
+
+/* SSL_use_private_key_method configures a custom private key on
+ * |ssl|. |key_method| must remain valid for the lifetime of |ssl|. Using custom
+ * keys with the multiple certificate slots feature is not supported.
+ *
+ * TODO(davidben): Remove the multiple certificate slots feature. */
+OPENSSL_EXPORT void SSL_set_private_key_method(
+    SSL *ssl, const SSL_PRIVATE_KEY_METHOD *key_method);
+
+
+/* Connection information. */
+
+/* SSL_get_tls_unique writes at most |max_out| bytes of the tls-unique value
+ * for |ssl| to |out| and sets |*out_len| to the number of bytes written. It
+ * returns one on success or zero on error. In general |max_out| should be at
+ * least 12.
+ *
+ * This function will always fail if the initial handshake has not completed.
+ * The tls-unique value will change after a renegotiation but, since
+ * renegotiations can be initiated by the server at any point, the higher-level
+ * protocol must either leave them disabled or define states in which the
+ * tls-unique value can be read.
+ *
+ * The tls-unique value is defined by
+ * https://tools.ietf.org/html/rfc5929#section-3.1. Due to a weakness in the
+ * TLS protocol, tls-unique is broken for resumed connections unless the
+ * Extended Master Secret extension is negotiated. Thus this function will
+ * return zero if |ssl| performed session resumption unless EMS was used when
+ * negotiating the original session. */
+OPENSSL_EXPORT int SSL_get_tls_unique(const SSL *ssl, uint8_t *out,
+                                      size_t *out_len, size_t max_out);
+
+
+/* Session tickets. */
+
+/* SSL_CTX_get_tlsext_ticket_keys writes |ctx|'s session ticket key material to
+ * |len| bytes of |out|. It returns one on success and zero if |len| is not
+ * 48. If |out| is NULL, it returns 48 instead. */
+OPENSSL_EXPORT int SSL_CTX_get_tlsext_ticket_keys(SSL_CTX *ctx, void *out,
+                                                  size_t len);
+
+/* SSL_CTX_set_tlsext_ticket_keys sets |ctx|'s session ticket key material to
+ * |len| bytes of |in|. It returns one on success and zero if |len| is not
+ * 48. If |in| is NULL, it returns 48 instead. */
+OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_keys(SSL_CTX *ctx, const void *in,
+                                                  size_t len);
+
+/* SSL_CTX_set_tlsext_ticket_key_cb sets the ticket callback to |callback| and
+ * returns one. |callback| will be called when encrypting a new ticket and when
+ * decrypting a ticket from the client.
+ *
+ * In both modes, |ctx| and |hmac_ctx| will already have been initialized with
+ * |EVP_CIPHER_CTX_init| and |HMAC_CTX_init|, respectively. |callback|
+ * configures |hmac_ctx| with an HMAC digest and key, and configures |ctx|
+ * for encryption or decryption, based on the mode.
+ *
+ * When encrypting a new ticket, |encrypt| will be one. It writes a public
+ * 16-byte key name to |key_name| and a fresh IV to |iv|. The output IV length
+ * must match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
+ * |callback| returns 1 on success and -1 on error.
+ *
+ * When decrypting a ticket, |encrypt| will be zero. |key_name| will point to a
+ * 16-byte key name and |iv| points to an IV. The length of the IV consumed must
+ * match |EVP_CIPHER_CTX_iv_length| of the cipher selected. In this mode,
+ * |callback| returns -1 to abort the handshake, 0 if decrypting the ticket
+ * failed, and 1 or 2 on success. If it returns 2, the ticket will be renewed.
+ * This may be used to re-key the ticket.
+ *
+ * WARNING: |callback| wildly breaks the usual return value convention and is
+ * called in two different modes. */
+OPENSSL_EXPORT int SSL_CTX_set_tlsext_ticket_key_cb(
+    SSL_CTX *ctx, int (*callback)(SSL *ssl, uint8_t *key_name, uint8_t *iv,
+                                  EVP_CIPHER_CTX *ctx, HMAC_CTX *hmac_ctx,
+                                  int encrypt));
 
 
 /* Underdocumented functions.
@@ -366,7 +719,6 @@ OPENSSL_EXPORT int SSL_CIPHER_get_bits(const SSL_CIPHER *cipher,
 #define SSL_FILETYPE_ASN1 X509_FILETYPE_ASN1
 #define SSL_FILETYPE_PEM X509_FILETYPE_PEM
 
-typedef struct ssl_method_st SSL_METHOD;
 typedef struct ssl_protocol_method_st SSL_PROTOCOL_METHOD;
 typedef struct ssl_session_st SSL_SESSION;
 typedef struct tls_sigalgs_st TLS_SIGALGS;
@@ -403,7 +755,12 @@ struct ssl_session_st {
    * disable session caching and tickets. */
   int not_resumable;
 
-  /* The cert is the certificate used to establish this connection */
+  /* The cert is the certificate used to establish this connection
+   *
+   * TODO(davidben): Remove this field. It is not serialized as part of the
+   * session, but some APIs access it. Certificate-related fields, where not
+   * redundant with |peer|, should be added to the session. Others should
+   * probably not be retained across resumptions. */
   struct sess_cert_st /* SESS_CERT */ *sess_cert;
 
   /* This is the cert for the other end. On clients, it will be the same as
@@ -414,7 +771,7 @@ struct ssl_session_st {
    * not ok, we must remember the error for session reuse: */
   long verify_result; /* only for servers */
 
-  int references;
+  CRYPTO_refcount_t references;
   long timeout;
   long time;
 
@@ -424,7 +781,7 @@ struct ssl_session_st {
 
   /* These are used to make removal of session-ids more efficient and to
    * implement a maximum cache size. */
-  struct ssl_session_st *prev, *next;
+  SSL_SESSION *prev, *next;
   char *tlsext_hostname;
   /* RFC4507 info */
   uint8_t *tlsext_tick;               /* Session ticket */
@@ -454,81 +811,6 @@ struct ssl_session_st {
   char extended_master_secret;
 };
 
-/* SSL_OP_LEGACY_SERVER_CONNECT allows initial connection to servers that don't
- * support RI */
-#define SSL_OP_LEGACY_SERVER_CONNECT 0x00000004L
-
-/* SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER allows for record sizes SSL3_RT_MAX_EXTRA
- * bytes above the maximum record size. */
-#define SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER 0x00000020L
-
-/* SSL_OP_TLS_D5_BUG accepts an RSAClientKeyExchange in TLS encoded as SSL3,
- * without a length prefix. */
-#define SSL_OP_TLS_D5_BUG 0x00000100L
-
-/* SSL_OP_ALL enables the above bug workarounds that should be rather harmless.
- * */
-#define SSL_OP_ALL 0x00000BFFL
-
-/* DTLS options */
-#define SSL_OP_NO_QUERY_MTU 0x00001000L
-/* Don't use RFC4507 ticket extension */
-#define SSL_OP_NO_TICKET 0x00004000L
-
-/* Permit unsafe legacy renegotiation */
-#define SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION 0x00040000L
-/* Set on servers to choose the cipher according to the server's preferences */
-#define SSL_OP_CIPHER_SERVER_PREFERENCE 0x00400000L
-
-/* Deprecated: Use SSL_CTX_set_min_version and SSL_CTX_set_max_version
- * instead. */
-#define SSL_OP_NO_SSLv3 0x02000000L
-#define SSL_OP_NO_TLSv1 0x04000000L
-#define SSL_OP_NO_TLSv1_2 0x08000000L
-#define SSL_OP_NO_TLSv1_1 0x10000000L
-
-#define SSL_OP_NO_DTLSv1 SSL_OP_NO_TLSv1
-#define SSL_OP_NO_DTLSv1_2 SSL_OP_NO_TLSv1_2
-
-#define SSL_OP_NO_SSL_MASK                                                   \
-  (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | \
-   SSL_OP_NO_TLSv1_2)
-
-/* The following flags do nothing and are included only to make it easier to
- * compile code with BoringSSL. */
-#define SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS 0
-#define SSL_OP_MICROSOFT_SESS_ID_BUG 0
-#define SSL_OP_NETSCAPE_CHALLENGE_BUG 0
-#define SSL_OP_NO_COMPRESSION 0
-#define SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION 0
-#define SSL_OP_NO_SSLv2 0
-#define SSL_OP_SINGLE_DH_USE 0
-#define SSL_OP_SINGLE_ECDH_USE 0
-#define SSL_OP_SSLREF2_REUSE_CERT_TYPE_BUG 0
-#define SSL_OP_TLS_BLOCK_PADDING_BUG 0
-#define SSL_OP_TLS_ROLLBACK_BUG 0
-
-/* Allow SSL_write(..., n) to return r with 0 < r < n (i.e. report success when
- * just a single record has been written): */
-#define SSL_MODE_ENABLE_PARTIAL_WRITE 0x00000001L
-/* Make it possible to retry SSL_write() with changed buffer location (buffer
- * contents must stay the same!); this is not the default to avoid the
- * misconception that non-blocking SSL_write() behaves like non-blocking
- * write(): */
-#define SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER 0x00000002L
-/* Don't attempt to automatically build certificate chain */
-#define SSL_MODE_NO_AUTO_CHAIN 0x00000008L
-
-/* The following flags do nothing and are included only to make it easier to
- * compile code with BoringSSL. */
-#define SSL_MODE_AUTO_RETRY 0
-#define SSL_MODE_RELEASE_BUFFERS 0
-
-/* Send the current time in the Random fields of the ClientHello and
- * ServerHello records for compatibility with hypothetical implementations that
- * require it. */
-#define SSL_MODE_SEND_CLIENTHELLO_TIME 0x00000020L
-#define SSL_MODE_SEND_SERVERHELLO_TIME 0x00000040L
 
 /* Cert related flags */
 /* Many implementations ignore some aspects of the TLS standards such as
@@ -547,92 +829,6 @@ struct ssl_session_st {
 /* Clear verification errors from queue */
 #define SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR 0x10
 
-/* SSL_MODE_ENABLE_FALSE_START allows clients to send application data before
- * receipt of CCS and Finished. This mode enables full-handshakes to 'complete'
- * in one RTT. See draft-bmoeller-tls-falsestart-01. */
-#define SSL_MODE_ENABLE_FALSE_START 0x00000080L
-
-/* Deprecated: SSL_MODE_HANDSHAKE_CUTTHROUGH is the same as
- * SSL_MODE_ENABLE_FALSE_START. */
-#define SSL_MODE_HANDSHAKE_CUTTHROUGH SSL_MODE_ENABLE_FALSE_START
-
-/* When set, TLS 1.0 and SSLv3, multi-byte, CBC records will be split in two:
- * the first record will contain a single byte and the second will contain the
- * rest of the bytes. This effectively randomises the IV and prevents BEAST
- * attacks. */
-#define SSL_MODE_CBC_RECORD_SPLITTING 0x00000100L
-
-/* SSL_MODE_NO_SESSION_CREATION will cause any attempts to create a session to
- * fail with SSL_R_SESSION_MAY_NOT_BE_CREATED. This can be used to enforce that
- * session resumption is used for a given SSL*. */
-#define SSL_MODE_NO_SESSION_CREATION 0x00000200L
-
-/* SSL_MODE_SEND_FALLBACK_SCSV sends TLS_FALLBACK_SCSV in the ClientHello.
- * To be set only by applications that reconnect with a downgraded protocol
- * version; see https://tools.ietf.org/html/draft-ietf-tls-downgrade-scsv-05
- * for details.
- *
- * DO NOT ENABLE THIS if your application attempts a normal handshake. Only use
- * this in explicit fallback retries, following the guidance in
- * draft-ietf-tls-downgrade-scsv-05. */
-#define SSL_MODE_SEND_FALLBACK_SCSV 0x00000400L
-
-/* SSL_CTX_set_options enables all options set in |options| (which should be one
- * or more of the |SSL_OP_*| values, ORed together) in |ctx|. It returns a
- * bitmask representing the resulting enabled options. */
-OPENSSL_EXPORT uint32_t SSL_CTX_set_options(SSL_CTX *ctx, uint32_t options);
-
-/* SSL_CTX_clear_options disables all options set in |options| (which should be
- * one or more of the |SSL_OP_*| values, ORed together) in |ctx|. It returns a
- * bitmask representing the resulting enabled options. */
-OPENSSL_EXPORT uint32_t SSL_CTX_clear_options(SSL_CTX *ctx, uint32_t options);
-
-/* SSL_CTX_get_options returns a bitmask of |SSL_OP_*| values that represent all
- * the options enabled for |ctx|. */
-OPENSSL_EXPORT uint32_t SSL_CTX_get_options(const SSL_CTX *ctx);
-
-/* SSL_set_options enables all options set in |options| (which should be one or
- * more of the |SSL_OP_*| values, ORed together) in |ssl|. It returns a bitmask
- * representing the resulting enabled options. */
-OPENSSL_EXPORT uint32_t SSL_set_options(SSL *ssl, uint32_t options);
-
-/* SSL_clear_options disables all options set in |options| (which should be one
- * or more of the |SSL_OP_*| values, ORed together) in |ssl|. It returns a
- * bitmask representing the resulting enabled options. */
-OPENSSL_EXPORT uint32_t SSL_clear_options(SSL *ssl, uint32_t options);
-
-/* SSL_get_options returns a bitmask of |SSL_OP_*| values that represent all the
- * options enabled for |ssl|. */
-OPENSSL_EXPORT uint32_t SSL_get_options(const SSL *ssl);
-
-/* SSL_CTX_set_mode enables all modes set in |mode| (which should be one or more
- * of the |SSL_MODE_*| values, ORed together) in |ctx|. It returns a bitmask
- * representing the resulting enabled modes. */
-OPENSSL_EXPORT uint32_t SSL_CTX_set_mode(SSL_CTX *ctx, uint32_t mode);
-
-/* SSL_CTX_clear_mode disables all modes set in |mode| (which should be one or
- * more of the |SSL_MODE_*| values, ORed together) in |ctx|. It returns a
- * bitmask representing the resulting enabled modes. */
-OPENSSL_EXPORT uint32_t SSL_CTX_clear_mode(SSL_CTX *ctx, uint32_t mode);
-
-/* SSL_CTX_get_mode returns a bitmask of |SSL_MODE_*| values that represent all
- * the modes enabled for |ssl|. */
-OPENSSL_EXPORT uint32_t SSL_CTX_get_mode(const SSL_CTX *ctx);
-
-/* SSL_set_mode enables all modes set in |mode| (which should be one or more of
- * the |SSL_MODE_*| values, ORed together) in |ssl|. It returns a bitmask
- * representing the resulting enabled modes. */
-OPENSSL_EXPORT uint32_t SSL_set_mode(SSL *ssl, uint32_t mode);
-
-/* SSL_clear_mode disables all modes set in |mode| (which should be one or more
- * of the |SSL_MODE_*| values, ORed together) in |ssl|. It returns a bitmask
- * representing the resulting enabled modes. */
-OPENSSL_EXPORT uint32_t SSL_clear_mode(SSL *ssl, uint32_t mode);
-
-/* SSL_get_mode returns a bitmask of |SSL_MODE_*| values that represent all the
- * modes enabled for |ssl|. */
-OPENSSL_EXPORT uint32_t SSL_get_mode(const SSL *ssl);
-
 /* SSL_set_mtu sets the |ssl|'s MTU in DTLS to |mtu|. It returns one on success
  * and zero on failure. */
 OPENSSL_EXPORT int SSL_set_mtu(SSL *ssl, unsigned mtu);
@@ -640,22 +836,6 @@ OPENSSL_EXPORT int SSL_set_mtu(SSL *ssl, unsigned mtu);
 /* SSL_get_secure_renegotiation_support returns one if the peer supports secure
  * renegotiation (RFC 5746) and zero otherwise. */
 OPENSSL_EXPORT int SSL_get_secure_renegotiation_support(const SSL *ssl);
-
-/* SSL_CTX_set_min_version sets the minimum protocol version for |ctx| to
- * |version|. */
-OPENSSL_EXPORT void SSL_CTX_set_min_version(SSL_CTX *ctx, uint16_t version);
-
-/* SSL_CTX_set_max_version sets the maximum protocol version for |ctx| to
- * |version|. */
-OPENSSL_EXPORT void SSL_CTX_set_max_version(SSL_CTX *ctx, uint16_t version);
-
-/* SSL_set_min_version sets the minimum protocol version for |ssl| to
- * |version|. */
-OPENSSL_EXPORT void SSL_set_min_version(SSL *ssl, uint16_t version);
-
-/* SSL_set_max_version sets the maximum protocol version for |ssl| to
- * |version|. */
-OPENSSL_EXPORT void SSL_set_max_version(SSL *ssl, uint16_t version);
 
 /* SSL_CTX_set_msg_callback installs |cb| as the message callback for |ctx|.
  * This callback will be called when sending or receiving low-level record
@@ -685,7 +865,7 @@ OPENSSL_EXPORT void SSL_set_msg_callback(
     SSL *ssl, void (*cb)(int write_p, int version, int content_type,
                          const void *buf, size_t len, SSL *ssl, void *arg));
 
-/* set_msg_callback_arg sets the |arg| parameter of the message callback. */
+/* SSL_set_msg_callback_arg sets the |arg| parameter of the message callback. */
 OPENSSL_EXPORT void SSL_set_msg_callback_arg(SSL *ssl, void *arg);
 
 /* SSL_CTX_set_keylog_bio sets configures all SSL objects attached to |ctx| to
@@ -798,6 +978,9 @@ struct ssl_cipher_preference_list_st {
 struct ssl_ctx_st {
   const SSL_PROTOCOL_METHOD *method;
 
+  /* lock is used to protect various operations on this object. */
+  CRYPTO_MUTEX lock;
+
   /* max_version is the maximum acceptable protocol version. If zero, the
    * maximum supported version, currently (D)TLS 1.2, is used. */
   uint16_t max_version;
@@ -814,13 +997,13 @@ struct ssl_ctx_st {
    * number is known at connect time and so the cipher list can be set then. */
   struct ssl_cipher_preference_list_st *cipher_list_tls11;
 
-  struct x509_store_st /* X509_STORE */ *cert_store;
+  X509_STORE *cert_store;
   LHASH_OF(SSL_SESSION) *sessions;
   /* Most session-ids that will be cached, default is
    * SSL_SESSION_CACHE_MAX_SIZE_DEFAULT. 0 is unlimited. */
   unsigned long session_cache_size;
-  struct ssl_session_st *session_cache_head;
-  struct ssl_session_st *session_cache_tail;
+  SSL_SESSION *session_cache_head;
+  SSL_SESSION *session_cache_tail;
 
   /* handshakes_since_cache_flush is the number of successful handshakes since
    * the last cache flush. */
@@ -844,12 +1027,12 @@ struct ssl_ctx_st {
    * remove_session_cb is not null, it will be called when a session-id is
    * removed from the cache.  After the call, OpenSSL will SSL_SESSION_free()
    * it. */
-  int (*new_session_cb)(struct ssl_st *ssl, SSL_SESSION *sess);
-  void (*remove_session_cb)(struct ssl_ctx_st *ctx, SSL_SESSION *sess);
-  SSL_SESSION *(*get_session_cb)(struct ssl_st *ssl, uint8_t *data, int len,
+  int (*new_session_cb)(SSL *ssl, SSL_SESSION *sess);
+  void (*remove_session_cb)(SSL_CTX *ctx, SSL_SESSION *sess);
+  SSL_SESSION *(*get_session_cb)(SSL *ssl, uint8_t *data, int len,
                                  int *copy);
 
-  int references;
+  CRYPTO_refcount_t references;
 
   /* if defined, these override the X509_verify_cert() calls */
   int (*app_verify_callback)(X509_STORE_CTX *, void *);
@@ -891,7 +1074,6 @@ struct ssl_ctx_st {
   uint32_t max_cert_list;
 
   struct cert_st /* CERT */ *cert;
-  int read_ahead;
 
   /* callback that allows applications to peek at protocol messages */
   void (*msg_callback)(int write_p, int version, int content_type,
@@ -1033,20 +1215,20 @@ OPENSSL_EXPORT LHASH_OF(SSL_SESSION) *SSL_CTX_sessions(SSL_CTX *ctx);
 OPENSSL_EXPORT size_t SSL_CTX_sess_number(const SSL_CTX *ctx);
 
 OPENSSL_EXPORT void SSL_CTX_sess_set_new_cb(
-    SSL_CTX *ctx, int (*new_session_cb)(struct ssl_st *ssl, SSL_SESSION *sess));
-OPENSSL_EXPORT int (*SSL_CTX_sess_get_new_cb(SSL_CTX *ctx))(struct ssl_st *ssl,
+    SSL_CTX *ctx, int (*new_session_cb)(SSL *ssl, SSL_SESSION *sess));
+OPENSSL_EXPORT int (*SSL_CTX_sess_get_new_cb(SSL_CTX *ctx))(SSL *ssl,
                                                             SSL_SESSION *sess);
 OPENSSL_EXPORT void SSL_CTX_sess_set_remove_cb(
     SSL_CTX *ctx,
-    void (*remove_session_cb)(struct ssl_ctx_st *ctx, SSL_SESSION *sess));
+    void (*remove_session_cb)(SSL_CTX *ctx, SSL_SESSION *sess));
 OPENSSL_EXPORT void (*SSL_CTX_sess_get_remove_cb(SSL_CTX *ctx))(
-    struct ssl_ctx_st *ctx, SSL_SESSION *sess);
+    SSL_CTX *ctx, SSL_SESSION *sess);
 OPENSSL_EXPORT void SSL_CTX_sess_set_get_cb(
     SSL_CTX *ctx,
-    SSL_SESSION *(*get_session_cb)(struct ssl_st *ssl, uint8_t *data, int len,
+    SSL_SESSION *(*get_session_cb)(SSL *ssl, uint8_t *data, int len,
                                    int *copy));
 OPENSSL_EXPORT SSL_SESSION *(*SSL_CTX_sess_get_get_cb(SSL_CTX *ctx))(
-    struct ssl_st *ssl, uint8_t *Data, int len, int *copy);
+    SSL *ssl, uint8_t *data, int len, int *copy);
 /* SSL_magic_pending_session_ptr returns a magic SSL_SESSION* which indicates
  * that the session isn't currently unavailable. SSL_get_error will then return
  * SSL_ERROR_PENDING_SESSION and the handshake can be retried later when the
@@ -1071,16 +1253,16 @@ OPENSSL_EXPORT void (*SSL_CTX_get_channel_id_cb(SSL_CTX *ctx))(SSL *ssl,
 
 /* SSL_enable_signed_cert_timestamps causes |ssl| (which must be the client end
  * of a connection) to request SCTs from the server. See
- * https://tools.ietf.org/html/rfc6962. Returns 1 on success. */
+ * https://tools.ietf.org/html/rfc6962. It returns one. */
 OPENSSL_EXPORT int SSL_enable_signed_cert_timestamps(SSL *ssl);
 
 /* SSL_CTX_enable_signed_cert_timestamps enables SCT requests on all client SSL
  * objects created from |ctx|. */
 OPENSSL_EXPORT void SSL_CTX_enable_signed_cert_timestamps(SSL_CTX *ctx);
 
-/* SSL_enable_signed_cert_timestamps causes |ssl| (which must be the client end
- * of a connection) to request a stapled OCSP response from the server. Returns
- * 1 on success. */
+/* SSL_enable_ocsp_stapling causes |ssl| (which must be the client end of a
+ * connection) to request a stapled OCSP response from the server. It returns
+ * one. */
 OPENSSL_EXPORT int SSL_enable_ocsp_stapling(SSL *ssl);
 
 /* SSL_CTX_enable_ocsp_stapling enables OCSP stapling on all client SSL objects
@@ -1161,7 +1343,7 @@ OPENSSL_EXPORT void SSL_enable_fastradio_padding(SSL *ssl, char on_off);
 /* SSL_set_reject_peer_renegotiations controls whether renegotiation attempts by
  * the peer are rejected. It may be set at any point in a connection's lifetime
  * to control future renegotiations programmatically. By default, renegotiations
- * are rejected. */
+ * are rejected. (Renegotiations requested by a client are always rejected.) */
 OPENSSL_EXPORT void SSL_set_reject_peer_renegotiations(SSL *ssl, int reject);
 
 /* the maximum length of the buffer given to callbacks containing the resulting
@@ -1194,8 +1376,6 @@ OPENSSL_EXPORT int SSL_CTX_use_psk_identity_hint(SSL_CTX *ctx,
 OPENSSL_EXPORT int SSL_use_psk_identity_hint(SSL *s, const char *identity_hint);
 OPENSSL_EXPORT const char *SSL_get_psk_identity_hint(const SSL *s);
 OPENSSL_EXPORT const char *SSL_get_psk_identity(const SSL *s);
-OPENSSL_EXPORT void ssl_update_cache(SSL *s, int mode);
-OPENSSL_EXPORT int ssl_get_new_session(SSL *s, int session);
 
 #define SSL_NOTHING 1
 #define SSL_WRITING 2
@@ -1204,6 +1384,7 @@ OPENSSL_EXPORT int ssl_get_new_session(SSL *s, int session);
 #define SSL_CHANNEL_ID_LOOKUP 5
 #define SSL_PENDING_SESSION 7
 #define SSL_CERTIFICATE_SELECTION_PENDING 8
+#define SSL_PRIVATE_KEY_OPERATION 9
 
 /* These will only be used when doing non-blocking IO */
 #define SSL_want_nothing(s) (SSL_want(s) == SSL_NOTHING)
@@ -1214,6 +1395,8 @@ OPENSSL_EXPORT int ssl_get_new_session(SSL *s, int session);
 #define SSL_want_session(s) (SSL_want(s) == SSL_PENDING_SESSION)
 #define SSL_want_certificate(s) \
   (SSL_want(s) == SSL_CERTIFICATE_SELECTION_PENDING)
+#define SSL_want_private_key_operation(s) \
+  (SSL_want(s) == SSL_PRIVATE_KEY_OPERATION)
 
 struct ssl_st {
   /* version is the protocol version. */
@@ -1284,9 +1467,6 @@ struct ssl_st {
 
   struct ssl3_state_st *s3;  /* SSLv3 variables */
   struct dtls1_state_st *d1; /* DTLSv1 variables */
-
-  int read_ahead; /* Read as many input bytes as possible
-                   * (for non-blocking reads) */
 
   /* callback that allows applications to peek at protocol messages */
   void (*msg_callback)(int write_p, int version, int content_type,
@@ -1405,10 +1585,6 @@ struct ssl_st {
   uint8_t *alpn_client_proto_list;
   unsigned alpn_client_proto_list_len;
 
-  int renegotiate; /* 1 if we are renegotiating.
-                    * 2 if we are a server and are inside a handshake
-                    * (i.e. not just sending a HelloRequest) */
-
   /* fastradio_padding, if true, causes ClientHellos to be padded to 1024
    * bytes. This ensures that the cellular radio is fast forwarded to DCH (high
    * data rate) state in 3G networks. */
@@ -1445,7 +1621,6 @@ struct ssl_st {
 #define SSL_ST_ACCEPT 0x2000
 #define SSL_ST_MASK 0x0FFF
 #define SSL_ST_INIT (SSL_ST_CONNECT | SSL_ST_ACCEPT)
-#define SSL_ST_BEFORE 0x4000
 #define SSL_ST_OK 0x03
 #define SSL_ST_RENEGOTIATE (0x04 | SSL_ST_INIT)
 
@@ -1467,7 +1642,6 @@ struct ssl_st {
 #define SSL_get_state(a) SSL_state(a)
 #define SSL_is_init_finished(a) (SSL_state(a) == SSL_ST_OK)
 #define SSL_in_init(a) (SSL_state(a) & SSL_ST_INIT)
-#define SSL_in_before(a) (SSL_state(a) & SSL_ST_BEFORE)
 #define SSL_in_connect_init(a) (SSL_state(a) & SSL_ST_CONNECT)
 #define SSL_in_accept_init(a) (SSL_state(a) & SSL_ST_ACCEPT)
 
@@ -1494,6 +1668,7 @@ OPENSSL_EXPORT size_t SSL_get_peer_finished(const SSL *s, void *buf, size_t coun
 #define SSL_VERIFY_NONE 0x00
 #define SSL_VERIFY_PEER 0x01
 #define SSL_VERIFY_FAIL_IF_NO_PEER_CERT 0x02
+/* SSL_VERIFY_CLIENT_ONCE does nothing. */
 #define SSL_VERIFY_CLIENT_ONCE 0x04
 #define SSL_VERIFY_PEER_IF_NO_OBC 0x08
 
@@ -1570,12 +1745,9 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 #define SSL_ERROR_WANT_CHANNEL_ID_LOOKUP 9
 #define SSL_ERROR_PENDING_SESSION 11
 #define SSL_ERROR_PENDING_CERTIFICATE 12
+#define SSL_ERROR_WANT_PRIVATE_KEY_OPERATION 13
 
 #define SSL_CTRL_EXTRA_CHAIN_CERT 14
-
-/* see tls1.h for macros based on these */
-#define SSL_CTRL_GET_TLSEXT_TICKET_KEYS 58
-#define SSL_CTRL_SET_TLSEXT_TICKET_KEYS 59
 
 #define SSL_CTRL_SET_SRP_ARG 78
 #define SSL_CTRL_SET_TLS_EXT_SRP_USERNAME 79
@@ -1794,14 +1966,11 @@ OPENSSL_EXPORT size_t SSL_get_tls_channel_id(SSL *ssl, uint8_t *out,
 
 OPENSSL_EXPORT int SSL_CTX_set_cipher_list(SSL_CTX *, const char *str);
 OPENSSL_EXPORT int SSL_CTX_set_cipher_list_tls11(SSL_CTX *, const char *str);
-OPENSSL_EXPORT SSL_CTX *SSL_CTX_new(const SSL_METHOD *meth);
-OPENSSL_EXPORT void SSL_CTX_free(SSL_CTX *);
 OPENSSL_EXPORT long SSL_CTX_set_timeout(SSL_CTX *ctx, long t);
 OPENSSL_EXPORT long SSL_CTX_get_timeout(const SSL_CTX *ctx);
 OPENSSL_EXPORT X509_STORE *SSL_CTX_get_cert_store(const SSL_CTX *);
 OPENSSL_EXPORT void SSL_CTX_set_cert_store(SSL_CTX *, X509_STORE *);
 OPENSSL_EXPORT int SSL_want(const SSL *s);
-OPENSSL_EXPORT int SSL_clear(SSL *s);
 
 OPENSSL_EXPORT void SSL_CTX_flush_sessions(SSL_CTX *ctx, long tm);
 
@@ -1813,7 +1982,6 @@ OPENSSL_EXPORT int SSL_get_fd(const SSL *s);
 OPENSSL_EXPORT int SSL_get_rfd(const SSL *s);
 OPENSSL_EXPORT int SSL_get_wfd(const SSL *s);
 OPENSSL_EXPORT const char *SSL_get_cipher_list(const SSL *s, int n);
-OPENSSL_EXPORT int SSL_get_read_ahead(const SSL *s);
 OPENSSL_EXPORT int SSL_pending(const SSL *s);
 OPENSSL_EXPORT int SSL_set_fd(SSL *s, int fd);
 OPENSSL_EXPORT int SSL_set_rfd(SSL *s, int fd);
@@ -1822,7 +1990,6 @@ OPENSSL_EXPORT void SSL_set_bio(SSL *s, BIO *rbio, BIO *wbio);
 OPENSSL_EXPORT BIO *SSL_get_rbio(const SSL *s);
 OPENSSL_EXPORT BIO *SSL_get_wbio(const SSL *s);
 OPENSSL_EXPORT int SSL_set_cipher_list(SSL *s, const char *str);
-OPENSSL_EXPORT void SSL_set_read_ahead(SSL *s, int yes);
 OPENSSL_EXPORT int SSL_get_verify_mode(const SSL *s);
 OPENSSL_EXPORT int SSL_get_verify_depth(const SSL *s);
 OPENSSL_EXPORT int (*SSL_get_verify_callback(const SSL *s))(int,
@@ -1910,31 +2077,34 @@ OPENSSL_EXPORT int SSL_has_matching_session_id(const SSL *ssl,
 OPENSSL_EXPORT int SSL_SESSION_to_bytes(SSL_SESSION *in, uint8_t **out_data,
                                         size_t *out_len);
 
-/* SSL_SESSION_to_bytes_for_ticket serializes |in|, but excludes the session ID
- * which is not necessary in a session ticket. */
+/* SSL_SESSION_to_bytes_for_ticket serializes |in|, but excludes the session
+ * identification information, namely the session ID and ticket. */
 OPENSSL_EXPORT int SSL_SESSION_to_bytes_for_ticket(SSL_SESSION *in,
                                                    uint8_t **out_data,
                                                    size_t *out_len);
+
+/* SSL_SESSION_from_bytes parses |in_len| bytes from |in| as an SSL_SESSION. It
+ * returns a newly-allocated |SSL_SESSION| on success or NULL on error. */
+OPENSSL_EXPORT SSL_SESSION *SSL_SESSION_from_bytes(const uint8_t *in,
+                                                   size_t in_len);
 
 /* Deprecated: i2d_SSL_SESSION serializes |in| to the bytes pointed to by
  * |*pp|. On success, it returns the number of bytes written and advances |*pp|
  * by that many bytes. On failure, it returns -1. If |pp| is NULL, no bytes are
  * written and only the length is returned.
  *
- * Use SSL_SESSION_to_bytes instead. */
+ * Use |SSL_SESSION_to_bytes| instead. */
 OPENSSL_EXPORT int i2d_SSL_SESSION(SSL_SESSION *in, uint8_t **pp);
 
-/* d2i_SSL_SESSION deserializes a serialized buffer contained in the |length|
- * bytes pointed to by |*pp|. It returns the new SSL_SESSION and advances |*pp|
- * by the number of bytes consumed on success and NULL on failure. If |a| is
- * NULL, the caller takes ownership of the new session and must call
- * |SSL_SESSION_free| when done.
+/* Deprecated: d2i_SSL_SESSION parses a serialized session from the |length|
+ * bytes pointed to by |*pp|. It returns the new |SSL_SESSION| and advances
+ * |*pp| by the number of bytes consumed on success and NULL on failure. The
+ * caller takes ownership of the new session and must call |SSL_SESSION_free|
+ * when done.
  *
- * If |a| and |*a| are not NULL, the SSL_SESSION at |*a| is overridden with the
- * deserialized session rather than allocating a new one. In addition, |a| is
- * not NULL, but |*a| is, |*a| is set to the new SSL_SESSION.
+ * If |a| is non-NULL, |*a| is released and set the new |SSL_SESSION|.
  *
- * Passing a value other than NULL to |a| is deprecated. */
+ * Use |SSL_SESSION_from_bytes| instead. */
 OPENSSL_EXPORT SSL_SESSION *d2i_SSL_SESSION(SSL_SESSION **a, const uint8_t **pp,
                                             long length);
 
@@ -1976,7 +2146,6 @@ OPENSSL_EXPORT int SSL_CTX_set_session_id_context(SSL_CTX *ctx,
                                                   const uint8_t *sid_ctx,
                                                   unsigned int sid_ctx_len);
 
-OPENSSL_EXPORT SSL *SSL_new(SSL_CTX *ctx);
 OPENSSL_EXPORT int SSL_set_session_id_context(SSL *ssl, const uint8_t *sid_ctx,
                                               unsigned int sid_ctx_len);
 
@@ -1992,7 +2161,6 @@ OPENSSL_EXPORT X509_VERIFY_PARAM *SSL_CTX_get0_param(SSL_CTX *ctx);
 OPENSSL_EXPORT X509_VERIFY_PARAM *SSL_get0_param(SSL *ssl);
 
 OPENSSL_EXPORT void SSL_certs_clear(SSL *s);
-OPENSSL_EXPORT void SSL_free(SSL *ssl);
 OPENSSL_EXPORT int SSL_accept(SSL *ssl);
 OPENSSL_EXPORT int SSL_connect(SSL *ssl);
 OPENSSL_EXPORT int SSL_read(SSL *ssl, void *buf, int num);
@@ -2009,17 +2177,14 @@ OPENSSL_EXPORT const char *SSL_get_version(const SSL *s);
  * |sess|. For example, "TLSv1.2" or "SSLv3". */
 OPENSSL_EXPORT const char *SSL_SESSION_get_version(const SSL_SESSION *sess);
 
-/* TLS_method is the SSL_METHOD used for TLS (and SSLv3) connections. */
-OPENSSL_EXPORT const SSL_METHOD *TLS_method(void);
-
-/* DTLS_method is the SSL_METHOD used for DTLS connections. */
-OPENSSL_EXPORT const SSL_METHOD *DTLS_method(void);
-
 OPENSSL_EXPORT STACK_OF(SSL_CIPHER) *SSL_get_ciphers(const SSL *s);
 
 OPENSSL_EXPORT int SSL_do_handshake(SSL *s);
-OPENSSL_EXPORT int SSL_renegotiate(SSL *s);
-OPENSSL_EXPORT int SSL_renegotiate_pending(SSL *s);
+
+/* SSL_renegotiate_pending returns one if |ssl| is in the middle of a
+ * renegotiation. */
+OPENSSL_EXPORT int SSL_renegotiate_pending(SSL *ssl);
+
 OPENSSL_EXPORT int SSL_shutdown(SSL *s);
 
 OPENSSL_EXPORT const char *SSL_alert_type_string_long(int value);
@@ -2037,16 +2202,12 @@ OPENSSL_EXPORT STACK_OF(X509_NAME) *
 OPENSSL_EXPORT int SSL_add_client_CA(SSL *ssl, X509 *x);
 OPENSSL_EXPORT int SSL_CTX_add_client_CA(SSL_CTX *ctx, X509 *x);
 
-OPENSSL_EXPORT void SSL_set_connect_state(SSL *s);
-OPENSSL_EXPORT void SSL_set_accept_state(SSL *s);
-
 OPENSSL_EXPORT long SSL_get_default_timeout(const SSL *s);
 
 OPENSSL_EXPORT STACK_OF(X509_NAME) *SSL_dup_CA_list(STACK_OF(X509_NAME) *sk);
 
 OPENSSL_EXPORT X509 *SSL_get_certificate(const SSL *ssl);
-OPENSSL_EXPORT /* EVP_PKEY */ struct evp_pkey_st *SSL_get_privatekey(
-    const SSL *ssl);
+OPENSSL_EXPORT EVP_PKEY *SSL_get_privatekey(const SSL *ssl);
 
 OPENSSL_EXPORT X509 *SSL_CTX_get0_certificate(const SSL_CTX *ctx);
 OPENSSL_EXPORT EVP_PKEY *SSL_CTX_get0_privatekey(const SSL_CTX *ctx);
@@ -2074,7 +2235,6 @@ OPENSSL_EXPORT void SSL_set_info_callback(SSL *ssl,
 OPENSSL_EXPORT void (*SSL_get_info_callback(const SSL *ssl))(const SSL *ssl,
                                                              int type, int val);
 OPENSSL_EXPORT int SSL_state(const SSL *ssl);
-OPENSSL_EXPORT void SSL_set_state(SSL *ssl, int state);
 
 OPENSSL_EXPORT void SSL_set_verify_result(SSL *ssl, long v);
 OPENSSL_EXPORT long SSL_get_verify_result(const SSL *ssl);
@@ -2108,7 +2268,7 @@ OPENSSL_EXPORT int SSL_get_ex_data_X509_STORE_CTX_idx(void);
 OPENSSL_EXPORT unsigned long SSL_CTX_sess_set_cache_size(SSL_CTX *ctx,
                                                          unsigned long size);
 
-/* SSL_CTX_sess_set_cache_size returns the maximum size of |ctx|'s session
+/* SSL_CTX_sess_get_cache_size returns the maximum size of |ctx|'s session
  * cache. */
 OPENSSL_EXPORT unsigned long SSL_CTX_sess_get_cache_size(const SSL_CTX *ctx);
 
@@ -2131,11 +2291,6 @@ OPENSSL_EXPORT int SSL_CTX_set_session_cache_mode(SSL_CTX *ctx, int mode);
 /* SSL_CTX_get_session_cache_mode returns the session cache mode bits for
  * |ctx| */
 OPENSSL_EXPORT int SSL_CTX_get_session_cache_mode(const SSL_CTX *ctx);
-
-/* TODO(davidben): Deprecate read_ahead functions after https://crbug.com/447431
- * is resolved. */
-OPENSSL_EXPORT int SSL_CTX_get_read_ahead(const SSL_CTX *ctx);
-OPENSSL_EXPORT void SSL_CTX_set_read_ahead(SSL_CTX *ctx, int yes);
 
 /* SSL_CTX_get_max_cert_list returns the maximum length, in bytes, of a peer
  * certificate chain accepted by |ctx|. */
@@ -2302,6 +2457,13 @@ OPENSSL_EXPORT const SSL_METHOD *DTLSv1_client_method(void);
 OPENSSL_EXPORT const SSL_METHOD *DTLSv1_2_server_method(void);
 OPENSSL_EXPORT const SSL_METHOD *DTLSv1_2_client_method(void);
 
+/* SSL_clear resets |ssl| to allow another connection and returns one on success
+ * or zero on failure. It returns most configuration state but releases memory
+ * associated with the current connection.
+ *
+ * Free |ssl| and create a new one instead. */
+OPENSSL_EXPORT int SSL_clear(SSL *ssl);
+
 /* SSL_CTX_set_tmp_rsa_callback does nothing. */
 OPENSSL_EXPORT void SSL_CTX_set_tmp_rsa_callback(
     SSL_CTX *ctx, RSA *(*cb)(SSL *ssl, int is_export, int keylength));
@@ -2362,6 +2524,24 @@ OPENSSL_EXPORT int SSL_CTX_set_tmp_rsa(SSL_CTX *ctx, const RSA *rsa);
 /* SSL_set_tmp_rsa returns one. */
 OPENSSL_EXPORT int SSL_set_tmp_rsa(SSL *ssl, const RSA *rsa);
 
+/* SSL_CTX_get_read_ahead returns zero. */
+OPENSSL_EXPORT int SSL_CTX_get_read_ahead(const SSL_CTX *ctx);
+
+/* SSL_CTX_set_read_ahead does nothing. */
+OPENSSL_EXPORT void SSL_CTX_set_read_ahead(SSL_CTX *ctx, int yes);
+
+/* SSL_get_read_ahead returns zero. */
+OPENSSL_EXPORT int SSL_get_read_ahead(const SSL *s);
+
+/* SSL_set_read_ahead does nothing. */
+OPENSSL_EXPORT void SSL_set_read_ahead(SSL *s, int yes);
+
+/* SSL_renegotiate put an error on the error queue and returns zero. */
+OPENSSL_EXPORT int SSL_renegotiate(SSL *ssl);
+
+/* SSL_set_state does nothing. */
+OPENSSL_EXPORT void SSL_set_state(SSL *ssl, int state);
+
 
 /* Android compatibility section.
  *
@@ -2390,99 +2570,107 @@ OPENSSL_EXPORT const char *SSLeay_version(int unused);
  *
  * Historically, a number of APIs were implemented in OpenSSL as macros and
  * constants to 'ctrl' functions. To avoid breaking #ifdefs in consumers, this
- * section defines a number of legacy macros. */
+ * section defines a number of legacy macros.
+ *
+ * Although using either the CTRL values or their wrapper macros in #ifdefs is
+ * still supported, the CTRL values may not be passed to |SSL_ctrl| and
+ * |SSL_CTX_ctrl|. Call the functions (previously wrapper macros) instead. */
 
-#define SSL_CTRL_NEED_TMP_RSA doesnt_exist
-#define SSL_CTRL_SET_TMP_RSA doesnt_exist
-#define SSL_CTRL_SET_TMP_DH doesnt_exist
-#define SSL_CTRL_SET_TMP_ECDH doesnt_exist
-#define SSL_CTRL_SET_TMP_RSA_CB doesnt_exist
-#define SSL_CTRL_SET_TMP_DH_CB doesnt_exist
-#define SSL_CTRL_SET_TMP_ECDH_CB doesnt_exist
-#define SSL_CTRL_GET_SESSION_REUSED doesnt_exist
+#define DTLS_CTRL_GET_TIMEOUT doesnt_exist
+#define DTLS_CTRL_HANDLE_TIMEOUT doesnt_exist
+#define SSL_CTRL_CHANNEL_ID doesnt_exist
+#define SSL_CTRL_CLEAR_MODE doesnt_exist
+#define SSL_CTRL_CLEAR_OPTIONS doesnt_exist
+#define SSL_CTRL_GET_CHANNEL_ID doesnt_exist
+#define SSL_CTRL_GET_MAX_CERT_LIST doesnt_exist
 #define SSL_CTRL_GET_NUM_RENEGOTIATIONS doesnt_exist
+#define SSL_CTRL_GET_READ_AHEAD doesnt_exist
+#define SSL_CTRL_GET_RI_SUPPORT doesnt_exist
+#define SSL_CTRL_GET_SESSION_REUSED doesnt_exist
+#define SSL_CTRL_GET_SESS_CACHE_MODE doesnt_exist
+#define SSL_CTRL_GET_SESS_CACHE_SIZE doesnt_exist
+#define SSL_CTRL_GET_TLSEXT_TICKET_KEYS doesnt_exist
 #define SSL_CTRL_GET_TOTAL_RENEGOTIATIONS doesnt_exist
+#define SSL_CTRL_MODE doesnt_exist
+#define SSL_CTRL_NEED_TMP_RSA doesnt_exist
+#define SSL_CTRL_OPTIONS doesnt_exist
+#define SSL_CTRL_SESS_NUMBER doesnt_exist
+#define SSL_CTRL_SET_CHANNEL_ID doesnt_exist
+#define SSL_CTRL_SET_MAX_CERT_LIST doesnt_exist
+#define SSL_CTRL_SET_MAX_SEND_FRAGMENT doesnt_exist
 #define SSL_CTRL_SET_MSG_CALLBACK doesnt_exist
 #define SSL_CTRL_SET_MSG_CALLBACK_ARG doesnt_exist
 #define SSL_CTRL_SET_MTU doesnt_exist
-#define SSL_CTRL_SESS_NUMBER doesnt_exist
-#define SSL_CTRL_OPTIONS doesnt_exist
-#define SSL_CTRL_MODE doesnt_exist
-#define SSL_CTRL_GET_READ_AHEAD doesnt_exist
 #define SSL_CTRL_SET_READ_AHEAD doesnt_exist
-#define SSL_CTRL_SET_SESS_CACHE_SIZE doesnt_exist
-#define SSL_CTRL_GET_SESS_CACHE_SIZE doesnt_exist
 #define SSL_CTRL_SET_SESS_CACHE_MODE doesnt_exist
-#define SSL_CTRL_GET_SESS_CACHE_MODE doesnt_exist
-#define SSL_CTRL_GET_MAX_CERT_LIST doesnt_exist
-#define SSL_CTRL_SET_MAX_CERT_LIST doesnt_exist
-#define SSL_CTRL_SET_MAX_SEND_FRAGMENT doesnt_exist
-#define SSL_CTRL_SET_TLSEXT_SERVERNAME_CB doesnt_exist
-#define SSL_CTRL_SET_TLSEXT_SERVERNAME_ARG doesnt_exist
+#define SSL_CTRL_SET_SESS_CACHE_SIZE doesnt_exist
 #define SSL_CTRL_SET_TLSEXT_HOSTNAME doesnt_exist
+#define SSL_CTRL_SET_TLSEXT_SERVERNAME_ARG doesnt_exist
+#define SSL_CTRL_SET_TLSEXT_SERVERNAME_CB doesnt_exist
+#define SSL_CTRL_SET_TLSEXT_TICKET_KEYS doesnt_exist
 #define SSL_CTRL_SET_TLSEXT_TICKET_KEY_CB doesnt_exist
-#define DTLS_CTRL_GET_TIMEOUT doesnt_exist
-#define DTLS_CTRL_HANDLE_TIMEOUT doesnt_exist
-#define SSL_CTRL_GET_RI_SUPPORT doesnt_exist
-#define SSL_CTRL_CLEAR_OPTIONS doesnt_exist
-#define SSL_CTRL_CLEAR_MODE doesnt_exist
-#define SSL_CTRL_CHANNEL_ID doesnt_exist
-#define SSL_CTRL_GET_CHANNEL_ID doesnt_exist
-#define SSL_CTRL_SET_CHANNEL_ID doesnt_exist
+#define SSL_CTRL_SET_TMP_DH doesnt_exist
+#define SSL_CTRL_SET_TMP_DH_CB doesnt_exist
+#define SSL_CTRL_SET_TMP_ECDH doesnt_exist
+#define SSL_CTRL_SET_TMP_ECDH_CB doesnt_exist
+#define SSL_CTRL_SET_TMP_RSA doesnt_exist
+#define SSL_CTRL_SET_TMP_RSA_CB doesnt_exist
 
-#define SSL_CTX_need_tmp_RSA SSL_CTX_need_tmp_RSA
-#define SSL_need_tmp_RSA SSL_need_tmp_RSA
-#define SSL_CTX_set_tmp_rsa SSL_CTX_set_tmp_rsa
-#define SSL_set_tmp_rsa SSL_set_tmp_rsa
-#define SSL_CTX_set_tmp_dh SSL_CTX_set_tmp_dh
-#define SSL_set_tmp_dh SSL_set_tmp_dh
-#define SSL_CTX_set_tmp_ecdh SSL_CTX_set_tmp_ecdh
-#define SSL_set_tmp_ecdh SSL_set_tmp_ecdh
-#define SSL_session_reused SSL_session_reused
-#define SSL_num_renegotiations SSL_num_renegotiations
-#define SSL_total_renegotiations SSL_total_renegotiations
-#define SSL_CTX_set_msg_callback_arg SSL_CTX_set_msg_callback_arg
-#define SSL_set_msg_callback_arg SSL_set_msg_callback_arg
-#define SSL_set_mtu SSL_set_mtu
-#define SSL_CTX_sess_number SSL_CTX_sess_number
-#define SSL_CTX_get_options SSL_CTX_get_options
-#define SSL_CTX_set_options SSL_CTX_set_options
-#define SSL_get_options SSL_get_options
-#define SSL_set_options SSL_set_options
-#define SSL_CTX_get_mode SSL_CTX_get_mode
-#define SSL_CTX_set_mode SSL_CTX_set_mode
-#define SSL_get_mode SSL_get_mode
-#define SSL_set_mode SSL_set_mode
-#define SSL_CTX_get_read_ahead SSL_CTX_get_read_ahead
-#define SSL_CTX_set_read_ahead SSL_CTX_set_read_ahead
-#define SSL_CTX_sess_set_cache_size SSL_CTX_sess_set_cache_size
-#define SSL_CTX_sess_get_cache_size SSL_CTX_sess_get_cache_size
-#define SSL_CTX_set_session_cache_mode SSL_CTX_set_session_cache_mode
-#define SSL_CTX_get_session_cache_mode SSL_CTX_get_session_cache_mode
-#define SSL_CTX_get_max_cert_list SSL_CTX_get_max_cert_list
-#define SSL_get_max_cert_list SSL_get_max_cert_list
-#define SSL_CTX_set_max_cert_list SSL_CTX_set_max_cert_list
-#define SSL_set_max_cert_list SSL_set_max_cert_list
-#define SSL_CTX_set_max_send_fragment SSL_CTX_set_max_send_fragment
-#define SSL_set_max_send_fragment SSL_set_max_send_fragment
-#define SSL_CTX_set_tlsext_servername_callback \
-    SSL_CTX_set_tlsext_servername_callback
-#define SSL_CTX_set_tlsext_servername_arg SSL_CTX_set_tlsext_servername_arg
-#define SSL_set_tlsext_host_name SSL_set_tlsext_host_name
-#define SSL_CTX_set_tlsext_ticket_key_cb SSL_CTX_set_tlsext_ticket_key_cb
 #define DTLSv1_get_timeout DTLSv1_get_timeout
 #define DTLSv1_handle_timeout DTLSv1_handle_timeout
+#define SSL_CTX_clear_mode SSL_CTX_clear_mode
+#define SSL_CTX_clear_options SSL_CTX_clear_options
+#define SSL_CTX_enable_tls_channel_id SSL_CTX_enable_tls_channel_id
+#define SSL_CTX_get_max_cert_list SSL_CTX_get_max_cert_list
+#define SSL_CTX_get_mode SSL_CTX_get_mode
+#define SSL_CTX_get_options SSL_CTX_get_options
+#define SSL_CTX_get_read_ahead SSL_CTX_get_read_ahead
+#define SSL_CTX_get_session_cache_mode SSL_CTX_get_session_cache_mode
+#define SSL_CTX_get_tlsext_ticket_keys SSL_CTX_get_tlsext_ticket_keys
+#define SSL_CTX_need_tmp_RSA SSL_CTX_need_tmp_RSA
+#define SSL_CTX_sess_get_cache_size SSL_CTX_sess_get_cache_size
+#define SSL_CTX_sess_number SSL_CTX_sess_number
+#define SSL_CTX_sess_set_cache_size SSL_CTX_sess_set_cache_size
+#define SSL_CTX_set1_tls_channel_id SSL_CTX_set1_tls_channel_id
+#define SSL_CTX_set_max_cert_list SSL_CTX_set_max_cert_list
+#define SSL_CTX_set_max_send_fragment SSL_CTX_set_max_send_fragment
+#define SSL_CTX_set_mode SSL_CTX_set_mode
+#define SSL_CTX_set_msg_callback_arg SSL_CTX_set_msg_callback_arg
+#define SSL_CTX_set_options SSL_CTX_set_options
+#define SSL_CTX_set_read_ahead SSL_CTX_set_read_ahead
+#define SSL_CTX_set_session_cache_mode SSL_CTX_set_session_cache_mode
+#define SSL_CTX_set_tlsext_servername_arg SSL_CTX_set_tlsext_servername_arg
+#define SSL_CTX_set_tlsext_servername_callback \
+    SSL_CTX_set_tlsext_servername_callback
+#define SSL_CTX_set_tlsext_ticket_key_cb SSL_CTX_set_tlsext_ticket_key_cb
+#define SSL_CTX_set_tlsext_ticket_keys SSL_CTX_set_tlsext_ticket_keys
+#define SSL_CTX_set_tmp_dh SSL_CTX_set_tmp_dh
+#define SSL_CTX_set_tmp_ecdh SSL_CTX_set_tmp_ecdh
+#define SSL_CTX_set_tmp_rsa SSL_CTX_set_tmp_rsa
+#define SSL_clear_mode SSL_clear_mode
+#define SSL_clear_options SSL_clear_options
+#define SSL_enable_tls_channel_id SSL_enable_tls_channel_id
+#define SSL_get_max_cert_list SSL_get_max_cert_list
+#define SSL_get_mode SSL_get_mode
+#define SSL_get_options SSL_get_options
 #define SSL_get_secure_renegotiation_support \
     SSL_get_secure_renegotiation_support
-#define SSL_CTX_clear_options SSL_CTX_clear_options
-#define SSL_clear_options SSL_clear_options
-#define SSL_CTX_clear_mode SSL_CTX_clear_mode
-#define SSL_clear_mode SSL_clear_mode
-#define SSL_CTX_enable_tls_channel_id SSL_CTX_enable_tls_channel_id
-#define SSL_enable_tls_channel_id SSL_enable_tls_channel_id
-#define SSL_set1_tls_channel_id SSL_set1_tls_channel_id
-#define SSL_CTX_set1_tls_channel_id SSL_CTX_set1_tls_channel_id
 #define SSL_get_tls_channel_id SSL_get_tls_channel_id
+#define SSL_need_tmp_RSA SSL_need_tmp_RSA
+#define SSL_num_renegotiations SSL_num_renegotiations
+#define SSL_session_reused SSL_session_reused
+#define SSL_set1_tls_channel_id SSL_set1_tls_channel_id
+#define SSL_set_max_cert_list SSL_set_max_cert_list
+#define SSL_set_max_send_fragment SSL_set_max_send_fragment
+#define SSL_set_mode SSL_set_mode
+#define SSL_set_msg_callback_arg SSL_set_msg_callback_arg
+#define SSL_set_mtu SSL_set_mtu
+#define SSL_set_options SSL_set_options
+#define SSL_set_tlsext_host_name SSL_set_tlsext_host_name
+#define SSL_set_tmp_dh SSL_set_tmp_dh
+#define SSL_set_tmp_ecdh SSL_set_tmp_ecdh
+#define SSL_set_tmp_rsa SSL_set_tmp_rsa
+#define SSL_total_renegotiations SSL_total_renegotiations
 
 
 #if defined(__cplusplus)
@@ -2558,8 +2746,8 @@ OPENSSL_EXPORT const char *SSLeay_version(int unused);
 #define SSL_F_SSL_use_psk_identity_hint 147
 #define SSL_F_SSL_write 148
 #define SSL_F_d2i_SSL_SESSION 149
-#define SSL_F_d2i_SSL_SESSION_get_octet_string 150
-#define SSL_F_d2i_SSL_SESSION_get_string 151
+#define SSL_F_SSL_SESSION_parse_octet_string 150
+#define SSL_F_SSL_SESSION_parse_string 151
 #define SSL_F_do_ssl3_write 152
 #define SSL_F_dtls1_accept 153
 #define SSL_F_dtls1_buffer_record 154
@@ -2573,7 +2761,7 @@ OPENSSL_EXPORT const char *SSLeay_version(int unused);
 #define SSL_F_dtls1_process_record 162
 #define SSL_F_dtls1_read_bytes 163
 #define SSL_F_dtls1_send_hello_verify_request 164
-#define SSL_F_dtls1_write_app_data_bytes 165
+#define SSL_F_dtls1_write_app_data 165
 #define SSL_F_i2d_SSL_SESSION 166
 #define SSL_F_ssl3_accept 167
 #define SSL_F_ssl3_cert_verify_hash 169
@@ -2680,6 +2868,15 @@ OPENSSL_EXPORT const char *SSLeay_version(int unused);
 #define SSL_F_SSL_set1_tls_channel_id 273
 #define SSL_F_SSL_set_tlsext_host_name 274
 #define SSL_F_ssl3_output_cert_chain 275
+#define SSL_F_SSL_AEAD_CTX_new 276
+#define SSL_F_SSL_AEAD_CTX_open 277
+#define SSL_F_SSL_AEAD_CTX_seal 278
+#define SSL_F_dtls1_seal_record 279
+#define SSL_F_SSL_SESSION_from_bytes 280
+#define SSL_F_SSL_SESSION_parse 281
+#define SSL_F_ssl3_check_certificate_for_cipher 282
+#define SSL_F_SSL_CTX_get_tlsext_ticket_keys 283
+#define SSL_F_SSL_CTX_set_tlsext_ticket_keys 284
 #define SSL_R_APP_DATA_IN_HANDSHAKE 100
 #define SSL_R_ATTEMPT_TO_REUSE_SESSION_IN_DIFFERENT_CONTEXT 101
 #define SSL_R_BAD_ALERT 102
@@ -2854,6 +3051,11 @@ OPENSSL_EXPORT const char *SSLeay_version(int unused);
 #define SSL_R_FRAGMENT_MISMATCH 271
 #define SSL_R_BUFFER_TOO_SMALL 272
 #define SSL_R_OLD_SESSION_VERSION_NOT_RETURNED 273
+#define SSL_R_OUTPUT_ALIASES_INPUT 274
+#define SSL_R_RESUMED_EMS_SESSION_WITHOUT_EMS_EXTENSION 275
+#define SSL_R_EMS_STATE_INCONSISTENT 276
+#define SSL_R_RESUMED_NON_EMS_SESSION_WITH_EMS_EXTENSION 277
+#define SSL_R_TOO_MANY_WARNING_ALERTS 278
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020

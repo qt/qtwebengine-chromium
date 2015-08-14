@@ -175,7 +175,7 @@ bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& 
 
     // Get the layoutObject that will be responsible for painting the caret
     // (which is either the layoutObject we just found, or one of its containers).
-    LayoutBlock* caretPainter = caretLayoutObject(caretPosition.position().deprecatedNode());
+    LayoutBlock* caretPainter = caretLayoutObject(caretPosition.position().anchorNode());
 
     mapCaretRectToCaretPainter(layoutObject, caretPainter, m_caretLocalRect);
 
@@ -185,11 +185,6 @@ bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& 
 bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caretPosition)
 {
     return updateCaretRect(document, PositionWithAffinity(caretPosition.deepEquivalent(), caretPosition.affinity()));
-}
-
-LayoutBlock* DragCaretController::caretLayoutObject() const
-{
-    return CaretBase::caretLayoutObject(m_position.deepEquivalent().deprecatedNode());
 }
 
 IntRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect) const
@@ -224,9 +219,9 @@ void CaretBase::invalidateLocalCaretRect(Node* node, const LayoutRect& rect)
 
 bool CaretBase::shouldRepaintCaret(Node& node) const
 {
-    // If PositionIsBeforeAnchor or PositionIsAfterAnchor, carets need to be
-    // repainted not only when the node is contentEditable but also when its
-    // parentNode() is contentEditable.
+    // If PositionAnchorType::BeforeAnchor or PositionAnchorType::AfterAnchor,
+    // carets need to be repainted not only when the node is contentEditable but
+    // also when its parentNode() is contentEditable.
     return node.isContentEditable() || (node.parentNode() && node.parentNode()->isContentEditable());
 }
 
@@ -276,6 +271,11 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
         caretColor = element->layoutObject()->resolveColor(CSSPropertyColor);
 
     context->fillRect(caret, caretColor);
+}
+
+LayoutBlock* DragCaretController::caretLayoutObject() const
+{
+    return CaretBase::caretLayoutObject(m_position.deepEquivalent().anchorNode());
 }
 
 void DragCaretController::paintDragCaret(LocalFrame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const

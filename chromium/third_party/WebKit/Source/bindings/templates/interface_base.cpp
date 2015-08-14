@@ -20,7 +20,16 @@ namespace blink {
 
 {% set wrapper_type_info_const = '' if has_partial_interface else 'const ' %}
 {% if not is_partial %}
+// Suppress warning: global constructors, because struct WrapperTypeInfo is trivial
+// and does not depend on another global objects.
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#endif
 {{wrapper_type_info_const}}WrapperTypeInfo {{v8_class}}::wrapperTypeInfo = { gin::kEmbedderBlink, {{dom_template}}, {{v8_class}}::refObject, {{v8_class}}::derefObject, {{v8_class}}::trace, {{to_active_dom_object}}, {{visit_dom_wrapper}}, {{v8_class}}::preparePrototypeObject, {{v8_class}}::installConditionallyEnabledProperties, "{{interface_name}}", {{parent_wrapper_type_info}}, WrapperTypeInfo::{{wrapper_type_prototype}}, WrapperTypeInfo::{{wrapper_class_id}}, WrapperTypeInfo::{{event_target_inheritance}}, WrapperTypeInfo::{{lifetime}}, WrapperTypeInfo::{{gc_type}} };
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
 
 // This static member must be declared by DEFINE_WRAPPERTYPEINFO in {{cpp_class}}.h.
 // For details, see the comment of DEFINE_WRAPPERTYPEINFO in
@@ -48,7 +57,7 @@ static void (*{{method.name}}MethodForPartialInterface)(const v8::FunctionCallba
 {% block replaceable_attribute_setter_and_callback %}
 {% if has_replaceable_attributes or has_constructor_attributes %}
 template<class CallbackInfo>
-static void {{cpp_class}}ForceSetAttributeOnThis(v8::Local<v8::Name> name, v8::Local<v8::Value> v8Value, const CallbackInfo& info)
+static bool {{cpp_class}}CreateDataProperty(v8::Local<v8::Name> name, v8::Local<v8::Value> v8Value, const CallbackInfo& info)
 {
     {% if is_check_security %}
     {{cpp_class}}* impl = {{v8_class}}::toImpl(info.Holder());
@@ -56,11 +65,11 @@ static void {{cpp_class}}ForceSetAttributeOnThis(v8::Local<v8::Name> name, v8::L
     ExceptionState exceptionState(ExceptionState::SetterContext, *attributeName, "{{interface_name}}", info.Holder(), info.GetIsolate());
     if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
         exceptionState.throwIfNeeded();
-        return;
+        return false;
     }
     {% endif %}
     ASSERT(info.This()->IsObject());
-    v8::Local<v8::Object>::Cast(info.This())->ForceSet(info.GetIsolate()->GetCurrentContext(), name, v8Value);
+    return v8CallBoolean(v8::Local<v8::Object>::Cast(info.This())->CreateDataProperty(info.GetIsolate()->GetCurrentContext(), name, v8Value));
 }
 
 {% if has_constructor_attributes %}
@@ -76,7 +85,7 @@ static void {{cpp_class}}ConstructorAttributeSetterCallback(v8::Local<v8::Name>,
         const WrapperTypeInfo* wrapperTypeInfo = WrapperTypeInfo::unwrap(data);
         if (!wrapperTypeInfo)
             break;
-        {{cpp_class}}ForceSetAttributeOnThis(v8String(info.GetIsolate(), wrapperTypeInfo->interfaceName), v8Value, info);
+        {{cpp_class}}CreateDataProperty(v8String(info.GetIsolate(), wrapperTypeInfo->interfaceName), v8Value, info);
     } while (false); // do ... while (false) just for use of break
     TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
@@ -137,14 +146,17 @@ bool namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8
 {# Methods #}
 {% from 'methods.cpp' import generate_method, overload_resolution_method,
        method_callback, origin_safe_method_getter, generate_constructor,
-       method_implemented_in_private_script, runtime_determined_length_method,
-       runtime_determined_maxarg_method
+       method_implemented_in_private_script, generate_post_message_impl,
+       runtime_determined_length_method, runtime_determined_maxarg_method
        with context %}
 {% for method in methods %}
 {% if method.should_be_exposed_to_script %}
 {% for world_suffix in method.world_suffixes %}
-{% if not method.is_custom and method.visible %}
+{% if not method.is_custom and not method.is_post_message and method.visible %}
 {{generate_method(method, world_suffix)}}
+{% endif %}
+{% if method.is_post_message %}
+{{generate_post_message_impl()}}
 {% endif %}
 {% if method.overloads and method.overloads.visible %}
 {% if method.overloads.runtime_determined_lengths %}
@@ -208,6 +220,12 @@ bool namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8
 {% block install_attributes %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
 {% if has_attribute_configuration %}
+// Suppress warning: global constructors, because AttributeConfiguration is trivial
+// and does not depend on another global objects.
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+#endif
 static const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[] = {
     {% for attribute in attributes
        if not (attribute.is_expose_js_accessors or
@@ -221,6 +239,9 @@ static const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[]
     {% endfilter %}
     {% endfor %}
 };
+#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
 
 {% endif %}
 {% endblock %}
@@ -260,7 +281,6 @@ static const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
 {% endif %}{# not is_array_buffer_or_view #}
 {##############################################################################}
 {% block named_constructor %}{% endblock %}
-{% block initialize_event %}{% endblock %}
 {% block constructor_callback %}{% endblock %}
 {% block configure_shadow_object_template %}{% endblock %}
 {##############################################################################}
@@ -336,7 +356,7 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
         {% if attribute.is_expose_js_accessors %}
         static const V8DOMConfiguration::AccessorConfiguration accessorConfiguration =\
         {{attribute_configuration(attribute)}};
-        V8DOMConfiguration::installAccessor(isolate, prototypeTemplate, defaultSignature, accessorConfiguration);
+        V8DOMConfiguration::installAccessor(isolate, instanceTemplate, prototypeTemplate, functionTemplate, defaultSignature, accessorConfiguration);
         {% else %}
         static const V8DOMConfiguration::AttributeConfiguration attributeConfiguration =\
         {{attribute_configuration(attribute)}};

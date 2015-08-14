@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include "base/callback_forward.h"
+#include "base/callback.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -21,6 +21,8 @@ class GLSurface;
 }
 
 namespace gpu {
+class AsyncPixelTransferDelegate;
+
 namespace gles2 {
 
 class ContextGroup;
@@ -102,16 +104,16 @@ class MockGLES2Decoder : public GLES2Decoder {
                                          uint32* service_texture_id));
   MOCK_METHOD0(GetContextLostReason, error::ContextLostReason());
   MOCK_CONST_METHOD1(GetCommandName, const char*(unsigned int command_id));
-  MOCK_METHOD9(ClearLevel, bool(
-      Texture* texture,
-      unsigned target,
-      int level,
-      unsigned internal_format,
-      unsigned format,
-      unsigned type,
-      int width,
-      int height,
-      bool is_texture_immutable));
+  MOCK_METHOD9(ClearLevel,
+               bool(Texture* texture,
+                    unsigned target,
+                    int level,
+                    unsigned format,
+                    unsigned type,
+                    int x_offset,
+                    int y_offset,
+                    int width,
+                    int height));
   MOCK_METHOD0(GetErrorState, ErrorState *());
 
   MOCK_METHOD0(GetLogger, Logger*());

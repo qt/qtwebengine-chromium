@@ -10,8 +10,8 @@
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "mojo/application/application_test_base_chromium.h"
 #include "mojo/application/public/cpp/application_impl.h"
+#include "mojo/application/public/cpp/application_test_base.h"
 #include "mojo/common/data_pipe_utils.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "mojo/runner/kPingable.h"
@@ -42,7 +42,7 @@ class GetHandler : public http_server::HttpHandler {
       http_server::HttpRequestPtr request,
       const Callback<void(http_server::HttpResponsePtr)>& callback) override {
     http_server::HttpResponsePtr response;
-    if (StartsWithASCII(request->relative_url, "/app", true)) {
+    if (base::StartsWithASCII(request->relative_url, "/app", true)) {
       response = http_server::CreateHttpResponse(
           200, std::string(kPingable.data, kPingable.size));
       response->content_type = "application/octet-stream";
@@ -91,13 +91,13 @@ class ShellHTTPAppTest : public test::ApplicationTestBase {
                                            local_address.Pass());
 
     http_server_->GetPort([this](uint16_t p) { port_ = p; });
-    EXPECT_TRUE(http_server_.WaitForIncomingMethodCall());
+    EXPECT_TRUE(http_server_.WaitForIncomingResponse());
 
     InterfacePtr<http_server::HttpHandler> http_handler;
     handler_.reset(new GetHandler(GetProxy(&http_handler).Pass(), port_));
     http_server_->SetHandler(".*", http_handler.Pass(),
                              [](bool result) { EXPECT_TRUE(result); });
-    EXPECT_TRUE(http_server_.WaitForIncomingMethodCall());
+    EXPECT_TRUE(http_server_.WaitForIncomingResponse());
   }
 
   std::string GetURL(const std::string& path) {
@@ -184,7 +184,7 @@ TEST_F(ShellAppTest, MojoURLQueryHandling) {
   application_impl()->ConnectToService("mojo:pingable_app?foo", &pingable);
   auto callback = [this](const String& app_url, const String& connection_url,
                          const String& message) {
-    EXPECT_TRUE(EndsWith(app_url, "/pingable_app.mojo", true));
+    EXPECT_TRUE(base::EndsWith(app_url, "/pingable_app.mojo", true));
     EXPECT_EQ(app_url.To<std::string>() + "?foo", connection_url);
     EXPECT_EQ("hello", message);
     base::MessageLoop::current()->Quit();

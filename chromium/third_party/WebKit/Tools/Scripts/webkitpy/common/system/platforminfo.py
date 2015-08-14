@@ -43,8 +43,9 @@ class PlatformInfo(object):
     newer than one known to the code.
     """
 
-    def __init__(self, sys_module, platform_module, executive):
+    def __init__(self, sys_module, platform_module, filesystem_module, executive):
         self._executive = executive
+        self._filesystem = filesystem_module
         self._platform_module = platform_module
         self.os_name = self._determine_os_name(sys_module.platform)
         if self.os_name == 'linux':
@@ -119,6 +120,19 @@ class PlatformInfo(object):
         except:
             return sys.maxint
 
+    def linux_distribution(self):
+        if not self.is_linux():
+            return None
+
+        if self._filesystem.exists('/etc/redhat-release'):
+            return 'redhat'
+        if self._filesystem.exists('/etc/debian_version'):
+            return 'debian'
+        if self._filesystem.exists('/etc/arch-release'):
+            return 'arch'
+
+        return 'unknown'
+
     def _determine_os_name(self, sys_platform):
         if sys_platform == 'darwin':
             return 'mac'
@@ -138,6 +152,7 @@ class PlatformInfo(object):
             7: 'lion',
             8: 'mountainlion',
             9: 'mavericks',
+            10: 'yosemite',
         }
         assert release_version >= min(version_strings.keys())
         return version_strings.get(release_version, 'future')
@@ -164,6 +179,6 @@ class PlatformInfo(object):
     def _win_version_tuple_from_cmd(self):
         # Note that this should only ever be called on windows, so this should always work.
         ver_output = self._executive.run_command(['cmd', '/c', 'ver'], decode_output=False)
-        match_object = re.search(r'(?P<major>\d)\.(?P<minor>\d)\.(?P<build>\d+)', ver_output)
+        match_object = re.search(r'(?P<major>\d+)\.(?P<minor>\d)\.(?P<build>\d+)', ver_output)
         assert match_object, 'cmd returned an unexpected version string: ' + ver_output
         return tuple(map(int, match_object.groups()))

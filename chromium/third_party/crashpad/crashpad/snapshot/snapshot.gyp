@@ -87,8 +87,12 @@
         'process_snapshot.h',
         'system_snapshot.h',
         'thread_snapshot.h',
+        'win/memory_snapshot_win.cc',
+        'win/memory_snapshot_win.h',
         'win/module_snapshot_win.cc',
         'win/module_snapshot_win.h',
+        'win/pe_image_annotations_reader.cc',
+        'win/pe_image_annotations_reader.h',
         'win/pe_image_reader.cc',
         'win/pe_image_reader.h',
         'win/process_reader_win.cc',
@@ -97,6 +101,8 @@
         'win/process_snapshot_win.h',
         'win/system_snapshot_win.cc',
         'win/system_snapshot_win.h',
+        'win/thread_snapshot_win.cc',
+        'win/thread_snapshot_win.h',
       ],
       'conditions': [
         ['OS=="win"', {

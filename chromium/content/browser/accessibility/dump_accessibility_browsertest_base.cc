@@ -102,19 +102,19 @@ void DumpAccessibilityTestBase::ParseHtmlForExtraDirectives(
     const std::string& deny_str =
         AccessibilityTreeFormatter::GetDenyString();
     const std::string& wait_str = "@WAIT-FOR:";
-    if (StartsWithASCII(line, allow_empty_str, true)) {
+    if (base::StartsWithASCII(line, allow_empty_str, true)) {
       filters->push_back(
           Filter(base::UTF8ToUTF16(line.substr(allow_empty_str.size())),
                  Filter::ALLOW_EMPTY));
-    } else if (StartsWithASCII(line, allow_str, true)) {
+    } else if (base::StartsWithASCII(line, allow_str, true)) {
       filters->push_back(Filter(base::UTF8ToUTF16(
           line.substr(allow_str.size())),
                                 Filter::ALLOW));
-    } else if (StartsWithASCII(line, deny_str, true)) {
+    } else if (base::StartsWithASCII(line, deny_str, true)) {
       filters->push_back(Filter(base::UTF8ToUTF16(
           line.substr(deny_str.size())),
                                 Filter::DENY));
-    } else if (StartsWithASCII(line, wait_str, true)) {
+    } else if (base::StartsWithASCII(line, wait_str, true)) {
       *wait_for = line.substr(wait_str.size());
     }
   }
@@ -195,8 +195,9 @@ void DumpAccessibilityTestBase::RunTest(
   std::vector<std::string> actual_lines = Dump();
 
   // Perform a diff (or write the initial baseline).
-  std::vector<std::string> expected_lines;
-  Tokenize(expected_contents, "\n", &expected_lines);
+  std::vector<std::string> expected_lines = base::SplitString(
+      expected_contents, "\n", base::KEEP_WHITESPACE,
+      base::SPLIT_WANT_NONEMPTY);
   // Marking the end of the file with a line of text ensures that
   // file length differences are found.
   expected_lines.push_back(kMarkEndOfFile);

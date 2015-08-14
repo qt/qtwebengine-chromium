@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 cr.define('downloads', function() {
-  /** @const */ var Item = downloads.Item;
-
   /**
    * Creates and updates the DOM representation for a download.
+   * @param {!downloads.ThrottledIconLoader} iconLoader
    * @constructor
    */
-  function ItemView() {
+  function ItemView(iconLoader) {
+    /** @private {!downloads.ThrottledIconLoader} */
+    this.iconLoader_ = iconLoader;
+
     this.node = $('templates').querySelector('.download').cloneNode(true);
 
     this.safe_ = this.queryRequired_('.safe');
@@ -117,47 +119,6 @@ cr.define('downloads', function() {
     return ItemView.foregroundImages_[x];
   };
 
-  /** @private {Array<{img: HTMLImageElement, url: string}>} */
-  ItemView.iconsToLoad_ = [];
-
-  /**
-   * Load the provided |url| into |img.src| after appending ?scale=.
-   * @param {!HTMLImageElement} img An <img> to show the loaded image in.
-   * @param {string} url A remote image URL to load.
-   */
-  ItemView.loadScaledIcon = function(img, url) {
-    var scale = '?scale=' + window.devicePixelRatio + 'x';
-    ItemView.iconsToLoad_.push({img: img, url: url + scale});
-    ItemView.loadNextIcon_();
-  };
-
-  /** @private */
-  ItemView.loadNextIcon_ = function() {
-    if (ItemView.isIconLoading_)
-      return;
-
-    ItemView.isIconLoading_ = true;
-
-    while (ItemView.iconsToLoad_.length) {
-      var request = ItemView.iconsToLoad_.shift();
-      var img = request.img;
-
-      if (img.src == request.url)
-        continue;
-
-      img.onabort = img.onerror = img.onload = function() {
-        ItemView.isIconLoading_ = false;
-        ItemView.loadNextIcon_();
-      };
-
-      img.src = request.url;
-      return;
-    }
-
-    // If we reached here, there's no more work to do.
-    ItemView.isIconLoading_ = false;
-  };
-
   ItemView.prototype = {
     /** @param {!downloads.Data} data */
     update: function(data) {
@@ -176,36 +137,41 @@ cr.define('downloads', function() {
       if (dangerText) {
         this.ensureTextIs_(this.description_, dangerText);
 
-        var dangerousFile = data.danger_type == Item.DangerType.DANGEROUS_FILE;
+        var dangerType = data.danger_type;
+        var dangerousFile = dangerType == downloads.DangerType.DANGEROUS_FILE;
         this.description_.classList.toggle('malware', !dangerousFile);
 
         var idr = dangerousFile ? 'IDR_WARNING' : 'IDR_SAFEBROWSING_WARNING';
-        ItemView.loadScaledIcon(this.dangerImg_, 'chrome://theme/' + idr);
+        var iconUrl = 'chrome://theme/' + idr;
+        this.iconLoader_.loadScaledIcon(this.dangerImg_, iconUrl);
 
         var showMalwareControls =
-            data.danger_type == Item.DangerType.DANGEROUS_CONTENT ||
-            data.danger_type == Item.DangerType.DANGEROUS_HOST ||
-            data.danger_type == Item.DangerType.DANGEROUS_URL ||
-            data.danger_type == Item.DangerType.POTENTIALLY_UNWANTED;
+            dangerType == downloads.DangerType.DANGEROUS_CONTENT ||
+            dangerType == downloads.DangerType.DANGEROUS_HOST ||
+            dangerType == downloads.DangerType.DANGEROUS_URL ||
+            dangerType == downloads.DangerType.POTENTIALLY_UNWANTED;
 
         this.malwareControls_.hidden = !showMalwareControls;
         this.discard_.hidden = showMalwareControls;
         this.save_.hidden = showMalwareControls;
       } else {
-        var path = encodeURIComponent(data.file_path);
-        ItemView.loadScaledIcon(this.safeImg_, 'chrome://fileicon/' + path);
+        var iconUrl = 'chrome://fileicon/' + encodeURIComponent(data.file_path);
+        this.iconLoader_.loadScaledIcon(this.safeImg_, iconUrl);
 
-        /** @const */ var isInProgress = data.state == Item.States.IN_PROGRESS;
+        /** @const */ var isInProgress =
+            data.state == downloads.States.IN_PROGRESS;
         this.node.classList.toggle('in-progress', isInProgress);
 
         /** @const */ var completelyOnDisk =
-            data.state == Item.States.COMPLETE && !data.file_externally_removed;
+            data.state == downloads.States.COMPLETE &&
+            !data.file_externally_removed;
 
         this.fileLink_.href = data.url;
         this.ensureTextIs_(this.fileLink_, data.file_name);
         this.fileLink_.hidden = !completelyOnDisk;
 
-        /** @const */ var isInterrupted = data.state == Item.States.INTERRUPTED;
+        /** @const */ var isInterrupted =
+            data.state == downloads.States.INTERRUPTED;
         this.fileName_.classList.toggle('interrupted', isInterrupted);
         this.ensureTextIs_(this.fileName_, data.file_name);
         this.fileName_.hidden = completelyOnDisk;
@@ -219,12 +185,12 @@ cr.define('downloads', function() {
 
         this.resume_.hidden = !data.resume;
 
-        /** @const */ var isPaused = data.state == Item.States.PAUSED;
+        /** @const */ var isPaused = data.state == downloads.States.PAUSED;
         /** @const */ var showCancel = isPaused || isInProgress;
         this.cancel_.hidden = !showCancel;
 
         this.safeRemove_.hidden = showCancel ||
-            !loadTimeData.getBoolean('allow_deleting_history');
+            !loadTimeData.getBoolean('allowDeletingHistory');
 
         /** @const */ var controlledByExtension = data.by_ext_id &&
                                                   data.by_ext_name;
@@ -319,19 +285,17 @@ cr.define('downloads', function() {
      */
     getDangerText_: function(data) {
       switch (data.danger_type) {
-        case Item.DangerType.DANGEROUS_FILE:
-          return loadTimeData.getStringF('danger_file_desc', data.file_name);
-        case Item.DangerType.DANGEROUS_URL:
-          return loadTimeData.getString('danger_url_desc');
-        case Item.DangerType.DANGEROUS_CONTENT:  // Fall through.
-        case Item.DangerType.DANGEROUS_HOST:
-          return loadTimeData.getStringF('danger_content_desc', data.file_name);
-        case Item.DangerType.UNCOMMON_CONTENT:
-          return loadTimeData.getStringF('danger_uncommon_desc',
-                                         data.file_name);
-        case Item.DangerType.POTENTIALLY_UNWANTED:
-          return loadTimeData.getStringF('danger_settings_desc',
-                                         data.file_name);
+        case downloads.DangerType.DANGEROUS_FILE:
+          return loadTimeData.getStringF('dangerFileDesc', data.file_name);
+        case downloads.DangerType.DANGEROUS_URL:
+          return loadTimeData.getString('dangerUrlDesc');
+        case downloads.DangerType.DANGEROUS_CONTENT:  // Fall through.
+        case downloads.DangerType.DANGEROUS_HOST:
+          return loadTimeData.getStringF('dangerContentDesc', data.file_name);
+        case downloads.DangerType.UNCOMMON_CONTENT:
+          return loadTimeData.getStringF('dangerUncommonDesc', data.file_name);
+        case downloads.DangerType.POTENTIALLY_UNWANTED:
+          return loadTimeData.getStringF('dangerSettingsDesc', data.file_name);
         default:
           return '';
       }
@@ -344,20 +308,20 @@ cr.define('downloads', function() {
      */
     getStatusText_: function(data) {
       switch (data.state) {
-        case Item.States.IN_PROGRESS:
-        case Item.States.PAUSED:  // Fallthrough.
+        case downloads.States.IN_PROGRESS:
+        case downloads.States.PAUSED:  // Fallthrough.
           assert(typeof data.progress_status_text == 'string');
           return data.progress_status_text;
-        case Item.States.CANCELLED:
-          return loadTimeData.getString('status_cancelled');
-        case Item.States.DANGEROUS:
+        case downloads.States.CANCELLED:
+          return loadTimeData.getString('statusCancelled');
+        case downloads.States.DANGEROUS:
           break;  // Intentionally hit assertNotReached(); at bottom.
-        case Item.States.INTERRUPTED:
+        case downloads.States.INTERRUPTED:
           assert(typeof data.last_reason_text == 'string');
           return data.last_reason_text;
-        case Item.States.COMPLETE:
+        case downloads.States.COMPLETE:
           return data.file_externally_removed ?
-              loadTimeData.getString('status_removed') : '';
+              loadTimeData.getString('statusRemoved') : '';
       }
       assertNotReached();
       return '';

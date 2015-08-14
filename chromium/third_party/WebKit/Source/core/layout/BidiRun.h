@@ -25,6 +25,7 @@
 #define BidiRun_h
 
 #include "core/layout/LayoutText.h"
+#include "core/layout/api/LineLayoutItem.h"
 #include "platform/text/BidiResolver.h"
 #include "wtf/StdLibExtras.h"
 
@@ -37,7 +38,7 @@ struct BidiRun : BidiCharacterRun {
     BidiRun(int start, int stop, LayoutObject* object, BidiContext* context, WTF::Unicode::Direction dir)
         : BidiCharacterRun(start, stop, context, dir)
         , m_object(object)
-        , m_box(0)
+        , m_box(nullptr)
     {
         // Stored in base class to save space.
         m_hasHyphen = false;

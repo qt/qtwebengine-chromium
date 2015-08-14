@@ -32,9 +32,6 @@ using ::testing::Return;
 
 namespace media {
 
-static const wchar_t kAudioFile1_16b_m_16K[]
-    = L"media\\test\\data\\sweep02_16b_mono_16KHz.raw";
-
 static int ClearData(AudioBus* audio_bus, uint32 total_bytes_delay) {
   audio_bus->Zero();
   return audio_bus->frames();
@@ -44,7 +41,7 @@ static int ClearData(AudioBus* audio_bus, uint32 total_bytes_delay) {
 // expected and if any error has been reported.
 class TestSourceBasic : public AudioOutputStream::AudioSourceCallback {
  public:
-  explicit TestSourceBasic()
+  TestSourceBasic()
       : callback_count_(0),
         had_error_(0) {
   }
@@ -80,8 +77,8 @@ const int kMaxNumBuffers = 3;
 // in the OnMoreData callback.
 class TestSourceLaggy : public TestSourceBasic {
  public:
-  TestSourceLaggy(int laggy_after_buffer, int lag_in_ms)
-      : laggy_after_buffer_(laggy_after_buffer), lag_in_ms_(lag_in_ms) {
+  explicit TestSourceLaggy(int lag_in_ms)
+      : lag_in_ms_(lag_in_ms) {
   }
   int OnMoreData(AudioBus* audio_bus, uint32 total_bytes_delay) override {
     // Call the base, which increments the callback_count_.
@@ -92,7 +89,6 @@ class TestSourceLaggy : public TestSourceBasic {
     return audio_bus->frames();
   }
  private:
-  int laggy_after_buffer_;
   int lag_in_ms_;
 };
 
@@ -238,7 +234,7 @@ TEST(WinAudioTest, PCMWaveSlowSource) {
                       16000, 16, 256),
       std::string());
   ASSERT_TRUE(NULL != oas);
-  TestSourceLaggy test_laggy(2, 90);
+  TestSourceLaggy test_laggy(90);
   EXPECT_TRUE(oas->Open());
   // The test parameters cause a callback every 32 ms and the source is
   // sleeping for 90 ms, so it is guaranteed that we run out of ready buffers.

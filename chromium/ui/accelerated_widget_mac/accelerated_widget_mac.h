@@ -10,6 +10,7 @@
 
 #include "ui/accelerated_widget_mac/accelerated_widget_mac_export.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -77,8 +78,9 @@ class ACCELERATED_WIDGET_MAC_EXPORT AcceleratedWidgetMac
   void GotAcceleratedFrame(
       uint64 surface_handle,
       const std::vector<ui::LatencyInfo>& latency_info,
-      gfx::Size pixel_size,
+      const gfx::Size& pixel_size,
       float scale_factor,
+      const gfx::Rect& pixel_damage_rect,
       const base::Closure& drawn_callback);
 
   void GotSoftwareFrame(float scale_factor, SkCanvas* canvas);
@@ -89,11 +91,13 @@ class ACCELERATED_WIDGET_MAC_EXPORT AcceleratedWidgetMac
   void IOSurfaceLayerDidDrawFrame() override;
   void IOSurfaceLayerHitError() override;
 
-  void GotAcceleratedCAContextFrame(
-      CAContextID ca_context_id, gfx::Size pixel_size, float scale_factor);
+  void GotAcceleratedCAContextFrame(CAContextID ca_context_id,
+                                    const gfx::Size& pixel_size,
+                                    float scale_factor);
 
-  void GotAcceleratedIOSurfaceFrame(
-      IOSurfaceID io_surface_id, gfx::Size pixel_size, float scale_factor);
+  void GotAcceleratedIOSurfaceFrame(IOSurfaceID io_surface_id,
+                                    const gfx::Size& pixel_size,
+                                    float scale_factor);
 
   void AcknowledgeAcceleratedFrame();
 
@@ -153,7 +157,9 @@ ACCELERATED_WIDGET_MAC_EXPORT
 void AcceleratedWidgetMacGotAcceleratedFrame(
     gfx::AcceleratedWidget widget, uint64 surface_handle,
     const std::vector<ui::LatencyInfo>& latency_info,
-    gfx::Size pixel_size, float scale_factor,
+    const gfx::Size& pixel_size,
+    float scale_factor,
+    const gfx::Rect& pixel_damage_rect,
     const base::Closure& drawn_callback,
     bool* disable_throttling, int* renderer_id);
 

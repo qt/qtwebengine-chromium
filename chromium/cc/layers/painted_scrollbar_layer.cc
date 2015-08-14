@@ -32,18 +32,21 @@ scoped_ptr<LayerImpl> PaintedScrollbarLayer::CreateLayerImpl(
 }
 
 scoped_refptr<PaintedScrollbarLayer> PaintedScrollbarLayer::Create(
+    const LayerSettings& settings,
     scoped_ptr<Scrollbar> scrollbar,
     int scroll_layer_id) {
   return make_scoped_refptr(
-      new PaintedScrollbarLayer(scrollbar.Pass(), scroll_layer_id));
+      new PaintedScrollbarLayer(settings, scrollbar.Pass(), scroll_layer_id));
 }
 
-PaintedScrollbarLayer::PaintedScrollbarLayer(scoped_ptr<Scrollbar> scrollbar,
+PaintedScrollbarLayer::PaintedScrollbarLayer(const LayerSettings& settings,
+                                             scoped_ptr<Scrollbar> scrollbar,
                                              int scroll_layer_id)
-    : scrollbar_(scrollbar.Pass()),
+    : Layer(settings),
+      scrollbar_(scrollbar.Pass()),
       scroll_layer_id_(scroll_layer_id),
       clip_layer_id_(Layer::INVALID_ID),
-      internal_contents_scale_(0.f),
+      internal_contents_scale_(1.f),
       thumb_thickness_(scrollbar_->ThumbThickness()),
       thumb_length_(scrollbar_->ThumbLength()),
       is_overlay_(scrollbar_->IsOverlay()),
@@ -205,12 +208,8 @@ void PaintedScrollbarLayer::UpdateInternalContentScale() {
           ->settings()
           .layer_transforms_should_scale_layer_contents) {
     gfx::Transform transform;
-    if (layer_tree_host()->using_only_property_trees()) {
-      transform = DrawTransformFromPropertyTrees(
-          this, layer_tree_host()->property_trees()->transform_tree);
-    } else {
-      transform = draw_transform();
-    }
+    transform = DrawTransformFromPropertyTrees(
+        this, layer_tree_host()->property_trees()->transform_tree);
 
     gfx::Vector2dF transform_scales =
         MathUtil::ComputeTransform2dScaleComponents(transform, scale);
@@ -228,12 +227,11 @@ void PaintedScrollbarLayer::UpdateInternalContentScale() {
   }
 }
 
-bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
-                                   const OcclusionTracker<Layer>* occlusion) {
+bool PaintedScrollbarLayer::Update() {
   {
     base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
                                                   true);
-    Layer::Update(queue, occlusion);
+    Layer::Update();
     UpdateInternalContentScale();
   }
 

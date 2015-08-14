@@ -16,55 +16,45 @@
 namespace blink {
 
 class PLATFORM_EXPORT ClipDisplayItem : public PairedBeginDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(ClipDisplayItem);
 public:
-    static PassOwnPtr<ClipDisplayItem> create(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
-    {
-        return adoptPtr(new ClipDisplayItem(client, type, clipRect, operation));
-    }
-
-    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
+    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect)
         : PairedBeginDisplayItem(client, type)
         , m_clipRect(clipRect)
-        , m_operation(operation)
     {
         ASSERT(isClipType(type));
     }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, Vector<FloatRoundedRect>& roundedRectClips)
+        : ClipDisplayItem(client, type, clipRect)
+    {
+        m_roundedRectClips.swap(roundedRectClips);
+    }
 
-    Vector<FloatRoundedRect>& roundedRectClips() { return m_roundedRectClips; }
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:
 #ifndef NDEBUG
-    virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
+    void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
-    IntRect m_clipRect;
+    const IntRect m_clipRect;
     Vector<FloatRoundedRect> m_roundedRectClips;
-    SkRegion::Op m_operation;
 };
 
 class PLATFORM_EXPORT EndClipDisplayItem : public PairedEndDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED(EndClipDisplayItem);
 public:
-    static PassOwnPtr<EndClipDisplayItem> create(const DisplayItemClientWrapper& client, Type type)
-    {
-        return adoptPtr(new EndClipDisplayItem(client, type));
-    }
-
     EndClipDisplayItem(const DisplayItemClientWrapper& client, Type type)
         : PairedEndDisplayItem(client, type)
     {
         ASSERT(isEndClipType(type));
     }
 
-    virtual void replay(GraphicsContext&) override;
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) override;
+    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)
-    virtual bool isEndAndPairedWith(const DisplayItem& other) const override final { return other.isClip(); }
+    bool isEndAndPairedWith(DisplayItem::Type otherType) const final { return DisplayItem::isClipType(otherType); }
 #endif
 };
 

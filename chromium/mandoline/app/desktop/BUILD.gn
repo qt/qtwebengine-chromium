@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/mojo/src/mojo/public/mojo.gni")
-
 group("desktop") {
   deps = [
     ":mandoline",
@@ -21,10 +19,14 @@ executable("mandoline") {
   deps = [
     "//base",
     "//build/config/sanitizers:deps",
+    "//components/tracing:startup_tracing",
     "//mojo/common",
     "//mojo/environment:chromium",
     "//mojo/runner:lib",
   ]
 
-  data_deps = [ "//mandoline/services/core_services/" ]
+  data_deps = [
+    "//components/html_viewer",
+    "//mandoline/services/core_services/",
+  ]
 }

@@ -42,7 +42,6 @@ public:
 
     LayoutImage(Element*);
     virtual ~LayoutImage();
-    virtual void destroy() override;
 
     static LayoutImage* createAnonymous(Document*);
 
@@ -75,7 +74,7 @@ protected:
     virtual LayoutBox* embeddedContentBox() const override final;
     virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override final;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override final;
 
@@ -84,7 +83,7 @@ protected:
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutImage || LayoutReplaced::isOfType(type); }
 
-    virtual PaintInvalidationReason invalidatePaintIfNeeded(PaintInvalidationState&, const LayoutBoxModelObject&) override;
+    virtual void willBeDestroyed() override;
 
 private:
     virtual bool isImage() const override { return true; }
@@ -107,9 +106,6 @@ private:
     void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
-
-    // Returns true if the image intersects the viewport visible to the user.
-    bool intersectsVisibleViewport();
 
     // Text to display as long as the image isn't available.
     OwnPtr<LayoutImageResource> m_imageResource;

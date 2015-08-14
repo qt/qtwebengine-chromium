@@ -6,6 +6,7 @@
 #define NET_QUIC_QUIC_PROTOCOL_H_
 
 #include <stddef.h>
+#include <stdint.h>
 #include <limits>
 #include <list>
 #include <map>
@@ -20,11 +21,12 @@
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
 #include "net/base/int128.h"
+#include "net/base/iovec.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
-#include "net/quic/iovector.h"
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_time.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
 
@@ -72,8 +74,11 @@ const uint32 kMinimumFlowControlSendWindow = 16 * 1024;  // 16 KB
 // Minimum size of the CWND, in packets, when doing bandwidth resumption.
 const QuicPacketCount kMinCongestionWindowForBandwidthResumption = 10;
 
-// Maximum size of the CWND, in packets, for TCP congestion control algorithms.
-const QuicPacketCount kMaxTcpCongestionWindow = 200;
+// Maximum size of the CWND, in packets, for bandwidth resumption.
+const QuicPacketCount kMaxResumptionCwnd = 200;
+
+// Maximum number of tracked packets.
+const QuicPacketCount kMaxTrackedPackets = 5000;
 
 // Default size of the socket receive buffer in bytes.
 const QuicByteCount kDefaultSocketReceiveBuffer = 256 * 1024;
@@ -169,7 +174,7 @@ const int kUFloat16MaxExponent = (1 << kUFloat16ExponentBits) - 2;  // 30
 const int kUFloat16MantissaBits = 16 - kUFloat16ExponentBits;  // 11
 const int kUFloat16MantissaEffectiveBits = kUFloat16MantissaBits + 1;  // 12
 const uint64 kUFloat16MaxValue =  // 0x3FFC0000000
-    ((GG_UINT64_C(1) << kUFloat16MantissaEffectiveBits) - 1) <<
+    ((UINT64_C(1) << kUFloat16MantissaEffectiveBits) - 1) <<
     kUFloat16MaxExponent;
 
 enum TransmissionType {
@@ -211,6 +216,14 @@ enum FecPolicy {
   FEC_PROTECT_OPTIONAL  // Data in the stream does not need FEC protection.
 };
 
+// Indicates FEC policy about when to send FEC packet.
+enum FecSendPolicy {
+  // Send FEC packet when FEC group is full or when FEC alarm goes off.
+  FEC_ANY_TRIGGER,
+  // Send FEC packet only when FEC alarm goes off.
+  FEC_ALARM_TRIGGER
+};
+
 enum QuicFrameType {
   // Regular frame types. The values set here cannot change without the
   // introduction of a new QUIC version.
@@ -227,6 +240,8 @@ enum QuicFrameType {
   // the wire and their values do not need to be stable.
   STREAM_FRAME,
   ACK_FRAME,
+  // The path MTU discovery frame is encoded as a PING frame on the wire.
+  MTU_DISCOVERY_FRAME,
   NUM_FRAME_TYPES
 };
 
@@ -527,6 +542,12 @@ enum QuicErrorCode {
   QUIC_CONNECTION_CANCELLED = 70,
   // Disabled QUIC because of high packet loss rate.
   QUIC_BAD_PACKET_LOSS_RATE = 71,
+  // Disabled QUIC because of too many PUBLIC_RESETs post handshake.
+  QUIC_PUBLIC_RESETS_POST_HANDSHAKE = 73,
+  // Disabled QUIC because of too many timeouts with streams open.
+  QUIC_TIMEOUTS_WITH_OPEN_STREAMS = 74,
+  // Closed because we failed to serialize a packet.
+  QUIC_FAILED_TO_SERIALIZE_PACKET = 75,
 
   // Crypto errors.
 
@@ -586,7 +607,7 @@ enum QuicErrorCode {
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 73,
+  QUIC_LAST_ERROR = 76,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -616,10 +637,10 @@ struct NET_EXPORT_PRIVATE QuicPacketHeader {
       std::ostream& os, const QuicPacketHeader& s);
 
   QuicPacketPublicHeader public_header;
+  QuicPacketSequenceNumber packet_sequence_number;
   bool fec_flag;
   bool entropy_flag;
   QuicPacketEntropyHash entropy_hash;
-  QuicPacketSequenceNumber packet_sequence_number;
   InFecGroup is_in_fec_group;
   QuicFecGroupNumber fec_group;
 };
@@ -659,25 +680,25 @@ struct NET_EXPORT_PRIVATE QuicPaddingFrame {
 struct NET_EXPORT_PRIVATE QuicPingFrame {
 };
 
+// A path MTU discovery frame contains no payload and is serialized as a ping
+// frame.
+struct NET_EXPORT_PRIVATE QuicMtuDiscoveryFrame {};
+
 struct NET_EXPORT_PRIVATE QuicStreamFrame {
   QuicStreamFrame();
   QuicStreamFrame(const QuicStreamFrame& frame);
   QuicStreamFrame(QuicStreamId stream_id,
                   bool fin,
                   QuicStreamOffset offset,
-                  IOVector data);
+                  base::StringPiece data);
 
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
       std::ostream& os, const QuicStreamFrame& s);
 
-  // Returns a copy of the IOVector |data| as a heap-allocated string.
-  // Caller must take ownership of the returned string.
-  std::string* GetDataAsString() const;
-
   QuicStreamId stream_id;
   bool fin;
   QuicStreamOffset offset;  // Location of this data in the stream.
-  IOVector data;
+  base::StringPiece data;
 };
 
 // TODO(ianswett): Re-evaluate the trade-offs of hash_set vs set when framing
@@ -871,6 +892,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
   explicit QuicFrame(QuicPaddingFrame* padding_frame);
   explicit QuicFrame(QuicStreamFrame* stream_frame);
   explicit QuicFrame(QuicAckFrame* frame);
+  explicit QuicFrame(QuicMtuDiscoveryFrame* frame);
 
   explicit QuicFrame(QuicRstStreamFrame* frame);
   explicit QuicFrame(QuicConnectionCloseFrame* frame);
@@ -888,6 +910,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
     QuicPaddingFrame* padding_frame;
     QuicStreamFrame* stream_frame;
     QuicAckFrame* ack_frame;
+    QuicMtuDiscoveryFrame* mtu_discovery_frame;
 
     QuicStopWaitingFrame* stop_waiting_frame;
 
@@ -983,12 +1006,10 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
   explicit RetransmittableFrames(EncryptionLevel level);
   ~RetransmittableFrames();
 
-  // Allocates a local copy of the referenced StringPiece has QuicStreamFrame
-  // use it.
-  // Takes ownership of |stream_frame|.
-  const QuicFrame& AddStreamFrame(QuicStreamFrame* stream_frame);
   // Takes ownership of the frame inside |frame|.
-  const QuicFrame& AddNonStreamFrame(const QuicFrame& frame);
+  const QuicFrame& AddFrame(const QuicFrame& frame);
+  // Takes ownership of the frame inside |frame| and |buffer|.
+  const QuicFrame& AddFrame(const QuicFrame& frame, char* buffer);
   // Removes all stream frames associated with |stream_id|.
   void RemoveFramesForStream(QuicStreamId stream_id);
 
@@ -1002,12 +1023,17 @@ class NET_EXPORT_PRIVATE RetransmittableFrames {
     return encryption_level_;
   }
 
+  bool needs_padding() const { return needs_padding_; }
+
+  void set_needs_padding(bool needs_padding) { needs_padding_ = needs_padding; }
+
  private:
   QuicFrames frames_;
   const EncryptionLevel encryption_level_;
   IsHandshake has_crypto_handshake_;
+  bool needs_padding_;
   // Data referenced by the StringPiece of a QuicStreamFrame.
-  std::vector<std::string*> stream_data_;
+  std::vector<const char*> stream_data_;
 
   DISALLOW_COPY_AND_ASSIGN(RetransmittableFrames);
 };
@@ -1020,11 +1046,11 @@ struct NET_EXPORT_PRIVATE SerializedPacket {
                    RetransmittableFrames* retransmittable_frames);
   ~SerializedPacket();
 
+  QuicEncryptedPacket* packet;
+  RetransmittableFrames* retransmittable_frames;
   QuicPacketSequenceNumber sequence_number;
   QuicSequenceNumberLength sequence_number_length;
-  QuicEncryptedPacket* packet;
   QuicPacketEntropyHash entropy_hash;
-  RetransmittableFrames* retransmittable_frames;
   bool is_fec_packet;
 
   // Optional notifiers which will be informed when this packet has been ACKed.
@@ -1060,6 +1086,17 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   bool is_unackable;
   // True if the packet is an FEC packet.
   bool is_fec_packet;
+};
+
+// Convenience wrapper to wrap an iovec array and the total length, which must
+// be less than or equal to the actual total length of the iovecs.
+struct NET_EXPORT_PRIVATE QuicIOVector {
+  QuicIOVector(const struct iovec* iov, int iov_count, size_t total_length)
+      : iov(iov), iov_count(iov_count), total_length(total_length) {}
+
+  const struct iovec* iov;
+  const int iov_count;
+  const size_t total_length;
 };
 
 }  // namespace net

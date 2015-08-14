@@ -72,9 +72,9 @@ public:
     static void computeContainerBoundingBoxes(const LayoutObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& paintInvalidationBoundingBox);
 
     // Important functions used by nearly all SVG layoutObjects centralizing coordinate transformations / paint invalidation rect calculations
-    static LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState*);
-    static const LayoutSVGRoot& mapRectToSVGRootForPaintInvalidation(const LayoutObject*, const FloatRect& localPaintInvalidationRect, LayoutRect&);
-    static void mapLocalToContainer(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, bool* wasFixed = 0, const PaintInvalidationState* = 0);
+    static LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutObject&, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState*);
+    static const LayoutSVGRoot& mapRectToSVGRootForPaintInvalidation(const LayoutObject&, const FloatRect& localPaintInvalidationRect, LayoutRect&);
+    static void mapLocalToContainer(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, bool* wasFixed = nullptr, const PaintInvalidationState* = nullptr);
     static const LayoutObject* pushMappingToContainer(const LayoutObject*, const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&);
 
     // Shared between SVG layoutObjects and resources.
@@ -99,6 +99,7 @@ public:
     static bool computeHasNonIsolatedBlendingDescendants(const LayoutObjectType*);
     static bool isIsolationRequired(const LayoutObject*);
 
+    static AffineTransform deprecatedCalculateTransformToLayer(const LayoutObject*);
     static float calculateScreenFontSizeScalingFactor(const LayoutObject*);
 
 private:

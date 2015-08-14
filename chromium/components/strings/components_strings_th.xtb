@@ -1,5 +1,6 @@
 <?xml version="1.0" ?><!DOCTYPE translationbundle><translationbundle lang="th">
 <translation id="2774256287122201187">คุณสามารถดำเนินการต่อได้ หากคุณไปยังหน้าดังกล่าว คำเตือนนี้จะไม่ปรากฏอีกเป็นเวลา 5 นาที</translation>
+<translation id="3963721102035795474">โหมดนักอ่าน</translation>
 <translation id="7485870689360869515">ไม่พบข้อมูล</translation>
 <translation id="3884278016824448484">ตัวชี้อุปกรณ์ขัดแย้งกัน</translation>
 <translation id="5172758083709347301">ผู้ใช้คอมพิวเตอร์นี้</translation>
@@ -25,6 +26,7 @@
 <translation id="7537536606612762813">จำเป็น</translation>
 <translation id="2958431318199492670">การกำหนดค่าเครือข่ายไม่เป็นไปตามมาตรฐาน ONC การกำหนดค่าบางส่วนอาจไม่ได้รับการนำเข้า</translation>
 <translation id="3583757800736429874">&amp;ทำซ้ำการย้าย</translation>
+<translation id="7887683347370398519">ตรวจสอบ CVC และลองอีกครั้ง</translation>
 <translation id="933712198907837967">Diners Club</translation>
 <translation id="277499241957683684">ไม่มีอุปกรณ์บันทึก</translation>
 <translation id="1491151370853475546">โหลดหน้าเว็บนี้ซ้ำ</translation>
@@ -33,12 +35,14 @@
 <translation id="1103523840287552314">แปลภาษา<ph name="LANGUAGE"/>ทุกครั้ง</translation>
 <translation id="1227633850867390598">ซ่อนค่า</translation>
 <translation id="6753269504797312559">ค่านโยบาย</translation>
+<translation id="3369366829301677151">อัปเดตและยืนยัน <ph name="CREDIT_CARD"/> ของคุณ</translation>
 <translation id="8834246243508017242">เปิดใช้การป้อนข้อความอัตโนมัติโดยใช้รายชื่อติดต่อ…</translation>
 <translation id="7275334191706090484">บุ๊กมาร์กที่มีการจัดการ</translation>
 <translation id="7400418766976504921">URL</translation>
 <translation id="7378627244592794276">ไม่</translation>
 <translation id="2704283930420550640">ค่าไม่ตรงกับรูปแบบ</translation>
 <translation id="1055184225775184556">&amp;เลิกทำการเพิ่ม</translation>
+<translation id="7813600968533626083">นำคำแนะนำสำหรับแบบฟอร์มออกจาก Chrome ไหม</translation>
 <translation id="4850886885716139402">มุมมอง</translation>
 <translation id="8091372947890762290">กำลังรอการเปิดใช้งานบนเซิร์ฟเวอร์</translation>
 <translation id="6874604403660855544">&amp;ทำซ้ำการเพิ่ม</translation>
@@ -46,6 +50,7 @@
 <translation id="719464814642662924">Visa</translation>
 <translation id="6839929833149231406">พื้นที่</translation>
 <translation id="1871208020102129563">พร็อกซีถูกตั้งค่าให้ใช้พร็อกซีเซิร์ฟเวอร์แบบคงที่ ไม่ใช่ URL สคริปต์ .pac</translation>
+<translation id="8988760548304185580">ป้อนวันหมดอายุและ CVC 3 หลักจากด้านหลังบัตร</translation>
 <translation id="8940229512486821554">เรียกใช้คำสั่ง <ph name="EXTENSION_NAME"/>: <ph name="SEARCH_TERMS"/></translation>
 <translation id="3380365263193509176">ข้อผิดพลาดที่ไม่รู้จัก</translation>
 <translation id="112840717907525620">แคชนโยบายใช้ได้</translation>
@@ -58,8 +63,8 @@
 <translation id="4506176782989081258">ข้อผิดพลาดในการตรวจสอบ: <ph name="VALIDATION_ERROR"/></translation>
 <translation id="7108649287766967076">การแปลเป็น <ph name="TARGET_LANGUAGE"/> ล้มเหลว</translation>
 <translation id="4103249731201008433">หมายเลขซีเรียลของอุปกรณ์ไม่ถูกต้อง</translation>
+<translation id="3219579145727097045">ป้อนวันหมดอายุและ CVC 4 หลักจากด้านหน้าบัตร</translation>
 <translation id="59107663811261420">Google Payments ไม่สนับสนุนบัตรประเภทนี้สำหรับผู้ขายรายนี้ โปรดเลือกบัตรอื่น</translation>
-<translation id="3667681724235208644">ดูหน้าต้นฉบับ</translation>
 <translation id="4079302484614802869">การกำหนดค่าพร็อกซีมีการตั้งค่าให้ใช้ URL สคริปต์ .pac ไม่ใช่พร็อกซีเซิร์ฟเวอร์แบบคงที่</translation>
 <translation id="5540224163453853">ไม่พบบทความที่ขอ</translation>
 <translation id="8437238597147034694">&amp;เลิกทำการย้าย</translation>
@@ -111,13 +116,17 @@
 <translation id="498957508165411911">แปลจาก <ph name="ORIGINAL_LANGUAGE"/> เป็น <ph name="TARGET_LANGUAGE"/> หรือไม่</translation>
 <translation id="8218327578424803826">ตำแหน่งที่มอบหมาย:</translation>
 <translation id="3542684924769048008">ใช้รหัสผ่านสำหรับ:</translation>
+<translation id="2855922900409897335">ยืนยัน <ph name="CREDIT_CARD"/> ของคุณ</translation>
 <translation id="7186367841673660872">แปลหน้าเว็บนี้จาก<ph name="ORIGINAL_LANGUAGE"/>เป็น<ph name="LANGUAGE_LANGUAGE"/>แล้ว</translation>
+<translation id="4587425331216688090">นำที่อยู่ออกจาก Chrome ไหม</translation>
 <translation id="7139724024395191329">เอมิเรต</translation>
+<translation id="6646897916597483132">ป้อน CVC 4 หลักจากด้านหน้าบัตร</translation>
 <translation id="5145883236150621069">มีรหัสข้อผิดพลาดในการตอบกลับนโยบาย</translation>
 <translation id="7983301409776629893">แปล <ph name="ORIGINAL_LANGUAGE"/> เป็น <ph name="TARGET_LANGUAGE"/> เสมอ</translation>
 <translation id="6970216967273061347">เขต</translation>
 <translation id="3427342743765426898">&amp;ทำซ้ำการแก้ไข</translation>
 <translation id="3010559122411665027">รายการที่เข้ามา &quot;<ph name="ENTRY_INDEX"/>&quot;: <ph name="ERROR"/></translation>
+<translation id="7569952961197462199">นำบัตรเครดิตออกจาก Chrome ไหม</translation>
 <translation id="6445051938772793705">ประเทศ</translation>
 <translation id="5031870354684148875">เกี่ยวกับ Google แปลภาษา</translation>
 <translation id="1152921474424827756">เข้าถึง<ph name="BEGIN_LINK"/>สำเนาแคช<ph name="END_LINK"/>ของ <ph name="URL"/></translation>
@@ -130,6 +139,7 @@
 <translation id="1962204205936693436">บุ๊กมาร์กของ <ph name="DOMAIN"/></translation>
 <translation id="4300246636397505754">คำแนะนำระดับบนสุด</translation>
 <translation id="111844081046043029">คุณแน่ใจหรือไม่ว่าต้องการออกจากหน้านี้</translation>
+<translation id="2495083838625180221">โปรแกรมแยกวิเคราะห์ JSON</translation>
 <translation id="1973335181906896915">ข้อผิดพลาดในการจัดเรียง</translation>
 <translation id="5989320800837274978">ไม่มีการระบุทั้งพร็อกซีเซิร์ฟเวอร์แบบคงที่หรือ URL สคริปต์ .pac</translation>
 <translation id="7805768142964895445">สถานะ</translation>
@@ -138,6 +148,7 @@
 <translation id="536296301121032821">ไม่สามารถจัดเก็บการตั้งค่านโยบาย</translation>
 <translation id="5439770059721715174">ข้อผิดพลาดในการตรวจสอบรูปแบบที่ &quot;<ph name="ERROR_PATH"/>&quot;: <ph name="ERROR"/></translation>
 <translation id="8349305172487531364">แถบบุ๊กมาร์ก</translation>
+<translation id="587701087903783706">ปิดมุมมองที่เหมาะกับอุปกรณ์เคลื่อนที่</translation>
 <translation id="7208899522964477531">ค้นหาข้อความ <ph name="SEARCH_TERMS"/> จาก <ph name="SITE_NAME"/></translation>
 <translation id="7956713633345437162">บุ๊กมาร์กบนมือถือ</translation>
 <translation id="5089810972385038852">รัฐ</translation>
@@ -155,10 +166,12 @@
 <translation id="8891727572606052622">โหมดพร็อกซีไม่ถูกต้อง</translation>
 <translation id="3105172416063519923">รหัสสินทรัพย์:</translation>
 <translation id="6008256403891681546">JCB</translation>
+<translation id="1549470594296187301">ต้องเปิดใช้ JavaScript เพื่อใช้คุณลักษณะนี้</translation>
 <translation id="2587841377698384444">รหัส API ไดเรกทอรี:</translation>
 <translation id="7752995774971033316">ไม่ได้จัดการ</translation>
 <translation id="3712624925041724820">ใบอนุญาตหมด</translation>
 <translation id="4926049483395192435">ต้องระบุ</translation>
+<translation id="1455235771979731432">เกิดปัญหาในการยืนยันบัตรของคุณ โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ตและลองอีกครั้ง</translation>
 <translation id="7542995811387359312">การป้อนหมายเลขบัตรเครดิตอัตโนมัติถูกปิดใช้งานเนื่องจากฟอร์มนี้ไม่ได้ใช้การเชื่อมต่อที่ปลอดภัย</translation>
 <translation id="5179510805599951267">หากไม่มีในภาษา <ph name="ORIGINAL_LANGUAGE"/> ให้รายงานข้อผิดพลาดนี้</translation>
 <translation id="8088680233425245692">การดูบทความล้มเหลว</translation>
@@ -217,7 +230,9 @@
 <translation id="5565735124758917034">ใช้งานอยู่</translation>
 <translation id="7568593326407688803">หน้าเว็บนี้เป็น<ph name="ORIGINAL_LANGUAGE"/>คุณต้องการแปลหรือไม่</translation>
 <translation id="8876793034577346603">ไม่สามารถแยกวิเคราะห์การกำหนดค่าเครือข่าย</translation>
+<translation id="4800132727771399293">ตรวจสอบวันหมดอายุและ CVC แล้วลองอีกครั้ง</translation>
 <translation id="4171400957073367226">ลายเซ็นยืนยันไม่ถูกต้อง</translation>
+<translation id="9125941078353557812">ป้อน CVC 3 หลักจากด้านหลังบัตร</translation>
 <translation id="106701514854093668">บุ๊กมาร์กบนเดสก์ท็อป</translation>
 <translation id="6154808779448689242">โทเค็นนโยบายที่ส่งกลับไม่ตรงกับโทเค็นปัจจุบัน</translation>
 <translation id="7995512525968007366">ไม่ได้ระบุ</translation>
@@ -233,6 +248,7 @@
 <translation id="3270847123878663523">&amp;เลิกทำการจัดลำดับใหม่</translation>
 <translation id="20817612488360358">มีการกำหนดให้ใช้การตั้งค่าพร็อกซีระบบ แต่ก็มีการระบุการกำหนดค่าพร็อกซีอย่างชัดเจนไว้ด้วยเช่นกัน</translation>
 <translation id="2639739919103226564">สถานะ:</translation>
+<translation id="8824019021993735287">Chrome ไม่สามารถยืนยันบัตรของคุณได้ในขณะนี้ โปรดลองอีกครั้งในภายหลัง</translation>
 <translation id="4968547170521245791">ไม่สามารถพร็อกซีได้</translation>
 <translation id="385051799172605136">กลับ</translation>
 <translation id="4196861286325780578">&amp;ทำซ้ำการย้าย</translation>

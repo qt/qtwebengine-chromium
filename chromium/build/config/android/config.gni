@@ -42,6 +42,9 @@ if (is_android) {
 
     # Set to true to run findbugs on JAR targets.
     run_findbugs = false
+
+    # Set to true to enable the Errorprone compiler
+    use_errorprone_java_compiler = false
   }
 
   # Host stuff -----------------------------------------------------------------
@@ -91,7 +94,7 @@ if (is_android) {
 
   # Subdirectories inside android_ndk_root that contain the sysroot for the
   # associated platform.
-  _android_api_level = 14
+  _android_api_level = 16
   x86_android_sysroot_subdir =
       "platforms/android-${_android_api_level}/arch-x86"
   arm_android_sysroot_subdir =
@@ -159,12 +162,12 @@ if (is_android) {
   android_gdbserver =
       "$android_ndk_root/prebuilt/$android_prebuilt_arch/gdbserver/gdbserver"
 
-  # stlport stuff --------------------------------------------------------------
+  # libc++ stuff ---------------------------------------------------------------
 
   if (component_mode == "shared_library") {
-    android_stlport_library = "stlport_shared"
+    android_libcpp_library = "c++_shared"
   } else {
-    android_stlport_library = "stlport_static"
+    android_libcpp_library = "c++_static"
   }
 
   # ABI ------------------------------------------------------------------------

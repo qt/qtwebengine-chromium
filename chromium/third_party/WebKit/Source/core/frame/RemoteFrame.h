@@ -17,6 +17,7 @@ class RemoteFrameClient;
 class RemoteFrameView;
 class WebLayer;
 class WindowProxyManager;
+struct FrameLoadRequest;
 
 class CORE_EXPORT RemoteFrame: public Frame {
 public:
@@ -29,12 +30,15 @@ public:
     bool isRemoteFrame() const override { return true; }
     DOMWindow* domWindow() const override;
     WindowProxy* windowProxy(DOMWrapperWorld&) override;
-    void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
-    void reload(ReloadPolicy, ClientRedirectPolicy) override;
-    void detach() override;
+    void navigate(Document& originDocument, const KURL&, bool lockBackForwardList, UserGestureStatus) override;
+    void navigate(const FrameLoadRequest& passedRequest) override;
+    void reload(FrameLoadType, ClientRedirectPolicy) override;
+    void detach(FrameDetachType) override;
     RemoteSecurityContext* securityContext() const override;
     void printNavigationErrorMessage(const Frame&, const char* reason) override { }
     void disconnectOwnerElement() override;
+    bool prepareForCommit() override;
+    bool shouldClose() override;
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.

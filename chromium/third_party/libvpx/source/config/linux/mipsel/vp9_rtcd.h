@@ -245,15 +245,6 @@ int vp9_full_search_sad_c(const struct macroblock *x, const struct mv *ref_mv, i
 void vp9_fwht4x4_c(const int16_t *input, tran_low_t *output, int stride);
 #define vp9_fwht4x4 vp9_fwht4x4_c
 
-void vp9_get16x16var_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, int *sum);
-#define vp9_get16x16var vp9_get16x16var_c
-
-void vp9_get8x8var_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, int *sum);
-#define vp9_get8x8var vp9_get8x8var_c
-
-unsigned int vp9_get_mb_ss_c(const int16_t *);
-#define vp9_get_mb_ss vp9_get_mb_ss_c
-
 void vp9_h_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 #define vp9_h_predictor_16x16 vp9_h_predictor_16x16_c
 
@@ -367,18 +358,6 @@ void vp9_mbpost_proc_down_c(uint8_t *dst, int pitch, int rows, int cols, int fli
 
 void vp9_minmax_8x8_c(const uint8_t *s, int p, const uint8_t *d, int dp, int *min, int *max);
 #define vp9_minmax_8x8 vp9_minmax_8x8_c
-
-unsigned int vp9_mse16x16_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
-#define vp9_mse16x16 vp9_mse16x16_c
-
-unsigned int vp9_mse16x8_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
-#define vp9_mse16x8 vp9_mse16x8_c
-
-unsigned int vp9_mse8x16_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
-#define vp9_mse8x16 vp9_mse8x16_c
-
-unsigned int vp9_mse8x8_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
-#define vp9_mse8x8 vp9_mse8x8_c
 
 void vp9_plane_add_noise_c(uint8_t *Start, char *noise, char blackclamp[16], char whiteclamp[16], char bothclamp[16], unsigned int Width, unsigned int Height, int Pitch);
 #define vp9_plane_add_noise vp9_plane_add_noise_c
@@ -508,45 +487,6 @@ void vp9_v_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *abov
 
 void vp9_v_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
 #define vp9_v_predictor_8x8 vp9_v_predictor_8x8_c
-
-unsigned int vp9_variance16x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance16x16 vp9_variance16x16_c
-
-unsigned int vp9_variance16x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance16x32 vp9_variance16x32_c
-
-unsigned int vp9_variance16x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance16x8 vp9_variance16x8_c
-
-unsigned int vp9_variance32x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance32x16 vp9_variance32x16_c
-
-unsigned int vp9_variance32x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance32x32 vp9_variance32x32_c
-
-unsigned int vp9_variance32x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance32x64 vp9_variance32x64_c
-
-unsigned int vp9_variance4x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance4x4 vp9_variance4x4_c
-
-unsigned int vp9_variance4x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance4x8 vp9_variance4x8_c
-
-unsigned int vp9_variance64x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance64x32 vp9_variance64x32_c
-
-unsigned int vp9_variance64x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance64x64 vp9_variance64x64_c
-
-unsigned int vp9_variance8x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance8x16 vp9_variance8x16_c
-
-unsigned int vp9_variance8x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance8x4 vp9_variance8x4_c
-
-unsigned int vp9_variance8x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
-#define vp9_variance8x8 vp9_variance8x8_c
 
 int vp9_vector_var_c(int16_t const *ref, int16_t const *src, const int bwl);
 #define vp9_vector_var vp9_vector_var_c

@@ -37,7 +37,7 @@ WebInspector.InspectorView = function()
     WebInspector.VBox.call(this);
     WebInspector.Dialog.setModalHostView(this);
     WebInspector.GlassPane.DefaultFocusedViewStack.push(this);
-    this.setMinimumSize(210, 72);
+    this.setMinimumSize(240, 72);
 
     // DevTools sidebar is a vertical split of panels tabbed pane and a drawer.
     this._drawerSplitWidget = new WebInspector.SplitWidget(false, true, "Inspector.drawerSplitViewState", 200, 200);
@@ -46,10 +46,9 @@ WebInspector.InspectorView = function()
     this._drawerSplitWidget.show(this.element);
 
     this._tabbedPane = new WebInspector.TabbedPane();
+    this._tabbedPane.registerRequiredCSS("components/inspectorViewTabbedPane.css");
     this._tabbedPane.element.classList.add("inspector-view-tabbed-pane");
     this._tabbedPane.setRetainTabOrder(true);
-    if (Runtime.experiments.isEnabled("materialDesign"))
-        this._tabbedPane.setTabSlider(true);
     this._drawerSplitWidget.setMainWidget(this._tabbedPane);
     this._drawer = new WebInspector.Drawer(this._drawerSplitWidget);
 
@@ -117,7 +116,7 @@ WebInspector.InspectorView.prototype = {
     {
         this._leftToolbar = new WebInspector.ExtensibleToolbar("main-toolbar-left");
         this._leftToolbar.element.classList.add("inspector-view-toolbar", "inspector-view-toolbar-left");
-        this._leftToolbar.makeNarrow();
+
         this._tabbedPane.insertBeforeTabStrip(this._leftToolbar.element);
 
         var rightToolbarContainer = createElementWithClass("div", "hbox flex-none flex-centered");
@@ -126,9 +125,6 @@ WebInspector.InspectorView.prototype = {
         this._rightToolbar = new WebInspector.ExtensibleToolbar("main-toolbar-right");
         this._rightToolbar.element.classList.add("inspector-view-toolbar", "flex-none");
         rightToolbarContainer.appendChild(this._rightToolbar.element);
-
-        var closeButtonElement = rightToolbarContainer.createChild("div", "inspector-view-close-button flex-none", "dt-close-button");
-        closeButtonElement.addEventListener("click", InspectorFrontendHost.closeWindow.bind(InspectorFrontendHost), true);
     },
 
     /**
@@ -230,6 +226,16 @@ WebInspector.InspectorView.prototype = {
             this.setCurrentPanel(panel);
             return panel;
         }
+    },
+
+    /**
+     * @param {string} panelName
+     * @param {string} iconType
+     * @param {string=} iconTooltip
+     */
+    setPanelIcon: function(panelName, iconType, iconTooltip)
+    {
+        this._tabbedPane.setTabIcon(panelName, iconType, iconTooltip);
     },
 
     /**

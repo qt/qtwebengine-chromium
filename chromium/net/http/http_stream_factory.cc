@@ -38,9 +38,10 @@ void HttpStreamFactory::ProcessAlternateProtocol(
   double probability = 1;
   bool is_valid = true;
   for (size_t i = 0; i < alternate_protocol_values.size(); ++i) {
-    const std::string& alternate_protocol_str = alternate_protocol_values[i];
-    if (StartsWithASCII(alternate_protocol_str, "p=", true)) {
-      if (!base::StringToDouble(alternate_protocol_str.substr(2),
+    base::StringPiece alternate_protocol_str = alternate_protocol_values[i];
+    if (base::StartsWith(alternate_protocol_str, "p=",
+                         base::CompareCase::SENSITIVE)) {
+      if (!base::StringToDouble(alternate_protocol_str.substr(2).as_string(),
                                 &probability) ||
           probability < 0 || probability > 1) {
         DVLOG(1) << kAlternateProtocolHeader
@@ -52,8 +53,9 @@ void HttpStreamFactory::ProcessAlternateProtocol(
       continue;
     }
 
-    std::vector<std::string> port_protocol_vector;
-    base::SplitString(alternate_protocol_str, ':', &port_protocol_vector);
+    std::vector<base::StringPiece> port_protocol_vector =
+        base::SplitStringPiece(alternate_protocol_str, ":",
+                               base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     if (port_protocol_vector.size() != 2) {
       DVLOG(1) << kAlternateProtocolHeader
                << " header has too many tokens: "
@@ -71,7 +73,7 @@ void HttpStreamFactory::ProcessAlternateProtocol(
       break;
     }
 
-    protocol = AlternateProtocolFromString(port_protocol_vector[1]);
+    protocol = AlternateProtocolFromString(port_protocol_vector[1].as_string());
 
     if (IsAlternateProtocolValid(protocol) &&
         !session.IsProtocolEnabled(protocol)) {
@@ -84,7 +86,7 @@ void HttpStreamFactory::ProcessAlternateProtocol(
   }
 
   if (!is_valid || protocol == UNINITIALIZED_ALTERNATE_PROTOCOL) {
-    http_server_properties->ClearAlternativeService(http_host_port_pair);
+    http_server_properties->ClearAlternativeServices(http_host_port_pair);
     return;
   }
 
@@ -103,7 +105,7 @@ GURL HttpStreamFactory::ApplyHostMappingRules(const GURL& url,
   const HostMappingRules* mapping_rules = GetHostMappingRules();
   if (mapping_rules && mapping_rules->RewriteHost(endpoint)) {
     url::Replacements<char> replacements;
-    const std::string port_str = base::IntToString(endpoint->port());
+    const std::string port_str = base::UintToString(endpoint->port());
     replacements.SetPort(port_str.c_str(), url::Component(0, port_str.size()));
     replacements.SetHost(endpoint->host().c_str(),
                          url::Component(0, endpoint->host().size()));

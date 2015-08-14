@@ -13,6 +13,7 @@
 #include "ui/gfx/display.h"
 #include "ui/ozone/common/gpu/ozone_gpu_messages.h"
 #include "ui/ozone/platform/drm/host/drm_cursor.h"
+#include "ui/ozone/platform/drm/host/drm_display_host.h"
 #include "ui/ozone/platform/drm/host/drm_display_host_manager.h"
 #include "ui/ozone/platform/drm/host/drm_gpu_platform_support_host.h"
 #include "ui/ozone/platform/drm/host/drm_window_host_manager.h"
@@ -44,14 +45,14 @@ DrmWindowHost::~DrmWindowHost() {
   cursor_->OnWindowRemoved(widget_);
 
   sender_->RemoveChannelObserver(this);
-  sender_->Send(new OzoneGpuMsg_DestroyWindowDelegate(widget_));
+  sender_->Send(new OzoneGpuMsg_DestroyWindow(widget_));
 }
 
 void DrmWindowHost::Initialize() {
   sender_->AddChannelObserver(this);
   PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
   cursor_->OnWindowAdded(widget_, bounds_, GetCursorConfinedBounds());
-  delegate_->OnAcceleratedWidgetAvailable(widget_);
+  delegate_->OnAcceleratedWidgetAvailable(widget_, 1.f);
 }
 
 gfx::AcceleratedWidget DrmWindowHost::GetAcceleratedWidget() {
@@ -139,8 +140,12 @@ bool DrmWindowHost::CanDispatchEvent(const PlatformEvent& ne) {
     if (display_id == gfx::Display::kInvalidDisplayID)
       return false;
 
-    DisplaySnapshot* snapshot = display_manager_->GetDisplay(display_id);
-    if (!snapshot || !snapshot->current_mode())
+    DrmDisplayHost* display = display_manager_->GetDisplay(display_id);
+    if (!display)
+      return false;
+
+    DisplaySnapshot* snapshot = display->snapshot();
+    if (!snapshot->current_mode())
       return false;
 
     gfx::Rect display_bounds(snapshot->origin(),
@@ -174,7 +179,7 @@ uint32_t DrmWindowHost::DispatchEvent(const PlatformEvent& native_event) {
 }
 
 void DrmWindowHost::OnChannelEstablished() {
-  sender_->Send(new OzoneGpuMsg_CreateWindowDelegate(widget_));
+  sender_->Send(new OzoneGpuMsg_CreateWindow(widget_));
   SendBoundsChange();
 }
 

@@ -42,13 +42,12 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLAppletElement.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
-#include "core/page/Chrome.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
 #include "modules/device_light/DeviceLightController.h"
@@ -86,7 +85,6 @@
 #include "public/web/WebPlugin.h"
 #include "public/web/WebPluginParams.h"
 #include "public/web/WebPluginPlaceholder.h"
-#include "public/web/WebTransitionElementData.h"
 #include "public/web/WebViewClient.h"
 #include "web/DevToolsEmulator.h"
 #include "web/PluginPlaceholderImpl.h"
@@ -131,8 +129,7 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInMainWorld()
             if (RuntimeEnabledFeatures::deviceLightEnabled())
                 DeviceLightController::from(*document);
             NavigatorGamepad::from(*document);
-            if (RuntimeEnabledFeatures::serviceWorkerEnabled())
-                NavigatorServiceWorker::from(*document);
+            NavigatorServiceWorker::from(*document);
             DOMWindowStorageController::from(*document);
             if (RuntimeEnabledFeatures::webVREnabled())
                 NavigatorVRDevice::from(*document);
@@ -267,6 +264,11 @@ bool FrameLoaderClientImpl::hasWebView() const
     return m_webFrame->viewImpl();
 }
 
+bool FrameLoaderClientImpl::inShadowTree() const
+{
+    return m_webFrame->inShadowTree();
+}
+
 Frame* FrameLoaderClientImpl::opener() const
 {
     return toCoreFrame(m_webFrame->opener());
@@ -312,7 +314,7 @@ void FrameLoaderClientImpl::willBeDetached()
     m_webFrame->willBeDetached();
 }
 
-void FrameLoaderClientImpl::detached()
+void FrameLoaderClientImpl::detached(FrameDetachType type)
 {
     // Alert the client that the frame is being detached. This is the last
     // chance we have to communicate with the client.
@@ -328,7 +330,7 @@ void FrameLoaderClientImpl::detached()
     // place at this point since we are no longer associated with the Page.
     m_webFrame->setClient(0);
 
-    client->frameDetached(m_webFrame);
+    client->frameDetached(m_webFrame, static_cast<WebFrameClient::DetachType>(type));
     // Clear our reference to LocalFrame at the very end, in case the client
     // refers to it.
     m_webFrame->setCoreFrame(nullptr);
@@ -409,10 +411,10 @@ void FrameLoaderClientImpl::dispatchWillClose()
         m_webFrame->client()->willClose(m_webFrame);
 }
 
-void FrameLoaderClientImpl::dispatchDidStartProvisionalLoad(bool isTransitionNavigation, double triggeringEventTime)
+void FrameLoaderClientImpl::dispatchDidStartProvisionalLoad(double triggeringEventTime)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didStartProvisionalLoad(m_webFrame, isTransitionNavigation, triggeringEventTime);
+        m_webFrame->client()->didStartProvisionalLoad(m_webFrame, triggeringEventTime);
 }
 
 void FrameLoaderClientImpl::dispatchDidReceiveTitle(const String& title)
@@ -525,7 +527,7 @@ static bool allowCreatingBackgroundTabs()
     return userPolicy == NavigationPolicyNewBackgroundTab;
 }
 
-NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy, bool isTransitionNavigation)
+NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy)
 {
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
@@ -542,24 +544,9 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
     navigationInfo.navigationType = ds->navigationType();
     navigationInfo.defaultPolicy = static_cast<WebNavigationPolicy>(policy);
     navigationInfo.isRedirect = ds->isRedirect();
-    navigationInfo.isTransitionNavigation = isTransitionNavigation;
 
     WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(navigationInfo);
     return static_cast<NavigationPolicy>(webPolicy);
-}
-
-void FrameLoaderClientImpl::dispatchAddNavigationTransitionData(const Document::TransitionElementData& data)
-{
-    if (!m_webFrame->client())
-        return;
-
-    WebVector<WebTransitionElement> webElements(data.elements.size());
-    for (size_t i = 0; i < data.elements.size(); ++i) {
-        webElements[i].id = data.elements[i].id;
-        webElements[i].rect = data.elements[i].rect;
-    }
-    WebTransitionElementData webData(data.scope, data.selector, data.markup, webElements);
-    m_webFrame->client()->addNavigationTransitionData(webData);
 }
 
 void FrameLoaderClientImpl::dispatchWillRequestResource(FetchRequest* request)
@@ -662,9 +649,9 @@ void FrameLoaderClientImpl::selectorMatchChanged(const Vector<String>& addedSele
         client->didMatchCSS(m_webFrame, WebVector<WebString>(addedSelectors), WebVector<WebString>(removedSelectors));
 }
 
-PassRefPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoader(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
+PassRefPtrWillBeRawPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoader(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
 {
-    RefPtr<WebDataSourceImpl> ds = WebDataSourceImpl::create(frame, request, data);
+    RefPtrWillBeRawPtr<WebDataSourceImpl> ds = WebDataSourceImpl::create(frame, request, data);
     if (m_webFrame->client())
         m_webFrame->client()->didCreateDataSource(m_webFrame, ds.get());
     return ds.release();
@@ -905,6 +892,11 @@ void FrameLoaderClientImpl::dispatchWillInsertBody()
 
     if (m_webFrame->viewImpl())
         m_webFrame->viewImpl()->willInsertBody(m_webFrame);
+}
+
+v8::Local<v8::Value> FrameLoaderClientImpl::createTestInterface(const AtomicString& name)
+{
+    return m_webFrame->createTestInterface(name);
 }
 
 PassOwnPtr<WebServiceWorkerProvider> FrameLoaderClientImpl::createServiceWorkerProvider()

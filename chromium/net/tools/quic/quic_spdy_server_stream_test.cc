@@ -20,7 +20,7 @@
 
 using base::StringPiece;
 using net::test::MockConnection;
-using net::test::MockSession;
+using net::test::MockQuicSpdySession;
 using net::test::SupportedVersions;
 using net::test::kInitialSessionFlowControlWindowForTest;
 using net::test::kInitialStreamFlowControlWindowForTest;
@@ -40,9 +40,8 @@ namespace test {
 
 class QuicSpdyServerStreamPeer : public QuicSpdyServerStream {
  public:
-  QuicSpdyServerStreamPeer(QuicStreamId stream_id, QuicSession* session)
-      : QuicSpdyServerStream(stream_id, session) {
-  }
+  QuicSpdyServerStreamPeer(QuicStreamId stream_id, QuicSpdySession* session)
+      : QuicSpdyServerStream(stream_id, session) {}
 
   using QuicSpdyServerStream::SendResponse;
   using QuicSpdyServerStream::SendErrorResponse;
@@ -120,7 +119,7 @@ class QuicSpdyServerStreamTest : public ::testing::TestWithParam<QuicVersion> {
 
   SpdyHeaderBlock response_headers_;
   StrictMock<MockConnection>* connection_;
-  StrictMock<MockSession> session_;
+  StrictMock<MockQuicSpdySession> session_;
   scoped_ptr<QuicSpdyServerStreamPeer> stream_;
   string headers_string_;
   string body_;
@@ -128,12 +127,12 @@ class QuicSpdyServerStreamTest : public ::testing::TestWithParam<QuicVersion> {
 
 QuicConsumedData ConsumeAllData(
     QuicStreamId id,
-    const IOVector& data,
+    const QuicIOVector& data,
     QuicStreamOffset offset,
     bool fin,
     FecProtection /*fec_protection_*/,
     QuicAckNotifier::DelegateInterface* /*ack_notifier_delegate*/) {
-  return QuicConsumedData(data.TotalBufferSize(), fin);
+  return QuicConsumedData(data.total_length, fin);
 }
 
 INSTANTIATE_TEST_CASE_P(Tests, QuicSpdyServerStreamTest,
@@ -243,7 +242,7 @@ TEST_P(QuicSpdyServerStreamTest, InvalidHeadersWithFin) {
     0x31, 0x2e, 0x31,        // 1.1
   };
   StringPiece data(arr, arraysize(arr));
-  QuicStreamFrame frame(stream_->id(), true, 0, MakeIOVector(data));
+  QuicStreamFrame frame(stream_->id(), true, 0, data);
   // Verify that we don't crash when we get a invalid headers in stream frame.
   stream_->OnStreamFrame(frame);
 }

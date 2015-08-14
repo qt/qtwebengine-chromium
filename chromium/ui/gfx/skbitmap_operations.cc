@@ -654,10 +654,12 @@ SkBitmap SkBitmapOperations::UnPreMultiply(const SkBitmap& bitmap) {
   if (bitmap.isOpaque())
     return bitmap;
 
-  SkImageInfo info = bitmap.info();
-  info.fAlphaType = kOpaque_SkAlphaType;
+  const SkImageInfo& info = bitmap.info();
+  SkImageInfo opaque_info =
+      SkImageInfo::Make(info.width(), info.height(), info.colorType(),
+                        kOpaque_SkAlphaType, info.profileType());
   SkBitmap opaque_bitmap;
-  opaque_bitmap.allocPixels(info);
+  opaque_bitmap.allocPixels(opaque_info);
 
   {
     SkAutoLockPixels bitmap_lock(bitmap);
@@ -741,9 +743,11 @@ SkBitmap SkBitmapOperations::CreateDropShadow(
     SkBitmap shadow_image = SkBitmapOperations::CreateColorMask(bitmap,
                                                                 shadow.color());
 
+    // The blur is halved to produce a shadow that correctly fits within the
+    // |shadow_margin|.
+    SkScalar sigma = SkDoubleToScalar(shadow.blur() / 2);
     skia::RefPtr<SkBlurImageFilter> filter =
-        skia::AdoptRef(SkBlurImageFilter::Create(
-            SkDoubleToScalar(shadow.blur()), SkDoubleToScalar(shadow.blur())));
+        skia::AdoptRef(SkBlurImageFilter::Create(sigma, sigma));
     paint.setImageFilter(filter.get());
 
     canvas.saveLayer(0, &paint);

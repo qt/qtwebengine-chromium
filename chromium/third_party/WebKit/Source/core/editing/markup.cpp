@@ -46,6 +46,7 @@
 #include "core/dom/Range.h"
 #include "core/editing/EditingStrategy.h"
 #include "core/editing/Editor.h"
+#include "core/editing/MarkupAccumulator.h"
 #include "core/editing/StyledMarkupSerializer.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
@@ -183,9 +184,10 @@ template<typename PositionType>
 static bool areSameRanges(Node* node, const PositionType& startPosition, const PositionType& endPosition)
 {
     ASSERT(node);
-    Position otherStartPosition;
-    Position otherEndPosition;
-    VisibleSelection::selectionFromContentsOfNode(node).toNormalizedPositions(otherStartPosition, otherEndPosition);
+
+    PositionType otherStartPosition;
+    PositionType otherEndPosition;
+    VisibleSelection::normalizePositions(PositionType::firstPositionInNode(node), PositionType::lastPositionInNode(node), &otherStartPosition, &otherEndPosition);
     return startPosition == otherStartPosition && endPosition == otherEndPosition;
 }
 
@@ -238,11 +240,19 @@ static HTMLElement* highestAncestorToWrapMarkup(const typename Strategy::Positio
     return specialCommonAncestor;
 }
 
+template <typename Strategy>
+class CreateMarkupAlgorithm {
+public:
+    using PositionType = typename Strategy::PositionType;
+
+    static String createMarkup(const PositionType& startPosition, const PositionType& endPosition, EAnnotateForInterchange shouldAnnotate = DoNotAnnotateForInterchange, ConvertBlocksToInlines = ConvertBlocksToInlines::NotConvert, EAbsoluteURLs shouldResolveURLs = DoNotResolveURLs, Node* constrainingAncestor = nullptr);
+};
+
 // FIXME: Shouldn't we omit style info when annotate == DoNotAnnotateForInterchange?
 // FIXME: At least, annotation and style info should probably not be included in range.markupString()
 template <typename Strategy>
 String CreateMarkupAlgorithm<Strategy>::createMarkup(const PositionType& startPosition, const PositionType& endPosition,
-    EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
+    EAnnotateForInterchange shouldAnnotate, ConvertBlocksToInlines convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
 {
     ASSERT(startPosition.isNotNull());
     ASSERT(endPosition.isNotNull());
@@ -259,16 +269,20 @@ String CreateMarkupAlgorithm<Strategy>::createMarkup(const PositionType& startPo
     document->updateLayoutIgnorePendingStylesheets();
 
     HTMLElement* specialCommonAncestor = highestAncestorToWrapMarkup<Strategy>(startPosition, endPosition, shouldAnnotate, constrainingAncestor);
-    StyledMarkupSerializer<Strategy> serializer(shouldResolveURLs, shouldAnnotate, startPosition, endPosition, specialCommonAncestor);
-    return serializer.createMarkup(convertBlocksToInlines, specialCommonAncestor);
+    StyledMarkupSerializer<Strategy> serializer(shouldResolveURLs, shouldAnnotate, startPosition, endPosition, specialCommonAncestor, convertBlocksToInlines);
+    return serializer.createMarkup();
 }
 
-String createMarkup(const Range* range, EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
+String createMarkup(const Position& startPosition, const Position& endPosition, EAnnotateForInterchange shouldAnnotate, ConvertBlocksToInlines convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
 {
-    if (!range)
-        return emptyString();
+    ASSERT(startPosition.compareTo(endPosition) <= 0);
+    return CreateMarkupAlgorithm<EditingStrategy>::createMarkup(startPosition, endPosition, shouldAnnotate, convertBlocksToInlines, shouldResolveURLs, constrainingAncestor);
+}
 
-    return CreateMarkupAlgorithm<EditingStrategy>::createMarkup(range->startPosition(), range->endPosition(), shouldAnnotate, convertBlocksToInlines, shouldResolveURLs, constrainingAncestor);
+String createMarkup(const PositionInComposedTree& startPosition, const PositionInComposedTree& endPosition, EAnnotateForInterchange shouldAnnotate, ConvertBlocksToInlines convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
+{
+    ASSERT(startPosition.compareTo(endPosition) <= 0);
+    return CreateMarkupAlgorithm<EditingInComposedTreeStrategy>::createMarkup(startPosition, endPosition, shouldAnnotate, convertBlocksToInlines, shouldResolveURLs, constrainingAncestor);
 }
 
 PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromMarkup(Document& document, const String& markup, const String& baseURL, ParserContentPolicy parserContentPolicy)
@@ -287,9 +301,9 @@ PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromMarkup(Document& docu
 
 static const char fragmentMarkerTag[] = "webkit-fragment-marker";
 
-static bool findNodesSurroundingContext(Document* document, RefPtrWillBeRawPtr<Comment>& nodeBeforeContext, RefPtrWillBeRawPtr<Comment>& nodeAfterContext)
+static bool findNodesSurroundingContext(DocumentFragment* fragment, RefPtrWillBeRawPtr<Comment>& nodeBeforeContext, RefPtrWillBeRawPtr<Comment>& nodeAfterContext)
 {
-    for (Node& node : NodeTraversal::startsAt(document->firstChild())) {
+    for (Node& node : NodeTraversal::startsAt(fragment->firstChild())) {
         if (node.nodeType() == Node::COMMENT_NODE && toComment(node).data() == fragmentMarkerTag) {
             if (!nodeBeforeContext)
                 nodeBeforeContext = &toComment(node);
@@ -331,23 +345,24 @@ PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromMarkupWithContext(Doc
 
     StringBuilder taggedMarkup;
     taggedMarkup.append(markup.left(fragmentStart));
-    MarkupAccumulator::appendComment(taggedMarkup, fragmentMarkerTag);
+    MarkupFormatter::appendComment(taggedMarkup, fragmentMarkerTag);
     taggedMarkup.append(markup.substring(fragmentStart, fragmentEnd - fragmentStart));
-    MarkupAccumulator::appendComment(taggedMarkup, fragmentMarkerTag);
+    MarkupFormatter::appendComment(taggedMarkup, fragmentMarkerTag);
     taggedMarkup.append(markup.substring(fragmentEnd));
 
     RefPtrWillBeRawPtr<DocumentFragment> taggedFragment = createFragmentFromMarkup(document, taggedMarkup.toString(), baseURL, parserContentPolicy);
-    RefPtrWillBeRawPtr<Document> taggedDocument = Document::create();
-    taggedDocument->setContextFeatures(document.contextFeatures());
-
-    // FIXME: It's not clear what this code is trying to do. It puts nodes as direct children of a
-    // Document that are not normally allowed by using the parser machinery.
-    taggedDocument->parserTakeAllChildrenFrom(*taggedFragment);
 
     RefPtrWillBeRawPtr<Comment> nodeBeforeContext = nullptr;
     RefPtrWillBeRawPtr<Comment> nodeAfterContext = nullptr;
-    if (!findNodesSurroundingContext(taggedDocument.get(), nodeBeforeContext, nodeAfterContext))
+    if (!findNodesSurroundingContext(taggedFragment.get(), nodeBeforeContext, nodeAfterContext))
         return nullptr;
+
+    RefPtrWillBeRawPtr<Document> taggedDocument = Document::create();
+    taggedDocument->setContextFeatures(document.contextFeatures());
+
+    RefPtrWillBeRawPtr<Element> root = Element::create(QualifiedName::null(), taggedDocument.get());
+    root->appendChild(taggedFragment.get());
+    taggedDocument->appendChild(root);
 
     RefPtrWillBeRawPtr<Range> range = Range::create(*taggedDocument.get(),
         positionAfterNode(nodeBeforeContext.get()).parentAnchoredEquivalent(),
@@ -435,9 +450,9 @@ bool isPlainTextMarkup(Node* node)
     return element.hasChildCount(2) && isTabHTMLSpanElementTextNode(element.firstChild()->firstChild()) && element.lastChild()->isTextNode();
 }
 
-static bool shouldPreserveNewline(const Range& range)
+static bool shouldPreserveNewline(const EphemeralRange& range)
 {
-    if (Node* node = range.firstNode()) {
+    if (Node* node = range.startPosition().nodeAsRangeFirstNode()) {
         if (LayoutObject* layoutObject = node->layoutObject())
             return layoutObject->style()->preserveNewline();
     }
@@ -452,10 +467,15 @@ static bool shouldPreserveNewline(const Range& range)
 
 PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromText(Range* context, const String& text)
 {
-    if (!context)
+    return createFragmentFromText(EphemeralRange(context), text);
+}
+
+PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromText(const EphemeralRange& context, const String& text)
+{
+    if (context.isNull())
         return nullptr;
 
-    Document& document = context->ownerDocument();
+    Document& document = context.document();
     RefPtrWillBeRawPtr<DocumentFragment> fragment = document.createDocumentFragment();
 
     if (text.isEmpty())
@@ -465,7 +485,7 @@ PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromText(Range* context, 
     string.replace("\r\n", "\n");
     string.replace('\r', '\n');
 
-    if (shouldPreserveNewline(*context)) {
+    if (shouldPreserveNewline(context)) {
         fragment->appendChild(document.createTextNode(string));
         if (string.endsWith('\n')) {
             RefPtrWillBeRawPtr<HTMLBRElement> element = createBreakElement(document);
@@ -482,12 +502,12 @@ PassRefPtrWillBeRawPtr<DocumentFragment> createFragmentFromText(Range* context, 
     }
 
     // Break string into paragraphs. Extra line breaks turn into empty paragraphs.
-    Element* block = enclosingBlock(context->firstNode());
+    Element* block = enclosingBlock(context.startPosition().nodeAsRangeFirstNode());
     bool useClonesOfEnclosingBlock = block
         && !isHTMLBodyElement(*block)
         && !isHTMLHtmlElement(*block)
-        && block != editableRootForPosition(context->startPosition());
-    bool useLineBreak = enclosingTextFormControl(context->startPosition());
+        && block != editableRootForPosition(context.startPosition());
+    bool useLineBreak = enclosingTextFormControl(context.startPosition());
 
     Vector<String> list;
     string.split('\n', true, list); // true gets us empty strings in the list
@@ -521,7 +541,7 @@ String urlToMarkup(const KURL& url, const String& title)
     markup.appendLiteral("<a href=\"");
     markup.append(url.string());
     markup.appendLiteral("\">");
-    MarkupAccumulator::appendCharactersReplacingEntities(markup, title, 0, title.length(), EntityMaskInPCDATA);
+    MarkupFormatter::appendCharactersReplacingEntities(markup, title, 0, title.length(), EntityMaskInPCDATA);
     markup.appendLiteral("</a>");
     return markup.toString();
 }
@@ -699,17 +719,7 @@ void mergeWithNextTextNode(Text* textNode, ExceptionState& exceptionState)
         textNext->remove(exceptionState);
 }
 
-String createStyledMarkupForNavigationTransition(Node* node)
-{
-    node->document().updateLayoutIgnorePendingStylesheets();
-
-    StyledMarkupSerializer<EditingStrategy> serializer(ResolveAllURLs, AnnotateForNavigationTransition, Position(), Position(), 0);
-    serializer.serializeNodes(node, NodeTraversal::nextSkippingChildren(*node));
-
-    static const char* documentMarkup = "<!DOCTYPE html><meta name=\"viewport\" content=\"width=device-width, user-scalable=0\">";
-    return documentMarkup + serializer.takeResults();
-}
-
-template class CORE_EXPORT CreateMarkupAlgorithm<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT CreateMarkupAlgorithm<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT CreateMarkupAlgorithm<EditingInComposedTreeStrategy>;
 
 }

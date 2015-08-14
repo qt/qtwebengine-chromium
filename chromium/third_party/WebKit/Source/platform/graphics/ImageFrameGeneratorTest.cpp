@@ -28,6 +28,7 @@
 
 #include "platform/SharedBuffer.h"
 #include "platform/Task.h"
+#include "platform/ThreadSafeFunctional.h"
 #include "platform/graphics/ImageDecodingStore.h"
 #include "platform/graphics/test/MockImageDecoder.h"
 #include "public/platform/Platform.h"
@@ -51,7 +52,7 @@ SkImageInfo imageInfo()
 
 class ImageFrameGeneratorTest : public ::testing::Test, public MockImageDecoderClient {
 public:
-    virtual void SetUp() override
+    void SetUp() override
     {
         ImageDecodingStore::instance().setCacheLimitInBytes(1024 * 1024);
         m_data = SharedBuffer::create();
@@ -63,31 +64,31 @@ public:
         m_frameCount = 1;
     }
 
-    virtual void TearDown() override
+    void TearDown() override
     {
         ImageDecodingStore::instance().clear();
     }
 
-    virtual void decoderBeingDestroyed() override
+    void decoderBeingDestroyed() override
     {
         ++m_decodersDestroyed;
     }
 
-    virtual void decodeRequested() override
+    void decodeRequested() override
     {
         ++m_decodeRequestCount;
     }
 
-    virtual ImageFrame::Status status() override
+    ImageFrame::Status status() override
     {
         ImageFrame::Status currentStatus = m_status;
         m_status = m_nextFrameStatus;
         return currentStatus;
     }
 
-    virtual size_t frameCount() override { return m_frameCount; }
-    virtual int repetitionCount() const override { return m_frameCount == 1 ? cAnimationNone:cAnimationLoopOnce; }
-    virtual float frameDuration() const override { return 0; }
+    size_t frameCount() override { return m_frameCount; }
+    int repetitionCount() const override { return m_frameCount == 1 ? cAnimationNone:cAnimationLoopOnce; }
+    float frameDuration() const override { return 0; }
 
 protected:
     void useMockImageDecoderFactory()
@@ -176,7 +177,7 @@ TEST_F(ImageFrameGeneratorTest, incompleteDecodeBecomesCompleteMultiThreaded)
     setFrameStatus(ImageFrame::FrameComplete);
     addNewData();
     OwnPtr<WebThread> thread = adoptPtr(Platform::current()->createThread("DecodeThread"));
-    thread->postTask(FROM_HERE, new Task(WTF::bind(&decodeThreadMain, m_generator.get())));
+    thread->postTask(FROM_HERE, new Task(threadSafeBind(&decodeThreadMain, AllowCrossThreadAccess(m_generator.get()))));
     thread.clear();
     EXPECT_EQ(2, m_decodeRequestCount);
     EXPECT_EQ(1, m_decodersDestroyed);

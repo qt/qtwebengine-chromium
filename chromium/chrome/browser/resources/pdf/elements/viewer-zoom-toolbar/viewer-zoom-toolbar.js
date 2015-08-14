@@ -4,35 +4,25 @@
 
 ANIMATION_INTERVAL = 50;
 
-Polymer('viewer-zoom-toolbar', {
-  /**
-   * @type {number}
-   * The minimum zoom percentage allowed.
-   */
-  zoomMin: 25,
+Polymer({
+  is: 'viewer-zoom-toolbar',
 
-  /**
-   * @type {number}
-   * The maximum zoom percentage allowed.
-   */
-  zoomMax: 500,
-
-  /**
-   * @type {number}
-   * The default zoom percentage.
-   */
-  zoomValue: 100,
+  properties: {
+   /**
+     * The default zoom percentage.
+     */
+    zoomValue: {
+      type: Number,
+      value: 100
+    }
+  },
 
   get visible() {
     return this.visible_;
   },
 
   ready: function() {
-    this.visible_ = false;
-  },
-
-  zoomValueChanged: function() {
-    this.fire('zoom', { zoom: this.zoomValue / 100 });
+    this.visible_ = true;
   },
 
   fitToPage: function() {
@@ -43,11 +33,21 @@ Polymer('viewer-zoom-toolbar', {
     this.fire('fit-to-width');
   },
 
+  zoomIn: function() {
+    this.fire('zoom-in');
+  },
+
+  zoomOut: function() {
+    this.fire('zoom-out');
+  },
+
   show: function() {
     if (!this.visible) {
       this.visible_ = true;
       this.$['fit-to-width-button'].show();
-      this.$['fit-to-page-button'].show(ANIMATION_INTERVAL);
+      this.$['fit-to-page-button'].show();
+      this.$['zoom-in-button'].show();
+      this.$['zoom-out-button'].show();
     }
   },
 
@@ -55,7 +55,9 @@ Polymer('viewer-zoom-toolbar', {
     if (this.visible) {
       this.visible_ = false;
       this.$['fit-to-page-button'].hide();
-      this.$['fit-to-width-button'].hide(ANIMATION_INTERVAL);
+      this.$['fit-to-width-button'].hide();
+      this.$['zoom-in-button'].hide();
+      this.$['zoom-out-button'].hide();
     }
   },
 });

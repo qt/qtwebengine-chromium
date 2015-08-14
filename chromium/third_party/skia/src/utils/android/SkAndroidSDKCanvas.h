@@ -78,15 +78,15 @@ protected:
 
     // PASS THROUGH
 
-    void onDrawDrawable(SkDrawable*) override;
+    void onDrawDrawable(SkDrawable*, const SkMatrix*) override;
     SkISize getBaseLayerSize() const override;
     bool getClipBounds(SkRect*) const override;
     bool getClipDeviceBounds(SkIRect*) const override;
     bool isClipEmpty() const override;
     bool isClipRect() const override;
     SkSurface* onNewSurface(const SkImageInfo&, const SkSurfaceProps&) override;
-    const void* onPeekPixels(SkImageInfo*, size_t*) override;
-    void* onAccessTopLayerPixels(SkImageInfo*, size_t*) override;
+    bool onPeekPixels(SkPixmap*) override;
+    bool onAccessTopLayerPixels(SkPixmap*) override;
     void willSave() override;
     SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) override;
     void willRestore() override;

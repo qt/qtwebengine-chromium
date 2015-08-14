@@ -11,6 +11,7 @@
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/debug/traced_value.h"
 #include "cc/raster/raster_buffer.h"
+#include "cc/resources/platform_color.h"
 #include "cc/resources/resource.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -25,20 +26,25 @@ class RasterBufferImpl : public RasterBuffer {
 
   // Overridden from RasterBuffer:
   void Playback(const RasterSource* raster_source,
-                const gfx::Rect& rect,
+                const gfx::Rect& raster_full_rect,
+                const gfx::Rect& raster_dirty_rect,
+                uint64_t new_content_id,
                 float scale) override {
     gfx::GpuMemoryBuffer* gpu_memory_buffer = lock_.GetGpuMemoryBuffer();
     if (!gpu_memory_buffer)
       return;
-
     void* data = NULL;
     bool rv = gpu_memory_buffer->Map(&data);
     DCHECK(rv);
     int stride;
     gpu_memory_buffer->GetStride(&stride);
-    TileTaskWorkerPool::PlaybackToMemory(data, resource_->format(),
-                                         resource_->size(), stride,
-                                         raster_source, rect, scale);
+    // TileTaskWorkerPool::PlaybackToMemory only supports unsigned strides.
+    DCHECK_GE(stride, 0);
+    // TODO(danakj): Implement partial raster with raster_dirty_rect.
+    TileTaskWorkerPool::PlaybackToMemory(
+        data, resource_->format(), resource_->size(),
+        static_cast<size_t>(stride), raster_source, raster_full_rect,
+        raster_full_rect, scale);
     gpu_memory_buffer->Unmap();
   }
 
@@ -99,7 +105,7 @@ void ZeroCopyTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
   // Mark all task sets as pending.
   tasks_pending_.set();
 
-  unsigned priority = kTileTaskPriorityBase;
+  size_t priority = kTileTaskPriorityBase;
 
   graph_.Reset();
 
@@ -171,12 +177,18 @@ void ZeroCopyTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_tasks_.clear();
 }
 
-ResourceFormat ZeroCopyTileTaskWorkerPool::GetResourceFormat() {
+ResourceFormat ZeroCopyTileTaskWorkerPool::GetResourceFormat() const {
   return resource_provider_->best_texture_format();
 }
 
+bool ZeroCopyTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
+  return !PlatformColor::SameComponentOrder(GetResourceFormat());
+}
+
 scoped_ptr<RasterBuffer> ZeroCopyTileTaskWorkerPool::AcquireBufferForRaster(
-    const Resource* resource) {
+    const Resource* resource,
+    uint64_t resource_content_id,
+    uint64_t previous_content_id) {
   return make_scoped_ptr<RasterBuffer>(
       new RasterBufferImpl(resource_provider_, resource));
 }

@@ -30,6 +30,8 @@
 for layout tests.
 """
 
+from collections import defaultdict
+
 import logging
 import re
 
@@ -85,10 +87,15 @@ class TestExpectationParser(object):
 
     MISSING_BUG_WARNING = 'Test lacks BUG specifier.'
 
-    def __init__(self, port, full_test_list, is_lint_mode):
+    def __init__(self, port, all_tests, is_lint_mode):
         self._port = port
         self._test_configuration_converter = TestConfigurationConverter(set(port.all_test_configurations()), port.configuration_specifier_macros())
-        self._full_test_list = full_test_list
+
+        if all_tests:
+            self._all_tests = set(all_tests)
+        else:
+            self._all_tests = set()
+
         self._is_lint_mode = is_lint_mode
 
     def parse(self, filename, expectations_string):
@@ -190,29 +197,23 @@ class TestExpectationParser(object):
     def _collect_matching_tests(self, expectation_line):
         """Convert the test specification to an absolute, normalized
         path and make sure directories end with the OS path separator."""
-        # FIXME: full_test_list can quickly contain a big amount of
-        # elements. We should consider at some point to use a more
-        # efficient structure instead of a list. Maybe a dictionary of
-        # lists to represent the tree of tests, leaves being test
-        # files and nodes being categories.
-
-        if not self._full_test_list:
+        if not self._all_tests:
             expectation_line.matching_tests = [expectation_line.path]
             return
 
         if not expectation_line.is_file:
             # this is a test category, return all the tests of the category.
-            expectation_line.matching_tests = [test for test in self._full_test_list if test.startswith(expectation_line.path)]
+            expectation_line.matching_tests = [test for test in self._all_tests if test.startswith(expectation_line.path)]
             return
 
         # this is a test file, do a quick check if it's in the
         # full test suite.
-        if expectation_line.path in self._full_test_list:
+        if expectation_line.path in self._all_tests:
             expectation_line.matching_tests.append(expectation_line.path)
 
     # FIXME: Update the original specifiers and remove this once the old syntax is gone.
     _configuration_tokens_list = [
-        'Mac', 'SnowLeopard', 'Lion', 'Retina', 'MountainLion', 'Mavericks',
+        'Mac', 'SnowLeopard', 'Lion', 'MountainLion', 'Retina', 'Mavericks', 'Yosemite',
         'Win', 'XP', 'Win7',
         'Linux',
         'Android',
@@ -563,10 +564,26 @@ class TestExpectationsModel(object):
     def merge_model(self, other):
         self._merge_test_map(self._test_to_expectations, other._test_to_expectations)
 
-        for test, line in other._test_to_expectation_line.items():
+        # merge_expectation_lines is O(tests per line). Therefore, this loop
+        # is O((tests per line)^2) which is really expensive when a line
+        # contains a lot of tests. Cache the output of merge_expectation_lines
+        # so that we only call that n^2 in the number of *lines*.
+        merge_lines_cache = defaultdict(dict)
+
+        for test, other_line in other._test_to_expectation_line.items():
+            merged_line = None
             if test in self._test_to_expectation_line:
-                line = TestExpectationLine.merge_expectation_lines(self._test_to_expectation_line[test], line, model_all_expectations=False)
-            self._test_to_expectation_line[test] = line
+                self_line = self._test_to_expectation_line[test]
+
+                if other_line not in merge_lines_cache[self_line]:
+                    merge_lines_cache[self_line][other_line] = TestExpectationLine.merge_expectation_lines(
+                        self_line, other_line, model_all_expectations=False)
+
+                merged_line = merge_lines_cache[self_line][other_line]
+            else:
+                merged_line = other_line
+
+            self._test_to_expectation_line[test] = merged_line
 
         self._merge_dict_of_sets(self._expectation_to_tests, other._expectation_to_tests)
         self._merge_dict_of_sets(self._timeline_to_tests, other._timeline_to_tests)

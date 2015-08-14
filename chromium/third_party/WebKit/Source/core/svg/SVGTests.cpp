@@ -19,12 +19,9 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGTests.h"
 
 #include "core/SVGNames.h"
-#include "core/dom/DOMImplementation.h"
-#include "core/frame/UseCounter.h"
 #include "core/svg/SVGElement.h"
 #include "platform/Language.h"
 
@@ -63,10 +60,8 @@ bool SVGTests::isValid(Document& document) const
         bool matchFound = false;
 
         const Vector<String>& systemLanguage = m_systemLanguage->value()->values();
-        Vector<String>::const_iterator it = systemLanguage.begin();
-        Vector<String>::const_iterator itEnd = systemLanguage.end();
-        for (; it != itEnd; ++it) {
-            if (*it == defaultLanguage().string().substring(0, 2)) {
+        for (const auto& value : systemLanguage) {
+            if (value == defaultLanguage().string().substring(0, 2)) {
                 matchFound = true;
                 break;
             }

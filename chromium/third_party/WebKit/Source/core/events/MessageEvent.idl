@@ -25,16 +25,22 @@
  *
  */
 
+// https://html.spec.whatwg.org/multipage/comms.html#the-messageevent-interfaces
+
 [
-    EventConstructor,
+    Constructor(DOMString type, optional MessageEventInit eventInitDict),
     Exposed=(Window,Worker),
     RaisesException=Constructor,
 ] interface MessageEvent : Event {
-    [InitializedByEventConstructor] readonly attribute DOMString origin;
-    [InitializedByEventConstructor] readonly attribute DOMString lastEventId;
-    [InitializedByEventConstructor] readonly attribute EventTarget? source; // May be a Window or a MessagePort
-    [InitializedByEventConstructor, Custom=Getter] readonly attribute any data;
-    [InitializedByEventConstructor] readonly attribute MessagePort[] ports;
+    [Custom=Getter] readonly attribute any data;
+    readonly attribute DOMString origin;
+    readonly attribute DOMString lastEventId;
+    // TODO(bashi): |source| should be (WindowProxy or MessagePort)?
+    readonly attribute EventTarget? source;
+    readonly attribute MessagePort[]? ports;
+
+    // TODO(philipj): None of the initMessageEvent() arguments should be
+    // optional, and |sourceArg| and |portsArg| are of the wrong type.
     [Custom, MeasureAs=InitMessageEvent] void initMessageEvent([Default=Undefined] optional DOMString typeArg,
                                    [Default=Undefined] optional boolean canBubbleArg,
                                    [Default=Undefined] optional boolean cancelableArg,
@@ -42,5 +48,5 @@
                                    [Default=Undefined] optional DOMString originArg,
                                    [Default=Undefined] optional DOMString lastEventIdArg,
                                    [Default=Undefined] optional Window sourceArg,
-                                   [Default=Undefined] optional MessagePort[] messagePorts);
+                                   [Default=Undefined] optional MessagePort[] portsArg);
 };

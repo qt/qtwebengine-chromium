@@ -8,6 +8,8 @@
 // Errors are described at:
 // http://www.chromium.org/developers/blink-gc-plugin-errors
 
+#include <algorithm>
+
 #include "Config.h"
 #include "JsonWriter.h"
 #include "RecordInfo.h"
@@ -17,6 +19,7 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
+#include "clang/Sema/Sema.h"
 
 using namespace clang;
 using std::string;
@@ -56,6 +59,9 @@ const char kClassDoesNotRequireFinalization[] =
 const char kFinalizerAccessesFinalizedField[] =
     "[blink-gc] Finalizer %0 accesses potentially finalized field %1.";
 
+const char kFinalizerAccessesEagerlyFinalizedField[] =
+    "[blink-gc] Finalizer %0 accesses eagerly finalized field %1.";
+
 const char kRawPtrToGCManagedClassNote[] =
     "[blink-gc] Raw pointer field %0 to a GC managed class declared here:";
 
@@ -64,6 +70,9 @@ const char kRefPtrToGCManagedClassNote[] =
 
 const char kOwnPtrToGCManagedClassNote[] =
     "[blink-gc] OwnPtr field %0 to a GC managed class declared here:";
+
+const char kMemberToGCUnmanagedClassNote[] =
+    "[blink-gc] Member field %0 to non-GC managed class declared here:";
 
 const char kStackAllocatedFieldNote[] =
     "[blink-gc] Stack-allocated field %0 declared here:";
@@ -105,6 +114,9 @@ const char kMissingFinalizeDispatch[] =
 const char kFinalizedFieldNote[] =
     "[blink-gc] Potentially finalized field %0 declared here:";
 
+const char kEagerlyFinalizedFieldNote[] =
+    "[blink-gc] Field %0 having eagerly finalized value, declared here:";
+
 const char kUserDeclaredDestructorNote[] =
     "[blink-gc] User-declared destructor declared here:";
 
@@ -143,6 +155,23 @@ const char kBaseClassMustDeclareVirtualTrace[] =
 const char kClassMustDeclareGCMixinTraceMethod[] =
     "[blink-gc] Class %0 which inherits from GarbageCollectedMixin must"
     " locally declare and override trace(Visitor*)";
+
+// Use a local RAV implementation to simply collect all FunctionDecls marked for
+// late template parsing. This happens with the flag -fdelayed-template-parsing,
+// which is on by default in MSVC-compatible mode.
+std::set<FunctionDecl*> GetLateParsedFunctionDecls(TranslationUnitDecl* decl) {
+  struct Visitor : public RecursiveASTVisitor<Visitor> {
+    bool VisitFunctionDecl(FunctionDecl* function_decl) {
+      if (function_decl->isLateTemplateParsed())
+        late_parsed_decls.insert(function_decl);
+      return true;
+    }
+
+    std::set<FunctionDecl*> late_parsed_decls;
+  } v;
+  v.TraverseDecl(decl);
+  return v.late_parsed_decls;
+}
 
 struct BlinkGCPluginOptions {
   BlinkGCPluginOptions()
@@ -223,11 +252,27 @@ class CheckFinalizerVisitor
   // during finalization.
   class MightBeCollectedVisitor : public EdgeVisitor {
    public:
-    MightBeCollectedVisitor() : might_be_collected_(false) {}
+    MightBeCollectedVisitor(bool is_eagerly_finalized)
+        : might_be_collected_(false)
+        , is_eagerly_finalized_(is_eagerly_finalized)
+        , as_eagerly_finalized_(false) {}
     bool might_be_collected() { return might_be_collected_; }
-    void VisitMember(Member* edge) override { might_be_collected_ = true; }
+    bool as_eagerly_finalized() { return as_eagerly_finalized_; }
+    void VisitMember(Member* edge) override {
+      if (is_eagerly_finalized_) {
+        if (edge->ptr()->IsValue()) {
+          Value* member = static_cast<Value*>(edge->ptr());
+          if (member->value()->IsEagerlyFinalized()) {
+            might_be_collected_ = true;
+            as_eagerly_finalized_ = true;
+          }
+        }
+        return;
+      }
+      might_be_collected_ = true;
+    }
     void VisitCollection(Collection* edge) override {
-      if (edge->on_heap()) {
+      if (edge->on_heap() && !is_eagerly_finalized_) {
         might_be_collected_ = !edge->is_root();
       } else {
         edge->AcceptMembers(this);
@@ -236,13 +281,31 @@ class CheckFinalizerVisitor
 
    private:
     bool might_be_collected_;
+    bool is_eagerly_finalized_;
+    bool as_eagerly_finalized_;
   };
 
  public:
-  typedef std::vector<std::pair<MemberExpr*, FieldPoint*> > Errors;
+  class Error {
+  public:
+    Error(MemberExpr *member,
+          bool as_eagerly_finalized,
+          FieldPoint* field)
+        : member_(member)
+        , as_eagerly_finalized_(as_eagerly_finalized)
+        , field_(field) {}
 
-  CheckFinalizerVisitor(RecordCache* cache)
-      : blacklist_context_(false), cache_(cache) {}
+    MemberExpr* member_;
+    bool as_eagerly_finalized_;
+    FieldPoint* field_;
+  };
+
+  typedef std::vector<Error> Errors;
+
+  CheckFinalizerVisitor(RecordCache* cache, bool is_eagerly_finalized)
+      : blacklist_context_(false)
+      , cache_(cache)
+      , is_eagerly_finalized_(is_eagerly_finalized) {}
 
   Errors& finalized_fields() { return finalized_fields_; }
 
@@ -280,21 +343,32 @@ class CheckFinalizerVisitor
     if (it == info->GetFields().end())
       return true;
 
-    if (blacklist_context_ && MightBeCollected(&it->second))
-      finalized_fields_.push_back(std::make_pair(member, &it->second));
+    if (seen_members_.find(member) != seen_members_.end())
+      return true;
+
+    bool as_eagerly_finalized = false;
+    if (blacklist_context_ &&
+        MightBeCollected(&it->second, as_eagerly_finalized)) {
+      finalized_fields_.push_back(
+          Error(member, as_eagerly_finalized, &it->second));
+      seen_members_.insert(member);
+    }
     return true;
   }
 
-  bool MightBeCollected(FieldPoint* point) {
-    MightBeCollectedVisitor visitor;
+  bool MightBeCollected(FieldPoint* point, bool& as_eagerly_finalized) {
+    MightBeCollectedVisitor visitor(is_eagerly_finalized_);
     point->edge()->Accept(&visitor);
+    as_eagerly_finalized = visitor.as_eagerly_finalized();
     return visitor.might_be_collected();
   }
 
  private:
   bool blacklist_context_;
   Errors finalized_fields_;
+  std::set<MemberExpr*> seen_members_;
   RecordCache* cache_;
+  bool is_eagerly_finalized_;
 };
 
 // This visitor checks that a method contains within its body, a call to a
@@ -780,6 +854,7 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
     kRawPtrToGCManagedWarning,
     kRefPtrToGCManaged,
     kOwnPtrToGCManaged,
+    kMemberToGCUnmanaged,
     kMemberInUnmanaged,
     kPtrFromHeapToStack,
     kGCDerivedPartObject
@@ -835,6 +910,23 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
         edge->value()->IsGCDerived() &&
         !edge->value()->IsGCMixin()) {
       invalid_fields_.push_back(std::make_pair(current_, kGCDerivedPartObject));
+      return;
+    }
+
+    // If in a stack allocated context, be fairly insistent that T in Member<T>
+    // is GC allocated, as stack allocated objects do not have a trace()
+    // that separately verifies the validity of Member<T>.
+    //
+    // Notice that an error is only reported if T's definition is in scope;
+    // we do not require that it must be brought into scope as that would
+    // prevent declarations of mutually dependent class types.
+    //
+    // (Note: Member<>'s constructor will at run-time verify that the
+    // pointer it wraps is indeed heap allocated.)
+    if (stack_allocated_host_ && Parent() && Parent()->IsMember() &&
+        edge->value()->HasDefinition() && !edge->value()->IsGCAllocated()) {
+      invalid_fields_.push_back(std::make_pair(current_,
+                                               kMemberToGCUnmanaged));
       return;
     }
 
@@ -923,7 +1015,6 @@ class BlinkGCPluginConsumer : public ASTConsumer {
 
     // Only check structures in the blink and WebKit namespaces.
     options_.checked_namespaces.insert("blink");
-    options_.checked_namespaces.insert("WebKit");
 
     // Ignore GC implementation files.
     options_.ignored_directories.push_back("/heap/");
@@ -949,6 +1040,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Warning, kClassDoesNotRequireFinalization);
     diag_finalizer_accesses_finalized_field_ = diagnostic_.getCustomDiagID(
         getErrorLevel(), kFinalizerAccessesFinalizedField);
+    diag_finalizer_eagerly_finalized_field_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kFinalizerAccessesEagerlyFinalizedField);
     diag_overridden_non_virtual_trace_ = diagnostic_.getCustomDiagID(
         getErrorLevel(), kOverriddenNonVirtualTrace);
     diag_missing_trace_dispatch_method_ = diagnostic_.getCustomDiagID(
@@ -986,6 +1079,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kRefPtrToGCManagedClassNote);
     diag_own_ptr_to_gc_managed_class_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kOwnPtrToGCManagedClassNote);
+    diag_member_to_gc_unmanaged_class_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kMemberToGCUnmanagedClassNote);
     diag_stack_allocated_field_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kStackAllocatedFieldNote);
     diag_member_in_unmanaged_class_note_ = diagnostic_.getCustomDiagID(
@@ -998,6 +1093,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         DiagnosticsEngine::Note, kFieldContainsGCRootNote);
     diag_finalized_field_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kFinalizedFieldNote);
+    diag_eagerly_finalized_field_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kEagerlyFinalizedFieldNote);
     diag_user_declared_destructor_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kUserDeclaredDestructorNote);
     diag_user_declared_finalizer_note_ = diagnostic_.getCustomDiagID(
@@ -1016,6 +1113,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     // Don't run the plugin if the compilation unit is already invalid.
     if (diagnostic_.hasErrorOccurred())
       return;
+
+    ParseFunctionTemplates(context.getTranslationUnitDecl());
 
     CollectVisitor visitor;
     visitor.TraverseDecl(context.getTranslationUnitDecl());
@@ -1060,6 +1159,31 @@ class BlinkGCPluginConsumer : public ASTConsumer {
       json_->CloseList();
       delete json_;
       json_ = 0;
+    }
+  }
+
+  void ParseFunctionTemplates(TranslationUnitDecl* decl) {
+    if (!instance_.getLangOpts().DelayedTemplateParsing)
+      return;  // Nothing to do.
+
+    std::set<FunctionDecl*> late_parsed_decls =
+        GetLateParsedFunctionDecls(decl);
+    clang::Sema& sema = instance_.getSema();
+
+    for (const FunctionDecl* fd : late_parsed_decls) {
+      assert(fd->isLateTemplateParsed());
+
+      if (!Config::IsTraceMethod(fd))
+        continue;
+
+      if (instance_.getSourceManager().isInSystemHeader(
+              instance_.getSourceManager().getSpellingLoc(fd->getLocation())))
+        continue;
+
+      // Force parsing and AST building of the yet-uninstantiated function
+      // template trace method bodies.
+      clang::LateParsedTemplate* lpt = sema.LateParsedTemplateMap[fd];
+      sema.LateTemplateParser(sema.OpaqueParser, *lpt);
     }
   }
 
@@ -1340,7 +1464,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     // For finalized classes, check the finalization method if possible.
     if (info->IsGCFinalized()) {
       if (dtor && dtor->hasBody()) {
-        CheckFinalizerVisitor visitor(&cache_);
+        CheckFinalizerVisitor visitor(&cache_, info->IsEagerlyFinalized());
         visitor.TraverseCXXMethodDecl(dtor);
         if (!visitor.finalized_fields().empty()) {
           ReportFinalizerAccessesFinalizedFields(
@@ -1610,6 +1734,9 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     string filename;
     if (!GetFilename(info->record()->getLocStart(), &filename))
       return false;  // TODO: should we ignore non-existing file locations?
+#if defined(LLVM_ON_WIN32)
+    std::replace(filename.begin(), filename.end(), '\\', '/');
+#endif
     std::vector<string>::iterator it = options_.ignored_directories.begin();
     for (; it != options_.ignored_directories.end(); ++it)
       if (filename.find(*it) != string::npos)
@@ -1624,6 +1751,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
          !context->isTranslationUnit();
          context = context->getParent()) {
       if (NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context)) {
+        if (decl->isAnonymousNamespace())
+          return true;
         if (options_.checked_namespaces.find(decl->getNameAsString()) !=
             options_.checked_namespaces.end()) {
           return true;
@@ -1727,6 +1856,8 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         error = diag_ref_ptr_to_gc_managed_class_note_;
       } else if (it->second == CheckFieldsVisitor::kOwnPtrToGCManaged) {
         error = diag_own_ptr_to_gc_managed_class_note_;
+      } else if (it->second == CheckFieldsVisitor::kMemberToGCUnmanaged) {
+        error = diag_member_to_gc_unmanaged_class_note_;
       } else if (it->second == CheckFieldsVisitor::kMemberInUnmanaged) {
         error = diag_member_in_unmanaged_class_note_;
       } else if (it->second == CheckFieldsVisitor::kPtrFromHeapToStack) {
@@ -1766,12 +1897,19 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     for (CheckFinalizerVisitor::Errors::iterator it = fields->begin();
          it != fields->end();
          ++it) {
-      SourceLocation loc = it->first->getLocStart();
+      SourceLocation loc = it->member_->getLocStart();
       SourceManager& manager = instance_.getSourceManager();
+      bool as_eagerly_finalized = it->as_eagerly_finalized_;
+      unsigned diag_error = as_eagerly_finalized ?
+          diag_finalizer_eagerly_finalized_field_ :
+          diag_finalizer_accesses_finalized_field_;
+      unsigned diag_note = as_eagerly_finalized ?
+          diag_eagerly_finalized_field_note_ :
+          diag_finalized_field_note_;
       FullSourceLoc full_loc(loc, manager);
-      diagnostic_.Report(full_loc, diag_finalizer_accesses_finalized_field_)
-          << dtor << it->second->field();
-      NoteField(it->second, diag_finalized_field_note_);
+      diagnostic_.Report(full_loc, diag_error)
+          << dtor << it->field_->field();
+      NoteField(it->field_, diag_note);
     }
   }
 
@@ -1980,6 +2118,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_class_requires_finalization_;
   unsigned diag_class_does_not_require_finalization_;
   unsigned diag_finalizer_accesses_finalized_field_;
+  unsigned diag_finalizer_eagerly_finalized_field_;
   unsigned diag_overridden_non_virtual_trace_;
   unsigned diag_missing_trace_dispatch_method_;
   unsigned diag_missing_finalize_dispatch_method_;
@@ -1998,12 +2137,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_raw_ptr_to_gc_managed_class_note_;
   unsigned diag_ref_ptr_to_gc_managed_class_note_;
   unsigned diag_own_ptr_to_gc_managed_class_note_;
+  unsigned diag_member_to_gc_unmanaged_class_note_;
   unsigned diag_stack_allocated_field_note_;
   unsigned diag_member_in_unmanaged_class_note_;
   unsigned diag_part_object_to_gc_derived_class_note_;
   unsigned diag_part_object_contains_gc_root_note_;
   unsigned diag_field_contains_gc_root_note_;
   unsigned diag_finalized_field_note_;
+  unsigned diag_eagerly_finalized_field_note_;
   unsigned diag_user_declared_destructor_note_;
   unsigned diag_user_declared_finalizer_note_;
   unsigned diag_base_requires_finalization_note_;

@@ -53,12 +53,20 @@ class TransportChannelImpl;
 
 typedef std::vector<Candidate> Candidates;
 
-// For "writable" and "readable", we need to differentiate between
+// For "writable", "readable", and "receiving", we need to differentiate between
 // none, all, and some.
 enum TransportState {
   TRANSPORT_STATE_NONE = 0,
   TRANSPORT_STATE_SOME,
   TRANSPORT_STATE_ALL
+};
+
+// When checking transport state, we need to differentiate between
+// "readable", "writable", or "receiving" check.
+enum TransportStateType {
+  TRANSPORT_READABLE_STATE = 0,
+  TRANSPORT_WRITABLE_STATE,
+  TRANSPORT_RECEIVING_STATE
 };
 
 // Stats that we can return about the connections for a transport channel.
@@ -172,8 +180,14 @@ class Transport : public rtc::MessageHandler,
   bool all_channels_writable() const {
     return (writable_ == TRANSPORT_STATE_ALL);
   }
+  bool any_channel_receiving() const {
+    return (receiving_ == TRANSPORT_STATE_SOME ||
+            receiving_ == TRANSPORT_STATE_ALL);
+  }
+
   sigslot::signal1<Transport*> SignalReadableState;
   sigslot::signal1<Transport*> SignalWritableState;
+  sigslot::signal1<Transport*> SignalReceivingState;
   sigslot::signal1<Transport*> SignalCompleted;
   sigslot::signal1<Transport*> SignalFailed;
 
@@ -264,6 +278,9 @@ class Transport : public rtc::MessageHandler,
 
   virtual bool GetSslRole(rtc::SSLRole* ssl_role) const;
 
+  // Must be called before channel is starting to connect.
+  virtual bool SetSslMaxProtocolVersion(rtc::SSLProtocolVersion version);
+
  protected:
   // These are called by Create/DestroyChannel above in order to create or
   // destroy the appropriate type of channel.
@@ -320,6 +337,10 @@ class Transport : public rtc::MessageHandler,
     return false;
   }
 
+  virtual bool SetSslMaxProtocolVersion_w(rtc::SSLProtocolVersion version) {
+    return false;
+  }
+
  private:
   struct ChannelMapEntry {
     ChannelMapEntry() : impl_(NULL), candidates_allocated_(false), ref_(0) {}
@@ -356,6 +377,9 @@ class Transport : public rtc::MessageHandler,
   void OnChannelReadableState(TransportChannel* channel);
   void OnChannelWritableState(TransportChannel* channel);
 
+  // Called when the receiving state of a channel changes.
+  void OnChannelReceivingState(TransportChannel* channel);
+
   // Called when a channel requests signaling.
   void OnChannelRequestSignaling(TransportChannelImpl* channel);
 
@@ -386,6 +410,7 @@ class Transport : public rtc::MessageHandler,
   void OnRemoteCandidate_w(const Candidate& candidate);
   void OnChannelReadableState_s();
   void OnChannelWritableState_s();
+  void OnChannelReceivingState_s();
   void OnChannelRequestSignaling_s();
   void OnConnecting_s();
   void OnChannelRouteChange_s(const TransportChannel* channel,
@@ -396,8 +421,9 @@ class Transport : public rtc::MessageHandler,
   typedef void (TransportChannelImpl::* TransportChannelFunc)();
   void CallChannels_w(TransportChannelFunc func);
 
-  // Computes the OR of the channel's read or write state (argument picks).
-  TransportState GetTransportState_s(bool read);
+  // Computes the AND and OR of the channel's read/write/receiving state
+  // (argument picks the operation).
+  TransportState GetTransportState_s(TransportStateType type);
 
   void OnChannelCandidateReady_s();
 
@@ -423,6 +449,7 @@ class Transport : public rtc::MessageHandler,
   bool destroyed_;
   TransportState readable_;
   TransportState writable_;
+  TransportState receiving_;
   bool was_writable_;
   bool connect_requested_;
   IceRole ice_role_;

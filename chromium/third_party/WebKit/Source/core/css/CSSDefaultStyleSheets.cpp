@@ -79,7 +79,6 @@ CSSDefaultStyleSheets::CSSDefaultStyleSheets()
     , m_defaultPrintStyle(nullptr)
     , m_defaultViewSourceStyle(nullptr)
     , m_defaultXHTMLMobileProfileStyle(nullptr)
-    , m_defaultTransitionStyle(nullptr)
     , m_defaultStyleSheet(nullptr)
     , m_mobileViewportStyleSheet(nullptr)
     , m_quirksStyleSheet(nullptr)
@@ -115,17 +114,6 @@ RuleSet* CSSDefaultStyleSheets::defaultViewSourceStyle()
     return m_defaultViewSourceStyle.get();
 }
 
-RuleSet* CSSDefaultStyleSheets::defaultTransitionStyle()
-{
-    if (!m_defaultTransitionStyle) {
-        m_defaultTransitionStyle = RuleSet::create();
-        // Loaded stylesheet is leaked on purpose.
-        RefPtrWillBeRawPtr<StyleSheetContents> stylesheet = parseUASheet(loadResourceAsASCIIString("navigationTransitions.css"));
-        m_defaultTransitionStyle->addRulesFromSheet(stylesheet.release().leakRef(), screenEval());
-    }
-    return m_defaultTransitionStyle.get();
-}
-
 RuleSet* CSSDefaultStyleSheets::defaultXHTMLMobileProfileStyle()
 {
     if (!m_defaultXHTMLMobileProfileStyle) {
@@ -147,10 +135,10 @@ RuleSet* CSSDefaultStyleSheets::defaultMobileViewportStyle()
     return m_defaultMobileViewportStyle.get();
 }
 
-void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element, bool& changedDefaultStyle)
+void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(const Element& element, bool& changedDefaultStyle)
 {
     // FIXME: We should assert that the sheet only styles SVG elements.
-    if (element->isSVGElement() && !m_svgStyleSheet) {
+    if (element.isSVGElement() && !m_svgStyleSheet) {
         m_svgStyleSheet = parseUASheet(loadResourceAsASCIIString("svg.css"));
         m_defaultStyle->addRulesFromSheet(svgStyleSheet(), screenEval());
         m_defaultPrintStyle->addRulesFromSheet(svgStyleSheet(), printEval());
@@ -158,7 +146,7 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
     }
 
     // FIXME: We should assert that the sheet only styles MathML elements.
-    if (element->namespaceURI() == MathMLNames::mathmlNamespaceURI
+    if (element.namespaceURI() == MathMLNames::mathmlNamespaceURI
         && !m_mathmlStyleSheet) {
         m_mathmlStyleSheet = parseUASheet(loadResourceAsASCIIString("mathml.css"));
         m_defaultStyle->addRulesFromSheet(mathmlStyleSheet(), screenEval());
@@ -167,7 +155,7 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
     }
 
     // FIXME: We should assert that this sheet only contains rules for <video> and <audio>.
-    if (!m_mediaControlsStyleSheet && (isHTMLVideoElement(*element) || isHTMLAudioElement(*element))) {
+    if (!m_mediaControlsStyleSheet && (isHTMLVideoElement(element) || isHTMLAudioElement(element))) {
         String mediaRules = loadResourceAsASCIIString("mediaControls.css") + LayoutTheme::theme().extraMediaControlsStyleSheet();
         m_mediaControlsStyleSheet = parseUASheet(mediaRules);
         m_defaultStyle->addRulesFromSheet(mediaControlsStyleSheet(), screenEval());
@@ -177,7 +165,7 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
 
     // FIXME: This only works because we Force recalc the entire document so the new sheet
     // is loaded for <html> and the correct styles apply to everyone.
-    if (!m_fullscreenStyleSheet && Fullscreen::isFullScreen(element->document())) {
+    if (!m_fullscreenStyleSheet && Fullscreen::isFullScreen(element.document())) {
         String fullscreenRules = loadResourceAsASCIIString("fullscreen.css") + LayoutTheme::theme().extraFullScreenStyleSheet();
         m_fullscreenStyleSheet = parseUASheet(fullscreenRules);
         m_defaultStyle->addRulesFromSheet(fullscreenStyleSheet(), screenEval());
@@ -197,7 +185,6 @@ DEFINE_TRACE(CSSDefaultStyleSheets)
     visitor->trace(m_defaultPrintStyle);
     visitor->trace(m_defaultViewSourceStyle);
     visitor->trace(m_defaultXHTMLMobileProfileStyle);
-    visitor->trace(m_defaultTransitionStyle);
     visitor->trace(m_defaultStyleSheet);
     visitor->trace(m_mobileViewportStyleSheet);
     visitor->trace(m_quirksStyleSheet);

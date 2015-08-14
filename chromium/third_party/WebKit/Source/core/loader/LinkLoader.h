@@ -32,6 +32,7 @@
 #ifndef LinkLoader_h
 #define LinkLoader_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceOwner.h"
 #include "core/loader/LinkLoaderClient.h"
@@ -47,20 +48,20 @@ class LinkRelAttribute;
 class PrerenderHandle;
 
 // The LinkLoader can load link rel types icon, dns-prefetch, subresource, prefetch and prerender.
-class LinkLoader final : public ResourceOwner<Resource, ResourceClient>, public PrerenderClient {
+class CORE_EXPORT LinkLoader final : public ResourceOwner<Resource, ResourceClient>, public PrerenderClient {
     DISALLOW_ALLOCATION();
 public:
     explicit LinkLoader(LinkLoaderClient*);
-    virtual ~LinkLoader();
+    ~LinkLoader() override;
 
     // from ResourceClient
-    virtual void notifyFinished(Resource*) override;
+    void notifyFinished(Resource*) override;
 
     // from PrerenderClient
-    virtual void didStartPrerender() override;
-    virtual void didStopPrerender() override;
-    virtual void didSendLoadForPrerender() override;
-    virtual void didSendDOMContentLoadedForPrerender() override;
+    void didStartPrerender() override;
+    void didStopPrerender() override;
+    void didSendLoadForPrerender() override;
+    void didSendDOMContentLoadedForPrerender() override;
 
     void released();
     bool loadLink(const LinkRelAttribute&, const AtomicString& crossOriginMode, const String& type, const String& as, const KURL&, Document&);

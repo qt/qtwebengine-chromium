@@ -31,7 +31,7 @@ class SCHEDULER_EXPORT RendererScheduler : public ChildScheduler {
   virtual scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() = 0;
 
   // Returns the timer task runner.  This queue is intended for DOM Timers.
-  virtual scoped_refptr<base::SingleThreadTaskRunner> TimerTaskRunner() = 0;
+  virtual scoped_refptr<TaskQueue> TimerTaskRunner() = 0;
 
   // Called to notify about the start of an extended period where no frames
   // need to be drawn. Must be called from the main thread.
@@ -78,6 +78,11 @@ class SCHEDULER_EXPORT RendererScheduler : public ChildScheduler {
   // The renderer is assumed to be visible when the scheduler is constructed.
   // Must be called on the main thread.
   virtual void OnRendererVisible() = 0;
+
+  // Tells the scheduler that a page load has started.  The scheduler will
+  // prioritize loading tasks for a short duration afterwards.
+  // Must be called from the main thread.
+  virtual void OnPageLoadStarted() = 0;
 
   // Returns true if the scheduler has reason to believe that high priority work
   // may soon arrive on the main thread, e.g., if gesture events were observed

@@ -60,7 +60,8 @@ VCMGenericEncoder::VCMGenericEncoder(VideoEncoder* encoder,
       bit_rate_(0),
       frame_rate_(0),
       internal_source_(internalSource),
-      rotation_(kVideoRotation_0) {
+      rotation_(kVideoRotation_0),
+      is_screenshare_(false) {
 }
 
 VCMGenericEncoder::~VCMGenericEncoder()
@@ -90,6 +91,7 @@ VCMGenericEncoder::InitEncode(const VideoCodec* settings,
       frame_rate_ = settings->maxFramerate;
     }
 
+    is_screenshare_ = settings->mode == VideoCodecMode::kScreensharing;
     if (encoder_->InitEncode(settings, numberOfCores, maxPayloadSize) != 0) {
       LOG(LS_ERROR) << "Failed to initialize the encoder associated with "
                        "payload name: " << settings->plName;
@@ -98,10 +100,9 @@ VCMGenericEncoder::InitEncode(const VideoCodec* settings,
     return 0;
 }
 
-int32_t
-VCMGenericEncoder::Encode(const I420VideoFrame& inputFrame,
-                          const CodecSpecificInfo* codecSpecificInfo,
-                          const std::vector<FrameType>& frameTypes) {
+int32_t VCMGenericEncoder::Encode(const VideoFrame& inputFrame,
+                                  const CodecSpecificInfo* codecSpecificInfo,
+                                  const std::vector<FrameType>& frameTypes) {
   std::vector<VideoFrameType> video_frame_types(frameTypes.size(),
                                                 kDeltaFrame);
   VCMEncodedFrame::ConvertFrameTypes(frameTypes, &video_frame_types);
@@ -115,7 +116,15 @@ VCMGenericEncoder::Encode(const I420VideoFrame& inputFrame,
     vcm_encoded_frame_callback_->SetRotation(rotation_);
   }
 
-  return encoder_->Encode(inputFrame, codecSpecificInfo, &video_frame_types);
+  int32_t result =
+      encoder_->Encode(inputFrame, codecSpecificInfo, &video_frame_types);
+  if (is_screenshare_ &&
+      result == WEBRTC_VIDEO_CODEC_TARGET_BITRATE_OVERSHOOT) {
+    // Target bitrate exceeded, encoder state has been reset - try again.
+    return encoder_->Encode(inputFrame, codecSpecificInfo, &video_frame_types);
+  }
+
+  return result;
 }
 
 int32_t
@@ -176,7 +185,7 @@ VCMGenericEncoder::SetPeriodicKeyFrames(bool enable)
 
 int32_t VCMGenericEncoder::RequestFrame(
     const std::vector<FrameType>& frame_types) {
-  I420VideoFrame image;
+  VideoFrame image;
   std::vector<VideoFrameType> video_frame_types(frame_types.size(),
                                                 kDeltaFrame);
   VCMEncodedFrame::ConvertFrameTypes(frame_types, &video_frame_types);
@@ -199,6 +208,10 @@ VCMGenericEncoder::InternalSource() const
 
 void VCMGenericEncoder::OnDroppedFrame() {
   encoder_->OnDroppedFrame();
+}
+
+bool VCMGenericEncoder::SupportsNativeHandle() const {
+  return encoder_->SupportsNativeHandle();
 }
 
  /***************************

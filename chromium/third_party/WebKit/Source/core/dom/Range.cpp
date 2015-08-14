@@ -35,9 +35,9 @@
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/Text.h"
-#include "core/editing/EditingStrategy.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/ScopedEventQueue.h"
@@ -238,7 +238,15 @@ void Range::collapse(bool toStart)
         m_start = m_end;
 }
 
-bool Range::isPointInRange(Node* refNode, int offset, ExceptionState& exceptionState)
+bool Range::isNodeFullyContained(Node& node) const
+{
+    ContainerNode* parentNode = node.parentNode();
+    int nodeIndex = node.nodeIndex();
+    return isPointInRange(parentNode, nodeIndex, IGNORE_EXCEPTION) // starts in the middle of this range, or on the boundary points.
+        && isPointInRange(parentNode, nodeIndex + 1, IGNORE_EXCEPTION); // ends in the middle of this range, or on the boundary points.
+}
+
+bool Range::isPointInRange(Node* refNode, int offset, ExceptionState& exceptionState) const
 {
     if (!refNode) {
         // FIXME: Generated bindings code never calls with null, and neither should other callers!
@@ -293,49 +301,6 @@ short Range::comparePoint(Node* refNode, int offset, ExceptionState& exceptionSt
     return 0;
 }
 
-Range::CompareResults Range::compareNode(Node* refNode, ExceptionState& exceptionState) const
-{
-    // http://developer.mozilla.org/en/docs/DOM:range.compareNode
-    // This method returns 0, 1, 2, or 3 based on if the node is before, after,
-    // before and after(surrounds), or inside the range, respectively
-
-    if (!refNode) {
-        // FIXME: Generated bindings code never calls with null, and neither should other callers!
-        exceptionState.throwTypeError("The node provided is null.");
-        return NODE_BEFORE;
-    }
-
-    if (!refNode->inActiveDocument()) {
-        // Firefox doesn't throw an exception for this case; it returns 0.
-        return NODE_BEFORE;
-    }
-
-    if (refNode->document() != m_ownerDocument) {
-        // Firefox doesn't throw an exception for this case; it returns 0.
-        return NODE_BEFORE;
-    }
-
-    ContainerNode* parentNode = refNode->parentNode();
-    int nodeIndex = refNode->nodeIndex();
-
-    if (!parentNode) {
-        // if the node is the top document we should return NODE_BEFORE_AND_AFTER
-        // but we throw to match firefox behavior
-        exceptionState.throwDOMException(NotFoundError, "The provided node has no parent.");
-        return NODE_BEFORE;
-    }
-
-    if (comparePoint(parentNode, nodeIndex, exceptionState) < 0) { // starts before
-        if (comparePoint(parentNode, nodeIndex + 1, exceptionState) > 0) // ends after the range
-            return NODE_BEFORE_AND_AFTER;
-        return NODE_BEFORE; // ends before or in the range
-    }
-    // starts at or after the range start
-    if (comparePoint(parentNode, nodeIndex + 1, exceptionState) > 0) // ends after the range
-        return NODE_AFTER;
-    return NODE_INSIDE; // ends inside the range
-}
-
 short Range::compareBoundaryPoints(unsigned how, const Range* sourceRange, ExceptionState& exceptionState) const
 {
     if (!(how == START_TO_START || how == START_TO_END || how == END_TO_END || how == END_TO_START)) {
@@ -362,14 +327,14 @@ short Range::compareBoundaryPoints(unsigned how, const Range* sourceRange, Excep
     }
 
     switch (how) {
-        case START_TO_START:
-            return compareBoundaryPoints(m_start, sourceRange->m_start, exceptionState);
-        case START_TO_END:
-            return compareBoundaryPoints(m_end, sourceRange->m_start, exceptionState);
-        case END_TO_END:
-            return compareBoundaryPoints(m_end, sourceRange->m_end, exceptionState);
-        case END_TO_START:
-            return compareBoundaryPoints(m_start, sourceRange->m_end, exceptionState);
+    case START_TO_START:
+        return compareBoundaryPoints(m_start, sourceRange->m_start, exceptionState);
+    case START_TO_END:
+        return compareBoundaryPoints(m_end, sourceRange->m_start, exceptionState);
+    case END_TO_END:
+        return compareBoundaryPoints(m_end, sourceRange->m_end, exceptionState);
+    case END_TO_START:
+        return compareBoundaryPoints(m_start, sourceRange->m_end, exceptionState);
     }
 
     ASSERT_NOT_REACHED();
@@ -379,7 +344,7 @@ short Range::compareBoundaryPoints(unsigned how, const Range* sourceRange, Excep
 short Range::compareBoundaryPoints(Node* containerA, int offsetA, Node* containerB, int offsetB, ExceptionState& exceptionState)
 {
     bool disconnected = false;
-    short result = EditingStrategy::comparePositions(containerA, offsetA, containerB, offsetB, &disconnected);
+    short result = comparePositionsInDOMTree(containerA, offsetA, containerB, offsetB, &disconnected);
     if (disconnected) {
         exceptionState.throwDOMException(WrongDocumentError, "The two ranges are in separate documents.");
         return 0;
@@ -655,8 +620,9 @@ PassRefPtrWillBeRawPtr<Node> Range::processContentsBetweenOffsets(ActionType act
             if (fragment) {
                 result = fragment;
                 result->appendChild(c.release(), exceptionState);
-            } else
+            } else {
                 result = c.release();
+            }
         }
         if (action == EXTRACT_CONTENTS || action == DELETE_CONTENTS)
             toCharacterData(container)->deleteData(startOffset, endOffset - startOffset, exceptionState);
@@ -669,8 +635,9 @@ PassRefPtrWillBeRawPtr<Node> Range::processContentsBetweenOffsets(ActionType act
             if (fragment) {
                 result = fragment;
                 result->appendChild(c.release(), exceptionState);
-            } else
+            } else {
                 result = c.release();
+            }
         }
         if (action == EXTRACT_CONTENTS || action == DELETE_CONTENTS) {
             ProcessingInstruction* pi = toProcessingInstruction(container);
@@ -931,7 +898,7 @@ String Range::toString() const
 
 String Range::text() const
 {
-    return plainText(this, TextIteratorEmitsObjectReplacementCharacter);
+    return plainText(startPosition(), endPosition(), TextIteratorEmitsObjectReplacementCharacter);
 }
 
 PassRefPtrWillBeRawPtr<DocumentFragment> Range::createContextualFragment(const String& markup, ExceptionState& exceptionState)
@@ -987,30 +954,30 @@ void Range::detach()
 Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionState& exceptionState) const
 {
     switch (n->nodeType()) {
-        case Node::DOCUMENT_TYPE_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
+    case Node::DOCUMENT_TYPE_NODE:
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
+        return nullptr;
+    case Node::CDATA_SECTION_NODE:
+    case Node::COMMENT_NODE:
+    case Node::TEXT_NODE:
+        if (static_cast<unsigned>(offset) > toCharacterData(n)->length())
+            exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to the node's length (" + String::number(toCharacterData(n)->length()) + ").");
+        return nullptr;
+    case Node::PROCESSING_INSTRUCTION_NODE:
+        if (static_cast<unsigned>(offset) > toProcessingInstruction(n)->data().length())
+            exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to than the node's length (" + String::number(toProcessingInstruction(n)->data().length()) + ").");
+        return nullptr;
+    case Node::ATTRIBUTE_NODE:
+    case Node::DOCUMENT_FRAGMENT_NODE:
+    case Node::DOCUMENT_NODE:
+    case Node::ELEMENT_NODE: {
+        if (!offset)
             return nullptr;
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::TEXT_NODE:
-            if (static_cast<unsigned>(offset) > toCharacterData(n)->length())
-                exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to the node's length (" + String::number(toCharacterData(n)->length()) + ").");
-            return nullptr;
-        case Node::PROCESSING_INSTRUCTION_NODE:
-            if (static_cast<unsigned>(offset) > toProcessingInstruction(n)->data().length())
-                exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than or equal to than the node's length (" + String::number(toProcessingInstruction(n)->data().length()) + ").");
-            return nullptr;
-        case Node::ATTRIBUTE_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-        case Node::ELEMENT_NODE: {
-            if (!offset)
-                return nullptr;
-            Node* childBefore = NodeTraversal::childAt(*n, offset - 1);
-            if (!childBefore)
-                exceptionState.throwDOMException(IndexSizeError, "There is no child at offset " + String::number(offset) + ".");
-            return childBefore;
-        }
+        Node* childBefore = NodeTraversal::childAt(*n, offset - 1);
+        if (!childBefore)
+            exceptionState.throwDOMException(IndexSizeError, "There is no child at offset " + String::number(offset) + ".");
+        return childBefore;
+    }
     }
     ASSERT_NOT_REACHED();
     return nullptr;
@@ -1034,18 +1001,18 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
     }
 
     switch (n->nodeType()) {
-        case Node::ATTRIBUTE_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
-            return;
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::DOCUMENT_TYPE_NODE:
-        case Node::ELEMENT_NODE:
-        case Node::PROCESSING_INSTRUCTION_NODE:
-        case Node::TEXT_NODE:
-            break;
+    case Node::ATTRIBUTE_NODE:
+    case Node::DOCUMENT_FRAGMENT_NODE:
+    case Node::DOCUMENT_NODE:
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
+        return;
+    case Node::CDATA_SECTION_NODE:
+    case Node::COMMENT_NODE:
+    case Node::DOCUMENT_TYPE_NODE:
+    case Node::ELEMENT_NODE:
+    case Node::PROCESSING_INSTRUCTION_NODE:
+    case Node::TEXT_NODE:
+        break;
     }
 
     Node* root = n;
@@ -1053,18 +1020,18 @@ void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
         root = parent;
 
     switch (root->nodeType()) {
-        case Node::ATTRIBUTE_NODE:
-        case Node::DOCUMENT_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::ELEMENT_NODE:
-            break;
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::DOCUMENT_TYPE_NODE:
-        case Node::PROCESSING_INSTRUCTION_NODE:
-        case Node::TEXT_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
-            return;
+    case Node::ATTRIBUTE_NODE:
+    case Node::DOCUMENT_NODE:
+    case Node::DOCUMENT_FRAGMENT_NODE:
+    case Node::ELEMENT_NODE:
+        break;
+    case Node::CDATA_SECTION_NODE:
+    case Node::COMMENT_NODE:
+    case Node::DOCUMENT_TYPE_NODE:
+    case Node::PROCESSING_INSTRUCTION_NODE:
+    case Node::TEXT_NODE:
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + n->nodeName() + "'.");
+        return;
     }
 }
 
@@ -1118,34 +1085,34 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
     // node.
     for (ContainerNode* anc = refNode->parentNode(); anc; anc = anc->parentNode()) {
         switch (anc->nodeType()) {
-            case Node::ATTRIBUTE_NODE:
-            case Node::CDATA_SECTION_NODE:
-            case Node::COMMENT_NODE:
-            case Node::DOCUMENT_FRAGMENT_NODE:
-            case Node::DOCUMENT_NODE:
-            case Node::ELEMENT_NODE:
-            case Node::PROCESSING_INSTRUCTION_NODE:
-            case Node::TEXT_NODE:
-                break;
-            case Node::DOCUMENT_TYPE_NODE:
-                exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided has an ancestor of type '" + anc->nodeName() + "'.");
-                return;
-        }
-    }
-
-    switch (refNode->nodeType()) {
+        case Node::ATTRIBUTE_NODE:
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
-        case Node::DOCUMENT_TYPE_NODE:
+        case Node::DOCUMENT_FRAGMENT_NODE:
+        case Node::DOCUMENT_NODE:
         case Node::ELEMENT_NODE:
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
             break;
-        case Node::ATTRIBUTE_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + refNode->nodeName() + "'.");
+        case Node::DOCUMENT_TYPE_NODE:
+            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided has an ancestor of type '" + anc->nodeName() + "'.");
             return;
+        }
+    }
+
+    switch (refNode->nodeType()) {
+    case Node::CDATA_SECTION_NODE:
+    case Node::COMMENT_NODE:
+    case Node::DOCUMENT_TYPE_NODE:
+    case Node::ELEMENT_NODE:
+    case Node::PROCESSING_INSTRUCTION_NODE:
+    case Node::TEXT_NODE:
+        break;
+    case Node::ATTRIBUTE_NODE:
+    case Node::DOCUMENT_FRAGMENT_NODE:
+    case Node::DOCUMENT_NODE:
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + refNode->nodeName() + "'.");
+        return;
     }
 
     if (m_ownerDocument != refNode->document())
@@ -1244,18 +1211,18 @@ void Range::surroundContents(PassRefPtrWillBeRawPtr<Node> passNewParent, Excepti
     // InvalidNodeTypeError: Raised if node is an Attr, Entity, DocumentType, Notation,
     // Document, or DocumentFragment node.
     switch (newParent->nodeType()) {
-        case Node::ATTRIBUTE_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-        case Node::DOCUMENT_TYPE_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + newParent->nodeName() + "'.");
-            return;
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::ELEMENT_NODE:
-        case Node::PROCESSING_INSTRUCTION_NODE:
-        case Node::TEXT_NODE:
-            break;
+    case Node::ATTRIBUTE_NODE:
+    case Node::DOCUMENT_FRAGMENT_NODE:
+    case Node::DOCUMENT_NODE:
+    case Node::DOCUMENT_TYPE_NODE:
+        exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided is of type '" + newParent->nodeName() + "'.");
+        return;
+    case Node::CDATA_SECTION_NODE:
+    case Node::COMMENT_NODE:
+    case Node::ELEMENT_NODE:
+    case Node::PROCESSING_INSTRUCTION_NODE:
+    case Node::TEXT_NODE:
+        break;
     }
 
     // Raise a HierarchyRequestError if m_start.container() doesn't accept children like newParent.
@@ -1449,14 +1416,6 @@ bool areRangesEqual(const Range* a, const Range* b)
     return a->startPosition() == b->startPosition() && a->endPosition() == b->endPosition();
 }
 
-PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node* node)
-{
-    ASSERT(node);
-    RefPtrWillBeRawPtr<Range> range = Range::create(node->document());
-    range->selectNodeContents(node, IGNORE_EXCEPTION);
-    return range.release();
-}
-
 static inline void boundaryNodeChildrenChanged(RangeBoundaryPoint& boundary, ContainerNode* container)
 {
     if (!boundary.childBefore())
@@ -1634,8 +1593,9 @@ void Range::expand(const String& unit, ExceptionState& exceptionState)
     } else if (unit == "document") {
         start = startOfDocument(start);
         end = endOfDocument(end);
-    } else
+    } else {
         return;
+    }
     setStart(start.deepEquivalent().containerNode(), start.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
     setEnd(end.deepEquivalent().containerNode(), end.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
 }

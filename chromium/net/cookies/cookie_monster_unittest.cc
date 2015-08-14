@@ -10,17 +10,20 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "net/cookies/canonical_cookie.h"
@@ -54,7 +57,7 @@ class NewMockPersistentCookieStore
   MOCK_METHOD1(DeleteCookie, void(const CanonicalCookie& cc));
   virtual void Flush(const base::Closure& callback) {
     if (!callback.is_null())
-      base::MessageLoop::current()->PostTask(FROM_HERE, callback);
+      base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, callback);
   }
   MOCK_METHOD0(SetForceKeepSessionState, void());
 
@@ -433,20 +436,18 @@ class CookieMonsterTest : public CookieStoreTest<CookieMonsterTestTraits> {
     std::vector<int> id_list[3];  // Indexed by CookiePriority.
 
     // Parse |coded_priority_str| and add cookies.
-    std::vector<std::string> priority_tok_list;
-    base::SplitString(coded_priority_str, ' ', &priority_tok_list);
-    for (std::vector<std::string>::iterator it = priority_tok_list.begin();
-         it != priority_tok_list.end(); ++it) {
-      size_t len = it->length();
-      DCHECK_NE(len, 0U);
+    for (const std::string& token :
+         base::SplitString(coded_priority_str, " ", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_ALL)) {
+      DCHECK(!token.empty());
       // Take last character as priority.
-      CookiePriority priority = CharToPriority((*it)[len - 1]);
+      CookiePriority priority = CharToPriority(token[token.length() - 1]);
       std::string priority_str = CookiePriorityToString(priority);
       // The rest of the string (possibly empty) specifies repetition.
       int rep = 1;
-      if (!it->empty()) {
+      if (!token.empty()) {
         bool result = base::StringToInt(
-            base::StringPiece(it->begin(), it->end() - 1), &rep);
+            base::StringPiece(token.begin(), token.end() - 1), &rep);
         DCHECK(result);
       }
       for (; rep > 0; --rep, ++next_cookie_id) {
@@ -463,14 +464,12 @@ class CookieMonsterTest : public CookieStoreTest<CookieMonsterTestTraits> {
 
     // Parse the list of cookies
     std::string cookie_str = this->GetCookies(cm, url_google_);
-    std::vector<std::string> cookie_tok_list;
-    base::SplitString(cookie_str, ';', &cookie_tok_list);
-    for (std::vector<std::string>::iterator it = cookie_tok_list.begin();
-         it != cookie_tok_list.end(); ++it) {
+    for (const std::string& token : base::SplitString(
+             cookie_str, ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
       // Assuming *it is "a#=b", so extract and parse "#" portion.
       int id = -1;
       bool result = base::StringToInt(
-          base::StringPiece(it->begin() + 1, it->end() - 2), &id);
+          base::StringPiece(token.begin() + 1, token.end() - 2), &id);
       DCHECK(result);
       DCHECK_GE(id, 0);
       DCHECK_LT(id, num_cookies);
@@ -637,8 +636,8 @@ struct CookiesInputInfo {
 };
 
 ACTION(QuitCurrentMessageLoop) {
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-                                         base::MessageLoop::QuitClosure());
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 // TODO(erikwright): When the synchronous helpers 'GetCookies' etc. are removed,
@@ -2062,7 +2061,7 @@ class FlushablePersistentStore : public CookieMonster::PersistentCookieStore {
 
   void Load(const LoadedCallback& loaded_callback) override {
     std::vector<CanonicalCookie*> out_cookies;
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
         base::Bind(&LoadedCallbackTask::Run,
                    new LoadedCallbackTask(loaded_callback, out_cookies)));
@@ -2445,7 +2444,7 @@ class MultiThreadedCookieMonsterTest : public CookieMonsterTest {
  protected:
   void RunOnOtherThread(const base::Closure& task) {
     other_thread_.Start();
-    other_thread_.message_loop()->PostTask(FROM_HERE, task);
+    other_thread_.task_runner()->PostTask(FROM_HERE, task);
     RunFor(kTimeout);
     other_thread_.Stop();
   }

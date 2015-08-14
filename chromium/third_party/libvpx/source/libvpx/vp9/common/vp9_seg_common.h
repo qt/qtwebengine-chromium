@@ -49,9 +49,12 @@ struct segmentation {
   unsigned int feature_mask[MAX_SEGMENTS];
 };
 
-int vp9_segfeature_active(const struct segmentation *seg,
-                          int segment_id,
-                          SEG_LVL_FEATURES feature_id);
+static INLINE int segfeature_active(const struct segmentation *seg,
+                                    int segment_id,
+                                    SEG_LVL_FEATURES feature_id) {
+  return seg->enabled &&
+         (seg->feature_mask[segment_id] & (1 << feature_id));
+}
 
 void vp9_clearall_segfeatures(struct segmentation *seg);
 
@@ -68,9 +71,10 @@ void vp9_set_segdata(struct segmentation *seg,
                      SEG_LVL_FEATURES feature_id,
                      int seg_data);
 
-int vp9_get_segdata(const struct segmentation *seg,
-                    int segment_id,
-                    SEG_LVL_FEATURES feature_id);
+static INLINE int get_segdata(const struct segmentation *seg, int segment_id,
+                              SEG_LVL_FEATURES feature_id) {
+  return seg->feature_data[segment_id][feature_id];
+}
 
 extern const vp9_tree_index vp9_segment_tree[TREE_SIZE(MAX_SEGMENTS)];
 

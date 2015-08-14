@@ -12,18 +12,17 @@ namespace cc {
 
 class CC_EXPORT IOSurfaceLayer : public Layer {
  public:
-  static scoped_refptr<IOSurfaceLayer> Create();
+  static scoped_refptr<IOSurfaceLayer> Create(const LayerSettings& settings);
 
   void SetIOSurfaceProperties(uint32_t io_surface_id, const gfx::Size& size);
 
   scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void PushPropertiesTo(LayerImpl* layer) override;
-  bool Update(ResourceUpdateQueue* queue,
-              const OcclusionTracker<Layer>* occlusion) override;
+  bool Update() override;
 
  protected:
   bool HasDrawableContent() const override;
-  IOSurfaceLayer();
+  explicit IOSurfaceLayer(const LayerSettings& settings);
 
  private:
   ~IOSurfaceLayer() override;

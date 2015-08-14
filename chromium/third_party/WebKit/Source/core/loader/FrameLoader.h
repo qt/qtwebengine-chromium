@@ -66,21 +66,25 @@ class CORE_EXPORT FrameLoader final {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
     DISALLOW_ALLOCATION();
 public:
-    static ResourceRequest requestFromHistoryItem(HistoryItem*, ResourceRequestCachePolicy);
+    static ResourceRequest resourceRequestFromHistoryItem(HistoryItem*, ResourceRequestCachePolicy);
 
     FrameLoader(LocalFrame*);
     ~FrameLoader();
 
     void init();
 
+    ResourceRequest resourceRequestForReload(FrameLoadType, const KURL& overrideURL = KURL(),
+        ClientRedirectPolicy = NotClientRedirect);
+
     ProgressTracker& progress() const { return *m_progressTracker; }
 
-    // These functions start a load. All eventually call into startLoad() or loadInSameDocument().
-    void load(const FrameLoadRequest&); // The entry point for non-reload, non-history loads.
-    void reload(ReloadPolicy, const KURL& overrideURL = KURL(), ClientRedirectPolicy = NotClientRedirect);
-    void loadHistoryItem(HistoryItem*, FrameLoadType = FrameLoadTypeBackForward,
-        HistoryLoadType = HistoryDifferentDocumentLoad,
-        ResourceRequestCachePolicy = UseProtocolCachePolicy); // The entry point for all back/forward loads
+    // Starts a load. It will eventually call startLoad() or
+    // loadInSameDocument(). For history navigations or reloads, an appropriate
+    // FrameLoadType should be given. Otherwise, FrameLoadTypeStandard should be
+    // used (and the final FrameLoadType will be computed). For history
+    // navigations, a history item and a HistoryLoadType should also be provided.
+    void load(const FrameLoadRequest&, FrameLoadType = FrameLoadTypeStandard,
+        HistoryItem* = nullptr, HistoryLoadType = HistoryDifferentDocumentLoad);
 
     static void reportLocalLoadFailed(LocalFrame*, const String& url);
 
@@ -149,9 +153,15 @@ public:
 
     void detach();
 
-    void loadDone();
     void finishedParsing();
     void checkCompleted();
+
+    void receivedMainResourceRedirect(const KURL& newURL);
+
+    // This prepares the FrameLoader for the next commit. It will dispatch
+    // unload events, abort XHR requests and detach the document. Returns true
+    // if the frame is ready to receive the next commit, or false otherwise.
+    bool prepareForCommit();
 
     void commitProvisionalLoad();
 
@@ -172,7 +182,6 @@ public:
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
     void saveScrollState();
-    void clearScrollPositionAndViewState();
 
     void restoreScrollPositionAndViewState();
 
@@ -189,18 +198,22 @@ private:
     SubstituteData defaultSubstituteDataForURL(const KURL&);
 
     bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const KURL&);
-    void scrollToFragmentWithParentBoundary(const KURL&);
+    void processFragment(const KURL&, LoadStartType);
 
     void startLoad(FrameLoadRequest&, FrameLoadType, NavigationPolicy);
 
-    bool validateTransitionNavigationMode();
-    bool dispatchNavigationTransitionData();
-
-    void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, HistoryScrollRestorationType = ScrollRestorationAuto, PassRefPtr<SerializedScriptValue> = nullptr);
+    enum class HistoryNavigationType {
+        DifferentDocument,
+        Fragment,
+        HistoryApi
+    };
+    void setHistoryItemStateForCommit(HistoryCommitType, HistoryNavigationType);
 
     void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
+
+    void detachDocumentLoader(RefPtrWillBeMember<DocumentLoader>&);
 
     RawPtrWillBeMember<LocalFrame> m_frame;
 
@@ -217,38 +230,42 @@ private:
     // a new request is being loaded, the old document loader may still be referenced.
     // E.g. while a new request is in the "policy" state, the old document loader may
     // be consulted in particular as it makes sense to imply certain settings on the new loader.
-    RefPtr<DocumentLoader> m_documentLoader;
-    RefPtr<DocumentLoader> m_provisionalDocumentLoader;
-    RefPtr<DocumentLoader> m_policyDocumentLoader;
+    RefPtrWillBeMember<DocumentLoader> m_documentLoader;
+    RefPtrWillBeMember<DocumentLoader> m_provisionalDocumentLoader;
+    RefPtrWillBeMember<DocumentLoader> m_policyDocumentLoader;
 
     RefPtrWillBeMember<HistoryItem> m_currentItem;
     RefPtrWillBeMember<HistoryItem> m_provisionalItem;
 
-    struct DeferredHistoryLoad {
-        DISALLOW_ALLOCATION();
+    class DeferredHistoryLoad : public NoBaseWillBeGarbageCollectedFinalized<DeferredHistoryLoad> {
+        DISALLOW_COPY(DeferredHistoryLoad);
     public:
-        DeferredHistoryLoad(HistoryItem* item, HistoryLoadType type, ResourceRequestCachePolicy cachePolicy)
-            : m_item(item)
-            , m_type(type)
-            , m_cachePolicy(cachePolicy)
+        static PassOwnPtrWillBeRawPtr<DeferredHistoryLoad> create(ResourceRequest request, HistoryItem* item, FrameLoadType loadType, HistoryLoadType historyLoadType)
         {
+            return adoptPtrWillBeNoop(new DeferredHistoryLoad(request, item, loadType, historyLoadType));
         }
 
-        DeferredHistoryLoad() { }
-
-        bool isValid() { return m_item; }
+        DeferredHistoryLoad(ResourceRequest request, HistoryItem* item, FrameLoadType loadType,
+            HistoryLoadType historyLoadType)
+            : m_request(request)
+            , m_item(item)
+            , m_loadType(loadType)
+            , m_historyLoadType(historyLoadType)
+        {
+        }
 
         DEFINE_INLINE_TRACE()
         {
             visitor->trace(m_item);
         }
 
+        ResourceRequest m_request;
         RefPtrWillBeMember<HistoryItem> m_item;
-        HistoryLoadType m_type;
-        ResourceRequestCachePolicy m_cachePolicy;
+        FrameLoadType m_loadType;
+        HistoryLoadType m_historyLoadType;
     };
 
-    DeferredHistoryLoad m_deferredHistoryLoad;
+    OwnPtrWillBeMember<DeferredHistoryLoad> m_deferredHistoryLoad;
 
     bool m_inStopAllLoaders;
 
@@ -258,6 +275,8 @@ private:
     Timer<FrameLoader> m_didAccessInitialDocumentTimer;
 
     SandboxFlags m_forcedSandboxFlags;
+
+    bool m_dispatchingDidClearWindowObjectInMainWorld;
 };
 
 } // namespace blink

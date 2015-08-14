@@ -11,19 +11,34 @@
 #include "base/memory/weak_ptr.h"
 #include "media/base/media_keys.h"
 #include "media/mojo/interfaces/content_decryption_module.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
+#include "media/mojo/services/mojo_cdm_promise.h"
+#include "mojo/application/public/interfaces/service_provider.mojom.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 
 namespace media {
 
+class CdmFactory;
+class MojoCdmServiceContext;
+
 // A mojo::ContentDecryptionModule implementation backed by a media::MediaKeys.
-class MojoCdmService
-    : public mojo::InterfaceImpl<mojo::ContentDecryptionModule> {
+class MojoCdmService : public mojo::ContentDecryptionModule {
  public:
-  MojoCdmService(const mojo::String& key_system);
+  // Constructs a MojoCdmService and strongly binds it to the |request|.
+  MojoCdmService(MojoCdmServiceContext* context,
+                 mojo::ServiceProvider* service_provider,
+                 CdmFactory* cdm_factory,
+                 mojo::InterfaceRequest<mojo::ContentDecryptionModule> request);
+
   ~MojoCdmService() final;
 
   // mojo::ContentDecryptionModule implementation.
   void SetClient(mojo::ContentDecryptionModuleClientPtr client) final;
+  void Initialize(
+      const mojo::String& key_system,
+      const mojo::String& security_origin,
+      mojo::CdmConfigPtr cdm_config,
+      int32_t cdm_id,
+      const mojo::Callback<void(mojo::CdmPromiseResultPtr)>& callback) final;
   void SetServerCertificate(
       mojo::Array<uint8_t> certificate_data,
       const mojo::Callback<void(mojo::CdmPromiseResultPtr)>& callback) final;
@@ -47,10 +62,18 @@ class MojoCdmService
   void RemoveSession(
       const mojo::String& session_id,
       const mojo::Callback<void(mojo::CdmPromiseResultPtr)>& callback) final;
-  void GetCdmContext(int32_t cdm_id,
-                     mojo::InterfaceRequest<mojo::Decryptor> decryptor) final;
+  void GetDecryptor(mojo::InterfaceRequest<mojo::Decryptor> decryptor) final;
+
+  // Get CdmContext to be used by the media pipeline.
+  CdmContext* GetCdmContext();
 
  private:
+  // Callback for CdmFactory::Create().
+  void OnCdmCreated(int cdm_id,
+                    scoped_ptr<MojoCdmPromise<>> promise,
+                    scoped_ptr<MediaKeys> cdm,
+                    const std::string& error_message);
+
   // Callbacks for firing session events.
   void OnSessionMessage(const std::string& session_id,
                         MediaKeys::MessageType message_type,
@@ -67,7 +90,14 @@ class MojoCdmService
                             uint32_t system_code,
                             const std::string& error_message);
 
+  mojo::StrongBinding<mojo::ContentDecryptionModule> binding_;
+  MojoCdmServiceContext* context_;
+  mojo::ServiceProvider* service_provider_;
+  CdmFactory* cdm_factory_;
   scoped_ptr<MediaKeys> cdm_;
+
+  // Set to a valid CDM ID if the |cdm_| is successfully created.
+  int cdm_id_;
 
   mojo::ContentDecryptionModuleClientPtr client_;
 

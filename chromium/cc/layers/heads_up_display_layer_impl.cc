@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -129,7 +130,7 @@ bool HeadsUpDisplayLayerImpl::WillDraw(DrawMode draw_mode,
   if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
     return false;
 
-  internal_contents_scale_ = draw_properties().ideal_contents_scale;
+  internal_contents_scale_ = GetIdealContentsScale();
   internal_content_bounds_ =
       gfx::ToCeiledSize(gfx::ScaleSize(bounds(), internal_contents_scale_));
 
@@ -225,6 +226,7 @@ void HeadsUpDisplayLayerImpl::ReleaseResources() {
 }
 
 gfx::Rect HeadsUpDisplayLayerImpl::GetEnclosingRectInTargetSpace() const {
+  DCHECK_GT(internal_contents_scale_, 0.f);
   return GetScaledEnclosingRectInTargetSpace(internal_contents_scale_);
 }
 
@@ -383,7 +385,8 @@ SkRect HeadsUpDisplayLayerImpl::DrawFPSDisplay(
 
   const int kFontHeight = 15;
 
-  const int kGraphWidth = fps_counter->time_stamp_history_size() - 2;
+  const int kGraphWidth =
+      base::saturated_cast<int>(fps_counter->time_stamp_history_size()) - 2;
   const int kGraphHeight = 40;
 
   const int kHistogramWidth = 37;
@@ -625,7 +628,8 @@ SkRect HeadsUpDisplayLayerImpl::DrawPaintTimeDisplay(
   const int kPadding = 4;
   const int kFontHeight = 14;
 
-  const int kGraphWidth = paint_time_counter->HistorySize();
+  const int kGraphWidth =
+      base::saturated_cast<int>(paint_time_counter->HistorySize());
   const int kGraphHeight = 40;
 
   SkPaint paint = CreatePaint();

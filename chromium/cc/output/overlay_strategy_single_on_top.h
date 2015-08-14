@@ -19,10 +19,13 @@ class TextureDrawQuad;
 
 class CC_EXPORT OverlayStrategySingleOnTop : public OverlayStrategyCommon {
  public:
-  OverlayStrategySingleOnTop(OverlayCandidateValidator* capability_checker,
-                             ResourceProvider* resource_provider);
-  bool Attempt(RenderPassList* render_passes_in_draw_order,
-               OverlayCandidateList* candidate_list) override;
+  explicit OverlayStrategySingleOnTop(
+      OverlayCandidateValidator* capability_checker);
+  bool TryOverlay(OverlayCandidateValidator* capability_checker,
+                  RenderPassList* render_passes_in_draw_order,
+                  OverlayCandidateList* candidate_list,
+                  const OverlayCandidate& candidate,
+                  QuadList::Iterator candidate_iterator) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OverlayStrategySingleOnTop);

@@ -28,13 +28,16 @@ namespace blink {
 
 UIEvent::UIEvent()
     : m_detail(0)
+    , m_sourceDevice(nullptr)
 {
 }
 
-UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg)
+// TODO(lanwei): Will add sourceDevice to all the subclass of UIEvent later, see https://crbug.com/476530.
+UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg, InputDevice* sourceDeviceArg)
     : Event(eventType, canBubbleArg, cancelableArg)
     , m_view(viewArg)
     , m_detail(detailArg)
+    , m_sourceDevice(sourceDeviceArg)
 {
 }
 
@@ -42,6 +45,7 @@ UIEvent::UIEvent(const AtomicString& eventType, const UIEventInit& initializer)
     : Event(eventType, initializer)
     , m_view(initializer.view())
     , m_detail(initializer.detail())
+    , m_sourceDevice(initializer.sourceDevice())
 {
 }
 
@@ -58,6 +62,7 @@ void UIEvent::initUIEvent(const AtomicString& typeArg, bool canBubbleArg, bool c
 
     m_view = viewArg;
     m_detail = detailArg;
+    m_sourceDevice = nullptr;
 }
 
 bool UIEvent::isUIEvent() const
@@ -80,26 +85,6 @@ int UIEvent::charCode() const
     return 0;
 }
 
-int UIEvent::layerX()
-{
-    return 0;
-}
-
-int UIEvent::layerY()
-{
-    return 0;
-}
-
-int UIEvent::pageX() const
-{
-    return 0;
-}
-
-int UIEvent::pageY() const
-{
-    return 0;
-}
-
 int UIEvent::which() const
 {
     return 0;
@@ -108,6 +93,7 @@ int UIEvent::which() const
 DEFINE_TRACE(UIEvent)
 {
     visitor->trace(m_view);
+    visitor->trace(m_sourceDevice);
     Event::trace(visitor);
 }
 

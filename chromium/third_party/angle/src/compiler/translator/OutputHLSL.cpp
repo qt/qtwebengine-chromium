@@ -19,15 +19,23 @@
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/NodeSearch.h"
 #include "compiler/translator/RemoveSwitchFallThrough.h"
-#include "compiler/translator/RewriteElseBlocks.h"
 #include "compiler/translator/SearchSymbol.h"
 #include "compiler/translator/StructureHLSL.h"
 #include "compiler/translator/TranslatorHLSL.h"
-#include "compiler/translator/UnfoldShortCircuit.h"
 #include "compiler/translator/UniformHLSL.h"
 #include "compiler/translator/UtilsHLSL.h"
 #include "compiler/translator/blocklayout.h"
 #include "compiler/translator/util.h"
+
+namespace
+{
+
+bool IsSequence(TIntermNode *node)
+{
+    return node->getAsAggregate() != nullptr && node->getAsAggregate()->getOp() == EOpSequence;
+}
+
+} // namespace
 
 namespace sh
 {
@@ -107,11 +115,10 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType, int shaderVersion,
       mExtensionBehavior(extensionBehavior),
       mSourcePath(sourcePath),
       mOutputType(outputType),
-      mNumRenderTargets(numRenderTargets),
       mCompileOptions(compileOptions),
+      mNumRenderTargets(numRenderTargets),
       mCurrentFunctionMetadata(nullptr)
 {
-    mUnfoldShortCircuit = new UnfoldShortCircuit(this);
     mInsideFunction = false;
 
     mUsesFragColor = false;
@@ -153,7 +160,6 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType, int shaderVersion,
 
 OutputHLSL::~OutputHLSL()
 {
-    SafeDelete(mUnfoldShortCircuit);
     SafeDelete(mStructureHLSL);
     SafeDelete(mUniformHLSL);
     for (auto &eqFunction : mStructEqualityFunctions)
@@ -170,13 +176,6 @@ void OutputHLSL::output(TIntermNode *treeRoot, TInfoSinkBase &objSink)
 {
     const std::vector<TIntermTyped*> &flaggedStructs = FlagStd140ValueStructs(treeRoot);
     makeFlaggedStructMaps(flaggedStructs);
-
-    // Work around D3D9 bug that would manifest in vertex shaders with selection blocks which
-    // use a vertex attribute as a condition, and some related computation in the else block.
-    if (mOutputType == SH_HLSL9_OUTPUT && mShaderType == GL_VERTEX_SHADER)
-    {
-        RewriteElseBlocks(treeRoot);
-    }
 
     BuiltInFunctionEmulator builtInFunctionEmulator;
     InitBuiltInFunctionEmulatorForHLSL(&builtInFunctionEmulator);
@@ -1505,8 +1504,12 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             if (symbolNode->getQualifier() == EvqGlobal && expression->getQualifier() != EvqConst)
             {
                 // For variables which are not constant, defer their real initialization until
-                // after we initialize other globals: uniforms, attributes and varyings.
-                mDeferredGlobalInitializers.push_back(std::make_pair(symbolNode, expression));
+                // after we initialize uniforms.
+                TIntermBinary *deferredInit = new TIntermBinary(EOpAssign);
+                deferredInit->setLeft(node->getLeft());
+                deferredInit->setRight(node->getRight());
+                deferredInit->setType(node->getType());
+                mDeferredGlobalInitializers.push_back(deferredInit);
                 const TString &initString = initializer(node->getType());
                 node->setRight(new TIntermRaw(node->getType(), initString));
             }
@@ -1672,31 +1675,19 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
       case EOpMatrixTimesVector: outputTriplet(visit, "mul(transpose(", "), ", ")"); break;
       case EOpMatrixTimesMatrix: outputTriplet(visit, "transpose(mul(transpose(", "), transpose(", ")))"); break;
       case EOpLogicalOr:
-        if (node->getRight()->hasSideEffects())
-        {
-            out << "s" << mUnfoldShortCircuit->getNextTemporaryIndex();
-            return false;
-        }
-        else
-        {
-           outputTriplet(visit, "(", " || ", ")");
-           return true;
-        }
+        // HLSL doesn't short-circuit ||, so we assume that || affected by short-circuiting have been unfolded.
+        ASSERT(!node->getRight()->hasSideEffects());
+        outputTriplet(visit, "(", " || ", ")");
+        return true;
       case EOpLogicalXor:
         mUsesXor = true;
         outputTriplet(visit, "xor(", ", ", ")");
         break;
       case EOpLogicalAnd:
-        if (node->getRight()->hasSideEffects())
-        {
-            out << "s" << mUnfoldShortCircuit->getNextTemporaryIndex();
-            return false;
-        }
-        else
-        {
-           outputTriplet(visit, "(", " && ", ")");
-           return true;
-        }
+        // HLSL doesn't short-circuit &&, so we assume that && affected by short-circuiting have been unfolded.
+        ASSERT(!node->getRight()->hasSideEffects());
+        outputTriplet(visit, "(", " && ", ")");
+        return true;
       default: UNREACHABLE();
     }
 
@@ -1854,12 +1845,16 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
             {
                 outputLineDirective((*sit)->getLine().first_line);
 
-                traverseStatements(*sit);
+                (*sit)->traverse(this);
 
                 // Don't output ; after case labels, they're terminated by :
                 // This is needed especially since outputting a ; after a case statement would turn empty
                 // case statements into non-empty case statements, disallowing fall-through from them.
-                if ((*sit)->getAsCaseNode() == nullptr)
+                // Also no need to output ; after selection (if) statements or sequences. This is done just
+                // for code clarity.
+                TIntermSelection *asSelection = (*sit)->getAsSelectionNode();
+                ASSERT(asSelection == nullptr || !asSelection->usesTernaryOperator());
+                if ((*sit)->getAsCaseNode() == nullptr && asSelection == nullptr && !IsSequence(*sit))
                     out << ";\n";
             }
 
@@ -1876,6 +1871,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
         {
             TIntermSequence *sequence = node->getSequence();
             TIntermTyped *variable = (*sequence)[0]->getAsTyped();
+            ASSERT(sequence->size() == 1);
 
             if (variable && (variable->getQualifier() == EvqTemporary || variable->getQualifier() == EvqGlobal))
             {
@@ -1883,37 +1879,24 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
 
                 if (!variable->getAsSymbolNode() || variable->getAsSymbolNode()->getSymbol() != "")   // Variable declaration
                 {
-                    for (const auto &seqElement : *sequence)
+                    if (!mInsideFunction)
                     {
-                        if (isSingleStatement(seqElement))
-                        {
-                            mUnfoldShortCircuit->traverse(seqElement);
-                        }
+                        out << "static ";
+                    }
 
-                        if (!mInsideFunction)
-                        {
-                            out << "static ";
-                        }
+                    out << TypeString(variable->getType()) + " ";
 
-                        out << TypeString(variable->getType()) + " ";
+                    TIntermSymbol *symbol = variable->getAsSymbolNode();
 
-                        TIntermSymbol *symbol = seqElement->getAsSymbolNode();
-
-                        if (symbol)
-                        {
-                            symbol->traverse(this);
-                            out << ArrayString(symbol->getType());
-                            out << " = " + initializer(symbol->getType());
-                        }
-                        else
-                        {
-                            seqElement->traverse(this);
-                        }
-
-                        if (seqElement != sequence->back())
-                        {
-                            out << ";\n";
-                        }
+                    if (symbol)
+                    {
+                        symbol->traverse(this);
+                        out << ArrayString(symbol->getType());
+                        out << " = " + initializer(symbol->getType());
+                    }
+                    else
+                    {
+                        variable->traverse(this);
                     }
                 }
                 else if (variable->getAsSymbolNode() && variable->getAsSymbolNode()->getSymbol() == "")   // Type (struct) declaration
@@ -2036,17 +2019,21 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 else UNREACHABLE();
             }
 
-            out << ")\n"
-                "{\n";
+            out << ")\n";
 
             if (sequence->size() > 1)
             {
                 mInsideFunction = true;
-                (*sequence)[1]->traverse(this);
+                TIntermNode *body = (*sequence)[1];
+                // The function body node will output braces.
+                ASSERT(IsSequence(body));
+                body->traverse(this);
                 mInsideFunction = false;
             }
-
-            out << "}\n";
+            else
+            {
+                out << "{}\n";
+            }
 
             mCurrentFunctionMetadata = nullptr;
 
@@ -2240,7 +2227,13 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
       case EOpConstructUVec3:   outputConstructor(visit, node->getType(), "uvec3", node->getSequence()); break;
       case EOpConstructUVec4:   outputConstructor(visit, node->getType(), "uvec4", node->getSequence()); break;
       case EOpConstructMat2:    outputConstructor(visit, node->getType(), "mat2", node->getSequence());  break;
+      case EOpConstructMat2x3:  outputConstructor(visit, node->getType(), "mat2x3", node->getSequence());  break;
+      case EOpConstructMat2x4:  outputConstructor(visit, node->getType(), "mat2x4", node->getSequence());  break;
+      case EOpConstructMat3x2:  outputConstructor(visit, node->getType(), "mat3x2", node->getSequence());  break;
       case EOpConstructMat3:    outputConstructor(visit, node->getType(), "mat3", node->getSequence());  break;
+      case EOpConstructMat3x4:  outputConstructor(visit, node->getType(), "mat3x4", node->getSequence());  break;
+      case EOpConstructMat4x2:  outputConstructor(visit, node->getType(), "mat4x2", node->getSequence());  break;
+      case EOpConstructMat4x3:  outputConstructor(visit, node->getType(), "mat4x3", node->getSequence());  break;
       case EOpConstructMat4:    outputConstructor(visit, node->getType(), "mat4", node->getSequence());  break;
       case EOpConstructStruct:
         {
@@ -2273,7 +2266,22 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
       case EOpMin:           outputTriplet(visit, "min(", ", ", ")");           break;
       case EOpMax:           outputTriplet(visit, "max(", ", ", ")");           break;
       case EOpClamp:         outputTriplet(visit, "clamp(", ", ", ")");         break;
-      case EOpMix:           outputTriplet(visit, "lerp(", ", ", ")");          break;
+      case EOpMix:
+        {
+            TIntermTyped *lastParamNode = (*(node->getSequence()))[2]->getAsTyped();
+            if (lastParamNode->getType().getBasicType() == EbtBool)
+            {
+                // There is no HLSL equivalent for ESSL3 built-in "genType mix (genType x, genType y, genBType a)",
+                // so use emulated version.
+                ASSERT(node->getUseEmulatedFunction());
+                writeEmulatedFunctionTriplet(visit, "mix(");
+            }
+            else
+            {
+                outputTriplet(visit, "lerp(", ", ", ")");
+            }
+        }
+        break;
       case EOpStep:          outputTriplet(visit, "step(", ", ", ")");          break;
       case EOpSmoothStep:    outputTriplet(visit, "smoothstep(", ", ", ")");    break;
       case EOpDistance:      outputTriplet(visit, "distance(", ", ", ")");      break;
@@ -2296,71 +2304,85 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
     return true;
 }
 
+void OutputHLSL::writeSelection(TIntermSelection *node)
+{
+    TInfoSinkBase &out = getInfoSink();
+
+    out << "if (";
+
+    node->getCondition()->traverse(this);
+
+    out << ")\n";
+
+    outputLineDirective(node->getLine().first_line);
+
+    bool discard = false;
+
+    if (node->getTrueBlock())
+    {
+        // The trueBlock child node will output braces.
+        ASSERT(IsSequence(node->getTrueBlock()));
+
+        node->getTrueBlock()->traverse(this);
+
+        // Detect true discard
+        discard = (discard || FindDiscard::search(node->getTrueBlock()));
+    }
+    else
+    {
+        // TODO(oetuaho): Check if the semicolon inside is necessary.
+        // It's there as a result of conservative refactoring of the output.
+        out << "{;}\n";
+    }
+
+    outputLineDirective(node->getLine().first_line);
+
+    if (node->getFalseBlock())
+    {
+        out << "else\n";
+
+        outputLineDirective(node->getFalseBlock()->getLine().first_line);
+
+        // Either this is "else if" or the falseBlock child node will output braces.
+        ASSERT(IsSequence(node->getFalseBlock()) || node->getFalseBlock()->getAsSelectionNode() != nullptr);
+
+        node->getFalseBlock()->traverse(this);
+
+        outputLineDirective(node->getFalseBlock()->getLine().first_line);
+
+        // Detect false discard
+        discard = (discard || FindDiscard::search(node->getFalseBlock()));
+    }
+
+    // ANGLE issue 486: Detect problematic conditional discard
+    if (discard)
+    {
+        mUsesDiscardRewriting = true;
+    }
+}
+
 bool OutputHLSL::visitSelection(Visit visit, TIntermSelection *node)
 {
     TInfoSinkBase &out = getInfoSink();
 
-    if (node->usesTernaryOperator())
+    ASSERT(!node->usesTernaryOperator());
+
+    if (!mInsideFunction)
     {
-        out << "s" << mUnfoldShortCircuit->getNextTemporaryIndex();
+        // This is part of unfolded global initialization.
+        mDeferredGlobalInitializers.push_back(node);
+        return false;
     }
-    else  // if/else statement
+
+    // D3D errors when there is a gradient operation in a loop in an unflattened if.
+    if (mShaderType == GL_FRAGMENT_SHADER &&
+        mCurrentFunctionMetadata->hasDiscontinuousLoop(node) &&
+        mCurrentFunctionMetadata->hasGradientInCallGraph(node))
     {
-        mUnfoldShortCircuit->traverse(node->getCondition());
-
-        // D3D errors when there is a gradient operation in a loop in an unflattened if.
-        if (mShaderType == GL_FRAGMENT_SHADER
-            && mCurrentFunctionMetadata->hasDiscontinuousLoop(node)
-            && mCurrentFunctionMetadata->hasGradientInCallGraph(node))
-        {
-            out << "FLATTEN ";
-        }
-
-        out << "if (";
-
-        node->getCondition()->traverse(this);
-
-        out << ")\n";
-
-        outputLineDirective(node->getLine().first_line);
-        out << "{\n";
-
-        bool discard = false;
-
-        if (node->getTrueBlock())
-        {
-            traverseStatements(node->getTrueBlock());
-
-            // Detect true discard
-            discard = (discard || FindDiscard::search(node->getTrueBlock()));
-        }
-
-        outputLineDirective(node->getLine().first_line);
-        out << ";\n}\n";
-
-        if (node->getFalseBlock())
-        {
-            out << "else\n";
-
-            outputLineDirective(node->getFalseBlock()->getLine().first_line);
-            out << "{\n";
-
-            outputLineDirective(node->getFalseBlock()->getLine().first_line);
-            traverseStatements(node->getFalseBlock());
-
-            outputLineDirective(node->getFalseBlock()->getLine().first_line);
-            out << ";\n}\n";
-
-            // Detect false discard
-            discard = (discard || FindDiscard::search(node->getFalseBlock()));
-        }
-
-        // ANGLE issue 486: Detect problematic conditional discard
-        if (discard && FindSideEffectRewriting::search(node))
-        {
-            mUsesDiscardRewriting = true;
-        }
+        out << "FLATTEN ";
     }
+
+    writeSelection(node);
 
     return false;
 }
@@ -2428,7 +2450,6 @@ bool OutputHLSL::visitLoop(Visit visit, TIntermLoop *node)
         out << "{" << unroll << " do\n";
 
         outputLineDirective(node->getLine().first_line);
-        out << "{\n";
     }
     else
     {
@@ -2456,16 +2477,22 @@ bool OutputHLSL::visitLoop(Visit visit, TIntermLoop *node)
         out << ")\n";
 
         outputLineDirective(node->getLine().first_line);
-        out << "{\n";
     }
 
     if (node->getBody())
     {
-        traverseStatements(node->getBody());
+        // The loop body node will output braces.
+        ASSERT(IsSequence(node->getBody()));
+        node->getBody()->traverse(this);
+    }
+    else
+    {
+        // TODO(oetuaho): Check if the semicolon inside is necessary.
+        // It's there as a result of conservative refactoring of the output.
+        out << "{;}\n";
     }
 
     outputLineDirective(node->getLine().first_line);
-    out << ";}\n";
 
     if (node->getType() == ELoopDoWhile)
     {
@@ -2539,16 +2566,6 @@ bool OutputHLSL::visitBranch(Visit visit, TIntermBranch *node)
     }
 
     return true;
-}
-
-void OutputHLSL::traverseStatements(TIntermNode *node)
-{
-    if (isSingleStatement(node))
-    {
-        mUnfoldShortCircuit->traverse(node);
-    }
-
-    node->traverse(this);
 }
 
 bool OutputHLSL::isSingleStatement(TIntermNode *node)
@@ -2991,20 +3008,33 @@ void OutputHLSL::writeDeferredGlobalInitializers(TInfoSinkBase &out)
 
     for (const auto &deferredGlobal : mDeferredGlobalInitializers)
     {
-        TIntermSymbol *symbol = deferredGlobal.first;
-        TIntermTyped *expression = deferredGlobal.second;
-        ASSERT(symbol);
-        ASSERT(symbol->getQualifier() == EvqGlobal && expression->getQualifier() != EvqConst);
+        TIntermBinary *binary = deferredGlobal->getAsBinaryNode();
+        TIntermSelection *selection = deferredGlobal->getAsSelectionNode();
+        if (binary != nullptr)
+        {
+            TIntermSymbol *symbol = binary->getLeft()->getAsSymbolNode();
+            TIntermTyped *expression = binary->getRight();
+            ASSERT(symbol);
+            ASSERT(symbol->getQualifier() == EvqGlobal && expression->getQualifier() != EvqConst);
 
-        out << "    " << Decorate(symbol->getSymbol()) << " = ";
+            out << "    " << Decorate(symbol->getSymbol()) << " = ";
 
-        if (!writeSameSymbolInitializer(out, symbol, expression))
+            if (!writeSameSymbolInitializer(out, symbol, expression))
+            {
+                ASSERT(mInfoSinkStack.top() == &out);
+                expression->traverse(this);
+            }
+            out << ";\n";
+        }
+        else if (selection != nullptr)
         {
             ASSERT(mInfoSinkStack.top() == &out);
-            expression->traverse(this);
+            writeSelection(selection);
         }
-
-        out << ";\n";
+        else
+        {
+            UNREACHABLE();
+        }
     }
 
     out << "}\n"

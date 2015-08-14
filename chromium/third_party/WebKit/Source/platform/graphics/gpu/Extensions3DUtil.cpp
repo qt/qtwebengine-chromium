@@ -26,13 +26,13 @@ void splitStringHelper(const String& str, HashSet<String>& set)
 PassOwnPtr<Extensions3DUtil> Extensions3DUtil::create(WebGraphicsContext3D* context)
 {
     OwnPtr<Extensions3DUtil> out = adoptPtr(new Extensions3DUtil(context));
-    if (!out->initializeExtensions())
-        return nullptr;
+    out->initializeExtensions();
     return out.release();
 }
 
 Extensions3DUtil::Extensions3DUtil(WebGraphicsContext3D* context)
     : m_context(context)
+    , m_isValid(true)
 {
 }
 
@@ -40,11 +40,13 @@ Extensions3DUtil::~Extensions3DUtil()
 {
 }
 
-bool Extensions3DUtil::initializeExtensions()
+void Extensions3DUtil::initializeExtensions()
 {
     if (m_context->isContextLost()) {
-        // Need to try to restore the context again later.
-        return false;
+        // If the context is lost don't initialize the extension strings.
+        // This will cause supportsExtension, ensureExtensionEnabled, and isExtensionEnabled to always return false.
+        m_isValid = false;
+        return;
     }
 
     String extensionsString = m_context->getString(GL_EXTENSIONS);
@@ -52,8 +54,6 @@ bool Extensions3DUtil::initializeExtensions()
 
     String requestableExtensionsString = m_context->getRequestableExtensionsCHROMIUM();
     splitStringHelper(requestableExtensionsString, m_requestableExtensions);
-
-    return true;
 }
 
 
@@ -81,11 +81,11 @@ bool Extensions3DUtil::isExtensionEnabled(const String& name)
     return m_enabledExtensions.contains(name);
 }
 
-bool Extensions3DUtil::canUseCopyTextureCHROMIUM(GLenum destFormat, GLenum destType, GLint level)
+bool Extensions3DUtil::canUseCopyTextureCHROMIUM(GLenum destTarget, GLenum destFormat, GLenum destType, GLint level)
 {
     // FIXME: restriction of (RGB || RGBA)/UNSIGNED_BYTE/(Level 0) should be lifted when
     // WebGraphicsContext3D::copyTextureCHROMIUM(...) are fully functional.
-    if ((destFormat == GL_RGB || destFormat == GL_RGBA)
+    if (destTarget == GL_TEXTURE_2D && (destFormat == GL_RGB || destFormat == GL_RGBA)
         && destType == GL_UNSIGNED_BYTE
         && !level)
         return true;

@@ -3,6 +3,11 @@
 // found in the LICENSE file.
 
 #include "ui/gl/gl_egl_api_implementation.h"
+
+#include "base/command_line.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 
 namespace gfx {
@@ -10,12 +15,13 @@ namespace gfx {
 RealEGLApi* g_real_egl;
 
 void InitializeStaticGLBindingsEGL() {
+  g_driver_egl.InitializeStaticBindings();
   if (!g_real_egl) {
     g_real_egl = new RealEGLApi();
   }
   g_real_egl->Initialize(&g_driver_egl);
   g_current_egl_context = g_real_egl;
-  g_driver_egl.InitializeStaticBindings();
+  g_driver_egl.InitializeExtensionBindings();
 }
 
 void InitializeDebugGLBindingsEGL() {
@@ -55,7 +61,36 @@ RealEGLApi::~RealEGLApi() {
 }
 
 void RealEGLApi::Initialize(DriverEGL* driver) {
+  InitializeWithCommandLine(driver, base::CommandLine::ForCurrentProcess());
+}
+
+void RealEGLApi::InitializeWithCommandLine(DriverEGL* driver,
+                                           base::CommandLine* command_line) {
+  DCHECK(command_line);
   InitializeBase(driver);
+
+  const std::string disabled_extensions = command_line->GetSwitchValueASCII(
+      switches::kDisableGLExtensions);
+  disabled_exts_.clear();
+  filtered_exts_.clear();
+  if (!disabled_extensions.empty()) {
+    disabled_exts_ = base::SplitString(
+        disabled_extensions, ", ;",
+        base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  }
+}
+
+const char* RealEGLApi::eglQueryStringFn(EGLDisplay dpy, EGLint name) {
+  if (name == EGL_EXTENSIONS) {
+    auto it = filtered_exts_.find(dpy);
+    if (it == filtered_exts_.end()) {
+      it = filtered_exts_.insert(std::make_pair(
+          dpy, FilterGLExtensionList(EGLApiBase::eglQueryStringFn(dpy, name),
+                                     disabled_exts_))).first;
+    }
+    return (*it).second.c_str();
+  }
+  return EGLApiBase::eglQueryStringFn(dpy, name);
 }
 
 TraceEGLApi::~TraceEGLApi() {

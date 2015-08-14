@@ -14,7 +14,7 @@
 
 namespace net {
 
-class QuicSession;
+class QuicSpdySession;
 
 namespace tools {
 
@@ -26,13 +26,23 @@ class QuicSpdyServerStreamPeer;
 // response.
 class QuicSpdyServerStream : public QuicDataStream {
  public:
-  QuicSpdyServerStream(QuicStreamId id, QuicSession* session);
+  QuicSpdyServerStream(QuicStreamId id, QuicSpdySession* session);
   ~QuicSpdyServerStream() override;
+
+  // QuicDataStream
+  void OnStreamHeadersComplete(bool fin, size_t frame_len) override;
 
   // ReliableQuicStream implementation called by the session when there's
   // data for us.
   uint32 ProcessData(const char* data, uint32 data_len) override;
   void OnFinRead() override;
+
+ protected:
+  // Sends a basic 200 response using SendHeaders for the headers and WriteData
+  // for the body.
+  virtual void SendResponse();
+
+  SpdyHeaderBlock* request_headers() { return &request_headers_; }
 
  private:
   friend class test::QuicSpdyServerStreamPeer;
@@ -40,10 +50,6 @@ class QuicSpdyServerStream : public QuicDataStream {
   // Parses the request headers from |data| to |request_headers_|.
   // Returns false if there was an error parsing the headers.
   bool ParseRequestHeaders(const char* data, uint32 data_len);
-
-  // Sends a basic 200 response using SendHeaders for the headers and WriteData
-  // for the body.
-  void SendResponse();
 
   // Sends a basic 500 response using SendHeaders for the headers and WriteData
   // for the body

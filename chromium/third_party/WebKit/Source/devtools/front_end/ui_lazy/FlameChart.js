@@ -345,7 +345,7 @@ WebInspector.FlameChart.ColorGenerator.prototype = {
         if (typeof space === "number")
             return space;
         index %= space.count;
-        return space.min + Math.floor(index / space.count * (space.max - space.min));
+        return space.min + Math.floor(index / (space.count - 1) * (space.max - space.min));
     }
 }
 
@@ -509,7 +509,7 @@ WebInspector.FlameChart.prototype = {
      */
     setWindowTimes: function(startTime, endTime)
     {
-        if (this._muteAnimation || this._timeWindowLeft === 0 || this._timeWindowRight === Infinity || (startTime === 0 && endTime === Infinity)) {
+        if (this._muteAnimation || this._timeWindowLeft === 0 || this._timeWindowRight === Infinity || (startTime === 0 && endTime === Infinity) || (startTime === Infinity && endTime === Infinity)) {
             // Initial setup.
             this._timeWindowLeft = startTime;
             this._timeWindowRight = endTime;
@@ -733,8 +733,6 @@ WebInspector.FlameChart.prototype = {
         if (this._maxDragOffset() > clickThreshold)
             return;
         this._hideRangeSelection();
-        if (this._highlightedEntryIndex === -1)
-            return;
         this.dispatchEventToListeners(WebInspector.FlameChart.Events.EntrySelected, this._highlightedEntryIndex);
     },
 
@@ -769,7 +767,85 @@ WebInspector.FlameChart.prototype = {
      */
     _onKeyDown: function(e)
     {
-        if (e.altKey || e.ctrlKey || e.metaKey)
+        this._handleZoomPanKeys(e);
+        this._handleSelectionNavigation(e);
+    },
+
+    /**
+     * @param {!Event} e
+     */
+    _handleSelectionNavigation: function(e)
+    {
+        if (!WebInspector.KeyboardShortcut.hasNoModifiers(e))
+            return;
+        if (this._selectedEntryIndex === -1)
+            return;
+        var timelineData = this._timelineData();
+        if (!timelineData)
+            return;
+
+        /**
+         * @param {number} time
+         * @param {number} entryIndex
+         * @return {number}
+         */
+        function timeComparator(time, entryIndex)
+        {
+            return time - timelineData.entryStartTimes[entryIndex];
+        }
+
+        /**
+         * @param {number} entry1
+         * @param {number} entry2
+         * @return {boolean}
+         */
+        function entriesIntersect(entry1, entry2)
+        {
+            var start1 = timelineData.entryStartTimes[entry1];
+            var start2 = timelineData.entryStartTimes[entry2];
+            var end1 = start1 + timelineData.entryTotalTimes[entry1];
+            var end2 = start2 + timelineData.entryTotalTimes[entry2];
+            return start1 < end2 && start2 < end1;
+        }
+
+        var keys = WebInspector.KeyboardShortcut.Keys;
+        if (e.keyCode === keys.Left.code || e.keyCode === keys.Right.code) {
+            var level = timelineData.entryLevels[this._selectedEntryIndex];
+            var levelIndexes = this._timelineLevels[level];
+            var indexOnLevel = levelIndexes.lowerBound(this._selectedEntryIndex);
+            indexOnLevel += e.keyCode === keys.Left.code ? -1 : 1;
+            e.consume(true);
+            if (indexOnLevel >= 0 && indexOnLevel < levelIndexes.length)
+                this.dispatchEventToListeners(WebInspector.FlameChart.Events.EntrySelected, levelIndexes[indexOnLevel]);
+            return;
+        }
+        if (e.keyCode === keys.Up.code || e.keyCode === keys.Down.code) {
+            var level = timelineData.entryLevels[this._selectedEntryIndex];
+            var delta = e.keyCode === keys.Up.code ? 1 : -1;
+            e.consume(true);
+            if (this._isTopDown)
+                delta = -delta;
+            level += delta;
+            if (level < 0 || level >= this._timelineLevels.length)
+                return;
+            var entryTime = timelineData.entryStartTimes[this._selectedEntryIndex] + timelineData.entryTotalTimes[this._selectedEntryIndex] / 2;
+            var levelIndexes = this._timelineLevels[level];
+            var indexOnLevel = levelIndexes.upperBound(entryTime, timeComparator) - 1;
+            if (!entriesIntersect(this._selectedEntryIndex, levelIndexes[indexOnLevel])) {
+                ++indexOnLevel;
+                if (indexOnLevel >= levelIndexes.length || !entriesIntersect(this._selectedEntryIndex, levelIndexes[indexOnLevel]))
+                    return;
+            }
+            this.dispatchEventToListeners(WebInspector.FlameChart.Events.EntrySelected, levelIndexes[indexOnLevel]);
+        }
+    },
+
+    /**
+     * @param {!Event} e
+     */
+    _handleZoomPanKeys: function(e)
+    {
+        if (!WebInspector.KeyboardShortcut.hasNoModifiers(e))
             return;
         var zoomMultiplier = e.shiftKey ? 0.8 : 0.3;
         var panMultiplier = e.shiftKey ? 320 : 80;
@@ -986,6 +1062,7 @@ WebInspector.FlameChart.prototype = {
         var textPadding = this._dataProvider.textPadding();
         this._minTextWidth = 2 * textPadding + this._measureWidth(context, "\u2026");
         var minTextWidth = this._minTextWidth;
+        var unclippedWidth = width - (WebInspector.isMac() ? 0 : this._vScrollElement.offsetWidth);
 
         var barHeight = this._barHeight;
 
@@ -1079,7 +1156,7 @@ WebInspector.FlameChart.prototype = {
             var entryIndex = titleIndices[i];
             var entryStartTime = entryStartTimes[entryIndex];
             var barX = this._timeToPositionClipped(entryStartTime);
-            var barRight = Math.min(this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]), width) + 1;
+            var barRight = Math.min(this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]), unclippedWidth) + 1;
             var barWidth = barRight - barX;
             var barLevel = entryLevels[entryIndex];
             var barY = this._levelToHeight(barLevel);
@@ -1374,6 +1451,10 @@ WebInspector.FlameChart.prototype = {
             this._windowLeft = (this._timeWindowLeft - this._minimumBoundary) / this._totalTime;
             this._windowRight = (this._timeWindowRight - this._minimumBoundary) / this._totalTime;
             this._windowWidth = this._windowRight - this._windowLeft;
+        } else if (this._timeWindowLeft === Infinity) {
+            this._windowLeft = Infinity;
+            this._windowRight = Infinity;
+            this._windowWidth = 1;
         } else {
             this._windowLeft = 0;
             this._windowRight = 1;
@@ -1390,7 +1471,7 @@ WebInspector.FlameChart.prototype = {
 
         this._baseHeight = this._isTopDown ? WebInspector.FlameChart.DividersBarHeight : this._offsetHeight - this._barHeight;
 
-        this._totalHeight = this._levelToHeight(this._dataProvider.maxStackDepth() + 1);
+        this._totalHeight = this._levelToHeight(this._dataProvider.maxStackDepth());
         this._vScrollContent.style.height = this._totalHeight + "px";
         this._updateScrollBar();
     },
@@ -1413,7 +1494,7 @@ WebInspector.FlameChart.prototype = {
 
     _updateContentElementSize: function()
     {
-        this._offsetWidth = this.contentElement.offsetWidth - (WebInspector.isMac() ? 0 : this._vScrollElement.offsetWidth);
+        this._offsetWidth = this.contentElement.offsetWidth;
         this._offsetHeight = this.contentElement.offsetHeight;
     },
 
@@ -1443,6 +1524,7 @@ WebInspector.FlameChart.prototype = {
 
     reset: function()
     {
+        this._vScrollElement.scrollTop = 0;
         this._highlightedMarkerIndex = -1;
         this._highlightedEntryIndex = -1;
         this._selectedEntryIndex = -1;

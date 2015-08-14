@@ -48,7 +48,6 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings, DevToolsEmulator* devToolsE
     , m_showPaintRects(false)
     , m_renderVSyncNotificationEnabled(false)
     , m_autoZoomFocusedNodeToLegibleScale(false)
-    , m_deferredImageDecodingEnabled(false)
     , m_supportDeprecatedTargetDensityDPI(false)
     , m_shrinksViewportContentToFit(false)
     , m_viewportMetaLayoutSizeQuirk(false)
@@ -74,6 +73,11 @@ void WebSettingsImpl::setFixedFontFamily(const WebString& font, UScriptCode scri
 {
     if (m_settings->genericFontFamilySettings().updateFixed(font, script))
         m_settings->notifyGenericFontFamilyChange();
+}
+
+void WebSettingsImpl::setReportWheelOverscroll(bool enabled)
+{
+    m_settings->setReportWheelOverscroll(enabled);
 }
 
 void WebSettingsImpl::setForceZeroLayoutHeight(bool enabled)
@@ -181,6 +185,11 @@ void WebSettingsImpl::setInlineTextBoxAccessibilityEnabled(bool enabled)
     m_settings->setInlineTextBoxAccessibilityEnabled(enabled);
 }
 
+void WebSettingsImpl::setInvertViewportScrollOrder(bool enabled)
+{
+    m_settings->setInvertViewportScrollOrder(enabled);
+}
+
 void WebSettingsImpl::setDeviceScaleAdjustment(float deviceScaleAdjustment)
 {
     m_devToolsEmulator->setDeviceScaleAdjustment(deviceScaleAdjustment);
@@ -282,7 +291,7 @@ void WebSettingsImpl::setLoadWithOverviewMode(bool enabled)
 
 void WebSettingsImpl::setPluginsEnabled(bool enabled)
 {
-    m_settings->setPluginsEnabled(enabled);
+    m_devToolsEmulator->setPluginsEnabled(enabled);
 }
 
 void WebSettingsImpl::setAvailablePointerTypes(int pointers)
@@ -373,6 +382,11 @@ void WebSettingsImpl::setJavaScriptCanAccessClipboard(bool enabled)
 void WebSettingsImpl::setXSSAuditorEnabled(bool enabled)
 {
     m_settings->setXSSAuditorEnabled(enabled);
+}
+
+void WebSettingsImpl::setTextTrackKindUserPreference(TextTrackKindUserPreference preference)
+{
+    m_settings->setTextTrackKindUserPreference(static_cast<blink::TextTrackKindUserPreference>(preference));
 }
 
 void WebSettingsImpl::setTextTrackBackgroundColor(const WebString& color)
@@ -475,12 +489,6 @@ void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
     m_settings->setWebGLEnabled(enabled);
 }
 
-void WebSettingsImpl::setRegionBasedColumnsEnabled(bool enabled)
-{
-    // TODO(mstensho): Get rid of this method. Cannot do it yet, because it's still called from the
-    // Chromium side. See crbug.com/350853
-}
-
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 {
     m_settings->setOpenGLMultisamplingEnabled(enabled);
@@ -549,12 +557,6 @@ void WebSettingsImpl::setAntialiased2dCanvasEnabled(bool enabled)
 void WebSettingsImpl::setAntialiasedClips2dCanvasEnabled(bool enabled)
 {
     m_settings->setAntialiasedClips2dCanvasEnabled(enabled);
-}
-
-void WebSettingsImpl::setDeferredImageDecodingEnabled(bool enabled)
-{
-    DeferredImageDecoder::setEnabled(enabled);
-    m_deferredImageDecodingEnabled = enabled;
 }
 
 void WebSettingsImpl::setPreferCompositingToLCDTextEnabled(bool enabled)

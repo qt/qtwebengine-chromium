@@ -108,11 +108,11 @@ class BaseRequestsTest : public testing::Test {
 
   void SetUp() override {
     request_context_getter_ = new net::TestURLRequestContextGetter(
-        message_loop_.message_loop_proxy());
+        message_loop_.task_runner());
 
     sender_.reset(new RequestSender(new DummyAuthService,
                                     request_context_getter_.get(),
-                                    message_loop_.message_loop_proxy(),
+                                    message_loop_.task_runner(),
                                     std::string() /* custom user agent */));
 
     ASSERT_TRUE(test_server_.InitializeAndWaitUntilReady());
@@ -175,12 +175,11 @@ TEST_F(BaseRequestsTest, UrlFetchRequestBaseResponseCodeOverride) {
 
   DriveApiErrorCode error = DRIVE_OTHER_ERROR;
   base::RunLoop run_loop;
-  sender_->StartRequestWithRetry(
-      new FakeUrlFetchRequest(
-          sender_.get(),
-          test_util::CreateQuitCallback(
-              &run_loop, test_util::CreateCopyResultCallback(&error)),
-          test_server_.base_url()));
+  sender_->StartRequestWithAuthRetry(new FakeUrlFetchRequest(
+      sender_.get(),
+      test_util::CreateQuitCallback(
+          &run_loop, test_util::CreateCopyResultCallback(&error)),
+      test_server_.base_url()));
   run_loop.Run();
 
   // HTTP_FORBIDDEN (403) is overridden by the error reason.
@@ -209,7 +208,7 @@ TEST_F(MultipartUploadRequestBaseTest, Basic) {
   scoped_ptr<drive::SingleBatchableDelegateRequest> request(
       new drive::SingleBatchableDelegateRequest(
           sender_.get(), multipart_request));
-  sender_->StartRequestWithRetry(request.release());
+  sender_->StartRequestWithAuthRetry(request.release());
   run_loop.Run();
   EXPECT_EQ("multipart/related; boundary=TESTBOUNDARY", upload_content_type);
   EXPECT_EQ(

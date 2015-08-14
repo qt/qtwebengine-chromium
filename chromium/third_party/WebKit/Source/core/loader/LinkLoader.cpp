@@ -35,6 +35,7 @@
 #include "core/dom/Document.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
+#include "core/fetch/LinkFetchResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/Settings.h"
 #include "core/html/CrossOriginAttribute.h"
@@ -131,7 +132,7 @@ static void dnsPrefetchIfNeeded(const LinkRelAttribute& relAttribute, const KURL
 
 static void preconnectIfNeeded(const LinkRelAttribute& relAttribute, const KURL& href, Document& document, const CrossOriginAttributeValue crossOrigin)
 {
-    if (relAttribute.isPreconnect() && href.isValid()) {
+    if (relAttribute.isPreconnect() && href.isValid() && href.protocolIsInHTTPFamily()) {
         ASSERT(RuntimeEnabledFeatures::linkPreconnectEnabled());
         Settings* settings = document.settings();
         if (settings && settings->logDnsPrefetchAndPreconnect()) {
@@ -145,14 +146,20 @@ static void preconnectIfNeeded(const LinkRelAttribute& relAttribute, const KURL&
     }
 }
 
-// TODO(yoav): Replace Resource:Type here with some way that conveys priority but not context.
-static bool getTypeFromAsAttribute(const String& as, Resource::Type& type)
+static bool getPriorityTypeFromAsAttribute(const String& as, Resource::Type& type)
 {
     if (as.isEmpty())
         return false;
-    // TODO(yoav): Return false also when the `as` value is not a valid one.
-    // TODO(yoav): Add actual types here and make sure priorities work accordingly.
-    type = Resource::LinkSubresource;
+
+    if (equalIgnoringCase(as, "image"))
+        type = Resource::Image;
+    else if (equalIgnoringCase(as, "script"))
+        type = Resource::Script;
+    else if (equalIgnoringCase(as, "stylesheet"))
+        type = Resource::CSSStyleSheet;
+    else
+        return false;
+
     return true;
 }
 
@@ -164,16 +171,18 @@ void LinkLoader::preloadIfNeeded(const LinkRelAttribute& relAttribute, const KUR
             document.addConsoleMessage(ConsoleMessage::create(OtherMessageSource, WarningMessageLevel, String("<link rel=preload> has an invalid `href` value")));
             return;
         }
-        Resource::Type type;
-        if (!getTypeFromAsAttribute(as, type)) {
+        // TODO(yoav): Figure out a way that 'as' would be used to set request headers.
+        Resource::Type priorityType;
+        if (!getPriorityTypeFromAsAttribute(as, priorityType)) {
             document.addConsoleMessage(ConsoleMessage::create(OtherMessageSource, WarningMessageLevel, String("<link rel=preload> must have a valid `as` value")));
             return;
         }
         FetchRequest linkRequest(ResourceRequest(document.completeURL(href)), FetchInitiatorTypeNames::link);
+        linkRequest.setPriority(document.fetcher()->loadPriority(priorityType, linkRequest));
         Settings* settings = document.settings();
         if (settings && settings->logPreload())
             document.addConsoleMessage(ConsoleMessage::create(OtherMessageSource, DebugMessageLevel, String("Preload triggered for " + href.host() + href.path())));
-        setResource(document.fetcher()->fetchLinkPreloadResource(type, linkRequest));
+        setResource(LinkFetchResource::fetch(Resource::LinkPreload, linkRequest, document.fetcher()));
     }
 }
 
@@ -200,23 +209,26 @@ bool LinkLoader::loadLinkFromHeader(const String& headerValue, Document* documen
 
 bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const AtomicString& crossOriginMode, const String& type, const String& as, const KURL& href, Document& document)
 {
+    // TODO(yoav): Do all links need to load only after they're in document???
+
     // TODO(yoav): Convert all uses of the CrossOriginAttribute to CrossOriginAttributeValue. crbug.com/486689
     // FIXME(crbug.com/463266): We're ignoring type here. Maybe we shouldn't.
     dnsPrefetchIfNeeded(relAttribute, href, document);
 
     preconnectIfNeeded(relAttribute, href, document, crossOriginAttributeValue(crossOriginMode));
 
-    preloadIfNeeded(relAttribute, href, document, as);
+    if (m_client->shouldLoadLink())
+        preloadIfNeeded(relAttribute, href, document, as);
 
     // FIXME(crbug.com/323096): Should take care of import.
-    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource() || relAttribute.isTransitionExitingStylesheet()) && href.isValid() && document.frame()) {
+    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource()) && href.isValid() && document.frame()) {
         if (!m_client->shouldLoadLink())
             return false;
         Resource::Type type = relAttribute.isLinkSubresource() ?  Resource::LinkSubresource : Resource::LinkPrefetch;
         FetchRequest linkRequest(ResourceRequest(document.completeURL(href)), FetchInitiatorTypeNames::link);
         if (!crossOriginMode.isNull())
             linkRequest.setCrossOriginAccessControl(document.securityOrigin(), crossOriginMode);
-        setResource(document.fetcher()->fetchLinkResource(type, linkRequest));
+        setResource(LinkFetchResource::fetch(type, linkRequest, document.fetcher()));
     }
 
     if (const unsigned prerenderRelTypes = prerenderRelTypesFromRelAttribute(relAttribute)) {

@@ -6,7 +6,8 @@
 #define MANDOLINE_UI_OMNIBOX_OMNIBOX_IMPL_H_
 
 #include "components/view_manager/public/cpp/view_manager_delegate.h"
-#include "mandoline/ui/browser/omnibox.mojom.h"
+#include "mandoline/ui/browser/public/interfaces/omnibox.mojom.h"
+#include "mandoline/ui/browser/public/interfaces/view_embedder.mojom.h"
 #include "mojo/application/public/cpp/application_delegate.h"
 #include "mojo/application/public/cpp/interface_factory.h"
 #include "mojo/common/weak_binding_set.h"
@@ -40,10 +41,8 @@ class OmniboxImpl : public mojo::ApplicationDelegate,
       mojo::ApplicationConnection* connection) override;
 
   // Overridden from mojo::ViewManagerDelegate:
-  void OnEmbed(mojo::View* root,
-               mojo::InterfaceRequest<mojo::ServiceProvider> services,
-               mojo::ServiceProviderPtr exposed_services) override;
-  void OnViewManagerDisconnected(mojo::ViewManager* view_manager) override;
+  void OnEmbed(mojo::View* root) override;
+  void OnViewManagerDestroyed(mojo::ViewManager* view_manager) override;
 
   // Overridden from views::LayoutManager:
   gfx::Size GetPreferredSize(const views::View* view) const override;
@@ -68,6 +67,7 @@ class OmniboxImpl : public mojo::ApplicationDelegate,
   views::Textfield* edit_;
   mojo::WeakBindingSet<Omnibox> bindings_;
   scoped_ptr<mojo::ViewManagerClientFactory> view_manager_client_factory_;
+  ViewEmbedderPtr view_embedder_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxImpl);
 };

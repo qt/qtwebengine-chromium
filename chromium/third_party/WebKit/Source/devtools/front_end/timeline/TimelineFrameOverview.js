@@ -36,8 +36,9 @@
  */
 WebInspector.TimelineFrameOverview = function(model, frameModel)
 {
-    WebInspector.TimelineOverviewBase.call(this, model);
+    WebInspector.TimelineOverviewBase.call(this);
     this.element.id = "timeline-overview-frames";
+    this._model = model;
     this._frameModel = frameModel;
     this.reset();
 
@@ -62,26 +63,11 @@ WebInspector.TimelineFrameOverview = function(model, frameModel)
     this.element.addEventListener("mouseout", this._onMouseOut.bind(this), false);
 }
 
+WebInspector.TimelineFrameOverview.Events = {
+    SelectionChanged: "SelectionChanged"
+}
+
 WebInspector.TimelineFrameOverview.prototype = {
-    /**
-     * @override
-     * @param {!WebInspector.OverviewGrid} grid
-     */
-    setOverviewGrid: function(grid)
-    {
-        this._overviewGrid = grid;
-        this._overviewGrid.element.classList.add("timeline-overview-frames-mode");
-    },
-
-    /**
-     * @override
-     */
-    dispose: function()
-    {
-        WebInspector.TimelineOverviewBase.prototype.dispose.call(this);
-        this._overviewGrid.element.classList.remove("timeline-overview-frames-mode");
-    },
-
     /**
      * @override
      */
@@ -122,7 +108,6 @@ WebInspector.TimelineFrameOverview.prototype = {
     },
 
     /**
-     * @override
      * @param {?WebInspector.TimelineSelection} selection
      */
     select: function(selection)
@@ -141,14 +126,16 @@ WebInspector.TimelineFrameOverview.prototype = {
     /**
      * @override
      * @param {!Event} event
-     * @return {?WebInspector.TimelineSelection|undefined}
+     * @return {boolean}
      */
-    selectionFromEvent: function(event)
+    onClick: function(event)
     {
         var barIndex = this._screenPositionToBarIndex(event.clientX);
         if (barIndex < 0 || barIndex >= this._visibleFrames.length)
-            return null;
-        return WebInspector.TimelineSelection.fromFrame(this._visibleFrames[barIndex]);
+            return false;
+        var selection = WebInspector.TimelineSelection.fromFrame(this._visibleFrames[barIndex]);
+        this.dispatchEventToListeners(WebInspector.TimelineFrameOverview.Events.SelectionChanged, selection);
+        return true;
     },
 
     /**
@@ -221,13 +208,14 @@ WebInspector.TimelineFrameOverview.prototype = {
         for (var barIndex = 0, currentFrame = 0; currentFrame < frames.length; ++barIndex) {
             var barStartTime = frames[currentFrame].startTime;
             var longestFrame = null;
-            var longestDuration = 0;
+            var longestDuration;
 
             for (var lastFrame = Math.min(Math.floor((barIndex + 1) * framesPerBar), frames.length);
                  currentFrame < lastFrame; ++currentFrame) {
-                var duration = frames[currentFrame].duration;
+                var frame = frames[currentFrame];
+                var duration = frame.idle ? 0 : frame.duration; // Only consider idle frames if there are no regular frames.
                 if (!longestFrame || longestDuration < duration) {
-                    longestFrame = frames[currentFrame];
+                    longestFrame = frame;
                     longestDuration = duration;
                 }
             }
@@ -370,8 +358,12 @@ WebInspector.TimelineFrameOverview.prototype = {
 
             bottomOffset -= height;
         }
+        // Skip outline for idle frames, unless frame is selected.
+        if (frame.idle && index !== this._activeBarIndex)
+            return;
+
         // Draw a contour for the total frame time.
-        var y0 = Math.floor(windowHeight - frame.duration * this._scale) + 0.5;
+        var y0 = frame.idle ? bottomOffset + 0.5 : Math.floor(windowHeight - frame.duration * this._scale) + 0.5;
         var y1 = windowHeight + 0.5;
 
         this._context.strokeStyle = index === this._activeBarIndex ? "rgba(0, 0, 0, 0.6)" : "rgba(90, 90, 90, 0.2)";

@@ -58,12 +58,12 @@ public:
         DocumentXSLT::applyXSLTransform(document, pi);
     }
 
-    virtual void detach() override
+    void detach() override
     {
         m_processingInstruction = nullptr;
     }
 
-    virtual EventListener* toEventListener() override
+    EventListener* toEventListener() override
     {
         return this;
     }
@@ -75,8 +75,8 @@ private:
     {
     }
 
-    virtual void refDetachableEventListener() override { ref(); }
-    virtual void derefDetachableEventListener() override { deref(); }
+    void refDetachableEventListener() override { ref(); }
+    void derefDetachableEventListener() override { deref(); }
 
     virtual v8::Local<v8::Value> callListenerFunction(ScriptState*, v8::Local<v8::Value>, Event*)
     {
@@ -129,7 +129,7 @@ ProcessingInstruction* DocumentXSLT::findXSLStyleSheet(Document& document)
         if (pi->isXSL())
             return pi;
     }
-    return 0;
+    return nullptr;
 }
 
 bool DocumentXSLT::processingInstructionInsertedIntoDocument(Document& document, ProcessingInstruction* pi)

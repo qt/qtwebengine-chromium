@@ -25,10 +25,12 @@
 #ifndef SVGAnimationElement_h
 #define SVGAnimationElement_h
 
+#include "core/CoreExport.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "platform/animation/UnitBezier.h"
 #include "wtf/Functional.h"
+#include "wtf/Vector.h"
 
 namespace blink {
 
@@ -58,7 +60,7 @@ enum CalcMode {
     CalcModeSpline
 };
 
-class SVGAnimationElement : public SVGSMILElement {
+class CORE_EXPORT SVGAnimationElement : public SVGSMILElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // SVGAnimationElement
@@ -138,8 +140,8 @@ protected:
     void computeCSSPropertyValue(SVGElement*, CSSPropertyID, String& value);
     void determinePropertyValueTypes(const String& from, const String& to);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
-    virtual void svgAttributeChanged(const QualifiedName&) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void svgAttributeChanged(const QualifiedName&) override;
 
     enum AttributeType {
         AttributeTypeCSS,
@@ -153,14 +155,14 @@ protected:
     String fromValue() const;
 
     // from SVGSMILElement
-    virtual void startedActiveInterval() override;
-    virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) override;
+    void startedActiveInterval() override;
+    void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) override;
 
     AnimatedPropertyValueType m_fromPropertyValueType;
     AnimatedPropertyValueType m_toPropertyValueType;
 
-    virtual void setTargetElement(SVGElement*) override;
-    virtual void setAttributeName(const QualifiedName&) override;
+    void setTargetElement(SVGElement*) override;
+    void setAttributeName(const QualifiedName&) override;
 
     bool hasInvalidCSSAttributeType() const { return m_hasInvalidCSSAttributeType; }
 
@@ -168,10 +170,17 @@ protected:
     void setAnimationMode(AnimationMode animationMode) { m_animationMode = animationMode; }
     void setCalcMode(CalcMode calcMode) { m_calcMode = calcMode; }
 
-private:
-    virtual bool isValid() const override final { return SVGTests::isValid(document()); }
+    // Parses a list of values as specified by SVG, stripping leading
+    // and trailing whitespace, and places them in result. If the
+    // format of the string is not valid, parseValues empties result
+    // and returns false. See
+    // http://www.w3.org/TR/SVG/animate.html#ValuesAttribute .
+    static bool parseValues(const String&, Vector<String>& result);
 
-    virtual void animationAttributeChanged() override;
+private:
+    bool isValid() const final { return SVGTests::isValid(document()); }
+
+    void animationAttributeChanged() override;
     void setAttributeType(const AtomicString&);
 
     void checkInvalidCSSAttributeType();

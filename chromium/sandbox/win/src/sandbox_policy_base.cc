@@ -9,6 +9,8 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/win/windows_version.h"
 #include "sandbox/win/src/app_container.h"
 #include "sandbox/win/src/filesystem_dispatcher.h"
@@ -31,6 +33,7 @@
 #include "sandbox/win/src/registry_policy.h"
 #include "sandbox/win/src/restricted_token_utils.h"
 #include "sandbox/win/src/sandbox_policy.h"
+#include "sandbox/win/src/sandbox_utils.h"
 #include "sandbox/win/src/sync_dispatcher.h"
 #include "sandbox/win/src/sync_policy.h"
 #include "sandbox/win/src/target_process.h"
@@ -65,6 +68,43 @@ bool IsInheritableHandle(HANDLE handle) {
   // inheritable via PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
   DWORD handle_type = GetFileType(handle);
   return handle_type == FILE_TYPE_DISK || handle_type == FILE_TYPE_PIPE;
+}
+
+HANDLE CreateLowBoxObjectDirectory(PSID lowbox_sid) {
+  DWORD session_id = 0;
+  if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &session_id))
+    return NULL;
+
+  LPWSTR sid_string = NULL;
+  if (!::ConvertSidToStringSid(lowbox_sid, &sid_string))
+    return NULL;
+
+  base::string16 directory_path = base::StringPrintf(
+                   L"\\Sessions\\%d\\AppContainerNamedObjects\\%ls",
+                   session_id, sid_string).c_str();
+  ::LocalFree(sid_string);
+
+  NtCreateDirectoryObjectFunction CreateObjectDirectory = NULL;
+  ResolveNTFunctionPtr("NtCreateDirectoryObject", &CreateObjectDirectory);
+
+  OBJECT_ATTRIBUTES obj_attr;
+  UNICODE_STRING obj_name;
+  sandbox::InitObjectAttribs(directory_path,
+                             OBJ_CASE_INSENSITIVE | OBJ_OPENIF,
+                             NULL,
+                             &obj_attr,
+                             &obj_name,
+                             NULL);
+
+  HANDLE handle = NULL;
+  NTSTATUS status = CreateObjectDirectory(&handle,
+                                          DIRECTORY_ALL_ACCESS,
+                                          &obj_attr);
+
+  if (!NT_SUCCESS(status))
+    return NULL;
+
+  return handle;
 }
 
 }
@@ -427,33 +467,26 @@ ResultCode PolicyBase::AddKernelObjectToClose(const base::char16* handle_type,
 
 void* PolicyBase::AddHandleToShare(HANDLE handle) {
   if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return NULL;
+    return nullptr;
 
   if (!handle)
-    return NULL;
+    return nullptr;
 
-  HANDLE duped_handle = NULL;
-  ::DuplicateHandle(::GetCurrentProcess(),
-                    handle,
-                    ::GetCurrentProcess(),
-                    &duped_handle,
-                    0,
-                    TRUE,
-                    DUPLICATE_SAME_ACCESS);
-  DCHECK(duped_handle);
-  handles_to_share_.push_back(duped_handle);
+  HANDLE duped_handle = nullptr;
+  if (!::DuplicateHandle(::GetCurrentProcess(), handle, ::GetCurrentProcess(),
+                         &duped_handle, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+    return nullptr;
+  }
+  handles_to_share_.push_back(new base::win::ScopedHandle(duped_handle));
   return duped_handle;
 }
 
-HandleList PolicyBase::GetHandlesBeingShared() {
+const HandleList& PolicyBase::GetHandlesBeingShared() {
   return handles_to_share_;
 }
 
 void PolicyBase::ClearSharedHandles() {
-  for (auto handle : handles_to_share_) {
-    ::CloseHandle(handle);
-  }
-  handles_to_share_.clear();
+  STLDeleteElements(&handles_to_share_);
 }
 
 // When an IPC is ready in any of the targets we get called. We manage an array
@@ -462,8 +495,8 @@ void PolicyBase::ClearSharedHandles() {
 Dispatcher* PolicyBase::OnMessageReady(IPCParams* ipc,
                                        CallbackGeneric* callback) {
   DCHECK(callback);
-  static const IPCParams ping1 = {IPC_PING1_TAG, UINT32_TYPE};
-  static const IPCParams ping2 = {IPC_PING2_TAG, INOUTPTR_TYPE};
+  static const IPCParams ping1 = {IPC_PING1_TAG, {UINT32_TYPE}};
+  static const IPCParams ping2 = {IPC_PING2_TAG, {INOUTPTR_TYPE}};
 
   if (ping1.Matches(ipc) || ping2.Matches(ipc)) {
     *callback = reinterpret_cast<CallbackGeneric>(
@@ -508,7 +541,8 @@ ResultCode PolicyBase::MakeJobObject(HANDLE* job) {
   return SBOX_ALL_OK;
 }
 
-ResultCode PolicyBase::MakeTokens(HANDLE* initial, HANDLE* lockdown) {
+ResultCode PolicyBase::MakeTokens(base::win::ScopedHandle* initial,
+                                  base::win::ScopedHandle* lockdown) {
   if (appcontainer_list_.get() && appcontainer_list_->HasAppContainer() &&
       lowbox_sid_) {
     return SBOX_ERROR_BAD_PARAMS;
@@ -516,10 +550,13 @@ ResultCode PolicyBase::MakeTokens(HANDLE* initial, HANDLE* lockdown) {
 
   // Create the 'naked' token. This will be the permanent token associated
   // with the process and therefore with any thread that is not impersonating.
-  DWORD result = CreateRestrictedToken(lockdown, lockdown_level_,
+  HANDLE temp_handle;
+  DWORD result = CreateRestrictedToken(&temp_handle, lockdown_level_,
                                        integrity_level_, PRIMARY);
   if (ERROR_SUCCESS != result)
     return SBOX_ERROR_GENERIC;
+
+  lockdown->Set(temp_handle);
 
   // If we're launching on the alternate desktop we need to make sure the
   // integrity label on the object is no higher than the sandboxed process's
@@ -551,34 +588,46 @@ ResultCode PolicyBase::MakeTokens(HANDLE* initial, HANDLE* lockdown) {
     if (lockdown_level_ < USER_LIMITED || lockdown_level_ != initial_level_)
       return SBOX_ERROR_CANNOT_INIT_APPCONTAINER;
 
-    *initial = INVALID_HANDLE_VALUE;
+    *initial = base::win::ScopedHandle();
     return SBOX_ALL_OK;
-  } else if (lowbox_sid_) {
+  }
+
+  if (lowbox_sid_) {
     NtCreateLowBoxToken CreateLowBoxToken = NULL;
     ResolveNTFunctionPtr("NtCreateLowBoxToken", &CreateLowBoxToken);
     OBJECT_ATTRIBUTES obj_attr;
     InitializeObjectAttributes(&obj_attr, NULL, 0, NULL, NULL);
     HANDLE token_lowbox = NULL;
-    NTSTATUS status = CreateLowBoxToken(&token_lowbox, *lockdown,
+
+    if (!lowbox_directory_.IsValid())
+      lowbox_directory_.Set(CreateLowBoxObjectDirectory(lowbox_sid_));
+    DCHECK(lowbox_directory_.IsValid());
+
+    // The order of handles isn't important in the CreateLowBoxToken call.
+    // The kernel will maintain a reference to the object directory handle.
+    HANDLE saved_handles[1] = {lowbox_directory_.Get()};
+    DWORD saved_handles_count = lowbox_directory_.IsValid() ? 1 : 0;
+
+    NTSTATUS status = CreateLowBoxToken(&token_lowbox, lockdown->Get(),
                                         TOKEN_ALL_ACCESS, &obj_attr,
-                                        lowbox_sid_, 0, NULL, 0, NULL);
+                                        lowbox_sid_, 0, NULL,
+                                        saved_handles_count, saved_handles);
     if (!NT_SUCCESS(status))
       return SBOX_ERROR_GENERIC;
 
     DCHECK(token_lowbox);
-    ::CloseHandle(*lockdown);
-    *lockdown = token_lowbox;
+    lockdown->Set(token_lowbox);
   }
 
   // Create the 'better' token. We use this token as the one that the main
   // thread uses when booting up the process. It should contain most of
   // what we need (before reaching main( ))
-  result = CreateRestrictedToken(initial, initial_level_,
+  result = CreateRestrictedToken(&temp_handle, initial_level_,
                                  integrity_level_, IMPERSONATION);
-  if (ERROR_SUCCESS != result) {
-    ::CloseHandle(*lockdown);
+  if (ERROR_SUCCESS != result)
     return SBOX_ERROR_GENERIC;
-  }
+
+  initial->Set(temp_handle);
   return SBOX_ALL_OK;
 }
 

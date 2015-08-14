@@ -82,9 +82,12 @@ class Manager(object):
         self.INSPECTOR_SUBDIR = 'inspector' + port.TEST_PATH_SEPARATOR
         self.PERF_SUBDIR = 'perf'
         self.WEBSOCKET_SUBDIR = 'websocket' + port.TEST_PATH_SEPARATOR
+        self.VIRTUAL_HTTP_SUBDIR = port.TEST_PATH_SEPARATOR.join([
+            'virtual', 'stable', 'http'])
         self.LAYOUT_TESTS_DIRECTORY = 'LayoutTests'
         self.ARCHIVED_RESULTS_LIMIT = 25
         self._http_server_started = False
+        self._wptserve_started = False
         self._websockets_server_started = False
 
         self._results_directory = self._port.results_directory()
@@ -95,12 +98,19 @@ class Manager(object):
         return self._finder.find_tests(self._options, args)
 
     def _is_http_test(self, test):
-        return self.HTTP_SUBDIR in test or self._is_websocket_test(test)
+        return (
+            test.startswith(self.HTTP_SUBDIR) or
+            self._is_websocket_test(test) or
+            self.VIRTUAL_HTTP_SUBDIR in test
+        )
 
     def _is_inspector_test(self, test):
         return self.INSPECTOR_SUBDIR in test
 
     def _is_websocket_test(self, test):
+        if self._port.is_wpt_enabled() and self._port.is_wpt_test(test):
+            return False
+
         return self.WEBSOCKET_SUBDIR in test
 
     def _http_tests(self, test_names):
@@ -332,6 +342,11 @@ class Manager(object):
         return self._runner.run_tests(self._expectations, test_inputs, tests_to_skip, num_workers, retrying)
 
     def _start_servers(self, tests_to_run):
+        if self._port.is_wpt_enabled() and any(self._port.is_wpt_test(test) for test in tests_to_run):
+            self._printer.write_update('Starting WPTServe ...')
+            self._port.start_wptserve()
+            self._wptserve_started = True
+
         if self._port.requires_http_server() or any((self._is_http_test(test) or self._is_inspector_test(test)) for test in tests_to_run):
             self._printer.write_update('Starting HTTP server ...')
             self._port.start_http_server(additional_dirs={}, number_of_drivers=self._options.max_locked_shards)
@@ -343,6 +358,10 @@ class Manager(object):
             self._websockets_server_started = True
 
     def _stop_servers(self):
+        if self._wptserve_started:
+            self._printer.write_update('Stopping WPTServe ...')
+            self._wptserve_started = False
+            self._port.stop_wptserve()
         if self._http_server_started:
             self._printer.write_update('Stopping HTTP server ...')
             self._http_server_started = False

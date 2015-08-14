@@ -2,12 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/ui.gni")
 import("//mojo/generate_mojo_shell_assets_list.gni")
-import("//third_party/mojo/src/mojo/public/mojo.gni")
-import("//third_party/mojo/src/mojo/public/mojo_application.gni")
-import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
+import("//mojo/public/mojo_application.gni")
 import("//testing/test.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
 # We don't support building in the component build since mojo apps are
 # inherently components.
@@ -47,6 +45,7 @@ source_set("mojo_runner_lib") {
       "desktop/launcher_process.h",
       "desktop/main.cc",
     ]
+    deps += [ "//components/tracing:startup_tracing" ]
   } else {
     sources += [
       "android/context_init.h",
@@ -57,7 +56,7 @@ source_set("mojo_runner_lib") {
 
     deps += [
       ":jni_headers",
-      "//components/native_viewport:lib",
+      "//components/view_manager",
       "//mojo/shell",
       "//ui/gl",
     ]
@@ -78,6 +77,8 @@ executable("mojo_runner") {
     # It means dynamic symbols must be preserved and exported.
     ldflags = [ "-Wl,--export-dynamic" ]
   }
+
+  deps += [ "//build/config/sanitizers:deps" ]
 }
 
 source_set("in_process_native_runner") {
@@ -121,13 +122,12 @@ source_set("lib") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//base:base_static",
-    "//mojo/application",
-    "//mojo/application/public/interfaces",
-    "//mojo/common",
+    "//components/devtools_service/public/cpp",
+    "//components/devtools_service/public/interfaces",
+    "//mojo/application/public/cpp",
     "//mojo/common:tracing_impl",
     "//mojo/util:filename_util",
     "//third_party/mojo/src/mojo/edk/system",
-    "//third_party/mojo/src/mojo/public/cpp/bindings",
     "//mojo/services/network/public/interfaces",
     "//mojo/shell",
     "//mojo/services/tracing:bindings",
@@ -139,7 +139,10 @@ source_set("lib") {
     ":switches",
   ]
 
-  data_deps = [ "//mojo/services/tracing" ]
+  data_deps = [
+    "//components/devtools_service",
+    "//mojo/services/tracing",
+  ]
 
   if (is_android) {
     sources += [
@@ -149,8 +152,6 @@ source_set("lib") {
       "android/android_handler_loader.h",
       "android/background_application_loader.cc",
       "android/background_application_loader.h",
-      "android/native_viewport_application_loader.cc",
-      "android/native_viewport_application_loader.h",
       "android/ui_application_loader_android.cc",
       "android/ui_application_loader_android.h",
     ]
@@ -158,9 +159,9 @@ source_set("lib") {
     deps += [
       ":jni_headers",
       ":run_android_application_function",
-      "//components/gles2",
-      "//components/native_viewport:lib",
-      "//mojo/application:content_handler",
+      "//components/view_manager/gles2",
+      "//components/view_manager/native_viewport",
+      "//mojo/application/public/cpp:content_handler",
     ]
   }
 
@@ -282,13 +283,19 @@ if (is_android) {
     clear_dir = true
     dest = mojo_runner_assets_dir
     deps = [
+      ":bootstrap",
+      ":bootstrap_java",
       ":copy_mojo_runner",
+      "//mojo/services/network",
     ]
     sources = [
       "$root_out_dir/lib.stripped/libbootstrap.so",
-      "$root_out_dir/network_service.mojo",
       "$root_out_dir/obj/mojo/runner/bootstrap_java.dex.jar",
     ]
+
+    # Directories can't be specified as sources so pass manually to the script.
+    args = [ "--files=" +
+             rebase_path("$root_out_dir/network_service", root_build_dir) ]
   }
 
   generate_mojo_shell_assets_list("build_mojo_runner_assets") {
@@ -305,14 +312,24 @@ if (is_android) {
     outputs = [
       "$root_out_dir/lib.stripped/libmojo_runner.so",
     ]
+    deps = [
+      ":mojo_runner",
+    ]
   }
 
   copy_ex("copy_mojo_runner_test_assets") {
     clear_dir = true
     dest = mojo_runner_test_assets_dir
-    sources = [
-      "$root_out_dir/test_app.mojo",
-      "$root_out_dir/test_request_tracker_app.mojo",
+    deps = [
+      "//mojo/services/test_service:test_app",
+      "//mojo/services/test_service:test_request_tracker_app",
+    ]
+
+    # Directories can't be specified as sources so pass manually to the script.
+    args = [
+      "--files=" + rebase_path("$root_out_dir/test_app", root_build_dir),
+      "--files=" +
+          rebase_path("$root_out_dir/test_request_tracker_app", root_build_dir),
     ]
   }
 
@@ -327,11 +344,12 @@ if (is_android) {
 
     deps = [
       ":build_mojo_runner_assets",
+      ":copy_mojo_runner",
       ":java",
       ":resources",
       "//base:base_java",
-      "//components/native_viewport:native_viewport_java",
       "//third_party/android_tools:google_play_services_default_resources",
+      "//ui/platform_window/android:platform_window_java",
     ]
   }
 
@@ -361,10 +379,11 @@ mojom("child_process_bindings") {
   deps = [
     "//mojo/application/public/interfaces",
   ]
+
+  import_dirs = [ "//mojo/services" ]
 }
 
-test("tests") {
-  output_name = "mojo_runner_unittests"
+test("mojo_runner_unittests") {
   sources = [
     "child_process_host_unittest.cc",
     "data_pipe_peek_unittest.cc",
@@ -395,7 +414,7 @@ test("tests") {
     "//url",
   ]
 
-  datadeps = [
+  data_deps = [
     "//mojo/services/test_service:test_app",
     "//mojo/services/test_service:test_request_tracker_app",
   ]
@@ -426,19 +445,9 @@ mojo_native_application("apptests") {
 
   deps = [
     "//base",
-    "//mojo/application",
-    "//mojo/application:test_support",
-    "//mojo/common:common",
+    "//mojo/application/public/cpp:test_support",
     "//mojo/runner/test:bindings",
-
-    #"//mojo/services/http_server/public/cpp",
-    #"//mojo/services/http_server/public/interfaces",
     "//mojo/services/network/public/interfaces",
-
     "//third_party/mojo/src/mojo/public/cpp/bindings:callback",
-    "//third_party/mojo/src/mojo/public/cpp/environment",
-    "//third_party/mojo/src/mojo/public/cpp/system:system",
   ]
-
-  #data_deps = [ "//services/http_server:http_server($default_toolchain)" ]
 }

@@ -78,7 +78,8 @@ int RAND_bytes(uint8_t *buf, size_t len) {
     return 1;
   }
 
-  if (!CRYPTO_have_hwrand()) {
+  if (!CRYPTO_have_hwrand() ||
+      !CRYPTO_hwrand(buf, len)) {
     /* Without a hardware RNG to save us from address-space duplication, the OS
      * entropy is used directly. */
     CRYPTO_sysrand(buf, len);
@@ -96,6 +97,7 @@ int RAND_bytes(uint8_t *buf, size_t len) {
       return 1;
     }
 
+    memset(state->partial_block, 0, sizeof(state->partial_block));
     state->calls_used = kMaxCallsPerRefresh;
   }
 
@@ -106,8 +108,6 @@ int RAND_bytes(uint8_t *buf, size_t len) {
     state->bytes_used = 0;
     state->partial_block_used = sizeof(state->partial_block);
   }
-
-  CRYPTO_hwrand(buf, len);
 
   if (len >= sizeof(state->partial_block)) {
     size_t remaining = len;
@@ -162,6 +162,10 @@ int RAND_load_file(const char *path, long num) {
 
 void RAND_add(const void *buf, int num, double entropy) {}
 
+int RAND_egd(const char *path) {
+  return 255;
+}
+
 int RAND_poll(void) {
   return 1;
 }
@@ -169,3 +173,12 @@ int RAND_poll(void) {
 int RAND_status(void) {
   return 1;
 }
+
+static const struct rand_meth_st kSSLeayMethod = {NULL, NULL, NULL,
+                                                  NULL, NULL, NULL};
+
+RAND_METHOD *RAND_SSLeay(void) {
+  return (RAND_METHOD*) &kSSLeayMethod;
+}
+
+void RAND_set_rand_method(const RAND_METHOD *method) {}

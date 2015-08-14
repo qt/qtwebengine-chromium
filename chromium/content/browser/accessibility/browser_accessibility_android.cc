@@ -78,7 +78,7 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
     return false;
 
   // Date and time controls should drop their children.
-  if (GetRole() == ui::AX_ROLE_DATE || GetRole() == ui::AX_ROLE_TIME)
+  if (GetRole() == ui::AX_ROLE_DATE || GetRole() == ui::AX_ROLE_INPUT_TIME)
     return true;
 
   BrowserAccessibilityManagerAndroid* manager_android =
@@ -99,24 +99,6 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
   }
 
   return BrowserAccessibility::PlatformIsLeaf();
-}
-
-bool BrowserAccessibilityAndroid::CanScrollForward() const {
-  if (!IsSlider())
-    return false;
-
-  float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
-  float max = GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
-  return value < max;
-}
-
-bool BrowserAccessibilityAndroid::CanScrollBackward() const {
-  if (!IsSlider())
-    return false;
-
-  float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
-  float min = GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
-  return value > min;
 }
 
 bool BrowserAccessibilityAndroid::IsCheckable() const {
@@ -234,8 +216,8 @@ bool BrowserAccessibilityAndroid::IsRangeType() const {
 }
 
 bool BrowserAccessibilityAndroid::IsScrollable() const {
-  int dummy;
-  return GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, &dummy);
+  return (HasIntAttribute(ui::AX_ATTR_SCROLL_X_MAX) &&
+          GetRole() != ui::AX_ROLE_SCROLL_AREA);
 }
 
 bool BrowserAccessibilityAndroid::IsSelected() const {
@@ -270,7 +252,7 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
     case ui::AX_ROLE_COMBO_BOX:
     case ui::AX_ROLE_DATE:
     case ui::AX_ROLE_POP_UP_BUTTON:
-    case ui::AX_ROLE_TIME:
+    case ui::AX_ROLE_INPUT_TIME:
       class_name = "android.widget.Spinner";
       break;
     case ui::AX_ROLE_BUTTON:
@@ -383,8 +365,8 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
   base::string16 placeholder;
   switch (GetRole()) {
     case ui::AX_ROLE_DATE:
+    case ui::AX_ROLE_INPUT_TIME:
     case ui::AX_ROLE_TEXT_FIELD:
-    case ui::AX_ROLE_TIME:
       GetHtmlAttribute("placeholder", &placeholder);
   }
 
@@ -486,6 +468,44 @@ int BrowserAccessibilityAndroid::GetItemCount() const {
   return count;
 }
 
+bool BrowserAccessibilityAndroid::CanScrollForward() const {
+  if (IsSlider()) {
+    float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+    float max = GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
+    return value < max;
+  } else {
+    return GetScrollX() < GetMaxScrollX() ||
+           GetScrollY() < GetMaxScrollY();
+  }
+}
+
+bool BrowserAccessibilityAndroid::CanScrollBackward() const {
+  if (IsSlider()) {
+    float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+    float min = GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
+    return value > min;
+  } else {
+    return GetScrollX() > GetMinScrollX() ||
+           GetScrollY() > GetMinScrollY();
+  }
+}
+
+bool BrowserAccessibilityAndroid::CanScrollUp() const {
+  return GetScrollY() > GetMinScrollY();
+}
+
+bool BrowserAccessibilityAndroid::CanScrollDown() const {
+  return GetScrollY() < GetMaxScrollY();
+}
+
+bool BrowserAccessibilityAndroid::CanScrollLeft() const {
+  return GetScrollX() > GetMinScrollX();
+}
+
+bool BrowserAccessibilityAndroid::CanScrollRight() const {
+  return GetScrollX() < GetMaxScrollX();
+}
+
 int BrowserAccessibilityAndroid::GetScrollX() const {
   int value = 0;
   GetIntAttribute(ui::AX_ATTR_SCROLL_X, &value);
@@ -498,62 +518,152 @@ int BrowserAccessibilityAndroid::GetScrollY() const {
   return value;
 }
 
+int BrowserAccessibilityAndroid::GetMinScrollX() const {
+  return GetIntAttribute(ui::AX_ATTR_SCROLL_X_MIN);
+}
+
+int BrowserAccessibilityAndroid::GetMinScrollY() const {
+  return GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MIN);
+}
+
 int BrowserAccessibilityAndroid::GetMaxScrollX() const {
-  int value = 0;
-  GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, &value);
-  return value;
+  return GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX);
 }
 
 int BrowserAccessibilityAndroid::GetMaxScrollY() const {
-  int value = 0;
-  GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX, &value);
-  return value;
+  return GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX);
 }
 
-int BrowserAccessibilityAndroid::GetTextChangeFromIndex() const {
-  size_t index = 0;
-  while (index < old_value_.length() &&
-         index < new_value_.length() &&
-         old_value_[index] == new_value_[index]) {
-    index++;
+bool BrowserAccessibilityAndroid::Scroll(int direction) const {
+  int x = GetIntAttribute(ui::AX_ATTR_SCROLL_X);
+  int x_min = GetIntAttribute(ui::AX_ATTR_SCROLL_X_MIN);
+  int x_max = GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX);
+  int y = GetIntAttribute(ui::AX_ATTR_SCROLL_Y);
+  int y_min = GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MIN);
+  int y_max = GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX);
+
+  // Figure out the bounding box of the visible portion of this scrollable
+  // view so we know how much to scroll by.
+  gfx::Rect bounds;
+  if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA) {
+    // If this is the root web area, use the bounds of the view to determine
+    // how big one page is.
+    if (!manager()->delegate())
+      return false;
+    bounds = manager()->delegate()->AccessibilityGetViewBounds();
+  } else if (GetRole() == ui::AX_ROLE_WEB_AREA) {
+    // If this is a web area inside of an iframe, try to use the bounds of
+    // the containing element.
+    BrowserAccessibility* parent = GetParent();
+    while (parent && (parent->GetLocation().width() == 0 ||
+                      parent->GetLocation().height() == 0)) {
+      parent = parent->GetParent();
+    }
+    if (parent)
+      bounds = parent->GetLocation();
+    else
+      bounds = GetLocation();
+  } else {
+    // Otherwise this is something like a scrollable div, just use the
+    // bounds of this object itself.
+    bounds = GetLocation();
   }
-  return index;
+
+  // Scroll by 80% of one page.
+  int page_x = std::max(bounds.width() * 4 / 5, 1);
+  int page_y = std::max(bounds.height() * 4 / 5, 1);
+
+  if (direction == FORWARD)
+    direction = y_max > y_min ? DOWN : RIGHT;
+  if (direction == BACKWARD)
+    direction = y_max > y_min ? UP : LEFT;
+
+  switch (direction) {
+    case UP:
+      y = std::min(std::max(y - page_y, y_min), y_max);
+      break;
+    case DOWN:
+      y = std::min(std::max(y + page_y, y_min), y_max);
+      break;
+    case LEFT:
+      x = std::min(std::max(x - page_x, x_min), x_max);
+      break;
+    case RIGHT:
+      x = std::min(std::max(x + page_x, x_min), x_max);
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  manager()->SetScrollOffset(*this, gfx::Point(x, y));
+  return true;
+}
+
+// Given arbitrary old_value_ and new_value_, we must come up with reasonable
+// edit metrics. Although edits like "apple" > "apples" are typical, anything
+// is possible, such as "apple" > "applesauce", "apple" > "boot", or "" >
+// "supercalifragilisticexpialidocious". So we consider old_value_ to be of the
+// form AXB and new_value_ to be of the form AYB, where X and Y are the pieces
+// that don't match. We take the X to be the "removed" characters and Y to be
+// the "added" characters.
+
+int BrowserAccessibilityAndroid::GetTextChangeFromIndex() const {
+  // This is len(A)
+  return CommonPrefixLength(old_value_, new_value_);
 }
 
 int BrowserAccessibilityAndroid::GetTextChangeAddedCount() const {
-  size_t old_len = old_value_.length();
-  size_t new_len = new_value_.length();
-  size_t left = 0;
-  while (left < old_len &&
-         left < new_len &&
-         old_value_[left] == new_value_[left]) {
-    left++;
-  }
-  size_t right = 0;
-  while (right < old_len &&
-         right < new_len &&
-         old_value_[old_len - right - 1] == new_value_[new_len - right - 1]) {
-    right++;
-  }
-  return (new_len - left - right);
+  // This is len(AYB) - (len(A) + len(B)), or len(Y), the added characters.
+  return new_value_.length() - CommonEndLengths(old_value_, new_value_);
 }
 
 int BrowserAccessibilityAndroid::GetTextChangeRemovedCount() const {
-  size_t old_len = old_value_.length();
-  size_t new_len = new_value_.length();
-  size_t left = 0;
-  while (left < old_len &&
-         left < new_len &&
-         old_value_[left] == new_value_[left]) {
-    left++;
+  // This is len(AXB) - (len(A) + len(B)), or len(X), the removed characters.
+  return old_value_.length() - CommonEndLengths(old_value_, new_value_);
+}
+
+// static
+size_t BrowserAccessibilityAndroid::CommonPrefixLength(
+    const base::string16 a,
+    const base::string16 b) {
+  size_t a_len = a.length();
+  size_t b_len = b.length();
+  size_t i = 0;
+  while (i < a_len &&
+         i < b_len &&
+         a[i] == b[i]) {
+    i++;
   }
-  size_t right = 0;
-  while (right < old_len &&
-         right < new_len &&
-         old_value_[old_len - right - 1] == new_value_[new_len - right - 1]) {
-    right++;
+  return i;
+}
+
+// static
+size_t BrowserAccessibilityAndroid::CommonSuffixLength(
+    const base::string16 a,
+    const base::string16 b) {
+  size_t a_len = a.length();
+  size_t b_len = b.length();
+  size_t i = 0;
+  while (i < a_len &&
+         i < b_len &&
+         a[a_len - i - 1] == b[b_len - i - 1]) {
+    i++;
   }
-  return (old_len - left - right);
+  return i;
+}
+
+// static
+size_t BrowserAccessibilityAndroid::CommonEndLengths(
+    const base::string16 a,
+    const base::string16 b) {
+  size_t prefix_len = CommonPrefixLength(a, b);
+  // Remove the matching prefix before finding the suffix. Otherwise, if
+  // old_value_ is "a" and new_value_ is "aa", "a" will be double-counted as
+  // both a prefix and a suffix of "aa".
+  base::string16 a_body = a.substr(prefix_len, std::string::npos);
+  base::string16 b_body = b.substr(prefix_len, std::string::npos);
+  size_t suffix_len = CommonSuffixLength(a_body, b_body);
+  return prefix_len + suffix_len;
 }
 
 base::string16 BrowserAccessibilityAndroid::GetTextChangeBeforeText() const {
@@ -863,8 +973,8 @@ void BrowserAccessibilityAndroid::OnDataChanged() {
 
 void BrowserAccessibilityAndroid::NotifyLiveRegionUpdate(
     base::string16& aria_live) {
-  if (!EqualsASCII(aria_live, aria_strings::kAriaLivePolite) &&
-      !EqualsASCII(aria_live, aria_strings::kAriaLiveAssertive))
+  if (!base::EqualsASCII(aria_live, aria_strings::kAriaLivePolite) &&
+      !base::EqualsASCII(aria_live, aria_strings::kAriaLiveAssertive))
     return;
 
   base::string16 text = GetText();

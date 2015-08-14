@@ -27,6 +27,26 @@
       },
     },
     {
+      'target_name': 'ppapi_tests_extensions_load_unload',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'ppapi_tests_extensions_load_unload',
+        # Only newlib build is used in tests, no need to build others.
+        'build_newlib': 1,
+        'build_glibc': 0,
+        'build_pnacl_newlib': 0,
+        'nexe_destination_dir': 'test_data/ppapi/tests/extensions/load_unload',
+        'sources': [
+          'load_unload/load_unload.cc',
+        ],
+        'test_files': [
+          'load_unload/background.js',
+          'load_unload/ext_icon.png',
+          'load_unload/manifest.json',
+        ],
+      },
+    },
+    {
       'target_name': 'ppapi_tests_extensions_media_galleries',
       'type': 'none',
       'variables': {
@@ -46,6 +66,48 @@
           'media_galleries/index.html',
           'media_galleries/manifest.json',
           'media_galleries/test.js',
+        ],
+      },
+    },
+    {
+      'target_name': 'ppapi_tests_extensions_multicast_permissions',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'ppapi_tests_extensions_multicast_permissions',
+        # Only newlib build is used in tests, no need to build others.
+        'build_newlib': 1,
+        'build_glibc': 0,
+        'build_pnacl_newlib': 0,
+        'nexe_destination_dir': 'test_data/ppapi/tests/extensions/multicast_permissions',
+        'sources': [
+          'multicast_permissions/test_multicast_permissions.cc',
+        ],
+        'test_files': [
+          'multicast_permissions/controller.js',
+          'multicast_permissions/index.html',
+          'multicast_permissions/main.js',
+          'multicast_permissions/manifest.json',
+        ],
+      },
+    },
+    {
+      'target_name': 'ppapi_tests_extensions_no_socket_permissions',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'ppapi_tests_extensions_no_socket_permissions',
+        # Only newlib build is used in tests, no need to build others.
+        'build_newlib': 1,
+        'build_glibc': 0,
+        'build_pnacl_newlib': 0,
+        'nexe_destination_dir': 'test_data/ppapi/tests/extensions/no_socket_permissions',
+        'sources': [
+          'no_socket_permissions/test_no_socket_permissions.cc',
+        ],
+        'test_files': [
+          'no_socket_permissions/controller.js',
+          'no_socket_permissions/index.html',
+          'no_socket_permissions/main.js',
+          'no_socket_permissions/manifest.json',
         ],
       },
     },

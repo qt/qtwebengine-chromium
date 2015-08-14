@@ -86,7 +86,7 @@ bool Utf8ToWindowsFilename(const std::string& utf8, std::wstring* filename);
 
 // Convert a FILETIME to a UInt64
 inline uint64 ToUInt64(const FILETIME& ft) {
-  ULARGE_INTEGER r = {ft.dwLowDateTime, ft.dwHighDateTime};
+  ULARGE_INTEGER r = {{ft.dwLowDateTime, ft.dwHighDateTime}};
   return r.QuadPart;
 }
 
@@ -125,9 +125,6 @@ inline bool IsCurrentProcessLowIntegrity() {
 }
 
 bool AdjustCurrentProcessPrivilege(const TCHAR* privilege, bool to_enable);
-
-// Sets the current thread name for the windows debugger.
-void SetCurrentThreadName(const char* name);
 
 }  // namespace rtc
 

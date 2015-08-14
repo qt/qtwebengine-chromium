@@ -12,6 +12,47 @@
 
 namespace blink {
 
+static void recordSelectorStats(const CSSParserContext& context, const CSSSelectorList& selectorList)
+{
+    if (!context.useCounter())
+        return;
+
+    for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector)) {
+        for (const CSSSelector* current = selector; current ; current = current->tagHistory()) {
+            UseCounter::Feature feature = UseCounter::NumberOfFeatures;
+            switch (current->pseudoType()) {
+            case CSSSelector::PseudoUnresolved:
+                feature = UseCounter::CSSSelectorPseudoUnresolved;
+                break;
+            case CSSSelector::PseudoContent:
+                feature = UseCounter::CSSSelectorPseudoContent;
+                break;
+            case CSSSelector::PseudoHost:
+                feature = UseCounter::CSSSelectorPseudoHost;
+                break;
+            case CSSSelector::PseudoHostContext:
+                feature = UseCounter::CSSSelectorPseudoHostContext;
+                break;
+            case CSSSelector::PseudoFullScreenDocument:
+                feature = UseCounter::CSSSelectorPseudoFullScreenDocument;
+                break;
+            case CSSSelector::PseudoFullScreenAncestor:
+                feature = UseCounter::CSSSelectorPseudoFullScreenAncestor;
+                break;
+            case CSSSelector::PseudoFullScreen:
+                feature = UseCounter::CSSSelectorPseudoFullScreen;
+                break;
+            default:
+                break;
+            }
+            if (feature != UseCounter::NumberOfFeatures)
+                context.useCounter()->count(feature);
+            if (current->selectorList())
+                recordSelectorStats(context, *current->selectorList());
+        }
+    }
+}
+
 void CSSSelectorParser::parseSelector(CSSParserTokenRange range, const CSSParserContext& context, const AtomicString& defaultNamespace, StyleSheetContents* styleSheet, CSSSelectorList& output)
 {
     CSSSelectorParser parser(context, defaultNamespace, styleSheet);
@@ -89,7 +130,7 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeComplexSelector(CSSParse
         while (end->tagHistory())
             end = end->tagHistory();
         end->setRelation(combinator);
-        if (selector->isContentPseudoElement())
+        if (selector->pseudoType() == CSSSelector::PseudoContent)
             end->setRelationIsAffectedByPseudoContent();
         end->setTagHistory(selector.release());
 
@@ -278,8 +319,10 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
 
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(colons == 1 ? CSSSelector::PseudoClass : CSSSelector::PseudoElement);
+
     String value = token.value();
-    selector->setValue(AtomicString(value.is8Bit() ? value.lower() : value));
+    bool hasArguments = token.type() == FunctionToken;
+    selector->updatePseudoType(AtomicString(value.is8Bit() ? value.lower() : value), hasArguments);
 
     if (token.type() == IdentToken) {
         range.consume();
@@ -290,76 +333,58 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
 
     CSSParserTokenRange block = range.consumeBlock();
     block.consumeWhitespace();
+    if (selector->pseudoType() == CSSSelector::PseudoUnknown)
+        return nullptr;
 
-    if ((colons == 1
-        && (token.valueEqualsIgnoringCase("host")
-            || token.valueEqualsIgnoringCase("host-context")
-            || token.valueEqualsIgnoringCase("-webkit-any")))
-        || (colons == 2 && token.valueEqualsIgnoringCase("cue"))) {
-
-        OwnPtr<CSSSelectorList> selectorList = adoptPtr(new CSSSelectorList());
-        consumeCompoundSelectorList(block, *selectorList);
-        if (!selectorList->isValid() || !block.atEnd())
-            return nullptr;
-
-        selector->setSelectorList(selectorList.release());
-        selector->pseudoType(); // FIXME: Do we need to force the pseudo type to be cached?
-        ASSERT(selector->pseudoType() != CSSSelector::PseudoUnknown);
-        return selector.release();
-    }
-
-    if (colons == 1 && token.valueEqualsIgnoringCase("not")) {
-        OwnPtr<CSSParserSelector> innerSelector = consumeCompoundSelector(block);
-        block.consumeWhitespace();
-        if (!innerSelector || !innerSelector->isSimple() || !block.atEnd())
-            return nullptr;
-        Vector<OwnPtr<CSSParserSelector>> selectorVector;
-        selectorVector.append(innerSelector.release());
-        selector->adoptSelectorVector(selectorVector);
-        return selector.release();
-    }
-
-    if (colons == 1 && token.valueEqualsIgnoringCase("lang")) {
-        // FIXME: CSS Selectors Level 4 allows :lang(*-foo)
-        const CSSParserToken& ident = block.consumeIncludingWhitespace();
-        if (ident.type() != IdentToken || !block.atEnd())
-            return nullptr;
-        selector->setArgument(ident.value());
-        selector->pseudoType(); // FIXME: Do we need to force the pseudo type to be cached?
-        ASSERT(selector->pseudoType() == CSSSelector::PseudoLang);
-        return selector.release();
-    }
-
-    if (colons == 1
-        && (token.valueEqualsIgnoringCase("nth-child")
-            || token.valueEqualsIgnoringCase("nth-last-child")
-            || token.valueEqualsIgnoringCase("nth-of-type")
-            || token.valueEqualsIgnoringCase("nth-last-of-type"))) {
-        std::pair<int, int> ab;
-        if (!consumeANPlusB(block, ab))
-            return nullptr;
-        block.consumeWhitespace();
-        if (!block.atEnd())
-            return nullptr;
-        // FIXME: We shouldn't serialize here and reparse in CSSSelector!
-        // Serialization should be in CSSSelector::selectorText instead.
-        int a = ab.first;
-        int b = ab.second;
-        String string;
-        if (a == 0 && b == 0)
-            string = "0";
-        else if (a == 0)
-            string = String::number(b);
-        else if (b == 0)
-            string = String::format("%dn", a);
-        else if (ab.second < 0)
-            string = String::format("%dn%d", a, b);
-        else
-            string = String::format("%dn+%d", a, b);
-        selector->setArgument(AtomicString(string));
-        selector->pseudoType(); // FIXME: Do we need to force the pseudo type to be cached?
-        ASSERT(selector->pseudoType() != CSSSelector::PseudoUnknown);
-        return selector.release();
+    switch (selector->pseudoType()) {
+    case CSSSelector::PseudoHost:
+    case CSSSelector::PseudoHostContext:
+    case CSSSelector::PseudoAny:
+    case CSSSelector::PseudoCue:
+        {
+            OwnPtr<CSSSelectorList> selectorList = adoptPtr(new CSSSelectorList());
+            consumeCompoundSelectorList(block, *selectorList);
+            if (!selectorList->isValid() || !block.atEnd())
+                return nullptr;
+            selector->setSelectorList(selectorList.release());
+            return selector.release();
+        }
+    case CSSSelector::PseudoNot:
+        {
+            OwnPtr<CSSParserSelector> innerSelector = consumeCompoundSelector(block);
+            block.consumeWhitespace();
+            if (!innerSelector || !innerSelector->isSimple() || !block.atEnd())
+                return nullptr;
+            Vector<OwnPtr<CSSParserSelector>> selectorVector;
+            selectorVector.append(innerSelector.release());
+            selector->adoptSelectorVector(selectorVector);
+            return selector.release();
+        }
+    case CSSSelector::PseudoLang:
+        {
+            // FIXME: CSS Selectors Level 4 allows :lang(*-foo)
+            const CSSParserToken& ident = block.consumeIncludingWhitespace();
+            if (ident.type() != IdentToken || !block.atEnd())
+                return nullptr;
+            selector->setArgument(ident.value());
+            return selector.release();
+        }
+    case CSSSelector::PseudoNthChild:
+    case CSSSelector::PseudoNthLastChild:
+    case CSSSelector::PseudoNthOfType:
+    case CSSSelector::PseudoNthLastOfType:
+        {
+            std::pair<int, int> ab;
+            if (!consumeANPlusB(block, ab))
+                return nullptr;
+            block.consumeWhitespace();
+            if (!block.atEnd())
+                return nullptr;
+            selector->setNth(ab.first, ab.second);
+            return selector.release();
+        }
+    default:
+        break;
     }
 
     return nullptr;
@@ -533,7 +558,7 @@ void CSSSelectorParser::prependTypeSelectorIfNeeded(const AtomicString& namespac
     if (compoundSelector->crossesTreeScopes())
         return rewriteSpecifiersWithElementNameForCustomPseudoElement(tag, compoundSelector, elementName.isNull());
 
-    if (compoundSelector->isContentPseudoElement())
+    if (compoundSelector->pseudoType() == CSSSelector::PseudoContent)
         return rewriteSpecifiersWithElementNameForContentPseudoElement(tag, compoundSelector, elementName.isNull());
 
     // *:host never matches, so we can't discard the * otherwise we can't tell the
@@ -572,7 +597,7 @@ void CSSSelectorParser::rewriteSpecifiersWithElementNameForContentPseudoElement(
     CSSParserSelector* history = specifiers;
     while (history->tagHistory()) {
         history = history->tagHistory();
-        if (history->isContentPseudoElement() || history->relationIsAffectedByPseudoContent())
+        if (history->pseudoType() == CSSSelector::PseudoContent || history->relationIsAffectedByPseudoContent())
             last = history;
     }
 
@@ -620,13 +645,13 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::addSimpleSelectorToCompound(Pas
 
     CSSSelector::Relation relation = CSSSelector::SubSelector;
 
-    if (simpleSelector->crossesTreeScopes() || simpleSelector->isContentPseudoElement()) {
+    if (simpleSelector->crossesTreeScopes() || simpleSelector->pseudoType() == CSSSelector::PseudoContent) {
         if (simpleSelector->crossesTreeScopes())
             relation = CSSSelector::ShadowPseudo;
         simpleSelector->appendTagHistory(relation, compoundSelector);
         return simpleSelector;
     }
-    if (compoundSelector->crossesTreeScopes() || compoundSelector->isContentPseudoElement()) {
+    if (compoundSelector->crossesTreeScopes() || compoundSelector->pseudoType() == CSSSelector::PseudoContent) {
         if (compoundSelector->crossesTreeScopes())
             relation = CSSSelector::ShadowPseudo;
         compoundSelector->insertTagHistory(CSSSelector::SubSelector, simpleSelector, relation);
@@ -636,52 +661,6 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::addSimpleSelectorToCompound(Pas
     // All other simple selectors are added to the end of the compound.
     compoundSelector->appendTagHistory(CSSSelector::SubSelector, simpleSelector);
     return compoundSelector;
-}
-
-void CSSSelectorParser::recordSelectorStats(const CSSParserContext& context, const CSSSelectorList& selectorList)
-{
-    if (!context.useCounter())
-        return;
-
-    for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector)) {
-        for (const CSSSelector* current = selector; current ; current = current->tagHistory()) {
-            UseCounter::Feature feature = UseCounter::NumberOfFeatures;
-            switch (current->pseudoType()) {
-            case CSSSelector::PseudoUnresolved:
-                feature = UseCounter::CSSSelectorPseudoUnresolved;
-                break;
-            case CSSSelector::PseudoShadow:
-                feature = UseCounter::CSSSelectorPseudoShadow;
-                break;
-            case CSSSelector::PseudoContent:
-                feature = UseCounter::CSSSelectorPseudoContent;
-                break;
-            case CSSSelector::PseudoHost:
-                feature = UseCounter::CSSSelectorPseudoHost;
-                break;
-            case CSSSelector::PseudoHostContext:
-                feature = UseCounter::CSSSelectorPseudoHostContext;
-                break;
-            case CSSSelector::PseudoFullScreenDocument:
-                feature = UseCounter::CSSSelectorPseudoFullScreenDocument;
-                break;
-            case CSSSelector::PseudoFullScreenAncestor:
-                feature = UseCounter::CSSSelectorPseudoFullScreenAncestor;
-                break;
-            case CSSSelector::PseudoFullScreen:
-                feature = UseCounter::CSSSelectorPseudoFullScreen;
-                break;
-            default:
-                break;
-            }
-            if (feature != UseCounter::NumberOfFeatures)
-                context.useCounter()->count(feature);
-            if (current->relation() == CSSSelector::ShadowDeep)
-                context.useCounter()->count(UseCounter::CSSDeepCombinator);
-            if (current->selectorList())
-                recordSelectorStats(context, *current->selectorList());
-        }
-    }
 }
 
 } // namespace blink

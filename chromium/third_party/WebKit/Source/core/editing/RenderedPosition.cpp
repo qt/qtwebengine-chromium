@@ -43,20 +43,20 @@ static inline LayoutObject* layoutObjectFromPosition(const Position& position)
     ASSERT(position.isNotNull());
     Node* layoutObjectNode = nullptr;
     switch (position.anchorType()) {
-    case Position::PositionIsOffsetInAnchor:
+    case PositionAnchorType::OffsetInAnchor:
         layoutObjectNode = position.computeNodeAfterPosition();
         if (!layoutObjectNode || !layoutObjectNode->layoutObject())
             layoutObjectNode = position.anchorNode()->lastChild();
         break;
 
-    case Position::PositionIsBeforeAnchor:
-    case Position::PositionIsAfterAnchor:
+    case PositionAnchorType::BeforeAnchor:
+    case PositionAnchorType::AfterAnchor:
         break;
 
-    case Position::PositionIsBeforeChildren:
+    case PositionAnchorType::BeforeChildren:
         layoutObjectNode = position.anchorNode()->firstChild();
         break;
-    case Position::PositionIsAfterChildren:
+    case PositionAnchorType::AfterChildren:
         layoutObjectNode = position.anchorNode()->lastChild();
         break;
     }
@@ -74,7 +74,9 @@ RenderedPosition::RenderedPosition(const VisiblePosition& position)
 {
     if (position.isNull())
         return;
-    position.getInlineBoxAndOffset(m_inlineBox, m_offset);
+    InlineBoxPosition boxPosition = position.computeInlineBoxPosition();
+    m_inlineBox = boxPosition.inlineBox;
+    m_offset = boxPosition.offsetInBox;
     if (m_inlineBox)
         m_layoutObject = &m_inlineBox->layoutObject();
     else
@@ -90,11 +92,18 @@ RenderedPosition::RenderedPosition(const Position& position, EAffinity affinity)
 {
     if (position.isNull())
         return;
-    position.getInlineBoxAndOffset(affinity, m_inlineBox, m_offset);
+    InlineBoxPosition boxPosition = position.computeInlineBoxPosition(affinity);
+    m_inlineBox = boxPosition.inlineBox;
+    m_offset = boxPosition.offsetInBox;
     if (m_inlineBox)
         m_layoutObject = &m_inlineBox->layoutObject();
     else
         m_layoutObject = layoutObjectFromPosition(position);
+}
+
+RenderedPosition::RenderedPosition(const PositionInComposedTree& position, EAffinity affinity)
+    : RenderedPosition(toPositionInDOMTree(position), affinity)
+{
 }
 
 InlineBox* RenderedPosition::prevLeafChild() const

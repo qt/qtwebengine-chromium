@@ -50,11 +50,11 @@
 #include "core/dom/StyleChangeReason.h"
 #include "core/events/EventFactory.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/html/canvas/CanvasRenderingContextFactory.h"
 #include "core/html/parser/HTMLParserThread.h"
 #include "core/workers/WorkerThread.h"
 #include "platform/EventTracer.h"
 #include "platform/FontFamilyNames.h"
-#include "platform/PlatformThreadData.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/Partitions.h"
@@ -109,10 +109,6 @@ void CoreInitializer::init()
     SecurityPolicy::init();
 
     registerEventFactory();
-
-    // Ensure that the main thread's thread-local data is initialized before
-    // starting any worker threads.
-    PlatformThreadData::current();
 
     StringImpl::freezeStaticStrings();
 

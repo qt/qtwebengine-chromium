@@ -63,9 +63,7 @@ WebInspector.ObjectPropertiesSection._arrayLoadThreshold = 100;
 WebInspector.ObjectPropertiesSection.defaultObjectPresentation = function(object, skipProto)
 {
     var componentRoot = createElementWithClass("span", "source-code");
-    WebInspector.installComponentRootStyles(componentRoot);
-
-    var shadowRoot = componentRoot.createShadowRoot();
+    var shadowRoot = WebInspector.createShadowRootWithCoreStyles(componentRoot);
     shadowRoot.appendChild(WebInspector.Widget.createStyleElement("components/objectValue.css"));
     shadowRoot.appendChild(WebInspector.ObjectPropertiesSection.createValueElement(object, false));
     if (!object.hasChildren)
@@ -1147,6 +1145,7 @@ WebInspector.ObjectPropertiesSection.createValueElement = function(value, wasThr
 
     if (type === "object" && subtype === "node" && description) {
         WebInspector.DOMPresentationUtils.createSpansForNodeTitle(valueElement, description);
+        valueElement.addEventListener("click", mouseClick, false);
         valueElement.addEventListener("mousemove", mouseMove, false);
         valueElement.addEventListener("mouseleave", mouseLeave, false);
     } else {
@@ -1163,6 +1162,15 @@ WebInspector.ObjectPropertiesSection.createValueElement = function(value, wasThr
         WebInspector.DOMModel.hideDOMNodeHighlight();
     }
 
+    /**
+     * @param {!Event} event
+     */
+    function mouseClick(event)
+    {
+        WebInspector.Revealer.reveal(value);
+        event.consume(true);
+    }
+
     return valueElement;
 }
 
@@ -1170,8 +1178,9 @@ WebInspector.ObjectPropertiesSection.createValueElement = function(value, wasThr
  * @param {!WebInspector.RemoteObject} func
  * @param {!Element} element
  * @param {boolean} linkify
+ * @param {boolean=} includePreview
  */
-WebInspector.ObjectPropertiesSection.formatObjectAsFunction = function(func, element, linkify)
+WebInspector.ObjectPropertiesSection.formatObjectAsFunction = function(func, element, linkify, includePreview)
 {
     func.functionDetails(didGetDetails);
 
@@ -1188,9 +1197,16 @@ WebInspector.ObjectPropertiesSection.formatObjectAsFunction = function(func, ele
 
         if (linkify && response && response.location) {
             var anchor = createElement("span");
+            element.classList.add("linkified");
             element.appendChild(anchor);
             element.addEventListener("click", WebInspector.Revealer.reveal.bind(WebInspector.Revealer, response.location, undefined));
             element = anchor;
+        }
+
+        var text = func.description.substring(0, 200);
+        if (includePreview) {
+            element.textContent = text.replace(/^function /, "") + (func.description.length > 200 ? "\u2026" : "");
+            return;
         }
 
         // Now parse description and get the real params and title.
@@ -1204,7 +1220,6 @@ WebInspector.ObjectPropertiesSection.formatObjectAsFunction = function(func, ele
          */
         function processTokens(tokenizerFactory)
         {
-            var text = func.description.substring(0, 200);
             var tokenize = tokenizerFactory.createTokenizer("text/javascript");
             tokenize(text, processToken);
             element.textContent = (functionName || "anonymous") + "(" + (params || []).join(", ") + ")";

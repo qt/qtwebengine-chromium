@@ -33,6 +33,7 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8ThrowException.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/events/Event.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceLoaderOptions.h"
@@ -51,6 +52,7 @@
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "modules/serviceworkers/ServiceWorkerScriptCachedMetadataHandler.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
+#include "modules/serviceworkers/StashedPortCollection.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/DatabaseIdentifier.h"
@@ -85,7 +87,7 @@ PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> ServiceWorkerGlobalScope::creat
     RefPtrWillBeRawPtr<ServiceWorkerGlobalScope> context = adoptRefWillBeNoop(new ServiceWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, monotonicallyIncreasingTime(), startupData->m_starterOrigin, startupData->m_workerClients.release()));
 
     context->setV8CacheOptions(startupData->m_v8CacheOptions);
-    context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
+    context->applyContentSecurityPolicyFromVector(*startupData->m_contentSecurityPolicyHeaders);
 
     return context.release();
 }
@@ -114,6 +116,13 @@ void ServiceWorkerGlobalScope::didEvaluateWorkerScript()
             platform->histogramCustomCounts("ServiceWorker.ScriptCachedMetadataTotalSize", m_scriptCachedMetadataTotalSize, 1000, 50000000, 50);
     }
     m_didEvaluateScript = true;
+}
+
+StashedPortCollection* ServiceWorkerGlobalScope::ports()
+{
+    if (!m_ports)
+        m_ports = StashedPortCollection::create(this);
+    return m_ports;
 }
 
 ScriptPromise ServiceWorkerGlobalScope::fetch(ScriptState* scriptState, const RequestInfo& input, const Dictionary& init, ExceptionState& exceptionState)
@@ -206,6 +215,7 @@ DEFINE_TRACE(ServiceWorkerGlobalScope)
 {
     visitor->trace(m_clients);
     visitor->trace(m_registration);
+    visitor->trace(m_ports);
     WorkerGlobalScope::trace(visitor);
 }
 

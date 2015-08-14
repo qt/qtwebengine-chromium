@@ -273,7 +273,7 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
 					OPENSSL_PUT_ERROR(X509, X509_verify_cert, ERR_R_MALLOC_FAILURE);
 					goto end;
 					}
-				CRYPTO_add(&xtmp->references,1,CRYPTO_LOCK_X509);
+				CRYPTO_refcount_inc(&xtmp->references);
 				(void)sk_X509_delete_ptr(sktmp,xtmp);
 				ctx->last_untrusted++;
 				x=xtmp;
@@ -990,7 +990,7 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509_CRL **pdcrl,
 		*pissuer = best_crl_issuer;
 		*pscore = best_score;
 		*preasons = best_reasons;
-		CRYPTO_add(&best_crl->references, 1, CRYPTO_LOCK_X509_CRL);
+		CRYPTO_refcount_inc(&best_crl->references);
 		if (*pdcrl)
 			{
 			X509_CRL_free(*pdcrl);
@@ -1097,7 +1097,7 @@ static void get_delta_sk(X509_STORE_CTX *ctx, X509_CRL **dcrl, int *pscore,
 			{
 			if (check_crl_time(ctx, delta, 0))
 				*pscore |= CRL_SCORE_TIME_DELTA;
-			CRYPTO_add(&delta->references, 1, CRYPTO_LOCK_X509_CRL);
+			CRYPTO_refcount_inc(&delta->references);
 			*dcrl = delta;
 			return;
 			}
@@ -1829,48 +1829,88 @@ int X509_cmp_time(const ASN1_TIME *ctm, time_t *cmp_time)
 	ASN1_TIME atm;
 	long offset;
 	char buff1[24],buff2[24],*p;
-	int i,j;
+	int i, j, remaining;
 
 	p=buff1;
-	i=ctm->length;
+	remaining = ctm->length;
 	str=(char *)ctm->data;
+	/* Note that the following (historical) code allows much more slack in
+	 * the time format than RFC5280. In RFC5280, the representation is
+	 * fixed:
+	 * UTCTime: YYMMDDHHMMSSZ
+	 * GeneralizedTime: YYYYMMDDHHMMSSZ */
 	if (ctm->type == V_ASN1_UTCTIME)
 		{
-		if ((i < 11) || (i > 17)) return 0;
+		/* YYMMDDHHMM[SS]Z or YYMMDDHHMM[SS](+-)hhmm */
+		int min_length = sizeof("YYMMDDHHMMZ") - 1;
+		int max_length = sizeof("YYMMDDHHMMSS+hhmm") - 1;
+		if (remaining < min_length || remaining > max_length)
+			return 0;
 		memcpy(p,str,10);
 		p+=10;
 		str+=10;
+		remaining -= 10;
 		}
 	else
 		{
-		if (i < 13) return 0;
+		/* YYYYMMDDHHMM[SS[.fff]]Z or YYYYMMDDHHMM[SS[.f[f[f]]]](+-)hhmm */
+		int min_length = sizeof("YYYYMMDDHHMMZ") - 1;
+		int max_length = sizeof("YYYYMMDDHHMMSS.fff+hhmm") - 1;
+		if (remaining < min_length || remaining > max_length)
+			return 0;
 		memcpy(p,str,12);
 		p+=12;
 		str+=12;
+		remaining -= 12;
 		}
 
 	if ((*str == 'Z') || (*str == '-') || (*str == '+'))
 		{ *(p++)='0'; *(p++)='0'; }
 	else
 		{ 
+		/* SS (seconds) */
+		if (remaining < 2)
+			return 0;
 		*(p++)= *(str++);
 		*(p++)= *(str++);
-		/* Skip any fractional seconds... */
-		if (*str == '.')
+		remaining -= 2;
+		/* Skip any (up to three) fractional seconds...
+		 * TODO(emilia): in RFC5280, fractional seconds are forbidden.
+		 * Can we just kill them altogether? */
+		if (remaining && *str == '.')
 			{
 			str++;
-			while ((*str >= '0') && (*str <= '9')) str++;
+			remaining--;
+			for (i = 0; i < 3 && remaining; i++, str++, remaining--)
+				{
+				if (*str < '0' || *str > '9')
+					break;
+				}
 			}
 		
 		}
 	*(p++)='Z';
 	*(p++)='\0';
 
+	/* We now need either a terminating 'Z' or an offset. */
+	if (!remaining)
+		return 0;
 	if (*str == 'Z')
+		{
+		if (remaining != 1)
+			return 0;
 		offset=0;
+		}
 	else
 		{
+		/* (+-)HHMM */
 		if ((*str != '+') && (*str != '-'))
+			return 0;
+		/* Historical behaviour: the (+-)hhmm offset is forbidden in RFC5280. */
+		if (remaining != 5)
+			return 0;
+		if (str[1] < '0' || str[1] > '9' || str[2] < '0' || str[2] > '9' ||
+			str[3] < '0' || str[3] > '9' || str[4] < '0' || str[4] > '9')
 			return 0;
 		offset=((str[1]-'0')*10+(str[2]-'0'))*60;
 		offset+=(str[3]-'0')*10+(str[4]-'0');

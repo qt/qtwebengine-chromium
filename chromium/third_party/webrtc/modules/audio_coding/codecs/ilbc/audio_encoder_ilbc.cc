@@ -25,12 +25,9 @@ const int kSampleRateHz = 8000;
 }  // namespace
 
 bool AudioEncoderIlbc::Config::IsOk() const {
-  if (!(frame_size_ms == 20 || frame_size_ms == 30 || frame_size_ms == 40 ||
-        frame_size_ms == 60))
-    return false;
-  if (kSampleRateHz / 100 * (frame_size_ms / 10) > kMaxSamplesPerPacket)
-    return false;
-  return true;
+  return (frame_size_ms == 20 || frame_size_ms == 30 || frame_size_ms == 40 ||
+          frame_size_ms == 60) &&
+      (kSampleRateHz / 100 * (frame_size_ms / 10)) <= kMaxSamplesPerPacket;
 }
 
 AudioEncoderIlbc::AudioEncoderIlbc(const Config& config)
@@ -67,6 +64,19 @@ int AudioEncoderIlbc::Num10MsFramesInNextPacket() const {
 
 int AudioEncoderIlbc::Max10MsFramesInAPacket() const {
   return num_10ms_frames_per_packet_;
+}
+
+int AudioEncoderIlbc::GetTargetBitrate() const {
+  switch (num_10ms_frames_per_packet_) {
+    case 2: case 4:
+      // 38 bytes per frame of 20 ms => 15200 bits/s.
+      return 15200;
+    case 3: case 6:
+      // 50 bytes per frame of 30 ms => (approx) 13333 bits/s.
+      return 13333;
+    default:
+      FATAL();
+  }
 }
 
 AudioEncoder::EncodedInfo AudioEncoderIlbc::EncodeInternal(

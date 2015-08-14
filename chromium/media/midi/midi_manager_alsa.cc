@@ -14,7 +14,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/safe_strerror_posix.h"
+#include "base/posix/safe_strerror.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -145,20 +145,14 @@ void SetStringIfNonEmpty(base::DictionaryValue* value,
 }  // namespace
 
 MidiManagerAlsa::MidiManagerAlsa()
-    : in_client_(NULL),
-      out_client_(NULL),
-      out_client_id_(-1),
-      in_port_id_(-1),
-      alsa_cards_deleter_(&alsa_cards_),
-      alsa_card_midi_count_(0),
-      decoder_(NULL),
-      udev_(device::udev_new()),
+    : udev_(device::udev_new()),
       send_thread_("MidiSendThread"),
-      event_thread_("MidiEventThread"),
-      event_thread_shutdown_(false) {
+      event_thread_("MidiEventThread") {
   // Initialize decoder.
-  snd_midi_event_new(0, &decoder_);
-  snd_midi_event_no_status(decoder_, 1);
+  snd_midi_event_t* decoder;
+  snd_midi_event_new(0, &decoder);
+  decoder_.reset(decoder);
+  snd_midi_event_no_status(decoder_.get(), 1);
 }
 
 MidiManagerAlsa::~MidiManagerAlsa() {
@@ -175,57 +169,55 @@ MidiManagerAlsa::~MidiManagerAlsa() {
 
   // Close the out client. This will trigger the event thread to stop,
   // because of SND_SEQ_EVENT_CLIENT_EXIT.
-  if (out_client_)
-    snd_seq_close(out_client_);
+  if (out_client_.get())
+    snd_seq_close(out_client_.release());
 
   // Wait for the event thread to stop.
   event_thread_.Stop();
-
-  // Close the in client.
-  if (in_client_)
-    snd_seq_close(in_client_);
-
-  // Free the decoder.
-  snd_midi_event_free(decoder_);
 }
 
 void MidiManagerAlsa::StartInitialization() {
   // TODO(agoode): Move off I/O thread. See http://crbug.com/374341.
 
   // Create client handles.
+  snd_seq_t* in_client;
   int err =
-      snd_seq_open(&in_client_, kAlsaHw, SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
+      snd_seq_open(&in_client, kAlsaHw, SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK);
   if (err != 0) {
     VLOG(1) << "snd_seq_open fails: " << snd_strerror(err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
-  in_client_id_ = snd_seq_client_id(in_client_);
-  err = snd_seq_open(&out_client_, kAlsaHw, SND_SEQ_OPEN_OUTPUT, 0);
+  in_client_.reset(in_client);
+  in_client_id_ = snd_seq_client_id(in_client_.get());
+
+  snd_seq_t* out_client;
+  err = snd_seq_open(&out_client, kAlsaHw, SND_SEQ_OPEN_OUTPUT, 0);
   if (err != 0) {
     VLOG(1) << "snd_seq_open fails: " << snd_strerror(err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
-  out_client_id_ = snd_seq_client_id(out_client_);
+  out_client_.reset(out_client);
+  out_client_id_ = snd_seq_client_id(out_client_.get());
 
   // Name the clients.
-  err = snd_seq_set_client_name(in_client_, "Chrome (input)");
+  err = snd_seq_set_client_name(in_client_.get(), "Chrome (input)");
   if (err != 0) {
     VLOG(1) << "snd_seq_set_client_name fails: " << snd_strerror(err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
-  err = snd_seq_set_client_name(out_client_, "Chrome (output)");
+  err = snd_seq_set_client_name(out_client_.get(), "Chrome (output)");
   if (err != 0) {
     VLOG(1) << "snd_seq_set_client_name fails: " << snd_strerror(err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
 
   // Create input port.
   in_port_id_ = snd_seq_create_simple_port(
-      in_client_, NULL, kCreateInputPortCaps, kCreatePortType);
+      in_client_.get(), NULL, kCreateInputPortCaps, kCreatePortType);
   if (in_port_id_ < 0) {
     VLOG(1) << "snd_seq_create_simple_port fails: "
             << snd_strerror(in_port_id_);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
 
   // Subscribe to the announce port.
@@ -239,11 +231,11 @@ void MidiManagerAlsa::StartInitialization() {
   announce_dest.port = in_port_id_;
   snd_seq_port_subscribe_set_sender(subs, &announce_sender);
   snd_seq_port_subscribe_set_dest(subs, &announce_dest);
-  err = snd_seq_subscribe_port(in_client_, subs);
+  err = snd_seq_subscribe_port(in_client_.get(), subs);
   if (err != 0) {
     VLOG(1) << "snd_seq_subscribe_port on the announce port fails: "
             << snd_strerror(err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
 
   // Generate hotplug events for existing ports.
@@ -255,19 +247,20 @@ void MidiManagerAlsa::StartInitialization() {
       device::udev_monitor_new_from_netlink(udev_.get(), kUdev));
   if (!udev_monitor_.get()) {
     VLOG(1) << "udev_monitor_new_from_netlink fails";
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
   err = device::udev_monitor_filter_add_match_subsystem_devtype(
       udev_monitor_.get(), kUdevSubsystemSound, nullptr);
   if (err != 0) {
     VLOG(1) << "udev_monitor_add_match_subsystem fails: "
-            << safe_strerror(-err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+            << base::safe_strerror(-err);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
   err = device::udev_monitor_enable_receiving(udev_monitor_.get());
   if (err != 0) {
-    VLOG(1) << "udev_monitor_enable_receiving fails: " << safe_strerror(-err);
-    return CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+    VLOG(1) << "udev_monitor_enable_receiving fails: "
+            << base::safe_strerror(-err);
+    return CompleteInitialization(Result::INITIALIZATION_ERROR);
   }
 
   // Generate hotplug events for existing udev devices.
@@ -279,7 +272,7 @@ void MidiManagerAlsa::StartInitialization() {
       FROM_HERE,
       base::Bind(&MidiManagerAlsa::ScheduleEventLoop, base::Unretained(this)));
 
-  CompleteInitialization(MIDI_OK);
+  CompleteInitialization(Result::OK);
 }
 
 void MidiManagerAlsa::DispatchSendMidiData(MidiManagerClient* client,
@@ -358,13 +351,10 @@ MidiManagerAlsa::MidiPort::MidiPort(const std::string& path,
       client_name_(client_name),
       port_name_(port_name),
       manufacturer_(manufacturer),
-      version_(version),
-      web_port_index_(0),
-      connected_(true) {
+      version_(version) {
 }
 
-MidiManagerAlsa::MidiPort::~MidiPort() {
-}
+MidiManagerAlsa::MidiPort::~MidiPort() = default;
 
 // Note: keep synchronized with the MidiPort::Match* methods.
 scoped_ptr<base::Value> MidiManagerAlsa::MidiPort::Value() const {
@@ -487,13 +477,7 @@ bool MidiManagerAlsa::MidiPort::MatchNoCardPass2(const MidiPort& query) const {
          (query.midi_device() == -1);
 }
 
-MidiManagerAlsa::MidiPortStateBase::~MidiPortStateBase() {
-}
-
-ScopedVector<MidiManagerAlsa::MidiPort>*
-MidiManagerAlsa::MidiPortStateBase::ports() {
-  return &ports_;
-}
+MidiManagerAlsa::MidiPortStateBase::~MidiPortStateBase() = default;
 
 MidiManagerAlsa::MidiPortStateBase::iterator
 MidiManagerAlsa::MidiPortStateBase::Find(
@@ -575,17 +559,14 @@ MidiManagerAlsa::MidiPortStateBase::FindDisconnected(
   return ports_.end();
 }
 
-MidiManagerAlsa::MidiPortStateBase::MidiPortStateBase() {
-}
+MidiManagerAlsa::MidiPortStateBase::MidiPortStateBase() = default;
 
 void MidiManagerAlsa::TemporaryMidiPortState::Insert(
     scoped_ptr<MidiPort> port) {
-  ports()->push_back(port.Pass());
+  ports().push_back(port.release());
 }
 
-MidiManagerAlsa::MidiPortState::MidiPortState()
-    : num_input_ports_(0), num_output_ports_(0) {
-}
+MidiManagerAlsa::MidiPortState::MidiPortState() = default;
 
 uint32 MidiManagerAlsa::MidiPortState::Insert(scoped_ptr<MidiPort> port) {
   // Add the web midi index.
@@ -599,22 +580,19 @@ uint32 MidiManagerAlsa::MidiPortState::Insert(scoped_ptr<MidiPort> port) {
       break;
   }
   port->set_web_port_index(web_port_index);
-  ports()->push_back(port.Pass());
+  ports().push_back(port.release());
   return web_port_index;
 }
 
-MidiManagerAlsa::AlsaSeqState::AlsaSeqState()
-    : clients_deleter_(&clients_), card_client_count_(0) {
-}
+MidiManagerAlsa::AlsaSeqState::AlsaSeqState() = default;
 
-MidiManagerAlsa::AlsaSeqState::~AlsaSeqState() {
-}
+MidiManagerAlsa::AlsaSeqState::~AlsaSeqState() = default;
 
 void MidiManagerAlsa::AlsaSeqState::ClientStart(int client_id,
                                                 const std::string& client_name,
                                                 snd_seq_client_type_t type) {
   ClientExit(client_id);
-  clients_[client_id] = new Client(client_name, type);
+  clients_.insert(client_id, make_scoped_ptr(new Client(client_name, type)));
   if (IsCardClient(type, client_id))
     ++card_client_count_;
 }
@@ -628,7 +606,6 @@ void MidiManagerAlsa::AlsaSeqState::ClientExit(int client_id) {
   if (it != clients_.end()) {
     if (IsCardClient(it->second->type(), client_id))
       --card_client_count_;
-    delete it->second;
     clients_.erase(it);
   }
 }
@@ -642,7 +619,7 @@ void MidiManagerAlsa::AlsaSeqState::PortStart(
   auto it = clients_.find(client_id);
   if (it != clients_.end())
     it->second->AddPort(port_id,
-                        scoped_ptr<Port>(new Port(port_name, direction, midi)));
+                        make_scoped_ptr(new Port(port_name, direction, midi)));
 }
 
 void MidiManagerAlsa::AlsaSeqState::PortExit(int client_id, int port_id) {
@@ -663,8 +640,6 @@ scoped_ptr<MidiManagerAlsa::TemporaryMidiPortState>
 MidiManagerAlsa::AlsaSeqState::ToMidiPortState(const AlsaCardMap& alsa_cards) {
   scoped_ptr<MidiManagerAlsa::TemporaryMidiPortState> midi_ports(
       new TemporaryMidiPortState);
-  // TODO(agoode): Use more information from udev, to allow hardware matching.
-  // See http://crbug.com/486471.
   auto card_it = alsa_cards.begin();
 
   int card_midi_device = -1;
@@ -717,13 +692,13 @@ MidiManagerAlsa::AlsaSeqState::ToMidiPortState(const AlsaCardMap& alsa_cards) {
         PortDirection direction = port->direction();
         if (direction == PortDirection::kInput ||
             direction == PortDirection::kDuplex) {
-          midi_ports->Insert(scoped_ptr<MidiPort>(new MidiPort(
+          midi_ports->Insert(make_scoped_ptr(new MidiPort(
               path, id, client_id, port_id, midi_device, client->name(),
               port->name(), manufacturer, version, MidiPort::Type::kInput)));
         }
         if (direction == PortDirection::kOutput ||
             direction == PortDirection::kDuplex) {
-          midi_ports->Insert(scoped_ptr<MidiPort>(new MidiPort(
+          midi_ports->Insert(make_scoped_ptr(new MidiPort(
               path, id, client_id, port_id, midi_device, client->name(),
               port->name(), manufacturer, version, MidiPort::Type::kOutput)));
         }
@@ -741,50 +716,22 @@ MidiManagerAlsa::AlsaSeqState::Port::Port(
     : name_(name), direction_(direction), midi_(midi) {
 }
 
-MidiManagerAlsa::AlsaSeqState::Port::~Port() {
-}
-
-std::string MidiManagerAlsa::AlsaSeqState::Port::name() const {
-  return name_;
-}
-
-MidiManagerAlsa::AlsaSeqState::PortDirection
-MidiManagerAlsa::AlsaSeqState::Port::direction() const {
-  return direction_;
-}
-
-bool MidiManagerAlsa::AlsaSeqState::Port::midi() const {
-  return midi_;
-}
+MidiManagerAlsa::AlsaSeqState::Port::~Port() = default;
 
 MidiManagerAlsa::AlsaSeqState::Client::Client(const std::string& name,
                                               snd_seq_client_type_t type)
-    : name_(name), type_(type), ports_deleter_(&ports_) {
+    : name_(name), type_(type) {
 }
 
-MidiManagerAlsa::AlsaSeqState::Client::~Client() {
-}
-
-std::string MidiManagerAlsa::AlsaSeqState::Client::name() const {
-  return name_;
-}
-
-snd_seq_client_type_t MidiManagerAlsa::AlsaSeqState::Client::type() const {
-  return type_;
-}
+MidiManagerAlsa::AlsaSeqState::Client::~Client() = default;
 
 void MidiManagerAlsa::AlsaSeqState::Client::AddPort(int addr,
                                                     scoped_ptr<Port> port) {
-  RemovePort(addr);
-  ports_[addr] = port.release();
+  ports_.set(addr, port.Pass());
 }
 
 void MidiManagerAlsa::AlsaSeqState::Client::RemovePort(int addr) {
-  auto it = ports_.find(addr);
-  if (it != ports_.end()) {
-    delete it->second;
-    ports_.erase(it);
-  }
+  ports_.erase(addr);
 }
 
 MidiManagerAlsa::AlsaSeqState::Client::PortMap::const_iterator
@@ -825,8 +772,7 @@ MidiManagerAlsa::AlsaCard::AlsaCard(udev_device* dev,
           longname)) {
 }
 
-MidiManagerAlsa::AlsaCard::~AlsaCard() {
-}
+MidiManagerAlsa::AlsaCard::~AlsaCard() = default;
 
 // static
 std::string MidiManagerAlsa::AlsaCard::ExtractManufacturerString(
@@ -869,13 +815,13 @@ std::string MidiManagerAlsa::AlsaCard::ExtractManufacturerString(
 
 void MidiManagerAlsa::SendMidiData(uint32 port_index,
                                    const std::vector<uint8>& data) {
-  DCHECK(send_thread_.message_loop_proxy()->BelongsToCurrentThread());
+  DCHECK(send_thread_.task_runner()->BelongsToCurrentThread());
 
   snd_midi_event_t* encoder;
   snd_midi_event_new(kSendBufferSize, &encoder);
-  for (unsigned int i = 0; i < data.size(); i++) {
+  for (const auto datum : data) {
     snd_seq_event_t event;
-    int result = snd_midi_event_encode_byte(encoder, data[i], &event);
+    int result = snd_midi_event_encode_byte(encoder, datum, &event);
     if (result == 1) {
       // Full event, send it.
       base::AutoLock lock(out_ports_lock_);
@@ -884,7 +830,7 @@ void MidiManagerAlsa::SendMidiData(uint32 port_index,
         snd_seq_ev_set_source(&event, it->second);
         snd_seq_ev_set_subs(&event);
         snd_seq_ev_set_direct(&event);
-        snd_seq_event_output_direct(out_client_, &event);
+        snd_seq_event_output_direct(out_client_.get(), &event);
       }
     }
   }
@@ -901,13 +847,13 @@ void MidiManagerAlsa::EventLoop() {
   bool loop_again = true;
 
   struct pollfd pfd[2];
-  snd_seq_poll_descriptors(in_client_, &pfd[0], 1, POLLIN);
+  snd_seq_poll_descriptors(in_client_.get(), &pfd[0], 1, POLLIN);
   pfd[1].fd = device::udev_monitor_get_fd(udev_monitor_.get());
   pfd[1].events = POLLIN;
 
   int err = HANDLE_EINTR(poll(pfd, arraysize(pfd), -1));
   if (err < 0) {
-    VLOG(1) << "poll fails: " << safe_strerror(errno);
+    VLOG(1) << "poll fails: " << base::safe_strerror(errno);
     loop_again = false;
   } else {
     if (pfd[0].revents & POLLIN) {
@@ -917,8 +863,8 @@ void MidiManagerAlsa::EventLoop() {
           (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF();
       do {
         snd_seq_event_t* event;
-        err = snd_seq_event_input(in_client_, &event);
-        remaining = snd_seq_event_input_pending(in_client_, 0);
+        err = snd_seq_event_input(in_client_.get(), &event);
+        remaining = snd_seq_event_input_pending(in_client_.get(), 0);
 
         if (err == -ENOSPC) {
           // Handle out of space error.
@@ -993,7 +939,8 @@ void MidiManagerAlsa::ProcessSingleEvent(snd_seq_event_t* event,
     } else {
       // Otherwise, decode this and send that on.
       unsigned char buf[12];
-      long count = snd_midi_event_decode(decoder_, buf, sizeof(buf), event);
+      long count =
+          snd_midi_event_decode(decoder_.get(), buf, sizeof(buf), event);
       if (count <= 0) {
         if (count != -ENOENT) {
           // ENOENT means that it's not a MIDI message, which is not an
@@ -1015,7 +962,8 @@ void MidiManagerAlsa::ProcessClientStartEvent(int client_id) {
 
   snd_seq_client_info_t* client_info;
   snd_seq_client_info_alloca(&client_info);
-  int err = snd_seq_get_any_client_info(in_client_, client_id, client_info);
+  int err =
+      snd_seq_get_any_client_info(in_client_.get(), client_id, client_info);
   if (err != 0)
     return;
 
@@ -1035,8 +983,8 @@ void MidiManagerAlsa::ProcessClientStartEvent(int client_id) {
 void MidiManagerAlsa::ProcessPortStartEvent(const snd_seq_addr_t& addr) {
   snd_seq_port_info_t* port_info;
   snd_seq_port_info_alloca(&port_info);
-  int err =
-      snd_seq_get_any_port_info(in_client_, addr.client, addr.port, port_info);
+  int err = snd_seq_get_any_port_info(in_client_.get(), addr.client, addr.port,
+                                      port_info);
   if (err != 0)
     return;
 
@@ -1168,9 +1116,12 @@ void MidiManagerAlsa::AddCard(udev_device* dev) {
   }
   snd_ctl_close(handle);
 
-  if (midi_count > 0)
-    alsa_cards_[number] = new AlsaCard(dev, name, longname, driver, midi_count);
-  alsa_card_midi_count_ += midi_count;
+  if (midi_count > 0) {
+    scoped_ptr<AlsaCard> card(
+        new AlsaCard(dev, name, longname, driver, midi_count));
+    alsa_cards_.insert(number, card.Pass());
+    alsa_card_midi_count_ += midi_count;
+  }
 }
 
 void MidiManagerAlsa::RemoveCard(int number) {
@@ -1179,7 +1130,6 @@ void MidiManagerAlsa::RemoveCard(int number) {
     return;
 
   alsa_card_midi_count_ -= it->second->midi_device_count();
-  delete it->second;
   alsa_cards_.erase(it);
 }
 
@@ -1219,8 +1169,7 @@ void MidiManagerAlsa::UpdatePortStateAndGenerateEvents() {
     auto old_port = port_state_.Find(*new_port);
     if (old_port == port_state_.end()) {
       // Add new port.
-      uint32 web_port_index =
-          port_state_.Insert(scoped_ptr<MidiPort>(new_port));
+      uint32 web_port_index = port_state_.Insert(make_scoped_ptr(new_port));
       MidiPortInfo info(new_port->OpaqueKey(), new_port->manufacturer(),
                         new_port->port_name(), new_port->version(),
                         MIDI_PORT_OPENED);
@@ -1273,14 +1222,14 @@ void MidiManagerAlsa::EnumerateAlsaPorts() {
 
   // Enumerate clients.
   snd_seq_client_info_set_client(client_info, -1);
-  while (!snd_seq_query_next_client(in_client_, client_info)) {
+  while (!snd_seq_query_next_client(in_client_.get(), client_info)) {
     int client_id = snd_seq_client_info_get_client(client_info);
     ProcessClientStartEvent(client_id);
 
     // Enumerate ports.
     snd_seq_port_info_set_client(port_info, client_id);
     snd_seq_port_info_set_port(port_info, -1);
-    while (!snd_seq_query_next_port(in_client_, port_info)) {
+    while (!snd_seq_query_next_port(in_client_.get(), port_info)) {
       const snd_seq_addr_t* addr = snd_seq_port_info_get_addr(port_info);
       ProcessPortStartEvent(*addr);
     }
@@ -1301,13 +1250,14 @@ bool MidiManagerAlsa::EnumerateUdevCards() {
                                                    kUdevSubsystemSound);
   if (err) {
     VLOG(1) << "udev_enumerate_add_match_subsystem fails: "
-            << safe_strerror(-err);
+            << base::safe_strerror(-err);
     return false;
   }
 
   err = device::udev_enumerate_scan_devices(enumerate.get());
   if (err) {
-    VLOG(1) << "udev_enumerate_scan_devices fails: " << safe_strerror(-err);
+    VLOG(1) << "udev_enumerate_scan_devices fails: "
+            << base::safe_strerror(-err);
     return false;
   }
 
@@ -1329,7 +1279,7 @@ bool MidiManagerAlsa::CreateAlsaOutputPort(uint32 port_index,
                                            int port_id) {
   // Create the port.
   int out_port = snd_seq_create_simple_port(
-      out_client_, NULL, kCreateOutputPortCaps, kCreatePortType);
+      out_client_.get(), NULL, kCreateOutputPortCaps, kCreatePortType);
   if (out_port < 0) {
     VLOG(1) << "snd_seq_create_simple_port fails: " << snd_strerror(out_port);
     return false;
@@ -1345,10 +1295,10 @@ bool MidiManagerAlsa::CreateAlsaOutputPort(uint32 port_index,
   dest.client = client_id;
   dest.port = port_id;
   snd_seq_port_subscribe_set_dest(subs, &dest);
-  int err = snd_seq_subscribe_port(out_client_, subs);
+  int err = snd_seq_subscribe_port(out_client_.get(), subs);
   if (err != 0) {
     VLOG(1) << "snd_seq_subscribe_port fails: " << snd_strerror(err);
-    snd_seq_delete_simple_port(out_client_, out_port);
+    snd_seq_delete_simple_port(out_client_.get(), out_port);
     return false;
   }
 
@@ -1365,7 +1315,7 @@ void MidiManagerAlsa::DeleteAlsaOutputPort(uint32 port_index) {
     return;
 
   int alsa_port = it->second;
-  snd_seq_delete_simple_port(out_client_, alsa_port);
+  snd_seq_delete_simple_port(out_client_.get(), alsa_port);
   out_ports_.erase(it);
 }
 
@@ -1381,7 +1331,7 @@ bool MidiManagerAlsa::Subscribe(uint32 port_index, int client_id, int port_id) {
   dest.client = in_client_id_;
   dest.port = in_port_id_;
   snd_seq_port_subscribe_set_dest(subs, &dest);
-  int err = snd_seq_subscribe_port(in_client_, subs);
+  int err = snd_seq_subscribe_port(in_client_.get(), subs);
   if (err != 0) {
     VLOG(1) << "snd_seq_subscribe_port fails: " << snd_strerror(err);
     return false;

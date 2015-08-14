@@ -47,7 +47,6 @@
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/layout/LayoutTextControlMultiLine.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/StdLibExtras.h"
@@ -57,8 +56,8 @@ namespace blink {
 
 using namespace HTMLNames;
 
-static const int defaultRows = 2;
-static const int defaultCols = 20;
+static const unsigned defaultRows = 2;
+static const unsigned defaultCols = 20;
 
 // On submission, LF characters are converted into CRLF.
 // This function returns number of characters considering this.
@@ -149,15 +148,16 @@ void HTMLTextAreaElement::collectStyleForPresentationAttribute(const QualifiedNa
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValuePre);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWordWrap, CSSValueNormal);
         }
-    } else
+    } else {
         HTMLTextFormControlElement::collectStyleForPresentationAttribute(name, value, style);
+    }
 }
 
 void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == rowsAttr) {
-        int rows = 0;
-        if (value.isEmpty() || !parseHTMLInteger(value, rows) || rows <= 0)
+        unsigned rows = 0;
+        if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, rows) || rows <= 0)
             rows = defaultRows;
         if (m_rows != rows) {
             m_rows = rows;
@@ -165,8 +165,8 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
                 layoutObject()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
         }
     } else if (name == colsAttr) {
-        int cols = 0;
-        if (value.isEmpty() || !parseHTMLInteger(value, cols) || cols <= 0)
+        unsigned cols = 0;
+        if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, cols) || cols <= 0)
             cols = defaultCols;
         if (m_cols != cols) {
             m_cols = cols;
@@ -194,8 +194,9 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
         setNeedsValidityCheck();
     } else if (name == minlengthAttr) {
         setNeedsValidityCheck();
-    } else
+    } else {
         HTMLTextFormControlElement::parseAttribute(name, value);
+    }
 }
 
 LayoutObject* HTMLTextAreaElement::createLayoutObject(const ComputedStyle&)
@@ -282,7 +283,7 @@ void HTMLTextAreaElement::subtreeHasChanged()
     calculateAndAdjustDirectionality();
 
     ASSERT(document().isActive());
-    document().frameHost()->chrome().client().didChangeValueInTextField(*this);
+    document().frameHost()->chromeClient().didChangeValueInTextField(*this);
 }
 
 void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* event) const
@@ -347,7 +348,7 @@ void HTMLTextAreaElement::setValue(const String& value, TextFieldEventBehavior e
     setValueCommon(value, eventBehavior);
     m_isDirty = true;
     if (document().focusedElement() == this)
-        document().frameHost()->chrome().client().didUpdateTextOfFocusedElementByNonUserInput();
+        document().frameHost()->chromeClient().didUpdateTextOfFocusedElementByNonUserInput();
 }
 
 void HTMLTextAreaElement::setNonDirtyValue(const String& value)
@@ -584,14 +585,14 @@ void HTMLTextAreaElement::accessKeyAction(bool)
     focus();
 }
 
-void HTMLTextAreaElement::setCols(int cols)
+void HTMLTextAreaElement::setCols(unsigned cols)
 {
-    setIntegralAttribute(colsAttr, cols);
+    setUnsignedIntegralAttribute(colsAttr, cols);
 }
 
-void HTMLTextAreaElement::setRows(int rows)
+void HTMLTextAreaElement::setRows(unsigned rows)
 {
-    setIntegralAttribute(rowsAttr, rows);
+    setUnsignedIntegralAttribute(rowsAttr, rows);
 }
 
 bool HTMLTextAreaElement::matchesReadOnlyPseudoClass() const
@@ -637,6 +638,14 @@ const AtomicString& HTMLTextAreaElement::defaultAutocapitalize() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, sentences, ("sentences", AtomicString::ConstructFromLiteral));
     return sentences;
+}
+
+void HTMLTextAreaElement::copyNonAttributePropertiesFromElement(const Element& source)
+{
+    const HTMLTextAreaElement& sourceElement = static_cast<const HTMLTextAreaElement&>(source);
+    setValueCommon(sourceElement.value(), DispatchNoEvent, SetSeletion);
+    m_isDirty = sourceElement.m_isDirty;
+    HTMLTextFormControlElement::copyNonAttributePropertiesFromElement(source);
 }
 
 } // namespace blink

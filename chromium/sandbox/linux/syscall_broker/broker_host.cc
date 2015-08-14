@@ -59,7 +59,7 @@ int sys_open(const char* pathname, int flags) {
 void OpenFileForIPC(const BrokerPolicy& policy,
                     const std::string& requested_filename,
                     int flags,
-                    Pickle* write_pickle,
+                    base::Pickle* write_pickle,
                     std::vector<int>* opened_files) {
   DCHECK(write_pickle);
   DCHECK(opened_files);
@@ -91,7 +91,7 @@ void OpenFileForIPC(const BrokerPolicy& policy,
 void AccessFileForIPC(const BrokerPolicy& policy,
                       const std::string& requested_filename,
                       int mode,
-                      Pickle* write_pickle) {
+                      base::Pickle* write_pickle) {
   DCHECK(write_pickle);
   const char* file_to_access = NULL;
   const bool safe_to_access_file = policy.GetFileNameIfAllowedToAccess(
@@ -116,14 +116,14 @@ void AccessFileForIPC(const BrokerPolicy& policy,
 bool HandleRemoteCommand(const BrokerPolicy& policy,
                          IPCCommand command_type,
                          int reply_ipc,
-                         PickleIterator iter) {
+                         base::PickleIterator iter) {
   // Currently all commands have two arguments: filename and flags.
   std::string requested_filename;
   int flags = 0;
   if (!iter.ReadString(&requested_filename) || !iter.ReadInt(&flags))
     return false;
 
-  Pickle write_pickle;
+  base::Pickle write_pickle;
   std::vector<int> opened_files;
 
   switch (command_type) {
@@ -140,7 +140,7 @@ bool HandleRemoteCommand(const BrokerPolicy& policy,
   }
 
   CHECK_LE(write_pickle.size(), kMaxMessageLength);
-  ssize_t sent = UnixDomainSocket::SendMsg(
+  ssize_t sent = base::UnixDomainSocket::SendMsg(
       reply_ipc, write_pickle.data(), write_pickle.size(), opened_files);
 
   // Close anything we have opened in this process.
@@ -176,8 +176,8 @@ BrokerHost::RequestStatus BrokerHost::HandleRequest() const {
   ScopedVector<base::ScopedFD> fds;
   char buf[kMaxMessageLength];
   errno = 0;
-  const ssize_t msg_len =
-      UnixDomainSocket::RecvMsg(ipc_channel_.get(), buf, sizeof(buf), &fds);
+  const ssize_t msg_len = base::UnixDomainSocket::RecvMsg(
+      ipc_channel_.get(), buf, sizeof(buf), &fds);
 
   if (msg_len == 0 || (msg_len == -1 && errno == ECONNRESET)) {
     // EOF from the client, or the client died, we should die.
@@ -194,8 +194,8 @@ BrokerHost::RequestStatus BrokerHost::HandleRequest() const {
 
   base::ScopedFD temporary_ipc(fds[0]->Pass());
 
-  Pickle pickle(buf, msg_len);
-  PickleIterator iter(pickle);
+  base::Pickle pickle(buf, msg_len);
+  base::PickleIterator iter(pickle);
   int command_type;
   if (iter.ReadInt(&command_type)) {
     bool command_handled = false;

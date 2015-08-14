@@ -422,8 +422,8 @@ class HttpStreamFactoryTest : public ::testing::Test,
 INSTANTIATE_TEST_CASE_P(NextProto,
                         HttpStreamFactoryTest,
                         testing::Values(kProtoSPDY31,
-                                        kProtoSPDY4_14,
-                                        kProtoSPDY4));
+                                        kProtoHTTP2_14,
+                                        kProtoHTTP2));
 
 TEST_P(HttpStreamFactoryTest, PreconnectDirect) {
   for (size_t i = 0; i < arraysize(kTests); ++i) {
@@ -552,8 +552,7 @@ TEST_P(HttpStreamFactoryTest, PreconnectDirectWithExistingSpdySession) {
 // Verify that preconnects to unsafe ports are cancelled before they reach
 // the SocketPool.
 TEST_P(HttpStreamFactoryTest, PreconnectUnsafePort) {
-  ASSERT_FALSE(IsPortAllowedByDefault(7));
-  ASSERT_FALSE(IsPortAllowedByOverride(7));
+  ASSERT_FALSE(IsPortAllowedForScheme(7, "http"));
 
   SpdySessionDependencies session_deps(
       GetParam(), ProxyService::CreateDirect());
@@ -570,7 +569,6 @@ TEST_P(HttpStreamFactoryTest, PreconnectUnsafePort) {
   peer.SetClientSocketPoolManager(mock_pool_manager.Pass());
 
   PreconnectHelperForURL(1, GURL("http://www.google.com:7"), session.get());
-
   EXPECT_EQ(-1, transport_conn_pool->last_num_streams());
 }
 
@@ -669,14 +667,75 @@ TEST_P(HttpStreamFactoryTest, UnreachableQuicProxyMarkedAsBad) {
     // The proxy that failed should now be known to the proxy_service as bad.
     const ProxyRetryInfoMap& retry_info =
         session->proxy_service()->proxy_retry_info();
-    // proxy_headers_handler.proxy_info_used.proxy_retry_info();
     EXPECT_EQ(1u, retry_info.size()) << i;
-    // EXPECT_TRUE(waiter.used_proxy_info().is_direct());
+    EXPECT_TRUE(waiter.used_proxy_info().is_direct());
 
     ProxyRetryInfoMap::const_iterator iter = retry_info.find("quic://bad:99");
     EXPECT_TRUE(iter != retry_info.end()) << i;
   }
 }
+
+}  // namespace
+
+TEST_P(HttpStreamFactoryTest, QuicLossyProxyMarkedAsBad) {
+  // Checks if a
+  scoped_ptr<ProxyService> proxy_service;
+  proxy_service.reset(
+      ProxyService::CreateFixedFromPacResult("QUIC bad:99; DIRECT"));
+
+  HttpNetworkSession::Params params;
+  params.enable_quic = true;
+  params.enable_quic_for_proxies = true;
+  scoped_refptr<SSLConfigServiceDefaults> ssl_config_service(
+      new SSLConfigServiceDefaults);
+  HttpServerPropertiesImpl http_server_properties;
+  MockClientSocketFactory socket_factory;
+  params.client_socket_factory = &socket_factory;
+  MockHostResolver host_resolver;
+  params.host_resolver = &host_resolver;
+  TransportSecurityState transport_security_state;
+  params.transport_security_state = &transport_security_state;
+  params.proxy_service = proxy_service.get();
+  params.ssl_config_service = ssl_config_service.get();
+  params.http_server_properties = http_server_properties.GetWeakPtr();
+  params.quic_max_number_of_lossy_connections = 2;
+
+  scoped_refptr<HttpNetworkSession> session;
+  session = new HttpNetworkSession(params);
+  session->quic_stream_factory()->set_require_confirmation(false);
+
+  session->quic_stream_factory()->number_of_lossy_connections_[99] =
+      params.quic_max_number_of_lossy_connections;
+
+  StaticSocketDataProvider socket_data2;
+  socket_data2.set_connect_data(MockConnect(ASYNC, OK));
+  socket_factory.AddSocketDataProvider(&socket_data2);
+
+  // Now request a stream. It should succeed using the second proxy in the
+  // list.
+  HttpRequestInfo request_info;
+  request_info.method = "GET";
+  request_info.url = GURL("http://www.google.com");
+
+  SSLConfig ssl_config;
+  StreamRequestWaiter waiter;
+  scoped_ptr<HttpStreamRequest> request(
+      session->http_stream_factory()->RequestStream(
+          request_info, DEFAULT_PRIORITY, ssl_config, ssl_config, &waiter,
+          BoundNetLog()));
+  waiter.WaitForStream();
+
+  // The proxy that failed should now be known to the proxy_service as bad.
+  const ProxyRetryInfoMap& retry_info =
+      session->proxy_service()->proxy_retry_info();
+  EXPECT_EQ(1u, retry_info.size());
+  EXPECT_TRUE(waiter.used_proxy_info().is_direct());
+
+  ProxyRetryInfoMap::const_iterator iter = retry_info.find("quic://bad:99");
+  EXPECT_TRUE(iter != retry_info.end());
+}
+
+namespace {
 
 TEST_P(HttpStreamFactoryTest, PrivacyModeDisablesChannelId) {
   SpdySessionDependencies session_deps(
@@ -1111,20 +1170,17 @@ TEST_P(HttpStreamFactoryTest, RequestSpdyHttpStream) {
                                        ProxyService::CreateDirect());
 
   MockRead mock_read(ASYNC, OK);
-  DeterministicSocketData socket_data(&mock_read, 1, nullptr, 0);
+  SequencedSocketData socket_data(&mock_read, 1, nullptr, 0);
   socket_data.set_connect_data(MockConnect(ASYNC, OK));
-  session_deps.deterministic_socket_factory->AddSocketDataProvider(
-      &socket_data);
+  session_deps.socket_factory->AddSocketDataProvider(&socket_data);
 
   SSLSocketDataProvider ssl_socket_data(ASYNC, OK);
   ssl_socket_data.SetNextProto(GetParam());
-  session_deps.deterministic_socket_factory->AddSSLSocketDataProvider(
-      &ssl_socket_data);
+  session_deps.socket_factory->AddSSLSocketDataProvider(&ssl_socket_data);
 
   HostPortPair host_port_pair("www.google.com", 443);
-  scoped_refptr<HttpNetworkSession>
-      session(SpdySessionDependencies::SpdyCreateSessionDeterministic(
-          &session_deps));
+  scoped_refptr<HttpNetworkSession> session(
+      SpdySessionDependencies::SpdyCreateSession(&session_deps));
 
   // Now request a stream.
   HttpRequestInfo request_info;
@@ -1296,25 +1352,21 @@ TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
   session_deps.use_alternate_protocols = true;
 
   MockRead mock_read(ASYNC, OK);
-  DeterministicSocketData socket_data(&mock_read, 1, nullptr, 0);
+  SequencedSocketData socket_data(&mock_read, 1, nullptr, 0);
   socket_data.set_connect_data(MockConnect(ASYNC, OK));
-  session_deps.deterministic_socket_factory->AddSocketDataProvider(
-      &socket_data);
+  session_deps.socket_factory->AddSocketDataProvider(&socket_data);
 
   MockRead mock_read2(ASYNC, OK);
-  DeterministicSocketData socket_data2(&mock_read2, 1, nullptr, 0);
+  SequencedSocketData socket_data2(&mock_read2, 1, nullptr, 0);
   socket_data2.set_connect_data(MockConnect(ASYNC, ERR_IO_PENDING));
-  session_deps.deterministic_socket_factory->AddSocketDataProvider(
-      &socket_data2);
+  session_deps.socket_factory->AddSocketDataProvider(&socket_data2);
 
   SSLSocketDataProvider ssl_socket_data(ASYNC, OK);
   ssl_socket_data.SetNextProto(GetParam());
-  session_deps.deterministic_socket_factory->AddSSLSocketDataProvider(
-      &ssl_socket_data);
+  session_deps.socket_factory->AddSSLSocketDataProvider(&ssl_socket_data);
 
-  scoped_refptr<HttpNetworkSession>
-      session(SpdySessionDependencies::SpdyCreateSessionDeterministic(
-          &session_deps));
+  scoped_refptr<HttpNetworkSession> session(
+      SpdySessionDependencies::SpdyCreateSession(&session_deps));
 
   // Now request a stream.
   HttpRequestInfo request_info;
@@ -1324,7 +1376,7 @@ TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
 
   session->http_server_properties()->SetAlternativeService(
       HostPortPair("www.google.com", 8888),
-      AlternativeService(NPN_SPDY_4, "www.google.com", 9999), 1.0);
+      AlternativeService(NPN_HTTP_2, "www.google.com", 9999), 1.0);
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;

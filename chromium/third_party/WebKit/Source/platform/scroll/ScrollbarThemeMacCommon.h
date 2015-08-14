@@ -29,38 +29,40 @@
 #include "platform/mac/NSScrollerImpDetails.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
+class SkCanvas;
+
 namespace blink {
 
 class Pattern;
 
 class PLATFORM_EXPORT ScrollbarThemeMacCommon : public ScrollbarTheme {
 public:
-    virtual ~ScrollbarThemeMacCommon();
+    ~ScrollbarThemeMacCommon() override;
 
-    virtual void registerScrollbar(ScrollbarThemeClient*) override;
-    virtual void unregisterScrollbar(ScrollbarThemeClient*) override;
+    void registerScrollbar(ScrollbarThemeClient*) override;
+    void unregisterScrollbar(ScrollbarThemeClient*) override;
     void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw);
 
-    virtual bool supportsControlTints() const override { return true; }
+    bool supportsControlTints() const override { return true; }
 
-    virtual double initialAutoscrollTimerDelay() override;
-    virtual double autoscrollTimerDelay() override;
+    double initialAutoscrollTimerDelay() override;
+    double autoscrollTimerDelay() override;
 
-    virtual void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) override;
+    void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) override;
 
     static NSScrollerStyle recommendedScrollerStyle();
 
     static bool isOverlayAPIAvailable();
 
 protected:
-    virtual int maxOverlapBetweenPages() override { return 40; }
+    int maxOverlapBetweenPages() override { return 40; }
 
-    virtual bool shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) override;
+    bool shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) override;
     int scrollbarPartToHIPressedState(ScrollbarPart);
 
     virtual void updateButtonPlacement() { }
 
-    void paintGivenTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&, const Vector<IntRect>&);
+    void paintGivenTickmarks(SkCanvas*, ScrollbarThemeClient*, const IntRect&, const Vector<IntRect>&);
 
     RefPtr<Pattern> m_overhangPattern;
 };

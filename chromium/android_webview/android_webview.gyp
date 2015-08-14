@@ -15,6 +15,16 @@
         '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
       ],
+      'variables': {
+        'conditions': [
+          ['target_arch=="arm" or target_arch=="ia32" or target_arch=="mipsel"', {
+            'arch_suffix':'32'
+          }],
+          ['target_arch=="arm64" or target_arch=="x64" or target_arch=="mips64el"', {
+            'arch_suffix':'64'
+          }],
+        ],
+      },
       'actions': [
         {
           'action_name': 'repack_android_webview_pack',
@@ -51,52 +61,47 @@
             '<@(locales)',
           ],
         },
-      ],
-      'conditions': [
-        ['v8_use_external_startup_data==1', {
-          'variables': {
-            'conditions': [
-              ['(target_arch=="arm" or target_arch=="ia32" or target_arch=="mipsel")', {
-                'arch_suffix':'32'
-              }],
-              ['(target_arch=="arm64" or target_arch=="x64" or target_arch=="mips64el")', {
-                'arch_suffix':'64'
-              }],
-            ],
-          },
-          'actions': [
-            {
-              'action_name': 'rename_snapshot_blob',
-              'inputs': [
-                '<(PRODUCT_DIR)/snapshot_blob.bin',
-              ],
-              'outputs': [
-                '<(PRODUCT_DIR)/snapshot_blob_<(arch_suffix).bin',
-              ],
-              'action': [
-                'python',
-                '<(DEPTH)/build/cp.py',
-                '<@(_inputs)',
-                '<@(_outputs)',
-              ],
-            },
-            {
-              'action_name': 'rename_natives_blob',
-              'inputs': [
-                '<(PRODUCT_DIR)/natives_blob.bin',
-              ],
-              'outputs': [
-                '<(PRODUCT_DIR)/natives_blob_<(arch_suffix).bin',
-              ],
-              'action': [
-                'python',
-                '<(DEPTH)/build/cp.py',
-                '<@(_inputs)',
-                '<@(_outputs)',
-              ],
-            },
+        {
+          'action_name': 'rename_snapshot_blob',
+          'inputs': [
+            '<(PRODUCT_DIR)/snapshot_blob.bin',
           ],
-        }],
+          'outputs': [
+            '<(PRODUCT_DIR)/snapshot_blob_<(arch_suffix).bin',
+          ],
+          'action': [
+            'python',
+            '<(DEPTH)/build/cp.py',
+            '<@(_inputs)',
+            '<@(_outputs)',
+          ],
+        },
+        {
+          'action_name': 'rename_natives_blob',
+          'inputs': [
+            '<(PRODUCT_DIR)/natives_blob.bin',
+          ],
+          'outputs': [
+            '<(PRODUCT_DIR)/natives_blob_<(arch_suffix).bin',
+          ],
+          'action': [
+            'python',
+            '<(DEPTH)/build/cp.py',
+            '<@(_inputs)',
+            '<@(_outputs)',
+          ],
+        },
+      ],
+    },
+    {
+      'target_name': 'android_webview_locale_paks',
+      'type': 'none',
+      'variables': {
+        'locale_pak_files': [ '<@(webview_locales_input_paks)' ],
+      },
+      'includes': [
+        'apk/system_webview_locales_paks.gypi',
+        '../build/android/locale_pak_resources.gypi',
       ],
     },
     {
@@ -156,6 +161,7 @@
       'type': 'static_library',
       'dependencies': [
         '../android_webview/native/webview_native.gyp:webview_native',
+        '../cc/cc.gyp:cc_surfaces',
         '../components/components.gyp:auto_login_parser',
         '../components/components.gyp:autofill_content_renderer',
         '../components/components.gyp:breakpad_host',
@@ -185,6 +191,7 @@
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
+        '../ui/events/events.gyp:gesture_detection',
         '../ui/gl/gl.gyp:gl',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../v8/tools/gyp/v8.gyp:v8',
@@ -300,8 +307,6 @@
         'common/android_webview_message_generator.h',
         'common/aw_content_client.cc',
         'common/aw_content_client.h',
-        'common/aw_crash_handler.cc',
-        'common/aw_crash_handler.h',
         'common/aw_hit_test_data.cc',
         'common/aw_hit_test_data.h',
         'common/aw_message_port_messages.h',
@@ -357,6 +362,7 @@
         '../components/components.gyp:web_contents_delegate_android_java',
         '../content/content.gyp:content_java',
         '../ui/android/ui_android.gyp:ui_java',
+        'android_webview_locale_paks',
         'android_webview_strings_grd',
       ],
       'variables': {
@@ -364,6 +370,7 @@
         'has_java_resources': 1,
         'R_package': 'org.chromium.android_webview',
         'R_package_relpath': 'org/chromium/android_webview',
+        'android_manifest_path': '../android_webview/apk/java/AndroidManifest.xml', # for lint
       },
       'includes': [ '../build/java.gypi' ],
     },

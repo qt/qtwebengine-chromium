@@ -22,6 +22,7 @@
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "ipc/ipc_listener.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/swap_result.h"
 
 struct GPUCommandBufferConsoleMessage;
 
@@ -117,6 +118,7 @@ class CommandBufferProxyImpl
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
   void SetLock(base::Lock* lock) override;
+  bool IsGpuChannelLost() override;
 
   int GetRouteID() const;
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
@@ -136,7 +138,8 @@ class CommandBufferProxyImpl
 
   void SetLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
   using SwapBuffersCompletionCallback =
-      base::Callback<void(const std::vector<ui::LatencyInfo>& latency_info)>;
+      base::Callback<void(const std::vector<ui::LatencyInfo>& latency_info,
+                          gfx::SwapResult result)>;
   void SetSwapBuffersCompletionCallback(
       const SwapBuffersCompletionCallback& callback);
 
@@ -160,8 +163,6 @@ class CommandBufferProxyImpl
  private:
   typedef std::map<int32, scoped_refptr<gpu::Buffer> > TransferBufferMap;
   typedef base::hash_map<uint32, base::Closure> SignalTaskMap;
-  typedef base::ScopedPtrHashMap<int32, scoped_ptr<gfx::GpuMemoryBuffer>>
-      GpuMemoryBufferMap;
 
   void CheckLock() {
     if (lock_)
@@ -180,7 +181,8 @@ class CommandBufferProxyImpl
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
   void OnSetMemoryAllocation(const gpu::MemoryAllocation& allocation);
   void OnSignalSyncPointAck(uint32 id);
-  void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info);
+  void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info,
+                              gfx::SwapResult result);
   void OnUpdateVSyncParameters(base::TimeTicks timebase,
                                base::TimeDelta interval);
 
@@ -193,7 +195,7 @@ class CommandBufferProxyImpl
   base::Lock* lock_;
 
   // Unowned list of DeletionObservers.
-  ObserverList<DeletionObserver> deletion_observers_;
+  base::ObserverList<DeletionObserver> deletion_observers_;
 
   // The last cached state received from the service.
   State last_state_;
@@ -218,9 +220,6 @@ class CommandBufferProxyImpl
   // Tasks to be invoked in SignalSyncPoint responses.
   uint32 next_signal_id_;
   SignalTaskMap signal_tasks_;
-
-  // Local cache of id to gpu memory buffer mapping.
-  GpuMemoryBufferMap gpu_memory_buffers_;
 
   gpu::Capabilities capabilities_;
 

@@ -58,17 +58,16 @@ class CopyOutputRequest;
 class LayerAnimationEventObserver;
 class LayerClient;
 class LayerImpl;
+class LayerSettings;
 class LayerTreeHost;
 class LayerTreeHostCommon;
 class LayerTreeImpl;
-class PriorityCalculator;
+class LayerTreeSettings;
 class RenderingStatsInstrumentation;
 class ResourceUpdateQueue;
 class ScrollbarLayerInterface;
 class SimpleEnclosedRegion;
 struct AnimationEvent;
-template <typename LayerType>
-class OcclusionTracker;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
@@ -84,7 +83,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     INVALID_ID = -1,
   };
 
-  static scoped_refptr<Layer> Create();
+  static scoped_refptr<Layer> Create(const LayerSettings& settings);
 
   int id() const { return layer_id_; }
 
@@ -136,6 +135,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetOpacity(float opacity);
   float opacity() const { return opacity_; }
   bool OpacityIsAnimating() const;
+  bool HasPotentiallyRunningOpacityAnimation() const;
   virtual bool OpacityCanAnimateOnImplThread() const;
 
   void SetBlendMode(SkXfermode::Mode blend_mode);
@@ -172,6 +172,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetPosition(const gfx::PointF& position);
   gfx::PointF position() const { return position_; }
 
+  // A layer that is a container for fixed position layers cannot be both
+  // scrollable and have a non-identity transform.
   void SetIsContainerForFixedPositionLayers(bool container);
   bool IsContainerForFixedPositionLayers() const;
 
@@ -187,11 +189,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetTransform(const gfx::Transform& transform);
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
+  bool HasPotentiallyRunningTransformAnimation() const;
   bool AnimationsPreserveAxisAlignment() const;
   bool transform_is_invertible() const { return transform_is_invertible_; }
 
   void SetTransformOrigin(const gfx::Point3F&);
   gfx::Point3F transform_origin() const { return transform_origin_; }
+
+  bool ScrollOffsetAnimationWasInterrupted() const;
 
   void SetScrollParent(Layer* parent);
 
@@ -252,8 +257,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::Rect drawable_content_rect() const {
     return draw_properties_.drawable_content_rect;
   }
-  gfx::Rect visible_content_rect() const {
-    return draw_properties_.visible_content_rect;
+  gfx::Rect visible_layer_rect() const {
+    return draw_properties_.visible_layer_rect;
   }
   Layer* render_target() {
     DCHECK(!draw_properties_.render_target ||
@@ -265,7 +270,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
            draw_properties_.render_target->render_surface());
     return draw_properties_.render_target;
   }
-  int num_unclipped_descendants() const {
+  size_t num_unclipped_descendants() const {
     return draw_properties_.num_unclipped_descendants;
   }
 
@@ -372,9 +377,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // This methods typically need to be overwritten by derived classes.
   virtual void SavePaintProperties();
-  // Returns true iff any resources were updated that need to be committed.
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion);
+  // Returns true iff anything was updated that needs to be committed.
+  virtual bool Update();
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
@@ -393,52 +397,33 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void ClearRenderSurfaceLayerList();
 
-  // The contents scale converts from logical, non-page-scaled pixels to target
-  // pixels. The contents scale is 1 for the root layer as it is already in
-  // physical pixels. By default contents scale is forced to be 1 except for
-  // subclasses of ContentsScalingLayer.
-  float contents_scale_x() const { return draw_properties_.contents_scale_x; }
-  float contents_scale_y() const { return draw_properties_.contents_scale_y; }
-  gfx::Size content_bounds() const { return draw_properties_.content_bounds; }
-
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds);
-
   LayerTreeHost* layer_tree_host() { return layer_tree_host_; }
   const LayerTreeHost* layer_tree_host() const { return layer_tree_host_; }
-
-  // Set the priority of all desired textures in this layer.
-  virtual void SetTexturePriorities(const PriorityCalculator& priority_calc) {}
 
   bool AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
   void RemoveAnimation(int animation_id, Animation::TargetProperty property);
-
-  LayerAnimationController* layer_animation_controller() {
+  LayerAnimationController* layer_animation_controller() const {
     return layer_animation_controller_.get();
   }
   void SetLayerAnimationControllerForTest(
       scoped_refptr<LayerAnimationController> controller);
 
   void set_layer_animation_delegate(AnimationDelegate* delegate) {
+    DCHECK(layer_animation_controller_);
     layer_animation_controller_->set_layer_animation_delegate(delegate);
   }
 
   bool HasActiveAnimation() const;
+  void RegisterForAnimations(AnimationRegistrar* registrar);
 
   void AddLayerAnimationEventObserver(
       LayerAnimationEventObserver* animation_observer);
   void RemoveLayerAnimationEventObserver(
       LayerAnimationEventObserver* animation_observer);
 
-  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const;
-
   virtual ScrollbarLayerInterface* ToScrollbarLayer();
-
-  gfx::Rect LayerRectToContentRect(const gfx::Rect& layer_rect) const;
 
   virtual skia::RefPtr<SkPicture> GetPicture() const;
 
@@ -453,14 +438,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   const PaintProperties& paint_properties() const {
     return paint_properties_;
   }
-
-  // The scale at which contents should be rastered, to match the scale at
-  // which they will drawn to the screen. This scale is a component of the
-  // contents scale but does not include page/device scale factors.
-  // TODO(danakj): This goes away when TiledLayer goes away.
-  void set_raster_scale(float scale) { raster_scale_ = scale; }
-  float raster_scale() const { return raster_scale_; }
-  bool raster_scale_is_unknown() const { return raster_scale_ == 0.f; }
 
   void SetNeedsPushProperties();
   bool needs_push_properties() const { return needs_push_properties_; }
@@ -559,12 +536,28 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return num_layer_or_descendants_with_input_handler_;
   }
 
+  void set_num_children_with_scroll_parent(
+      int num_children_with_scroll_parent) {
+    num_children_with_scroll_parent_ = num_children_with_scroll_parent;
+  }
+
+  int num_children_with_scroll_parent() {
+    return num_children_with_scroll_parent_;
+  }
+
+  void set_visited(bool visited);
+  bool visited();
+  void set_layer_or_descendant_is_drawn(bool layer_or_descendant_is_drawn);
+  bool layer_or_descendant_is_drawn();
+  void set_sorted_for_recursion(bool sorted_for_recursion);
+  bool sorted_for_recursion();
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
   ~Layer() override;
 
-  Layer();
+  explicit Layer(const LayerSettings& settings);
 
   // These SetNeeds functions are in order of severity of update:
   //
@@ -603,8 +596,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   }
 
   bool IsPropertyChangeAllowed() const;
-
-  void reset_raster_scale_to_unknown() { raster_scale_ = 0.f; }
 
   // This flag is set when the layer needs to push properties to the impl
   // side.
@@ -648,9 +639,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // This should only be called during BeginMainFrame since it does not
   // trigger a Commit.
   void SetHasRenderSurface(bool has_render_surface);
-
-  // Returns the index of the child or -1 if not found.
-  int IndexOfChild(const Layer* reference);
 
   // This should only be called from RemoveFromParent().
   void RemoveChildOrDependent(Layer* child);
@@ -707,6 +695,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   int property_tree_sequence_number_;
   int num_layer_or_descendants_with_copy_request_;
   int num_layer_or_descendants_with_input_handler_;
+  int num_children_with_scroll_parent_;
   gfx::Vector2dF offset_to_transform_parent_;
   bool should_flatten_transform_from_property_tree_ : 1;
   bool should_scroll_on_main_thread_ : 1;
@@ -741,6 +730,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   Layer* scroll_parent_;
   scoped_ptr<std::set<Layer*>> scroll_children_;
 
+  // The following three variables are tracker variables. They are bools
+  // wrapped inside an integer variable. If true, their value equals the
+  // LayerTreeHost's meta_information_sequence_number. This wrapping of bools
+  // inside ints is done to avoid a layer tree treewalk to reset their values.
+  int layer_or_descendant_is_drawn_tracker_;
+  int sorted_for_recursion_tracker_;
+  int visited_tracker_;
+
   Layer* clip_parent_;
   scoped_ptr<std::set<Layer*>> clip_children_;
 
@@ -749,9 +746,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // Replica layer used for reflections.
   scoped_refptr<Layer> replica_layer_;
-
-  // Transient properties.
-  float raster_scale_;
 
   LayerClient* client_;
 

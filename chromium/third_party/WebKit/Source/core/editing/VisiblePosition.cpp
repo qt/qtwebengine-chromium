@@ -53,20 +53,14 @@ VisiblePosition::VisiblePosition(const Position &pos, EAffinity affinity)
     init(pos, affinity);
 }
 
+VisiblePosition::VisiblePosition(const PositionInComposedTree& pos, EAffinity affinity)
+{
+    init(pos, affinity);
+}
+
 VisiblePosition::VisiblePosition(const PositionWithAffinity& positionWithAffinity)
 {
     init(positionWithAffinity.position(), positionWithAffinity.affinity());
-}
-
-void VisiblePosition::init(const Position& position, EAffinity affinity)
-{
-    m_affinity = affinity;
-
-    m_deepPosition = canonicalPosition(position);
-
-    // When not at a line wrap, make sure to end up with DOWNSTREAM affinity.
-    if (m_affinity == UPSTREAM && (isNull() || inSameLine(VisiblePosition(position, DOWNSTREAM), *this)))
-        m_affinity = DOWNSTREAM;
 }
 
 VisiblePosition VisiblePosition::next(EditingBoundaryCrossingRule rule) const
@@ -129,9 +123,9 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
     TextDirection primaryDirection = p.primaryDirection();
 
     while (true) {
-        InlineBox* box;
-        int offset;
-        p.getInlineBoxAndOffset(m_affinity, primaryDirection, box, offset);
+        InlineBoxPosition boxPosition = p.computeInlineBoxPosition(m_affinity, primaryDirection);
+        InlineBox* box = boxPosition.inlineBox;
+        int offset = boxPosition.offsetInBox;
         if (!box)
             return primaryDirection == LTR ? previousVisuallyDistinctCandidate(m_deepPosition) : nextVisuallyDistinctCandidate(m_deepPosition);
 
@@ -166,9 +160,7 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
                     if (positionOnLeft.isNull())
                         return Position();
 
-                    InlineBox* boxOnLeft;
-                    int offsetOnLeft;
-                    positionOnLeft.getInlineBoxAndOffset(m_affinity, primaryDirection, boxOnLeft, offsetOnLeft);
+                    InlineBox* boxOnLeft = positionOnLeft.computeInlineBoxPosition(m_affinity, primaryDirection).inlineBox;
                     if (boxOnLeft && boxOnLeft->root() == box->root())
                         return Position();
                     return positionOnLeft;
@@ -293,9 +285,9 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
     TextDirection primaryDirection = p.primaryDirection();
 
     while (true) {
-        InlineBox* box;
-        int offset;
-        p.getInlineBoxAndOffset(m_affinity, primaryDirection, box, offset);
+        InlineBoxPosition boxPosition = p.computeInlineBoxPosition(m_affinity, primaryDirection);
+        InlineBox* box = boxPosition.inlineBox;
+        int offset = boxPosition.offsetInBox;
         if (!box)
             return primaryDirection == LTR ? nextVisuallyDistinctCandidate(m_deepPosition) : previousVisuallyDistinctCandidate(m_deepPosition);
 
@@ -330,9 +322,7 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
                     if (positionOnRight.isNull())
                         return Position();
 
-                    InlineBox* boxOnRight;
-                    int offsetOnRight;
-                    positionOnRight.getInlineBoxAndOffset(m_affinity, primaryDirection, boxOnRight, offsetOnRight);
+                    InlineBox* boxOnRight = positionOnRight.computeInlineBoxPosition(m_affinity, primaryDirection).inlineBox;
                     if (boxOnRight && boxOnRight->root() == box->root())
                         return Position();
                     return positionOnRight;
@@ -371,7 +361,7 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
                     prevBox = prevBox->prevLeafChild();
                 } while (prevBox && prevBox->bidiLevel() > level);
 
-                if (prevBox && prevBox->bidiLevel() == level)   // For example, abc FED 123 ^ CBA
+                if (prevBox && prevBox->bidiLevel() == level) // For example, abc FED 123 ^ CBA
                     break;
 
                 // For example, abc 123 ^ CBA or 123 ^ CBA abc
@@ -450,30 +440,46 @@ VisiblePosition VisiblePosition::right(bool stayInEditableContent) const
     return directionOfEnclosingBlock(right.deepEquivalent()) == LTR ? honorEditingBoundaryAtOrAfter(right) : honorEditingBoundaryAtOrBefore(right);
 }
 
-VisiblePosition VisiblePosition::honorEditingBoundaryAtOrBefore(const VisiblePosition &pos) const
+template <typename PositionWithAffinityType>
+PositionWithAffinityType honorEditingBoundaryAtOrBeforeAlgorithm(const PositionWithAffinityType& pos, const typename PositionWithAffinityType::PositionType& anchor)
 {
     if (pos.isNull())
         return pos;
 
-    ContainerNode* highestRoot = highestEditableRoot(deepEquivalent());
+    ContainerNode* highestRoot = highestEditableRoot(anchor);
 
     // Return empty position if pos is not somewhere inside the editable region containing this position
-    if (highestRoot && !pos.deepEquivalent().deprecatedNode()->isDescendantOf(highestRoot))
-        return VisiblePosition();
+    if (highestRoot && !pos.position().deprecatedNode()->isDescendantOf(highestRoot))
+        return PositionWithAffinityType();
 
     // Return pos itself if the two are from the very same editable region, or both are non-editable
     // FIXME: In the non-editable case, just because the new position is non-editable doesn't mean movement
     // to it is allowed.  VisibleSelection::adjustForEditableContent has this problem too.
-    if (highestEditableRoot(pos.deepEquivalent()) == highestRoot)
+    if (highestEditableRoot(pos.position()) == highestRoot)
         return pos;
 
     // Return empty position if this position is non-editable, but pos is editable
     // FIXME: Move to the previous non-editable region.
     if (!highestRoot)
-        return VisiblePosition();
+        return PositionWithAffinityType();
 
     // Return the last position before pos that is in the same editable region as this position
-    return lastEditableVisiblePositionBeforePositionInRoot(pos.deepEquivalent(), highestRoot);
+    return lastEditablePositionBeforePositionInRoot(pos.position(), highestRoot);
+}
+
+PositionWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionWithAffinity& pos, const Position& anchor)
+{
+    return honorEditingBoundaryAtOrBeforeAlgorithm(pos, anchor);
+}
+
+PositionInComposedTreeWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionInComposedTreeWithAffinity& pos, const PositionInComposedTree& anchor)
+{
+    return honorEditingBoundaryAtOrBeforeAlgorithm(pos, anchor);
+}
+
+VisiblePosition VisiblePosition::honorEditingBoundaryAtOrBefore(const VisiblePosition &pos) const
+{
+    return VisiblePosition(honorEditingBoundaryAtOrBeforeOf(PositionWithAffinity(pos.deepEquivalent(), pos.affinity()), deepEquivalent()));
 }
 
 VisiblePosition VisiblePosition::honorEditingBoundaryAtOrAfter(const VisiblePosition &pos) const
@@ -516,7 +522,7 @@ VisiblePosition VisiblePosition::skipToStartOfEditingBoundary(const VisiblePosit
 
     // If this is not editable but |pos| has an editable root, skip to the start
     if (!highestRoot && highestRootOfPos)
-        return VisiblePosition(previousVisuallyDistinctCandidate(Position(highestRootOfPos, Position::PositionIsBeforeAnchor).parentAnchoredEquivalent()));
+        return VisiblePosition(previousVisuallyDistinctCandidate(Position(highestRootOfPos, PositionAnchorType::BeforeAnchor).parentAnchoredEquivalent()));
 
     // That must mean that |pos| is not editable. Return the last position before pos that is in the same editable region as this position
     return lastEditableVisiblePositionBeforePositionInRoot(pos.deepEquivalent(), highestRoot);
@@ -536,24 +542,26 @@ VisiblePosition VisiblePosition::skipToEndOfEditingBoundary(const VisiblePositio
 
     // If this is not editable but |pos| has an editable root, skip to the end
     if (!highestRoot && highestRootOfPos)
-        return VisiblePosition(Position(highestRootOfPos, Position::PositionIsAfterAnchor).parentAnchoredEquivalent());
+        return VisiblePosition(Position(highestRootOfPos, PositionAnchorType::AfterAnchor).parentAnchoredEquivalent());
 
     // That must mean that |pos| is not editable. Return the next position after pos that is in the same editable region as this position
     return firstEditableVisiblePositionAfterPositionInRoot(pos.deepEquivalent(), highestRoot);
 }
 
-static Position canonicalizeCandidate(const Position& candidate)
+template <typename PositionType>
+static PositionType canonicalizeCandidate(const PositionType& candidate)
 {
     if (candidate.isNull())
-        return Position();
+        return PositionType();
     ASSERT(candidate.isCandidate());
-    Position upstream = candidate.upstream();
+    PositionType upstream = candidate.upstream();
     if (upstream.isCandidate())
         return upstream;
     return candidate;
 }
 
-Position VisiblePosition::canonicalPosition(const Position& passedPosition)
+template <typename PositionType>
+static PositionType canonicalPosition(const PositionType& passedPosition)
 {
     // Sometimes updating selection positions can be extremely expensive and occur
     // frequently.  Often calling preventDefault on mousedown events can avoid
@@ -563,7 +571,7 @@ Position VisiblePosition::canonicalPosition(const Position& passedPosition)
     // The updateLayout call below can do so much that even the position passed
     // in to us might get changed as a side effect. Specifically, there are code
     // paths that pass selection endpoints, and updateLayout can change the selection.
-    Position position = passedPosition;
+    PositionType position = passedPosition;
 
     // FIXME (9535):  Canonicalizing to the leftmost candidate means that if we're at a line wrap, we will
     // ask layoutObjects to paint downstream carets for other layoutObjects.
@@ -571,14 +579,14 @@ Position VisiblePosition::canonicalPosition(const Position& passedPosition)
     // the appropriate layoutObject for VisiblePosition's like these, or b) canonicalize to the rightmost candidate
     // unless the affinity is upstream.
     if (position.isNull())
-        return Position();
+        return PositionType();
 
     ASSERT(position.document());
     position.document()->updateLayoutIgnorePendingStylesheets();
 
     Node* node = position.containerNode();
 
-    Position candidate = position.upstream();
+    PositionType candidate = position.upstream();
     if (candidate.isCandidate())
         return candidate;
     candidate = position.downstream();
@@ -587,8 +595,8 @@ Position VisiblePosition::canonicalPosition(const Position& passedPosition)
 
     // When neither upstream or downstream gets us to a candidate (upstream/downstream won't leave
     // blocks or enter new ones), we search forward and backward until we find one.
-    Position next = canonicalizeCandidate(nextCandidate(position));
-    Position prev = canonicalizeCandidate(previousCandidate(position));
+    PositionType next = canonicalizeCandidate(nextCandidate(position));
+    PositionType prev = canonicalizeCandidate(previousCandidate(position));
     Node* nextNode = next.deprecatedNode();
     Node* prevNode = prev.deprecatedNode();
 
@@ -613,7 +621,7 @@ Position VisiblePosition::canonicalPosition(const Position& passedPosition)
         return next;
 
     if (!nextIsInSameEditableElement && !prevIsInSameEditableElement)
-        return Position();
+        return PositionType();
 
     // The new position should be in the same block flow element. Favor that.
     Element* originalBlock = node ? enclosingBlockFlowElement(*node) : 0;
@@ -625,6 +633,39 @@ Position VisiblePosition::canonicalPosition(const Position& passedPosition)
     return next;
 }
 
+Position canonicalPositionOf(const Position& position)
+{
+    return canonicalPosition(position);
+}
+
+PositionInComposedTree canonicalPositionOf(const PositionInComposedTree& position)
+{
+    return canonicalPosition(position);
+}
+
+template<typename PositionType>
+void VisiblePosition::init(const PositionType& position, EAffinity affinity)
+{
+    m_affinity = affinity;
+
+    PositionType deepPosition = canonicalPosition(position);
+    m_deepPosition = toPositionInDOMTree(deepPosition);
+
+    if (m_affinity != UPSTREAM)
+        return;
+
+    if (isNull()) {
+        m_affinity = DOWNSTREAM;
+        return;
+    }
+
+    // When not at a line wrap, make sure to end up with DOWNSTREAM affinity.
+    using PositionWithAffinityType = PositionWithAffinityTemplate<PositionType>;
+    if (!inSameLine(PositionWithAffinityType(deepPosition, DOWNSTREAM), PositionWithAffinityType(deepPosition, UPSTREAM)))
+        return;
+    m_affinity = DOWNSTREAM;
+}
+
 UChar32 VisiblePosition::characterAfter() const
 {
     // We canonicalize to the first of two equivalent candidates, but the second of the two candidates
@@ -633,12 +674,12 @@ UChar32 VisiblePosition::characterAfter() const
     if (!pos.containerNode() || !pos.containerNode()->isTextNode())
         return 0;
     switch (pos.anchorType()) {
-    case Position::PositionIsAfterChildren:
-    case Position::PositionIsAfterAnchor:
-    case Position::PositionIsBeforeAnchor:
-    case Position::PositionIsBeforeChildren:
+    case PositionAnchorType::AfterChildren:
+    case PositionAnchorType::AfterAnchor:
+    case PositionAnchorType::BeforeAnchor:
+    case PositionAnchorType::BeforeChildren:
         return 0;
-    case Position::PositionIsOffsetInAnchor:
+    case PositionAnchorType::OffsetInAnchor:
         break;
     }
     unsigned offset = static_cast<unsigned>(pos.offsetInContainerNode());
@@ -781,7 +822,7 @@ DEFINE_TRACE(VisiblePosition)
     visitor->trace(m_deepPosition);
 }
 
-}  // namespace blink
+} // namespace blink
 
 #ifndef NDEBUG
 

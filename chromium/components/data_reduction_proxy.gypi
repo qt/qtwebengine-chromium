@@ -48,6 +48,12 @@
         'data_reduction_proxy/core/browser/data_reduction_proxy_settings.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_tamper_detection.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_tamper_detection.h',
+        'data_reduction_proxy/core/browser/data_store.cc',
+        'data_reduction_proxy/core/browser/data_store.h',
+        'data_reduction_proxy/core/browser/data_usage_store.cc',
+        'data_reduction_proxy/core/browser/data_usage_store.h',
+        'data_reduction_proxy/core/browser/db_data_owner.cc',
+        'data_reduction_proxy/core/browser/db_data_owner.h',
      ],
      'data_reduction_proxy_core_browser_deps' : [
         'data_reduction_proxy_version_header',
@@ -183,24 +189,31 @@
       'target_name': 'data_reduction_proxy_core_browser',
       'type': 'static_library',
       'conditions': [
-        ['OS != "android" and OS != "ios"', {
-          'dependencies' : [
-            '../google_apis/google_apis.gyp:google_apis',
+        ['OS != "ios"', {
+          'defines': [
+            'USE_GOOGLE_API_KEYS_FOR_AUTH_KEY' 
           ]
         }],
       ],
+      'defines': [
+        'USE_GOOGLE_API_KEYS'
+      ],
       'dependencies': [
         '<@(data_reduction_proxy_core_browser_deps)',
+        '../google_apis/google_apis.gyp:google_apis',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
         'data_reduction_proxy_core_common',
         'data_reduction_proxy_proto',
+        '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
       ],
       'include_dirs': [
         '..',
       ],
       'sources': [
-        '<@(data_reduction_proxy_core_browser_sources)'
+        '<@(data_reduction_proxy_core_browser_sources)',
+        'data_reduction_proxy/core/browser/data_store_impl.cc',
+        'data_reduction_proxy/core/browser/data_store_impl.h',
       ],
     },
     {
@@ -267,6 +280,7 @@
       'sources': [
         # Note: sources list duplicated in GN build.
         'data_reduction_proxy/proto/client_config.proto',
+        'data_reduction_proxy/proto/data_store.proto',
       ],
       'variables': {
         'proto_in_dir': 'data_reduction_proxy/proto',

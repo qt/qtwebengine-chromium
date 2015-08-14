@@ -150,6 +150,7 @@ Response InputHandler::DispatchKeyEvent(
     const std::string* unmodified_text,
     const std::string* key_identifier,
     const std::string* code,
+    const std::string* key,
     const int* windows_virtual_key_code,
     const int* native_virtual_key_code,
     const bool* auto_repeat,
@@ -177,20 +178,6 @@ Response InputHandler::DispatchKeyEvent(
   if (!SetKeyboardEventText(event.unmodifiedText, unmodified_text))
     return Response::InvalidParams("Invalid 'unmodifiedText' parameter");
 
-  if (key_identifier) {
-    if (key_identifier->size() >
-        blink::WebKeyboardEvent::keyIdentifierLengthCap) {
-      return Response::InvalidParams("Invalid 'keyIdentifier' parameter");
-    }
-    for (size_t i = 0; i < key_identifier->size(); ++i)
-      event.keyIdentifier[i] = (*key_identifier)[i];
-  }
-
-  if (code) {
-    event.domCode = static_cast<int>(
-        ui::KeycodeConverter::CodeStringToDomCode(code->c_str()));
-  }
-
   if (windows_virtual_key_code)
     event.windowsKeyCode = *windows_virtual_key_code;
   if (native_virtual_key_code)
@@ -201,6 +188,27 @@ Response InputHandler::DispatchKeyEvent(
     event.modifiers |= blink::WebInputEvent::IsKeyPad;
   if (is_system_key)
     event.isSystemKey = *is_system_key;
+
+  if (key_identifier) {
+    if (key_identifier->size() >
+        blink::WebKeyboardEvent::keyIdentifierLengthCap) {
+      return Response::InvalidParams("Invalid 'keyIdentifier' parameter");
+    }
+    for (size_t i = 0; i < key_identifier->size(); ++i)
+      event.keyIdentifier[i] = (*key_identifier)[i];
+  } else if (event.type != blink::WebInputEvent::Char) {
+    event.setKeyIdentifierFromWindowsKeyCode();
+  }
+
+  if (code) {
+    event.domCode = static_cast<int>(
+        ui::KeycodeConverter::CodeStringToDomCode(code->c_str()));
+  }
+
+  if (key) {
+    event.domKey = static_cast<int>(
+        ui::KeycodeConverter::KeyStringToDomKey(key->c_str()));
+  }
 
   if (!host_)
     return Response::ServerError("Could not connect to view");
@@ -229,12 +237,12 @@ Response InputHandler::DispatchMouseEvent(
   if (!SetMouseEventButton(&event, button))
     return Response::InvalidParams("Invalid mouse button");
 
-  event.x = x;
-  event.y = y;
-  event.windowX = x;
-  event.windowY = y;
-  event.globalX = x;
-  event.globalY = y;
+  event.x = x * page_scale_factor_;
+  event.y = y * page_scale_factor_;
+  event.windowX = x * page_scale_factor_;
+  event.windowY = y * page_scale_factor_;
+  event.globalX = x * page_scale_factor_;
+  event.globalY = y * page_scale_factor_;
   event.clickCount = click_count ? *click_count : 0;
 
   if (!host_)

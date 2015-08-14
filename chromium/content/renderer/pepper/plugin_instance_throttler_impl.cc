@@ -4,6 +4,8 @@
 
 #include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 
+#include <cmath>
+
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
 #include "content/public/common/content_constants.h"
@@ -13,6 +15,7 @@
 #include "ppapi/shared_impl/ppapi_constants.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "ui/gfx/color_utils.h"
 #include "url/gurl.h"
@@ -20,6 +23,18 @@
 namespace content {
 
 namespace {
+
+// Cross-origin plugin content must have a width and height both exceeding
+// these minimums to be considered "large", and thus not peripheral.
+const int kLargeContentMinWidth = 398;
+const int kLargeContentMinHeight = 298;
+
+// Mark some 16:9 aspect ratio plugins as essential (not peripheral). This is to
+// mark as "large" some medium sized video content that meets a minimum area
+// requirement, even if it is below the max width/height above.
+const double kEssentialVideoAspectRatio = 16.0 / 9.0;
+const double kAspectRatioEpsilon = 0.01;
+const int kEssentialVideoMinimumArea = 120000;
 
 // Threshold for 'boring' score to accept a frame as good enough to be a
 // representative keyframe. Units are the ratio of all pixels that are within
@@ -47,6 +62,21 @@ void PluginInstanceThrottler::RecordUnthrottleMethodMetric(
   UMA_HISTOGRAM_ENUMERATION(
       "Plugin.PowerSaver.Unthrottle", method,
       PluginInstanceThrottler::UNTHROTTLE_METHOD_NUM_ITEMS);
+}
+
+// static
+bool PluginInstanceThrottler::IsLargeContent(int width, int height) {
+  if (width >= kLargeContentMinWidth && height >= kLargeContentMinHeight)
+    return true;
+
+  double aspect_ratio = static_cast<double>(width) / height;
+  if (std::abs(aspect_ratio - kEssentialVideoAspectRatio) <
+          kAspectRatioEpsilon &&
+      width * height >= kEssentialVideoMinimumArea) {
+    return true;
+  }
+
+  return false;
 }
 
 PluginInstanceThrottlerImpl::PluginInstanceThrottlerImpl()
@@ -138,10 +168,12 @@ void PluginInstanceThrottlerImpl::Initialize(
   if (frame) {
     PluginPowerSaverHelper* helper = frame->plugin_power_saver_helper();
     bool cross_origin_main_content = false;
-    if (!helper->ShouldThrottleContent(content_origin, plugin_module_name,
-                                       unobscured_size.width(),
-                                       unobscured_size.height(),
-                                       &cross_origin_main_content)) {
+    float zoom_factor = GetWebPlugin()->container()->pageZoomFactor();
+    if (!helper->ShouldThrottleContent(
+            content_origin, plugin_module_name,
+            roundf(unobscured_size.width() / zoom_factor),
+            roundf(unobscured_size.height() / zoom_factor),
+            &cross_origin_main_content)) {
       DCHECK_NE(THROTTLER_STATE_MARKED_ESSENTIAL, state_);
       state_ = THROTTLER_STATE_MARKED_ESSENTIAL;
       FOR_EACH_OBSERVER(Observer, observer_list_, OnPeripheralStateChange());

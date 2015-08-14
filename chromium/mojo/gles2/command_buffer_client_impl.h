@@ -9,7 +9,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/gpu/public/interfaces/command_buffer.mojom.h"
+#include "components/view_manager/public/interfaces/command_buffer.mojom.h"
 #include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
@@ -72,6 +72,7 @@ class CommandBufferClientImpl : public mojo::CommandBufferLostContextObserver,
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
   void SetLock(base::Lock*) override;
+  bool IsGpuChannelLost() override;
 
  private:
   class SyncClientImpl;
@@ -100,6 +101,9 @@ class CommandBufferClientImpl : public mojo::CommandBufferLostContextObserver,
   gpu::CommandBufferSharedState* shared_state_;
   int32_t last_put_offset_;
   int32_t next_transfer_buffer_id_;
+
+  // Image IDs are allocated in sequence.
+  int next_image_id_;
 
   const MojoAsyncWaiter* async_waiter_;
 };

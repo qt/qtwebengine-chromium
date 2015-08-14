@@ -31,19 +31,26 @@
 
 namespace blink {
 
-PassRefPtr<AXSpinButton> AXSpinButton::create(AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXSpinButton> AXSpinButton::create(AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXSpinButton(axObjectCache));
+    return adoptRefWillBeNoop(new AXSpinButton(axObjectCache));
 }
 
-AXSpinButton::AXSpinButton(AXObjectCacheImpl* axObjectCache)
+AXSpinButton::AXSpinButton(AXObjectCacheImpl& axObjectCache)
     : AXMockObject(axObjectCache)
-    , m_spinButtonElement(0)
+    , m_spinButtonElement(nullptr)
 {
 }
 
 AXSpinButton::~AXSpinButton()
 {
+    ASSERT(!m_spinButtonElement);
+}
+
+DEFINE_TRACE(AXSpinButton)
+{
+    visitor->trace(m_spinButtonElement);
+    AXMockObject::trace(visitor);
 }
 
 LayoutRect AXSpinButton::elementRect() const
@@ -57,13 +64,13 @@ LayoutRect AXSpinButton::elementRect() const
 void AXSpinButton::detach()
 {
     AXObject::detach();
-    m_spinButtonElement = 0;
+    m_spinButtonElement = nullptr;
 }
 
 void AXSpinButton::detachFromParent()
 {
     AXObject::detachFromParent();
-    m_spinButtonElement = 0;
+    m_spinButtonElement = nullptr;
 }
 
 AccessibilityRole AXSpinButton::roleValue() const
@@ -75,12 +82,12 @@ void AXSpinButton::addChildren()
 {
     m_haveChildren = true;
 
-    AXSpinButtonPart* incrementor = toAXSpinButtonPart(axObjectCache()->getOrCreate(SpinButtonPartRole));
+    AXSpinButtonPart* incrementor = toAXSpinButtonPart(axObjectCache().getOrCreate(SpinButtonPartRole));
     incrementor->setIsIncrementor(true);
     incrementor->setParent(this);
     m_children.append(incrementor);
 
-    AXSpinButtonPart* decrementor = toAXSpinButtonPart(axObjectCache()->getOrCreate(SpinButtonPartRole));
+    AXSpinButtonPart* decrementor = toAXSpinButtonPart(axObjectCache().getOrCreate(SpinButtonPartRole));
     decrementor->setIsIncrementor(false);
     decrementor->setParent(this);
     m_children.append(decrementor);
@@ -97,15 +104,15 @@ void AXSpinButton::step(int amount)
 
 // AXSpinButtonPart
 
-AXSpinButtonPart::AXSpinButtonPart(AXObjectCacheImpl* axObjectCache)
+AXSpinButtonPart::AXSpinButtonPart(AXObjectCacheImpl& axObjectCache)
     : AXMockObject(axObjectCache)
     , m_isIncrementor(false)
 {
 }
 
-PassRefPtr<AXSpinButtonPart> AXSpinButtonPart::create(AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXSpinButtonPart> AXSpinButtonPart::create(AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXSpinButtonPart(axObjectCache));
+    return adoptRefWillBeNoop(new AXSpinButtonPart(axObjectCache));
 }
 
 LayoutRect AXSpinButtonPart::elementRect() const

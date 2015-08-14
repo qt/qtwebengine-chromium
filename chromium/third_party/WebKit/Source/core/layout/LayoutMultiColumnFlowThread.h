@@ -178,6 +178,9 @@ public:
 
     void columnRuleStyleDidChange();
 
+    // Remove the spanner placeholder and return true if the specified object is no longer a valid spanner.
+    bool removeSpannerPlaceholderIfNoLongerValid(LayoutBox* spannerObjectInFlowThread);
+
     virtual const char* name() const override { return "LayoutMultiColumnFlowThread"; }
 
 protected:
@@ -188,21 +191,24 @@ protected:
 
 private:
     void calculateColumnCountAndWidth(LayoutUnit& width, unsigned& count) const;
-    void createAndInsertMultiColumnSet(LayoutBox* insertBefore = 0);
-    void createAndInsertSpannerPlaceholder(LayoutBox* spanner, LayoutBox* insertBefore = 0);
+    void createAndInsertMultiColumnSet(LayoutBox* insertBefore = nullptr);
+    void createAndInsertSpannerPlaceholder(LayoutBox* spannerObjectInFlowThread, LayoutObject* insertedBeforeInFlowThread);
+    void destroySpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder*);
     virtual bool descendantIsValidColumnSpanner(LayoutObject* descendant) const;
 
     virtual void addColumnSetToThread(LayoutMultiColumnSet*) override;
     virtual void willBeRemovedFromTree() override;
-    virtual LayoutUnit skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) override;
-    virtual void flowThreadDescendantWasInserted(LayoutObject*) override;
-    virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) override;
+    virtual void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) override;
+    virtual void flowThreadDescendantWasInserted(LayoutObject*) final;
+    virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) final;
+    virtual void flowThreadDescendantStyleWillChange(LayoutObject*, StyleDifference, const ComputedStyle& newStyle) override;
+    virtual void flowThreadDescendantStyleDidChange(LayoutObject*, StyleDifference, const ComputedStyle& oldStyle) override;
     virtual void computePreferredLogicalWidths() override;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
     virtual void updateLogicalWidth() override;
     virtual void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage) override;
     virtual void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight) override;
-    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = 0) override;
+    virtual bool addForcedColumnBreak(LayoutUnit, LayoutObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = nullptr) override;
     virtual bool isPageLogicalHeightKnown() const override;
 
     // The last set we worked on. It's not to be used as the "current set". The concept of a

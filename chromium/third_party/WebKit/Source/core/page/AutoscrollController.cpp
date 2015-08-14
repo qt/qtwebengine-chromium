@@ -31,11 +31,11 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutListBox.h"
-#include "core/page/Chrome.h"
-#include "core/page/EventHandler.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "wtf/CurrentTime.h"
 
@@ -94,7 +94,6 @@ void AutoscrollController::stopAutoscroll()
 #if OS(WIN)
     if (panScrollInProgress()) {
         if (FrameView* view = scrollable->frame()->view()) {
-            view->removePanScrollIcon();
             view->setCursor(pointerCursor());
         }
     }
@@ -202,8 +201,6 @@ void AutoscrollController::startPanScrolling(LayoutBox* scrollable, const IntPoi
     m_autoscrollLayoutObject = scrollable;
     m_panScrollStartPos = lastKnownMousePosition;
 
-    if (FrameView* view = scrollable->frame()->view())
-        view->addPanScrollIcon(lastKnownMousePosition);
     startAutoscroll();
 }
 #else
@@ -252,12 +249,12 @@ void AutoscrollController::animate(double)
 #endif
     }
     if (m_autoscrollType != NoAutoscroll)
-        m_page.chrome().scheduleAnimation();
+        m_page.chromeClient().scheduleAnimation();
 }
 
 void AutoscrollController::startAutoscroll()
 {
-    m_page.chrome().scheduleAnimation();
+    m_page.chromeClient().scheduleAnimation();
 }
 
 #if OS(WIN)
@@ -265,10 +262,10 @@ void AutoscrollController::updatePanScrollState(FrameView* view, const IntPoint&
 {
     // At the original click location we draw a 4 arrowed icon. Over this icon there won't be any scroll
     // So we don't want to change the cursor over this area
-    bool east = m_panScrollStartPos.x() < (lastKnownMousePosition.x() - FrameView::noPanScrollRadius);
-    bool west = m_panScrollStartPos.x() > (lastKnownMousePosition.x() + FrameView::noPanScrollRadius);
-    bool north = m_panScrollStartPos.y() > (lastKnownMousePosition.y() + FrameView::noPanScrollRadius);
-    bool south = m_panScrollStartPos.y() < (lastKnownMousePosition.y() - FrameView::noPanScrollRadius);
+    bool east = m_panScrollStartPos.x() < (lastKnownMousePosition.x() - noPanScrollRadius);
+    bool west = m_panScrollStartPos.x() > (lastKnownMousePosition.x() + noPanScrollRadius);
+    bool north = m_panScrollStartPos.y() > (lastKnownMousePosition.y() + noPanScrollRadius);
+    bool south = m_panScrollStartPos.y() < (lastKnownMousePosition.y() - noPanScrollRadius);
 
     if (m_autoscrollType == AutoscrollForPan && (east || west || north || south))
         m_autoscrollType = AutoscrollForPanCanStop;

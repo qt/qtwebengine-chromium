@@ -47,6 +47,21 @@ enum MethodID {
   kNumEntries
 };
 
+// leveldb::Status::Code values are mapped to these values for UMA logging.
+// Do not change/delete these values as you will break reporting for older
+// copies of Chrome. Only add new values to the end.
+enum LevelDBStatusValue {
+  LEVELDB_STATUS_OK = 0,
+  LEVELDB_STATUS_NOT_FOUND,
+  LEVELDB_STATUS_CORRUPTION,
+  LEVELDB_STATUS_NOT_SUPPORTED,
+  LEVELDB_STATUS_INVALID_ARGUMENT,
+  LEVELDB_STATUS_IO_ERROR,
+  LEVELDB_STATUS_MAX
+};
+
+LevelDBStatusValue GetLevelDBStatusUMAValue(const leveldb::Status& s);
+
 // The default value for leveldb::Options::reuse_logs. Currently log reuse is an
 // experimental feature in leveldb. More info at:
 // https://github.com/google/leveldb/commit/251ebf5dc70129ad3
@@ -139,9 +154,7 @@ class ChromiumEnv : public leveldb::Env,
                                     leveldb::Logger** result);
 
  protected:
-  std::string name_;
-  std::string uma_ioerror_base_name_;
-  bool make_backup_;
+  ChromiumEnv(const std::string& name, bool make_backup);
 
  private:
   static const char* FileErrorString(base::File::Error error);
@@ -192,6 +205,10 @@ class ChromiumEnv : public leveldb::Env,
       MethodID method) const;
 
   base::FilePath test_directory_;
+
+  std::string name_;
+  std::string uma_ioerror_base_name_;
+  bool make_backup_;
 
   base::Lock mu_;
   base::ConditionVariable bgsignal_;

@@ -34,7 +34,6 @@
 #include "core/CoreExport.h"
 #include "core/dom/Range.h"
 #include "core/layout/LayoutText.h"
-#include "core/layout/line/FloatToLayoutUnit.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
@@ -73,13 +72,15 @@ public:
         BottomToTop
     };
 
+    ~AbstractInlineTextBox();
+
     LayoutText* layoutText() const { return m_layoutText; }
 
     PassRefPtr<AbstractInlineTextBox> nextInlineTextBox() const;
     LayoutRect bounds() const;
     unsigned len() const;
     Direction direction() const;
-    void characterWidths(Vector<FloatWillBeLayoutUnit>&) const;
+    void characterWidths(Vector<float>&) const;
     void wordBoundaries(Vector<WordBoundaries>&) const;
     String text() const;
     bool isFirst() const;

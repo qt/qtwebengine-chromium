@@ -15,7 +15,6 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/x/x11_error_tracker.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 
 namespace {
@@ -43,6 +42,7 @@ X11DesktopHandler* X11DesktopHandler::get() {
 X11DesktopHandler::X11DesktopHandler()
     : xdisplay_(gfx::GetXDisplay()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
+      x_active_window_(None),
       wm_user_time_ms_(0),
       current_window_(None),
       current_window_active_state_(NOT_ACTIVE),
@@ -86,30 +86,34 @@ void X11DesktopHandler::ActivateWindow(::Window window) {
     // in an active X window.
   }
 
-  XRaiseWindow(xdisplay_, window);
-
   if (wm_supports_active_window_) {
     DCHECK_EQ(gfx::GetXDisplay(), xdisplay_);
 
-    XEvent xclient;
-    memset(&xclient, 0, sizeof(xclient));
-    xclient.type = ClientMessage;
-    xclient.xclient.window = window;
-    xclient.xclient.message_type = atom_cache_.GetAtom("_NET_ACTIVE_WINDOW");
-    xclient.xclient.format = 32;
-    xclient.xclient.data.l[0] = 1;  // Specified we are an app.
-    xclient.xclient.data.l[1] = wm_user_time_ms_;
-    xclient.xclient.data.l[2] = None;
-    xclient.xclient.data.l[3] = 0;
-    xclient.xclient.data.l[4] = 0;
+    // If the window is not already active, send a hint to activate it
+    if (x_active_window_ != window) {
+      XEvent xclient;
+      memset(&xclient, 0, sizeof(xclient));
+      xclient.type = ClientMessage;
+      xclient.xclient.window = window;
+      xclient.xclient.message_type = atom_cache_.GetAtom("_NET_ACTIVE_WINDOW");
+      xclient.xclient.format = 32;
+      xclient.xclient.data.l[0] = 1;  // Specified we are an app.
+      xclient.xclient.data.l[1] = wm_user_time_ms_;
+      xclient.xclient.data.l[2] = None;
+      xclient.xclient.data.l[3] = 0;
+      xclient.xclient.data.l[4] = 0;
 
-    XSendEvent(xdisplay_, x_root_window_, False,
-               SubstructureRedirectMask | SubstructureNotifyMask,
-               &xclient);
+      XSendEvent(xdisplay_, x_root_window_, False,
+                 SubstructureRedirectMask | SubstructureNotifyMask,
+                 &xclient);
+    } else {
+      OnActiveWindowChanged(window, ACTIVE);
+    }
   } else {
-    // XRaiseWindow will not give input focus to the window. We now need to ask
-    // the X server to do that. Note that the call will raise an X error if the
-    // window is not mapped.
+    XRaiseWindow(xdisplay_, window);
+    // Directly ask the X server to give focus to the window. Note
+    // that the call will raise an X error if the window is not
+    // mapped.
     XSetInputFocus(xdisplay_, window, RevertToParent, CurrentTime);
 
     OnActiveWindowChanged(window, ACTIVE);
@@ -171,7 +175,10 @@ uint32_t X11DesktopHandler::DispatchEvent(const ui::PlatformEvent& event) {
         ::Window window;
         if (ui::GetXIDProperty(x_root_window_, "_NET_ACTIVE_WINDOW", &window) &&
             window) {
+          x_active_window_ = window;
           OnActiveWindowChanged(window, ACTIVE);
+        } else {
+          x_active_window_ = None;
         }
       }
       break;
@@ -182,6 +189,10 @@ uint32_t X11DesktopHandler::DispatchEvent(const ui::PlatformEvent& event) {
       break;
     case DestroyNotify:
       OnWindowCreatedOrDestroyed(event->type, event->xdestroywindow.window);
+      // If the current active window is being destroyed, reset our tracker.
+      if (x_active_window_ == event->xdestroywindow.window) {
+        x_active_window_ = None;
+      }
       break;
     default:
       NOTREACHED();

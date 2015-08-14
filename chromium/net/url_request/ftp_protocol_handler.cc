@@ -27,9 +27,10 @@ FtpProtocolHandler::~FtpProtocolHandler() {
 
 URLRequestJob* FtpProtocolHandler::MaybeCreateJob(
     URLRequest* request, NetworkDelegate* network_delegate) const {
-  int port = request->url().IntPort();
-  if (request->url().has_port() &&
-      !IsPortAllowedByFtp(port) && !IsPortAllowedByOverride(port)) {
+  DCHECK_EQ("ftp", request->url().scheme());
+
+  if (!IsPortAllowedForScheme(request->url().EffectiveIntPort(),
+                              request->url().scheme())) {
     return new URLRequestErrorJob(request, network_delegate, ERR_UNSAFE_PORT);
   }
 

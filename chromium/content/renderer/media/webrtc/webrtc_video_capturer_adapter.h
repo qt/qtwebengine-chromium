@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "media/base/video_capture_types.h"
@@ -55,10 +54,7 @@ class CONTENT_EXPORT WebRtcVideoCapturerAdapter
   bool running_;
   base::TimeDelta first_frame_timestamp_;
 
-  // This is an alias to the frame_factory_ in the base class
-  // cricket::VideoCapturer.
   class MediaVideoFrameFactory;
-  MediaVideoFrameFactory* frame_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcVideoCapturerAdapter);
 };

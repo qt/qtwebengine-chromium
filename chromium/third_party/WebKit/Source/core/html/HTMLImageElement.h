@@ -25,6 +25,7 @@
 #define HTMLImageElement_h
 
 #include "core/CoreExport.h"
+#include "core/fetch/FetchRequest.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasImageSource.h"
@@ -49,7 +50,7 @@ public:
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
-    virtual ~HTMLImageElement();
+    ~HTMLImageElement() override;
     DECLARE_VIRTUAL_TRACE();
 
     int width(bool ignorePendingStylesheets = false);
@@ -61,10 +62,10 @@ public:
 
     bool isServerMap() const;
 
-    virtual String altText() const override final;
+    String altText() const final;
 
     ImageResource* cachedImage() const { return imageLoader().image(); }
-    void setImageResource(ImageResource* i) { imageLoader().setImage(i); };
+    void setImageResource(ImageResource* i) { imageLoader().setImage(i); }
 
     void setLoadingImageDocument() { imageLoader().setLoadingImageDocument(); }
 
@@ -82,25 +83,25 @@ public:
 
     bool hasPendingActivity() const { return imageLoader().hasPendingActivity(); }
 
-    virtual bool canContainRangeEndPoint() const override { return false; }
+    bool canContainRangeEndPoint() const override { return false; }
 
     void addClient(ImageLoaderClient* client) { imageLoader().addClient(client); }
     void removeClient(ImageLoaderClient* client) { imageLoader().removeClient(client); }
 
-    virtual const AtomicString imageSourceURL() const override;
+    const AtomicString imageSourceURL() const override;
 
-    virtual HTMLFormElement* formOwner() const override;
+    HTMLFormElement* formOwner() const override;
     void formRemovedFromTree(const Node& formRoot);
     virtual void ensureFallbackContent();
     virtual void ensurePrimaryContent();
 
     // CanvasImageSource implementation
-    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
-    virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
-    virtual FloatSize elementSize() const override;
-    virtual FloatSize defaultDestinationSize() const override;
-    virtual const KURL& sourceURL() const override;
-    virtual bool isOpaque() const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    bool wouldTaintOrigin(SecurityOrigin*) const override;
+    FloatSize elementSize() const override;
+    FloatSize defaultDestinationSize() const override;
+    const KURL& sourceURL() const override;
+    bool isOpaque() const override;
 
     // public so that HTMLPictureElement can call this as well.
     void selectSourceURL(ImageLoader::UpdateFromElementBehavior);
@@ -108,6 +109,7 @@ public:
     void setUseFallbackContent();
     void setIsFallbackImage() { m_isFallbackImage = true; }
 
+    FetchRequest::ResourceWidth resourceWidth();
     float sourceSize(Element&);
 
     void forceReload() const;
@@ -115,35 +117,35 @@ public:
 protected:
     explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
-    virtual void didMoveToNewDocument(Document& oldDocument) override;
+    void didMoveToNewDocument(Document& oldDocument) override;
     virtual bool useFallbackContent() const { return m_useFallbackContent; }
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
-    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
+    void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
 private:
-    virtual bool areAuthorShadowsAllowed() const override { return false; }
+    bool areAuthorShadowsAllowed() const override { return false; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    void attach(const AttachContext& = AttachContext()) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual bool canStartSelection() const override { return false; }
+    bool canStartSelection() const override { return false; }
 
-    virtual bool isURLAttribute(const Attribute&) const override;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
-    virtual const QualifiedName& subResourceAttributeName() const override;
+    bool isURLAttribute(const Attribute&) const override;
+    bool hasLegalLinkAttribute(const QualifiedName&) const override;
+    const QualifiedName& subResourceAttributeName() const override;
 
-    virtual bool draggable() const override;
+    bool draggable() const override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
-    virtual void removedFrom(ContainerNode*) override;
-    virtual bool shouldRegisterAsNamedItem() const override { return true; }
-    virtual bool shouldRegisterAsExtraNamedItem() const override { return true; }
-    virtual bool isInteractiveContent() const override;
-    virtual Image* imageContents() override;
+    InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    void removedFrom(ContainerNode*) override;
+    bool shouldRegisterAsNamedItem() const override { return true; }
+    bool shouldRegisterAsExtraNamedItem() const override { return true; }
+    bool isInteractiveContent() const override;
+    Image* imageContents() override;
 
     void resetFormOwner();
     ImageCandidate findBestFitImageFromPictureParent();

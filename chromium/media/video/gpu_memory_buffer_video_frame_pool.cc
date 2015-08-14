@@ -32,7 +32,10 @@ class GpuMemoryBufferVideoFramePool::PoolImpl
   // null.
   PoolImpl(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
            const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories)
-      : task_runner_(task_runner), gpu_factories_(gpu_factories) {}
+      : task_runner_(task_runner),
+        gpu_factories_(gpu_factories),
+        texture_target_(gpu_factories_ ? gpu_factories_->ImageTextureTarget()
+                                       : GL_TEXTURE_2D) {}
 
   // Takes a software VideoFrame and returns a VideoFrame backed by native
   // textures if possible.
@@ -100,7 +103,7 @@ class GpuMemoryBufferVideoFramePool::PoolImpl
   // Pool of resources.
   std::list<FrameResources*> resources_pool_;
 
-  unsigned texture_target_ = GL_TEXTURE_2D;
+  const unsigned texture_target_;
   DISALLOW_COPY_AND_ASSIGN(PoolImpl);
 };
 
@@ -197,13 +200,16 @@ GpuMemoryBufferVideoFramePool::PoolImpl::CreateHardwareFrame(
   }
 
   // Create the VideoFrame backed by native textures.
-  return VideoFrame::WrapYUV420NativeTextures(
+  scoped_refptr<VideoFrame> frame = VideoFrame::WrapYUV420NativeTextures(
       mailbox_holders[VideoFrame::kYPlane],
       mailbox_holders[VideoFrame::kUPlane],
       mailbox_holders[VideoFrame::kVPlane],
       base::Bind(&PoolImpl::MailboxHoldersReleased, this, frame_resources),
       size, video_frame->visible_rect(), video_frame->natural_size(),
-      video_frame->timestamp(), video_frame->allow_overlay());
+      video_frame->timestamp());
+  if (video_frame->metadata()->IsTrue(VideoFrameMetadata::ALLOW_OVERLAY))
+    frame->metadata()->SetBoolean(VideoFrameMetadata::ALLOW_OVERLAY, true);
+  return frame;
 }
 
 // Destroy all the resources posting one task per FrameResources
@@ -332,18 +338,15 @@ GpuMemoryBufferVideoFramePool::MaybeCreateHardwareFrame(
     case VideoFrame::I420:
       return pool_impl_->CreateHardwareFrame(video_frame);
     // Unsupported cases.
-    case media::VideoFrame::YV12A:
-    case media::VideoFrame::YV16:
-    case media::VideoFrame::YV12J:
-    case media::VideoFrame::YV12HD:
-    case media::VideoFrame::YV24:
-#if defined(VIDEO_HOLE)
-    case media::VideoFrame::HOLE:
-#endif  // defined(VIDEO_HOLE)
-    case media::VideoFrame::ARGB:
-    case media::VideoFrame::NATIVE_TEXTURE:
-    case media::VideoFrame::UNKNOWN:
-    case media::VideoFrame::NV12:
+    case VideoFrame::YV12A:
+    case VideoFrame::YV16:
+    case VideoFrame::YV24:
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+    case VideoFrame::NV12:
+#endif
+    case VideoFrame::ARGB:
+    case VideoFrame::XRGB:
+    case VideoFrame::UNKNOWN:
       break;
   }
   return video_frame;

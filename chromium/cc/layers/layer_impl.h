@@ -57,8 +57,6 @@ class LayerTreeHostImpl;
 class LayerTreeImpl;
 class MicroBenchmarkImpl;
 class Occlusion;
-template <typename LayerType>
-class OcclusionTracker;
 class OpacityTree;
 class PrioritizedTile;
 class RenderPass;
@@ -185,6 +183,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return should_flatten_transform_from_property_tree_;
   }
 
+  void UpdatePropertyTreeTransform();
+  void UpdatePropertyTreeOpacity();
+  void UpdatePropertyTreeScrollOffset();
+
   // For compatibility with Layer.
   bool has_render_surface() const { return !!render_surface(); }
 
@@ -250,7 +252,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 #endif
   }
 
-  virtual void GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
+  virtual void GetContentsResourceId(ResourceId* resource_id,
                                      gfx::Size* resource_size) const;
 
   virtual bool HasDelegatedContent() const;
@@ -298,6 +300,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetOpacity(float opacity);
   float opacity() const { return opacity_; }
   bool OpacityIsAnimating() const;
+  bool HasPotentiallyRunningOpacityAnimation() const;
   bool OpacityIsAnimatingOnImplOnly() const;
 
   void SetBlendMode(SkXfermode::Mode);
@@ -320,6 +323,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // This is a non-trivial function in Layer.
   bool IsContainerForFixedPositionLayers() const {
     return is_container_for_fixed_position_layers_;
+  }
+
+  bool IsAffectedByPageScale() const { return is_affected_by_page_scale_; }
+  void SetIsAffectedByPageScale(bool is_affected) {
+    is_affected_by_page_scale_ = is_affected;
   }
 
   gfx::Vector2dF FixedContainerSizeDelta() const;
@@ -390,8 +398,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Rect drawable_content_rect() const {
     return draw_properties_.drawable_content_rect;
   }
-  gfx::Rect visible_content_rect() const {
-    return draw_properties_.visible_content_rect;
+  gfx::Rect visible_layer_rect() const {
+    return draw_properties_.visible_layer_rect;
   }
   LayerImpl* render_target() {
     DCHECK(!draw_properties_.render_target ||
@@ -404,7 +412,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return draw_properties_.render_target;
   }
 
-  int num_unclipped_descendants() const {
+  size_t num_unclipped_descendants() const {
     return draw_properties_.num_unclipped_descendants;
   }
 
@@ -420,14 +428,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetBoundsDelta(const gfx::Vector2dF& bounds_delta);
   gfx::Vector2dF bounds_delta() const { return bounds_delta_; }
 
-  void SetContentBounds(const gfx::Size& content_bounds);
-  gfx::Size content_bounds() const { return draw_properties_.content_bounds; }
-
-  float contents_scale_x() const { return draw_properties_.contents_scale_x; }
-  float contents_scale_y() const { return draw_properties_.contents_scale_y; }
-  void SetContentsScale(float contents_scale_x, float contents_scale_y);
-
-  bool IsExternalFlingActive() const;
+  bool IsExternalScrollActive() const;
 
   void SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset);
   void SetCurrentScrollOffsetFromDelegate(
@@ -535,10 +536,24 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetTransform(const gfx::Transform& transform);
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
+  bool HasPotentiallyRunningTransformAnimation() const;
   bool TransformIsAnimatingOnImplOnly() const;
+  bool HasOnlyTranslationTransforms() const;
   void SetTransformAndInvertibility(const gfx::Transform& transform,
                                     bool transform_is_invertible);
   bool transform_is_invertible() const { return transform_is_invertible_; }
+
+  bool MaximumTargetScale(float* max_scale) const;
+  bool AnimationStartScale(float* start_scale) const;
+
+  bool HasFilterAnimationThatInflatesBounds() const;
+  bool HasTransformAnimationThatInflatesBounds() const;
+  bool HasAnimationThatInflatesBounds() const;
+
+  bool FilterAnimationBoundsForBox(const gfx::BoxF& box,
+                                   gfx::BoxF* bounds) const;
+  bool TransformAnimationBoundsForBox(const gfx::BoxF& box,
+                                      gfx::BoxF* bounds) const;
 
   // Note this rect is in layer space (not content space).
   void SetUpdateRect(const gfx::Rect& update_rect);
@@ -564,7 +579,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return layer_animation_controller_.get();
   }
 
-  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const;
+  virtual SimpleEnclosedRegion VisibleOpaqueRegion() const;
 
   virtual void DidBecomeActive();
 
@@ -592,8 +607,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   int clip_height() {
     return scroll_clip_layer_ ? scroll_clip_layer_->bounds().height() : 0;
   }
-
-  gfx::Rect LayerRectToContentRect(const gfx::RectF& layer_rect) const;
 
   virtual skia::RefPtr<SkPicture> GetPicture();
 
@@ -628,8 +641,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void Set3dSortingContextId(int id);
   int sorting_context_id() { return sorting_context_id_; }
 
-  void PassFrameTimingRequests(
-      std::vector<FrameTimingRequest>* frame_timing_requests);
+  void SetFrameTimingRequests(
+      const std::vector<FrameTimingRequest>& frame_timing_requests);
   const std::vector<FrameTimingRequest>& frame_timing_requests() const {
     return frame_timing_requests_;
   }
@@ -643,6 +656,26 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   virtual gfx::Rect GetEnclosingRectInTargetSpace() const;
 
+  void set_visited(bool visited) { visited_ = visited; }
+
+  bool visited() { return visited_; }
+
+  void set_layer_or_descendant_is_drawn(bool layer_or_descendant_is_drawn) {
+    layer_or_descendant_is_drawn_ = layer_or_descendant_is_drawn;
+  }
+
+  bool layer_or_descendant_is_drawn() { return layer_or_descendant_is_drawn_; }
+
+  void set_sorted_for_recursion(bool sorted_for_recursion) {
+    sorted_for_recursion_ = sorted_for_recursion;
+  }
+
+  bool sorted_for_recursion() { return sorted_for_recursion_; }
+
+  void UpdatePropertyTreeForScrollingAndAnimationIfNeeded();
+
+  float GetIdealContentsScale() const;
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl,
             int id,
@@ -653,11 +686,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void GetDebugBorderProperties(SkColor* color, float* width) const;
 
   void AppendDebugBorderQuad(RenderPass* render_pass,
-                             const gfx::Size& content_bounds,
+                             const gfx::Size& bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data) const;
   void AppendDebugBorderQuad(RenderPass* render_pass,
-                             const gfx::Size& content_bounds,
+                             const gfx::Size& bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data,
                              SkColor color,
@@ -751,6 +784,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Set for the layer that other layers are fixed to.
   bool is_container_for_fixed_position_layers_ : 1;
 
+  bool is_affected_by_page_scale_ : 1;
+
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   SkColor background_color_;
@@ -825,6 +860,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   std::vector<FrameTimingRequest> frame_timing_requests_;
   bool frame_timing_requests_dirty_;
+  bool visited_;
+  bool layer_or_descendant_is_drawn_;
+  bool sorted_for_recursion_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);
 };

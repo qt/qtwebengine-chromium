@@ -72,9 +72,12 @@ class MediaConstraintsInterface {
   static const char kMinFrameRate[];  // minFrameRate
 
   // Constraint keys used by a local audio source.
+  static const char kEchoCancellation[];  // echoCancellation
+
   // These keys are google specific.
-  static const char kEchoCancellation[];  // googEchoCancellation
-  static const char kExperimentalEchoCancellation[];  // googEchoCancellation2
+  static const char kGoogEchoCancellation[];  // googEchoCancellation
+
+  static const char kExtendedFilterEchoCancellation[];  // googEchoCancellation2
   static const char kDAEchoCancellation[];  // googDAEchoCancellation
   static const char kAutoGainControl[];  // googAutoGainControl
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2

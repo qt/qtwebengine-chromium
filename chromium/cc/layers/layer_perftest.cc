@@ -6,7 +6,6 @@
 
 #include "base/thread_task_runner_handle.h"
 #include "cc/debug/lap_timer.h"
-#include "cc/resources/layer_painter.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_layer_tree_host_client.h"
@@ -22,12 +21,6 @@ static const int kTimeLimitMillis = 3000;
 static const int kWarmupRuns = 5;
 static const int kTimeCheckInterval = 10;
 
-class MockLayerPainter : public LayerPainter {
- public:
-  void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) override {}
-};
-
-
 class LayerPerfTest : public testing::Test {
  public:
   LayerPerfTest()
@@ -39,7 +32,8 @@ class LayerPerfTest : public testing::Test {
 
  protected:
   void SetUp() override {
-    layer_tree_host_ = FakeLayerTreeHost::Create(&fake_client_);
+    layer_tree_host_ =
+        FakeLayerTreeHost::Create(&fake_client_, &task_graph_runner_);
     layer_tree_host_->InitializeSingleThreaded(
         &fake_client_, base::ThreadTaskRunnerHandle::Get(), nullptr);
   }
@@ -60,7 +54,7 @@ class LayerPerfTest : public testing::Test {
 };
 
 TEST_F(LayerPerfTest, PushPropertiesTo) {
-  scoped_refptr<Layer> test_layer = Layer::Create();
+  scoped_refptr<Layer> test_layer = Layer::Create(LayerSettings());
   scoped_ptr<LayerImpl> impl_layer =
       LayerImpl::Create(host_impl_.active_tree(), 1);
 

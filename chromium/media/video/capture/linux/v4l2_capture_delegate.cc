@@ -81,7 +81,7 @@ V4L2CaptureDelegate::CreateV4L2CaptureDelegate(
   }
 }
 
-//static
+// static
 size_t V4L2CaptureDelegate::GetNumPlanesForFourCc(uint32_t fourcc) {
   for (const auto& fourcc_and_pixel_format : kSupportedFormatsAndPlanarity) {
     if (fourcc_and_pixel_format.fourcc == fourcc)
@@ -118,7 +118,7 @@ std::list<uint32_t> V4L2CaptureDelegate::GetListOfUsableFourCcs(
   return supported_formats;
 }
 
-//static
+// static
 std::string V4L2CaptureDelegate::FourccToString(uint32_t fourcc) {
   return base::StringPrintf("%c%c%c%c", fourcc & 0xFF, (fourcc >> 8) & 0xFF,
                             (fourcc >> 16) & 0xFF, (fourcc >> 24) & 0xFF);
@@ -141,6 +141,7 @@ void V4L2CaptureDelegate::BufferTracker::AddMmapedPlane(uint8_t* const start,
   Plane plane;
   plane.start = start;
   plane.length = length;
+  plane.payload_size = 0;
   planes_.push_back(plane);
 }
 
@@ -399,6 +400,7 @@ void V4L2CaptureDelegate::DoCapture() {
       return;
     }
 
+    SetPayloadSize(buffer_tracker_pool_[buffer.index], buffer);
     SendBuffer(buffer_tracker_pool_[buffer.index], video_fmt_);
 
     if (HANDLE_EINTR(ioctl(device_fd_.get(), VIDIOC_QBUF, &buffer)) < 0) {

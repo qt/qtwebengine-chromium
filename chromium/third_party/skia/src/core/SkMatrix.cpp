@@ -7,6 +7,7 @@
 
 #include "SkMatrix.h"
 #include "SkFloatBits.h"
+#include "SkRSXform.h"
 #include "SkString.h"
 #include "SkNx.h"
 
@@ -440,6 +441,22 @@ void SkMatrix::setSinCos(SkScalar sinV, SkScalar cosV, SkScalar px, SkScalar py)
     this->setTypeMask(kUnknown_Mask | kOnlyPerspectiveValid_Mask);
 }
 
+SkMatrix& SkMatrix::setRSXform(const SkRSXform& xform) {
+    fMat[kMScaleX]  = xform.fSCos;
+    fMat[kMSkewX]   = -xform.fSSin;
+    fMat[kMTransX]  = xform.fTx;
+    
+    fMat[kMSkewY]   = xform.fSSin;
+    fMat[kMScaleY]  = xform.fSCos;
+    fMat[kMTransY]  = xform.fTy;
+    
+    fMat[kMPersp0] = fMat[kMPersp1] = 0;
+    fMat[kMPersp2] = 1;
+    
+    this->setTypeMask(kUnknown_Mask | kOnlyPerspectiveValid_Mask);
+    return *this;
+}
+
 void SkMatrix::setSinCos(SkScalar sinV, SkScalar cosV) {
     fMat[kMScaleX]  = cosV;
     fMat[kMSkewX]   = -sinV;
@@ -752,16 +769,6 @@ static double sk_inv_determinant(const float mat[9], int isPerspective) {
     return 1.0 / det;
 }
 
-bool SkMatrix::isFinite() const {
-    for (int i = 0; i < 9; ++i) {
-        if (!SkScalarIsFinite(fMat[i])) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 void SkMatrix::SetAffineIdentity(SkScalar affine[6]) {
     affine[kAScaleX] = 1;
     affine[kASkewY] = 0;
@@ -786,7 +793,7 @@ bool SkMatrix::asAffine(SkScalar affine[6]) const {
     return true;
 }
 
-void SkMatrix::ComputeInv(SkScalar dst[9], const SkScalar src[9], SkScalar invDet, bool isPersp) {
+void SkMatrix::ComputeInv(SkScalar dst[9], const SkScalar src[9], double invDet, bool isPersp) {
     SkASSERT(src != dst);
     SkASSERT(src && dst);
 
@@ -1823,3 +1830,30 @@ bool SkDecomposeUpper2x2(const SkMatrix& matrix,
 
     return true;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+void SkRSXform::toQuad(SkScalar width, SkScalar height, SkPoint quad[4]) const {
+#if 0
+    // This is the slow way, but it documents what we're doing
+    quad[0].set(0, 0);
+    quad[1].set(width, 0);
+    quad[2].set(width, height);
+    quad[3].set(0, height);
+    SkMatrix m;
+    m.setRSXform(*this).mapPoints(quad, quad, 4);
+#else
+    const SkScalar m00 = fSCos;
+    const SkScalar m01 = -fSSin;
+    const SkScalar m02 = fTx;
+    const SkScalar m10 = -m01;
+    const SkScalar m11 = m00;
+    const SkScalar m12 = fTy;
+
+    quad[0].set(m02, m12);
+    quad[1].set(m00 * width + m02, m10 * width + m12);
+    quad[2].set(m00 * width + m01 * height + m02, m10 * width + m11 * height + m12);
+    quad[3].set(m01 * height + m02, m11 * height + m12);
+#endif
+}
+

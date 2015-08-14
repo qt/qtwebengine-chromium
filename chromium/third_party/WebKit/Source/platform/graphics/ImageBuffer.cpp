@@ -79,23 +79,11 @@ ImageBuffer::ImageBuffer(PassOwnPtr<ImageBufferSurface> surface)
     : m_surface(surface)
     , m_client(0)
 {
-    if (m_surface->canvas()) {
-        m_context = GraphicsContext::deprecatedCreateWithCanvas(m_surface->canvas());
-        m_context->setAccelerated(m_surface->isAccelerated());
-    }
     m_surface->setImageBuffer(this);
 }
 
 ImageBuffer::~ImageBuffer()
 {
-}
-
-GraphicsContext* ImageBuffer::context() const
-{
-    if (!isSurfaceValid())
-        return nullptr;
-    ASSERT(m_context.get());
-    return m_context.get();
 }
 
 SkCanvas* ImageBuffer::canvas() const
@@ -145,8 +133,6 @@ void ImageBuffer::notifySurfaceInvalid()
 
 void ImageBuffer::resetCanvas(SkCanvas* canvas)
 {
-    ASSERT(context()->canvas());
-    context()->resetCanvas(canvas);
     if (m_client)
         m_client->restoreCanvasMatrixClipStack();
 }
@@ -186,10 +172,20 @@ WebLayer* ImageBuffer::platformLayer() const
 
 bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY)
 {
-    if (!m_surface->isAccelerated() || !getBackingTexture() || !isSurfaceValid())
+    if (!m_surface->isAccelerated() || !isSurfaceValid())
         return false;
 
-    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(internalFormat, destType, level))
+    if (!Extensions3DUtil::canUseCopyTextureCHROMIUM(GL_TEXTURE_2D, internalFormat, destType, level))
+        return false;
+
+    RefPtr<const SkImage> textureImage = m_surface->newImageSnapshot();
+    if (!textureImage)
+        return false;
+
+    ASSERT(textureImage->isTextureBacked()); // isAccelerated() check above should guarantee this
+    // Get the texture ID, flushing pending operations if needed.
+    Platform3DObject textureId = textureImage->getTextureHandle(true);
+    if (!textureId)
         return false;
 
     OwnPtr<WebGraphicsContext3DProvider> provider = adoptPtr(Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
@@ -203,7 +199,7 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
 
     // Contexts may be in a different share group. We must transfer the texture through a mailbox first
     sharedContext->genMailboxCHROMIUM(mailbox->name);
-    sharedContext->produceTextureDirectCHROMIUM(getBackingTexture(), GL_TEXTURE_2D, mailbox->name);
+    sharedContext->produceTextureDirectCHROMIUM(textureId, GL_TEXTURE_2D, mailbox->name);
     sharedContext->flush();
 
     mailbox->syncPoint = sharedContext->insertSyncPoint();
@@ -212,14 +208,8 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
     Platform3DObject sourceTexture = context->createAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox->name);
 
     // The canvas is stored in a premultiplied format, so unpremultiply if necessary.
-    context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, !premultiplyAlpha);
-
     // The canvas is stored in an inverted position, so the flip semantics are reversed.
-    context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, !flipY);
-    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, internalFormat, destType);
-
-    context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, false);
-    context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
+    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, internalFormat, destType, flipY ? GL_FALSE : GL_TRUE, GL_FALSE, premultiplyAlpha ? GL_FALSE : GL_TRUE);
 
     context->deleteTexture(sourceTexture);
 
@@ -232,43 +222,24 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
     return true;
 }
 
-static bool drawNeedsCopy(GraphicsContext* src, GraphicsContext* dst)
-{
-    ASSERT(dst);
-    return (src == dst);
-}
-
-Platform3DObject ImageBuffer::getBackingTexture()
-{
-    return m_surface->getBackingTexture();
-}
-
-void ImageBuffer::didModifyBackingTexture()
-{
-    m_surface->didModifyBackingTexture();
-}
-
 bool ImageBuffer::copyRenderingResultsFromDrawingBuffer(DrawingBuffer* drawingBuffer, SourceDrawingBuffer sourceBuffer)
 {
-    if (!drawingBuffer)
+    if (!drawingBuffer || !m_surface->isAccelerated())
         return false;
     OwnPtr<WebGraphicsContext3DProvider> provider = adoptPtr(Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
     if (!provider)
         return false;
     WebGraphicsContext3D* context3D = provider->context3d();
-    Platform3DObject tex = m_surface->getBackingTexture();
-    if (!context3D || !tex)
+    if (!context3D)
+        return false;
+    Platform3DObject textureId = m_surface->getBackingTextureHandleForOverwrite();
+    if (!textureId)
         return false;
 
-    m_surface->invalidateCachedBitmap();
-    bool result = drawingBuffer->copyToPlatformTexture(context3D, tex, GL_RGBA,
+    context3D->flush();
+
+    return drawingBuffer->copyToPlatformTexture(context3D, textureId, GL_RGBA,
         GL_UNSIGNED_BYTE, 0, true, false, sourceBuffer);
-
-    if (result) {
-        m_surface->didModifyBackingTexture();
-    }
-
-    return result;
 }
 
 void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect* srcPtr, SkXfermode::Mode op)
@@ -277,7 +248,7 @@ void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, cons
         return;
 
     FloatRect srcRect = srcPtr ? *srcPtr : FloatRect(FloatPoint(), size());
-    m_surface->draw(context, destRect, srcRect, op, drawNeedsCopy(m_context.get(), context));
+    m_surface->draw(context, destRect, srcRect, op);
 }
 
 void ImageBuffer::flush()
@@ -296,7 +267,7 @@ bool ImageBuffer::getImageData(Multiply multiplied, const IntRect& rect, WTF::Ar
         return false;
 
     if (!isSurfaceValid()) {
-        WTF::ArrayBufferContents result(rect.width() * rect.height(), 4, WTF::ArrayBufferContents::ZeroInitialize);
+        WTF::ArrayBufferContents result(rect.width() * rect.height(), 4, WTF::ArrayBufferContents::NotShared, WTF::ArrayBufferContents::ZeroInitialize);
         result.transfer(contents);
         return true;
     }
@@ -308,6 +279,7 @@ bool ImageBuffer::getImageData(Multiply multiplied, const IntRect& rect, WTF::Ar
         || rect.maxY() > m_surface->size().height();
     WTF::ArrayBufferContents result(
         rect.width() * rect.height(), 4,
+        WTF::ArrayBufferContents::NotShared,
         hasStrayArea
         ? WTF::ArrayBufferContents::ZeroInitialize
         : WTF::ArrayBufferContents::DontInitialize);
@@ -351,7 +323,7 @@ void ImageBuffer::putByteArray(Multiply multiplied, const unsigned char* source,
 
     m_surface->willAccessPixels();
 
-    context()->writePixels(info, srcAddr, srcBytesPerRow, destX, destY);
+    canvas()->writePixels(info, srcAddr, srcBytesPerRow, destX, destY);
 }
 
 template <typename T>

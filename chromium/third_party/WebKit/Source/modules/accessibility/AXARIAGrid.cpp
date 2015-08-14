@@ -37,7 +37,7 @@
 
 namespace blink {
 
-AXARIAGrid::AXARIAGrid(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+AXARIAGrid::AXARIAGrid(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
     : AXTable(layoutObject, axObjectCache)
 {
 }
@@ -46,9 +46,9 @@ AXARIAGrid::~AXARIAGrid()
 {
 }
 
-PassRefPtr<AXARIAGrid> AXARIAGrid::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+PassRefPtrWillBeRawPtr<AXARIAGrid> AXARIAGrid::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRef(new AXARIAGrid(layoutObject, axObjectCache));
+    return adoptRefWillBeNoop(new AXARIAGrid(layoutObject, axObjectCache));
 }
 
 bool AXARIAGrid::addTableCellChild(AXObject* child, HashSet<AXObject*>& appendedRows, unsigned& columnCount)
@@ -92,14 +92,18 @@ void AXARIAGrid::addChildren()
     if (!m_layoutObject)
         return;
 
-    AXObjectCacheImpl* axCache = axObjectCache();
+    Vector<AXObject*> children;
+    for (AXObject* child = firstChild(); child; child = child->nextSibling())
+        children.append(child);
+    computeAriaOwnsChildren(children);
+
+    AXObjectCacheImpl& axCache = axObjectCache();
 
     // add only rows that are labeled as aria rows
     HashSet<AXObject*> appendedRows;
     unsigned columnCount = 0;
-    for (RefPtr<AXObject> child = firstChild(); child; child = child->nextSibling()) {
-
-        if (!addTableCellChild(child.get(), appendedRows, columnCount)) {
+    for (const auto& child : children) {
+        if (!addTableCellChild(child, appendedRows, columnCount)) {
 
             // in case the layout tree doesn't match the expected ARIA hierarchy, look at the children
             if (!child->hasChildren())
@@ -114,7 +118,7 @@ void AXARIAGrid::addChildren()
 
     // make the columns based on the number of columns in the first body
     for (unsigned i = 0; i < columnCount; ++i) {
-        AXTableColumn* column = toAXTableColumn(axCache->getOrCreate(ColumnRole));
+        AXTableColumn* column = toAXTableColumn(axCache.getOrCreate(ColumnRole));
         column->setColumnIndex((int)i);
         column->setParent(this);
         m_columns.append(column);

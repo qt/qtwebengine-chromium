@@ -35,20 +35,20 @@ class HTMLTableColElement final : public HTMLTablePartElement {
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableColElement);
 
-    int span() const { return m_span; }
-    void setSpan(int);
+    unsigned span() const { return m_span; }
+    void setSpan(unsigned);
 
     const AtomicString& width() const;
 
 private:
     HTMLTableColElement(const QualifiedName& tagName, Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
-    virtual const StylePropertySet* additionalPresentationAttributeStyle() override;
+    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    bool isPresentationAttribute(const QualifiedName&) const override;
+    void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    const StylePropertySet* additionalPresentationAttributeStyle() override;
 
-    int m_span;
+    unsigned m_span;
 };
 
 inline bool isHTMLTableColElement(const HTMLElement& element)

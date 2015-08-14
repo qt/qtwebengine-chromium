@@ -105,13 +105,11 @@ class CONTENT_EXPORT WebContentsImpl
 
   static WebContentsImpl* CreateWithOpener(
       const WebContents::CreateParams& params,
-      WebContentsImpl* opener);
+      FrameTreeNode* opener);
 
   static std::vector<WebContentsImpl*> GetAllWebContents();
 
-  // Returns the opener WebContentsImpl, if any. This can be set to null if the
-  // opener is closed or the page clears its window.opener.
-  WebContentsImpl* opener() const { return opener_; }
+  static WebContentsImpl* FromFrameTreeNode(FrameTreeNode* frame_tree_node);
 
   // Creates a swapped out RenderView. This is used by the browser plugin to
   // create a swapped out RenderView in the embedder render process for the
@@ -217,10 +215,6 @@ class CONTENT_EXPORT WebContentsImpl
       AXTreeSnapshotCallback;
   void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
 
-  // Clear the navigation transition data when the user navigates back to Chrome
-  // from a native app.
-  void ClearNavigationTransitionData();
-
   // WebContents ------------------------------------------------------
   WebContentsDelegate* GetDelegate() override;
   void SetDelegate(WebContentsDelegate* delegate) override;
@@ -285,6 +279,9 @@ class CONTENT_EXPORT WebContentsImpl
   void WasHidden() override;
   bool NeedToFireBeforeUnload() override;
   void DispatchBeforeUnload(bool for_cross_site_transition) override;
+  void AttachToOuterWebContentsFrame(
+      WebContents* outer_web_contents,
+      RenderFrameHost* outer_contents_frame) override;
   void Stop() override;
   WebContents* Clone() override;
   void ReloadFocusedFrame(bool ignore_cache) override;
@@ -347,7 +344,7 @@ class CONTENT_EXPORT WebContentsImpl
   gfx::Size GetPreferredSize() const override;
   bool GotResponseToLockMouseRequest(bool allowed) override;
   bool HasOpener() const override;
-  WebContents* GetOpener() const override;
+  WebContentsImpl* GetOpener() const override;
   void DidChooseColorInColorChooser(SkColor color) override;
   void DidEndColorChooser() override;
   int DownloadImage(const GURL& url,
@@ -366,6 +363,10 @@ class CONTENT_EXPORT WebContentsImpl
   void ExitFullscreen() override;
   void ResumeLoadingCreatedWebContents() override;
 #if defined(OS_ANDROID)
+  void OnMediaSessionStateChanged();
+  void ResumeMediaSession() override;
+  void SuspendMediaSession() override;
+
   base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() override;
   virtual WebContentsAndroid* GetWebContentsAndroid();
 #elif defined(OS_MACOSX)
@@ -386,9 +387,6 @@ class CONTENT_EXPORT WebContentsImpl
   void RenderFrameCreated(RenderFrameHost* render_frame_host) override;
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
   void SwappedOut(RenderFrameHost* render_frame_host) override;
-  void DidDeferAfterResponseStarted(
-      const TransitionLayerData& transition_data) override;
-  bool WillHandleDeferAfterResponseStarted() override;
   void WorkerCrashed(RenderFrameHost* render_frame_host) override;
   void ShowContextMenu(RenderFrameHost* render_frame_host,
                        const ContextMenuParams& params) override;
@@ -405,7 +403,6 @@ class CONTENT_EXPORT WebContentsImpl
   void DidAccessInitialDocument() override;
   void DidChangeName(RenderFrameHost* render_frame_host,
                      const std::string& name) override;
-  void DidDisownOpener(RenderFrameHost* render_frame_host) override;
   void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) override;
   void UpdateTitle(RenderFrameHost* render_frame_host,
                    int32 page_id,
@@ -427,7 +424,7 @@ class CONTENT_EXPORT WebContentsImpl
   bool ShouldRouteMessageEvent(
       RenderFrameHost* target_rfh,
       SiteInstance* source_site_instance) const override;
-  int EnsureOpenerRenderViewsExist(RenderFrameHost* source_rfh) override;
+  void EnsureOpenerProxiesExist(RenderFrameHost* source_rfh) override;
 #if defined(OS_WIN)
   gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
 #endif
@@ -510,15 +507,12 @@ class CONTENT_EXPORT WebContentsImpl
   void SetIsVirtualKeyboardRequested(bool requested) override;
   bool IsVirtualKeyboardRequested() override;
 
-
   // NavigatorDelegate ---------------------------------------------------------
 
   void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
                                const GURL& validated_url,
                                bool is_error_page,
                                bool is_iframe_srcdoc) override;
-  void DidStartNavigationTransition(
-      RenderFrameHostImpl* render_frame_host) override;
   void DidFailProvisionalLoadWithError(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params)
@@ -526,7 +520,8 @@ class CONTENT_EXPORT WebContentsImpl
   void DidFailLoadWithError(RenderFrameHostImpl* render_frame_host,
                             const GURL& url,
                             int error_code,
-                            const base::string16& error_description) override;
+                            const base::string16& error_description,
+                            bool was_ignored_by_handler) override;
   void DidCommitProvisionalLoad(RenderFrameHostImpl* render_frame_host,
                                 const GURL& url,
                                 ui::PageTransition transition_type) override;
@@ -572,13 +567,23 @@ class CONTENT_EXPORT WebContentsImpl
   BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
   BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager()
       override;
+  // The following 4 functions are already listed under WebContents overrides:
+  // void Cut() override;
+  // void Copy() override;
+  // void Paste() override;
+  // void SelectAll() override;
+  void MoveRangeSelectionExtent(const gfx::Point& extent) override;
+  void SelectRange(const gfx::Point& base, const gfx::Point& extent) override;
+  void AdjustSelectionByCharacterOffset(int start_adjust, int end_adjust)
+      override;
 
   // RenderFrameHostManager::Delegate ------------------------------------------
 
   bool CreateRenderViewForRenderManager(
       RenderViewHost* render_view_host,
-      int opener_route_id,
+      int opener_frame_routing_id,
       int proxy_routing_id,
+      const FrameReplicationState& replicated_frame_state,
       bool for_main_frame_navigation) override;
   bool CreateRenderFrameForRenderManager(RenderFrameHost* render_frame_host,
                                          int parent_routing_id,
@@ -598,13 +603,13 @@ class CONTENT_EXPORT WebContentsImpl
   void NotifyMainFrameSwappedFromRenderManager(
       RenderViewHost* old_host,
       RenderViewHost* new_host) override;
-  int CreateOpenerRenderViewsForRenderManager(SiteInstance* instance) override;
   NavigationControllerImpl& GetControllerForRenderManager() override;
   scoped_ptr<WebUIImpl> CreateWebUIForRenderManager(const GURL& url) override;
   NavigationEntry* GetLastCommittedNavigationEntryForRenderManager() override;
   bool FocusLocationBarByDefault() override;
   void SetFocusToLocationBar(bool select_all) override;
   bool IsHidden() override;
+  int GetOuterDelegateFrameTreeNodeID() override;
 
   // NotificationObserver ------------------------------------------------------
 
@@ -643,19 +648,6 @@ class CONTENT_EXPORT WebContentsImpl
   // |web_contents|.
   void CopyMaxPageIDsFrom(WebContents* web_contents) override;
 
-  // Called by the NavigationController to cause the WebContentsImpl to navigate
-  // to the current pending entry. The NavigationController should be called
-  // back with RendererDidNavigate on success or DiscardPendingEntry on failure.
-  // The callbacks can be inside of this function, or at some future time.
-  //
-  // The entry has a PageID of -1 if newly created (corresponding to navigation
-  // to a new URL).
-  //
-  // If this method returns false, then the navigation is discarded (equivalent
-  // to calling DiscardPendingEntry on the NavigationController).
-  bool NavigateToPendingEntry(
-      NavigationController::ReloadType reload_type) override;
-
   // Sets the history for this WebContentsImpl to |history_length| entries, with
   // an offset of |history_offset|.
   void SetHistoryOffsetAndLength(int history_offset,
@@ -680,17 +672,6 @@ class CONTENT_EXPORT WebContentsImpl
                     LoadNotificationDetails* details) override;
 
   typedef base::Callback<void(WebContents*)> CreatedCallback;
-
-  // Requests the renderer to move the selection extent to a new position.
-  void MoveRangeSelectionExtent(const gfx::Point& extent);
-
-  // Requests the renderer to select the region between two points in the
-  // currently focused frame.
-  void SelectRange(const gfx::Point& base, const gfx::Point& extent);
-
-  // Notifies the main frame that it can continue navigation (if it was deferred
-  // immediately at first response).
-  void ResumeResponseDeferredAtStart();
 
   // Forces overscroll to be disabled (used by touch emulation).
   void SetForceDisableOverscrollContent(bool force_disable);
@@ -740,9 +721,41 @@ class CONTENT_EXPORT WebContentsImpl
 
   class DestructionObserver;
 
+  // Represents a WebContents node in a tree of WebContents structure.
+  //
+  // Two WebContents with separate FrameTrees can be connected by
+  // outer/inner relationship using this class. Note that their FrameTrees
+  // still remain disjoint.
+  // The parent is referred to as "outer WebContents" and the descendents are
+  // referred to as "inner WebContents".
+  // For each inner WebContents, the outer WebContents will have a
+  // corresponding FrameTreeNode.
+  struct WebContentsTreeNode {
+   public:
+    WebContentsTreeNode();
+    ~WebContentsTreeNode();
+
+    typedef std::set<WebContentsTreeNode*> ChildrenSet;
+
+    void ConnectToOuterWebContents(WebContentsImpl* outer_web_contents,
+                                   RenderFrameHostImpl* outer_contents_frame);
+
+    WebContentsImpl* outer_web_contents() { return outer_web_contents_; }
+    int outer_contents_frame_tree_node_id() {
+      return outer_contents_frame_tree_node_id_;
+    }
+
+   private:
+    // The outer Webontents.
+    WebContentsImpl* outer_web_contents_;
+    // The ID of the FrameTreeNode in outer WebContents that is hosting us.
+    int outer_contents_frame_tree_node_id_;
+    // List of inner WebContents that we host.
+    ChildrenSet inner_web_contents_tree_nodes_;
+  };
+
   // See WebContents::Create for a description of these parameters.
-  WebContentsImpl(BrowserContext* browser_context,
-                  WebContentsImpl* opener);
+  WebContentsImpl(BrowserContext* browser_context);
 
   // Add and remove observers for page navigation notifications. The order in
   // which notifications are sent to observers is undefined. Clients must be
@@ -750,7 +763,7 @@ class CONTENT_EXPORT WebContentsImpl
   void AddObserver(WebContentsObserver* observer);
   void RemoveObserver(WebContentsObserver* observer);
 
-  // Clears this tab's opener if it has been closed.
+  // Clears a pending contents that has been closed before being shown.
   void OnWebContentsDestroyed(WebContentsImpl* web_contents);
 
   // Creates and adds to the map a destruction observer watching |web_contents|.
@@ -832,6 +845,8 @@ class CONTENT_EXPORT WebContentsImpl
                    const std::string& name,
                    const base::ListValue& args);
 #if defined(ENABLE_PLUGINS)
+  void OnPepperInstanceCreated();
+  void OnPepperInstanceDeleted();
   void OnPepperPluginHung(int plugin_child_id,
                           const base::FilePath& path,
                           bool is_hung);
@@ -848,11 +863,6 @@ class CONTENT_EXPORT WebContentsImpl
   void OnBrowserPluginMessage(RenderFrameHost* render_frame_host,
                               const IPC::Message& message);
 #endif  // defined(ENABLE_PLUGINS)
-  void OnDidDownloadImage(int id,
-                          int http_status_code,
-                          const GURL& image_url,
-                          const std::vector<SkBitmap>& bitmaps,
-                          const std::vector<gfx::Size>& original_bitmap_sizes);
   void OnUpdateFaviconURL(const std::vector<FaviconURL>& candidates);
   void OnFirstVisuallyNonEmptyPaint();
   void OnMediaPlayingNotification(int64 player_cookie,
@@ -896,12 +906,6 @@ class CONTENT_EXPORT WebContentsImpl
   // different and was therefore updated.
   bool UpdateTitleForEntry(NavigationEntryImpl* entry,
                            const base::string16& title);
-
-  // Recursively creates swapped out RenderViews for this tab's opener chain
-  // (including this tab) in the given SiteInstance, allowing other tabs to send
-  // cross-process JavaScript calls to their opener(s).  Returns the route ID of
-  // this tab's RenderView for |instance|.
-  int CreateOpenerRenderViews(SiteInstance* instance);
 
   // Helper for CreateNewWidget/CreateNewFullscreenWidget.
   void CreateNewWidget(int render_process_id,
@@ -1024,11 +1028,7 @@ class CONTENT_EXPORT WebContentsImpl
   // This MUST be listed above frame_tree_ since at destruction time the
   // latter might cause RenderViewHost's destructor to call us and we might use
   // the observer list then.
-  ObserverList<WebContentsObserver> observers_;
-
-  // The tab that opened this tab, if any.  Will be set to null if the opener
-  // is closed.
-  WebContentsImpl* opener_;
+  base::ObserverList<WebContentsObserver> observers_;
 
   // True if this tab was opened by another tab. This is not unset if the opener
   // is closed.
@@ -1053,6 +1053,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Manages the frame tree of the page and process swaps in each node.
   FrameTree frame_tree_;
+
+  // If this WebContents is part of a "tree of WebContents", then this contains
+  // information about the structure.
+  scoped_ptr<WebContentsTreeNode> node_;
 
   // SavePackage, lazily created.
   scoped_refptr<SavePackage> save_package_;
@@ -1091,6 +1095,10 @@ class CONTENT_EXPORT WebContentsImpl
   uint64 upload_size_;
   uint64 upload_position_;
 
+  // Tracks that this WebContents needs to unblock requests to the renderer.
+  // See ResumeLoadingCreatedWebContents.
+  bool is_resume_pending_;
+
   // Data for current page -----------------------------------------------------
 
   // When a title cannot be taken from any entry, this title will be used.
@@ -1120,6 +1128,9 @@ class CONTENT_EXPORT WebContentsImpl
 
   // The last published theme color.
   SkColor last_sent_theme_color_;
+
+  // Whether the first visually non-empty paint has occurred.
+  bool did_first_visually_non_empty_paint_;
 
   // Data for misc internal state ----------------------------------------------
 
@@ -1236,10 +1247,6 @@ class CONTENT_EXPORT WebContentsImpl
   // fullscreen widget is destroyed, and 2) the WebContentsDelegate has
   // completed making layout changes to effect an exit from fullscreen mode.
   bool fullscreen_widget_had_focus_at_shutdown_;
-
-  // Maps the ids of pending image downloads to their callbacks
-  typedef std::map<int, ImageDownloadCallback> ImageDownloadMap;
-  ImageDownloadMap image_download_map_;
 
   // Whether this WebContents is responsible for displaying a subframe in a
   // different process from its parent page.

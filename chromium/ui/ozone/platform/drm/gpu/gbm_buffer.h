@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/ozone/platform/drm/gpu/gbm_buffer_base.h"
+#include "ui/ozone/platform/drm/gpu/screen_manager.h"
 #include "ui/ozone/public/native_pixmap.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
@@ -35,21 +36,36 @@ class GbmBuffer : public GbmBufferBase {
 
 class GbmPixmap : public NativePixmap {
  public:
-  GbmPixmap(const scoped_refptr<GbmBuffer>& buffer);
+  GbmPixmap(const scoped_refptr<GbmBuffer>& buffer,
+            ScreenManager* screen_manager);
   bool Initialize();
+  void SetScalingCallback(const ScalingCallback& scaling_callback) override;
+  scoped_refptr<NativePixmap> GetScaledPixmap(gfx::Size new_size) override;
 
   // NativePixmap:
   void* GetEGLClientBuffer() override;
   int GetDmaBufFd() override;
   int GetDmaBufPitch() override;
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int plane_z_order,
+                            gfx::OverlayTransform plane_transform,
+                            const gfx::Rect& display_bounds,
+                            const gfx::RectF& crop_rect) override;
 
   scoped_refptr<GbmBuffer> buffer() { return buffer_; }
 
  private:
   ~GbmPixmap() override;
+  bool ShouldApplyScaling(const gfx::Rect& display_bounds,
+                          const gfx::RectF& crop_rect,
+                          gfx::Size* required_size);
 
   scoped_refptr<GbmBuffer> buffer_;
-  int dma_buf_;
+  int dma_buf_ = -1;
+
+  ScreenManager* screen_manager_;  // Not owned.
+
+  ScalingCallback scaling_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmPixmap);
 };

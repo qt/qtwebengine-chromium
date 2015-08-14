@@ -9,11 +9,11 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "content/public/browser/trace_uploader.h"
 #include "content/public/browser/web_ui_controller.h"
 
 namespace content {
 
-class TraceUploader;
 class TracingDelegate;
 
 // The C++ back-end for the chrome://tracing webui page.
@@ -22,11 +22,15 @@ class CONTENT_EXPORT TracingUI : public WebUIController {
   explicit TracingUI(WebUI* web_ui);
   ~TracingUI() override;
   void OnMonitoringStateChanged(bool is_monitoring);
-  void DoUpload(const base::ListValue* args);
   void OnTraceUploadProgress(int64 current, int64 total);
   void OnTraceUploadComplete(bool success, const std::string& feedback);
 
  private:
+  void DoUploadInternal(const std::string& file_contents,
+                        TraceUploader::UploadMode upload_mode);
+  void DoUpload(const base::ListValue* args);
+  void DoUploadBase64Encoded(const base::ListValue* args);
+
   scoped_ptr<TracingDelegate> delegate_;
   scoped_ptr<TraceUploader> trace_uploader_;
   base::WeakPtrFactory<TracingUI> weak_factory_;

@@ -38,17 +38,17 @@ class AXObjectCacheImpl;
 class AXSVGRoot final : public AXLayoutObject {
 
 protected:
-    AXSVGRoot(LayoutObject*, AXObjectCacheImpl*);
+    AXSVGRoot(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtr<AXSVGRoot> create(LayoutObject*, AXObjectCacheImpl*);
-    virtual ~AXSVGRoot();
+    static PassRefPtrWillBeRawPtr<AXSVGRoot> create(LayoutObject*, AXObjectCacheImpl&);
+    ~AXSVGRoot() override;
 
     void setParent(AXObject*) override;
 
 private:
-    virtual AXObject* computeParent() const override;
-    virtual bool isAXSVGRoot() const override { return true; }
+    AXObject* computeParent() const override;
+    bool isAXSVGRoot() const override { return true; }
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXSVGRoot, isAXSVGRoot());

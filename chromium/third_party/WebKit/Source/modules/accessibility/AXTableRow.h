@@ -38,13 +38,13 @@ class AXObjectCacheImpl;
 class AXTableRow : public AXLayoutObject {
 
 protected:
-    AXTableRow(LayoutObject*, AXObjectCacheImpl*);
+    AXTableRow(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtr<AXTableRow> create(LayoutObject*, AXObjectCacheImpl*);
-    virtual ~AXTableRow();
+    static PassRefPtrWillBeRawPtr<AXTableRow> create(LayoutObject*, AXObjectCacheImpl&);
+    ~AXTableRow() override;
 
-    virtual bool isTableRow() const override final;
+    bool isTableRow() const final;
 
     // retrieves the "row" header (a th tag in the rightmost column)
     virtual AXObject* headerObject();
@@ -60,12 +60,12 @@ public:
     void appendChild(AXObject*);
 
 protected:
-    virtual AccessibilityRole determineAccessibilityRole() override final;
+    AccessibilityRole determineAccessibilityRole() final;
 
 private:
     int m_rowIndex;
 
-    virtual bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override final;
+    bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const final;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXTableRow, isTableRow());

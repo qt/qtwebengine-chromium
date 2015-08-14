@@ -45,12 +45,41 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual const Region* GetPendingInvalidation() = 0;
   virtual const PictureLayerTiling* GetPendingOrActiveTwinTiling(
       const PictureLayerTiling* tiling) const = 0;
-  virtual TilePriority::PriorityBin GetMaxTilePriorityBin() const = 0;
+  virtual bool HasValidTilePriorities() const = 0;
   virtual bool RequiresHighResToDraw() const = 0;
 
  protected:
   virtual ~PictureLayerTilingClient() {}
 };
+
+struct TileMapKey {
+  TileMapKey(int x, int y) : index_x(x), index_y(y) {}
+  explicit TileMapKey(const std::pair<int, int>& index)
+      : index_x(index.first), index_y(index.second) {}
+
+  bool operator==(const TileMapKey& other) const {
+    return index_x == other.index_x && index_y == other.index_y;
+  }
+
+  int index_x;
+  int index_y;
+};
+
+}  // namespace cc
+
+namespace BASE_HASH_NAMESPACE {
+template <>
+struct hash<cc::TileMapKey> {
+  size_t operator()(const cc::TileMapKey& key) const {
+    uint16 value1 = static_cast<uint16>(key.index_x);
+    uint16 value2 = static_cast<uint16>(key.index_y);
+    uint32 value1_32 = value1;
+    return (value1_32 << 16) | value2;
+  }
+};
+}  // namespace BASE_HASH_NAMESPACE
+
+namespace cc {
 
 class CC_EXPORT PictureLayerTiling {
  public:
@@ -101,6 +130,20 @@ class CC_EXPORT PictureLayerTiling {
   }
 
   bool has_tiles() const { return !tiles_.empty(); }
+  // all_tiles_done() can return false negatives.
+  bool all_tiles_done() const { return all_tiles_done_; }
+  void set_all_tiles_done(bool all_tiles_done) {
+    all_tiles_done_ = all_tiles_done;
+  }
+
+  void VerifyNoTileNeedsRaster() const {
+#if DCHECK_IS_ON()
+    for (const auto tile_pair : tiles_) {
+      DCHECK(!tile_pair.second->draw_info().NeedsRaster() ||
+             IsTileOccluded(tile_pair.second));
+    }
+#endif  // DCHECK_IS_ON()
+  }
 
   // For testing functionality.
   void CreateAllTilesForTesting() {
@@ -131,6 +174,14 @@ class CC_EXPORT PictureLayerTiling {
   }
   const gfx::Rect& GetCurrentVisibleRectForTesting() const {
     return current_visible_rect_;
+  }
+  void SetTilePriorityRectsForTesting(
+      const gfx::Rect& visible_rect_in_content_space,
+      const gfx::Rect& skewport,
+      const gfx::Rect& soon_border_rect,
+      const gfx::Rect& eventually_rect) {
+    SetTilePriorityRects(1.0f, visible_rect_in_content_space, skewport,
+                         soon_border_rect, eventually_rect, Occlusion());
   }
 
   // Iterate over all tiles to fill content_rect.  Even if tiles are invalid
@@ -225,7 +276,6 @@ class CC_EXPORT PictureLayerTiling {
     EVENTUALLY_RECT
   };
 
-  using TileMapKey = std::pair<int, int>;
   using TileMap = base::ScopedPtrHashMap<TileMapKey, ScopedTilePtr>;
 
   struct FrameVisibleRect {
@@ -243,6 +293,7 @@ class CC_EXPORT PictureLayerTiling {
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
   void VerifyLiveTilesRect(bool is_on_recycle_tree) const;
   Tile* CreateTile(int i, int j);
+  ScopedTilePtr TakeTileAt(int i, int j);
   // Returns true if the Tile existed and was removed from the tiling.
   bool RemoveTileAt(int i, int j);
   bool TilingMatchesTileIndices(const PictureLayerTiling* twin) const;
@@ -359,6 +410,7 @@ class CC_EXPORT PictureLayerTiling {
   bool has_skewport_rect_tiles_;
   bool has_soon_border_rect_tiles_;
   bool has_eventually_rect_tiles_;
+  bool all_tiles_done_;
 
  private:
   DISALLOW_ASSIGN(PictureLayerTiling);

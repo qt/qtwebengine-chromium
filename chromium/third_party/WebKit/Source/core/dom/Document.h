@@ -74,9 +74,10 @@ class Attr;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
+class CanvasFontCache;
 class CanvasRenderingContext2D;
 class CanvasRenderingContext2DOrWebGLRenderingContext;
-class Chrome;
+class ChromeClient;
 class Comment;
 class ConsoleMessage;
 class ContextFeatures;
@@ -91,6 +92,7 @@ class DocumentNameCollection;
 class DocumentParser;
 class DocumentState;
 class DocumentType;
+class DocumentVisibilityObserver;
 class Element;
 class ElementDataCache;
 class ElementRegistrationOptions;
@@ -199,30 +201,6 @@ enum DocumentClass {
 
 using DocumentClassFlags = unsigned char;
 
-class Document;
-
-class CORE_EXPORT DocumentVisibilityObserver : public WillBeGarbageCollectedMixin {
-public:
-    DocumentVisibilityObserver(Document&);
-    virtual ~DocumentVisibilityObserver();
-
-    virtual void didChangeVisibilityState(PageVisibilityState) = 0;
-
-    // Classes that inherit Node and DocumentVisibilityObserver must have a
-    // virtual override of Node::didMoveToNewDocument that calls
-    // DocumentVisibilityObserver::setDocument
-    void setObservedDocument(Document&);
-
-protected:
-    DECLARE_VIRTUAL_TRACE();
-
-private:
-    void registerObserver(Document&);
-    void unregisterObserver();
-
-    RawPtrWillBeMember<Document> m_document;
-};
-
 class CORE_EXPORT Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext
     , public WillBeHeapSupplementable<Document>, public DocumentLifecycleNotifier {
     DEFINE_WRAPPERTYPEINFO();
@@ -232,7 +210,7 @@ public:
     {
         return adoptRefWillBeNoop(new Document(initializer));
     }
-    virtual ~Document();
+    ~Document() override;
 
     MediaQueryMatcher& mediaQueryMatcher();
 
@@ -246,7 +224,7 @@ public:
     using SecurityContext::contentSecurityPolicy;
     using TreeScope::getElementById;
 
-    virtual bool canContainRangeEndPoint() const override { return true; }
+    bool canContainRangeEndPoint() const override { return true; }
 
     SelectorQueryCache& selectorQueryCache();
 
@@ -327,8 +305,6 @@ public:
 
     AtomicString encodingName() const;
 
-    void setCharset(const String&);
-
     void setContent(const String&);
 
     String suggestedMIMEType() const;
@@ -350,7 +326,7 @@ public:
     void setXMLStandalone(bool, ExceptionState&);
     void setHasXMLDeclaration(bool hasXMLDeclaration) { m_hasXMLDeclaration = hasXMLDeclaration ? 1 : 0; }
 
-    virtual KURL baseURI() const override final;
+    KURL baseURI() const final;
 
     String origin() const { return securityOrigin()->toString(); }
 
@@ -388,24 +364,6 @@ public:
 
     bool isSrcdocDocument() const { return m_isSrcdocDocument; }
     bool isMobileDocument() const { return m_isMobileDocument; }
-
-    bool isTransitionDocument() const { return m_isTransitionDocument; }
-    void setIsTransitionDocument(bool isTransitionDocument) { m_isTransitionDocument = isTransitionDocument; }
-    void hideTransitionElements(const AtomicString& cssSelector);
-    void showTransitionElements(const AtomicString& cssSelector);
-
-    struct TransitionElement {
-        String id;
-        IntRect rect;
-    };
-
-    struct TransitionElementData {
-        String scope;
-        String selector;
-        String markup;
-        Vector<TransitionElement> elements;
-    };
-    void getTransitionElementData(Vector<TransitionElementData>&);
 
     StyleResolver* styleResolver() const;
     StyleResolver& ensureStyleResolver() const;
@@ -473,6 +431,7 @@ public:
     void updateLayoutTreeIfNeeded() { updateLayoutTree(NoChange); }
     void updateLayoutTreeForNodeIfNeeded(Node*);
     void updateLayout();
+    void layoutUpdated();
     enum RunPostLayoutTasks {
         RunPostLayoutTasksAsyhnchronously,
         RunPostLayoutTasksSynchronously,
@@ -510,11 +469,16 @@ public:
 
     DocumentLoader* loader() const;
 
-    void open(Document* ownerDocument = nullptr, ExceptionState& = ASSERT_NO_EXCEPTION);
+    // This is the DOM API document.open()
+    void open(Document* ownerDocument, ExceptionState&);
+    // This is used internally and does not handle exceptions.
+    void open();
     PassRefPtrWillBeRawPtr<DocumentParser> implicitOpen(ParserSynchronizationPolicy);
 
-    // close() is the DOM API document.close()
-    void close(ExceptionState& = ASSERT_NO_EXCEPTION);
+    // This is the DOM API document.close()
+    void close(ExceptionState&);
+    // This is used internally and does not handle exceptions.
+    void close();
     // In some situations (see the code), we ignore document.close().
     // explicitClose() bypass these checks and actually tries to close the
     // input stream.
@@ -522,7 +486,7 @@ public:
     // implicitClose() actually does the work of closing the input stream.
     void implicitClose();
 
-    bool dispatchBeforeUnloadEvent(Chrome&, bool&);
+    bool dispatchBeforeUnloadEvent(ChromeClient&, bool&);
     void dispatchUnloadEvents();
 
     enum PageDismissalType {
@@ -538,6 +502,8 @@ public:
     void write(const SegmentedString& text, Document* ownerDocument = nullptr, ExceptionState& = ASSERT_NO_EXCEPTION);
     void write(const String& text, Document* ownerDocument = nullptr, ExceptionState& = ASSERT_NO_EXCEPTION);
     void writeln(const String& text, Document* ownerDocument = nullptr, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void write(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
+    void writeln(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
 
     bool wellFormed() const { return m_wellFormed; }
 
@@ -556,8 +522,8 @@ public:
     KURL completeURL(const String&) const;
     KURL completeURLWithOverride(const String&, const KURL& baseURLOverride) const;
 
-    virtual String userAgent(const KURL&) const override final;
-    virtual void disableEval(const String& errorMessage) override final;
+    String userAgent(const KURL&) const final;
+    void disableEval(const String& errorMessage) final;
 
     CSSStyleSheet& elementSheet();
 
@@ -575,7 +541,7 @@ public:
 
     enum CompatibilityMode { QuirksMode, LimitedQuirksMode, NoQuirksMode };
 
-    void setCompatibilityMode(CompatibilityMode m);
+    void setCompatibilityMode(CompatibilityMode);
     CompatibilityMode compatibilityMode() const { return m_compatibilityMode; }
 
     String compatMode() const;
@@ -631,8 +597,8 @@ public:
     Node* hoverNode() const { return m_hoverNode.get(); }
 
     void removeFocusedElementOfSubtree(Node*, bool amongChildrenOnly = false);
-    void hoveredNodeDetached(Node*);
-    void activeChainNodeDetached(Node*);
+    void hoveredNodeDetached(Element&);
+    void activeChainNodeDetached(Element&);
 
     void updateHoverActiveState(const HitTestRequest&, Element*);
 
@@ -689,13 +655,12 @@ public:
         DOMNODEREMOVEDFROMDOCUMENT_LISTENER  = 1 << 3,
         DOMNODEINSERTEDINTODOCUMENT_LISTENER = 1 << 4,
         DOMCHARACTERDATAMODIFIED_LISTENER    = 1 << 5,
-        OVERFLOWCHANGED_LISTENER             = 1 << 6,
-        ANIMATIONEND_LISTENER                = 1 << 7,
-        ANIMATIONSTART_LISTENER              = 1 << 8,
-        ANIMATIONITERATION_LISTENER          = 1 << 9,
-        TRANSITIONEND_LISTENER               = 1 << 10,
-        SCROLL_LISTENER                      = 1 << 12
-        // 4 bits remaining
+        ANIMATIONEND_LISTENER                = 1 << 6,
+        ANIMATIONSTART_LISTENER              = 1 << 7,
+        ANIMATIONITERATION_LISTENER          = 1 << 8,
+        TRANSITIONEND_LISTENER               = 1 << 9,
+        SCROLL_LISTENER                      = 1 << 10
+        // 5 bits remaining
     };
 
     bool hasListenerType(ListenerType listenerType) const { return (m_listenerTypes & listenerType); }
@@ -799,12 +764,12 @@ public:
 
     DocumentMarkerController& markers() const { return *m_markers; }
 
-    bool execCommand(const String& command, bool showUI, const String& value);
-    bool queryCommandEnabled(const String& command);
-    bool queryCommandIndeterm(const String& command);
-    bool queryCommandState(const String& command);
-    bool queryCommandSupported(const String& command);
-    String queryCommandValue(const String& command);
+    bool execCommand(const String& command, bool showUI, const String& value, ExceptionState&);
+    bool queryCommandEnabled(const String& command, ExceptionState&);
+    bool queryCommandIndeterm(const String& command, ExceptionState&);
+    bool queryCommandState(const String& command, ExceptionState&);
+    bool queryCommandSupported(const String& command, ExceptionState&);
+    String queryCommandValue(const String& command, ExceptionState&);
 
     KURL openSearchDescriptionURL();
 
@@ -859,21 +824,21 @@ public:
     void cancelFocusAppearanceUpdate();
 
     // Extension for manipulating canvas drawing contexts for use in CSS
-    void getCSSCanvasContext(const String& type, const String& name, int width, int height, CanvasRenderingContext2DOrWebGLRenderingContext&);
+    ScriptValue getCSSCanvasContext(ScriptState*, const String& type, const String& name, int width, int height);
     HTMLCanvasElement& getCSSCanvasElement(const String& name);
 
     bool isDNSPrefetchEnabled() const { return m_isDNSPrefetchEnabled; }
     void parseDNSPrefetchControlHeader(const String&);
 
     // FIXME(crbug.com/305497): This should be removed once LocalDOMWindow is an ExecutionContext.
-    virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override; // Executes the task on context's thread asynchronously.
+    void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override; // Executes the task on context's thread asynchronously.
     void postInspectorTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
 
-    virtual void tasksWereSuspended() override final;
-    virtual void tasksWereResumed() override final;
-    virtual void suspendScheduledTasks() override final;
-    virtual void resumeScheduledTasks() override final;
-    virtual bool tasksNeedSuspension() override final;
+    void tasksWereSuspended() final;
+    void tasksWereResumed() final;
+    void suspendScheduledTasks() final;
+    void resumeScheduledTasks() final;
+    bool tasksNeedSuspension() final;
 
     void finishedParsing();
 
@@ -890,7 +855,7 @@ public:
     const Vector<AnnotatedRegionValue>& annotatedRegions() const;
     void setAnnotatedRegions(const Vector<AnnotatedRegionValue>&);
 
-    virtual void removeAllEventListeners() override final;
+    void removeAllEventListeners() final;
 
     const SVGDocumentExtensions* svgExtensions();
     SVGDocumentExtensions& accessSVGExtensions();
@@ -924,8 +889,8 @@ public:
     void setContainsPlugins() { m_containsPlugins = true; }
     bool containsPlugins() const { return m_containsPlugins; }
 
-    virtual bool isContextThread() const override final;
-    virtual bool isJSExecutionForbidden() const override final { return false; }
+    bool isContextThread() const final;
+    bool isJSExecutionForbidden() const final { return false; }
 
     bool containsValidityStyleRules() const { return m_containsValidityStyleRules; }
     void setContainsValidityStyleRules() { m_containsValidityStyleRules = true; }
@@ -961,8 +926,8 @@ public:
     void cancelAnimationFrame(int id);
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
-    virtual EventTarget* errorEventTarget() override final;
-    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override final;
+    EventTarget* errorEventTarget() final;
+    void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) final;
 
     void initDNSPrefetch();
 
@@ -1023,9 +988,9 @@ public:
     void didAssociateFormControl(Element*);
     void removeFormAssociation(Element*);
 
-    virtual void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override final;
+    void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) final;
 
-    virtual LocalDOMWindow* executingWindow() override final;
+    LocalDOMWindow* executingWindow() final;
     LocalFrame* executingFrame();
 
     DocumentLifecycle& lifecycle() { return m_lifecycle; }
@@ -1060,10 +1025,10 @@ public:
 
     void platformColorsChanged();
 
-    virtual DOMTimerCoordinator* timers() override final;
+    DOMTimerCoordinator* timers() final;
 
-    virtual v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override;
-    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override;
+    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override;
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override WARN_UNUSED_RETURN;
 
     OriginsUsingFeatures::Value& originsUsingFeaturesValue() { return m_originsUsingFeaturesValue; }
 
@@ -1074,15 +1039,17 @@ public:
     void setClientHintsPreferences(const ClientHintsPreferences& preferences) { m_clientHintsPreferences.set(preferences); }
     const ClientHintsPreferences& clientHintsPreferences() const { return m_clientHintsPreferences; }
 
+    CanvasFontCache* canvasFontCache();
+
 protected:
     Document(const DocumentInit&, DocumentClassFlags = DefaultDocumentClass);
 
-    virtual void didUpdateSecurityOrigin() override final;
+    void didUpdateSecurityOrigin() final;
 
     void clearXMLVersion() { m_xmlVersion = String(); }
 
 #if !ENABLE(OILPAN)
-    virtual void dispose() override;
+    void dispose() override;
 #endif
 
     virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren();
@@ -1100,8 +1067,8 @@ private:
     bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     ScriptedAnimationController& ensureScriptedAnimationController();
-    virtual const SecurityContext& securityContext() const override final { return *this; }
-    virtual EventQueue* eventQueue() const override final;
+    SecurityContext& securityContext() final { return *this; }
+    EventQueue* eventQueue() const final;
 
     // FIXME: Rename the StyleRecalc state to LayoutTreeUpdate.
     bool hasPendingStyleRecalc() const { return m_lifecycle.state() == DocumentLifecycle::VisualUpdatePending; }
@@ -1124,29 +1091,27 @@ private:
 
     void detachParser();
 
-    void clearWeakMembers(Visitor*);
+    bool isDocument() const final { return true; }
 
-    virtual bool isDocument() const override final { return true; }
+    void childrenChanged(const ChildrenChange&) override;
 
-    virtual void childrenChanged(const ChildrenChange&) override;
-
-    virtual String nodeName() const override final;
-    virtual NodeType nodeType() const override final;
-    virtual bool childTypeAllowed(NodeType) const override final;
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override final;
+    String nodeName() const final;
+    NodeType nodeType() const final;
+    bool childTypeAllowed(NodeType) const final;
+    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) final;
     void cloneDataFromDocument(const Document&);
 
 #if !ENABLE(OILPAN)
-    virtual void refExecutionContext() override final { ref(); }
-    virtual void derefExecutionContext() override final { deref(); }
+    void refExecutionContext() final { ref(); }
+    void derefExecutionContext() final { deref(); }
 #endif
 
-    virtual const KURL& virtualURL() const override final; // Same as url(), but needed for ExecutionContext to implement it without a performance loss for direct calls.
-    virtual KURL virtualCompleteURL(const String&) const override final; // Same as completeURL() for the same reason as above.
+    const KURL& virtualURL() const final; // Same as url(), but needed for ExecutionContext to implement it without a performance loss for direct calls.
+    KURL virtualCompleteURL(const String&) const final; // Same as completeURL() for the same reason as above.
 
-    virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) override final;
+    void reportBlockedScriptExecutionToInspector(const String& directiveText) final;
 
-    virtual double timerAlignmentInterval() const override final;
+    double timerAlignmentInterval() const final;
 
     void updateTitle(const String&);
     void updateFocusAppearanceTimerFired(Timer<Document>*);
@@ -1184,8 +1149,6 @@ private:
     using EventFactorySet = HashSet<OwnPtr<EventFactoryBase>>;
     static EventFactorySet& eventFactories();
 
-    void updateElementOpacity(const AtomicString& cssSelector, double opacity);
-
     void setNthIndexCache(NthIndexCache* nthIndexCache) { ASSERT(!m_nthIndexCache || !nthIndexCache); m_nthIndexCache = nthIndexCache; }
 
     DocumentLifecycle m_lifecycle;
@@ -1205,7 +1168,7 @@ private:
     // redundant with oilpan.
     RawPtrWillBeMember<HTMLImportsController> m_importsController;
 
-    RefPtrWillBeMember<ResourceFetcher> m_fetcher;
+    PersistentWillBeMember<ResourceFetcher> m_fetcher;
     RefPtrWillBeMember<DocumentParser> m_parser;
     unsigned m_activeParserCount;
     RefPtrWillBeMember<ContextFeatures> m_contextFeatures;
@@ -1285,7 +1248,7 @@ private:
     String m_rawTitle;
     RefPtrWillBeMember<Element> m_titleElement;
 
-    OwnPtr<AXObjectCache> m_axObjectCache;
+    OwnPtrWillBeMember<AXObjectCache> m_axObjectCache;
     OwnPtrWillBeMember<DocumentMarkerController> m_markers;
 
     Timer<Document> m_updateFocusAppearanceTimer;
@@ -1350,7 +1313,6 @@ private:
     bool m_sawElementsInKnownNamespaces;
     bool m_isSrcdocDocument;
     bool m_isMobileDocument;
-    bool m_isTransitionDocument;
 
     LayoutView* m_layoutView;
 
@@ -1423,9 +1385,11 @@ private:
     OriginsUsingFeatures::Value m_originsUsingFeaturesValue;
 
     ClientHintsPreferences m_clientHintsPreferences;
+
+    PersistentWillBeMember<CanvasFontCache> m_canvasFontCache;
 };
 
-extern template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Document>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT WillBeHeapSupplement<Document>;
 
 inline bool Document::shouldOverrideLegacyDescription(ViewportDescription::Type origin)
 {

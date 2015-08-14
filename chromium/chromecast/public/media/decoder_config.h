@@ -8,10 +8,10 @@
 #include <stdint.h>
 #include <vector>
 
+#include "chromecast/public/media/stream_id.h"
+
 namespace chromecast {
 namespace media {
-
-namespace {
 
 // Maximum audio bytes per sample.
 static const int kMaxBytesPerSample = 4;
@@ -19,13 +19,9 @@ static const int kMaxBytesPerSample = 4;
 // Maximum audio sampling rate.
 static const int kMaxSampleRate = 192000;
 
-}  // namespace
-
 enum AudioCodec {
-  kAudioCodecUnknown = -1,
-
-  kAudioCodecMin = 0,
-  kCodecAAC = kAudioCodecMin,
+  kAudioCodecUnknown = 0,
+  kCodecAAC,
   kCodecMP3,
   kCodecPCM,
   kCodecPCM_S16BE,
@@ -34,14 +30,28 @@ enum AudioCodec {
   kCodecEAC3,
   kCodecAC3,
   kCodecDTS,
+
+  kAudioCodecMin = kAudioCodecUnknown,
   kAudioCodecMax = kCodecDTS,
 };
 
-enum VideoCodec {
-  kVideoCodecUnknown = -1,
+enum SampleFormat {
+  kUnknownSampleFormat = 0,
+  kSampleFormatU8,         // Unsigned 8-bit w/ bias of 128.
+  kSampleFormatS16,        // Signed 16-bit.
+  kSampleFormatS32,        // Signed 32-bit.
+  kSampleFormatF32,        // Float 32-bit.
+  kSampleFormatPlanarS16,  // Signed 16-bit planar.
+  kSampleFormatPlanarF32,  // Float 32-bit planar.
+  kSampleFormatPlanarS32,  // Signed 32-bit planar.
 
-  kVideoCodecMin = 0,
-  kCodecH264 = kVideoCodecMin,
+  kSampleFormatMin = kUnknownSampleFormat,
+  kSampleFormatMax = kSampleFormatPlanarS32,
+};
+
+enum VideoCodec {
+  kVideoCodecUnknown = 0,
+  kCodecH264,
   kCodecVC1,
   kCodecMPEG2,
   kCodecMPEG4,
@@ -49,15 +59,15 @@ enum VideoCodec {
   kCodecVP8,
   kCodecVP9,
   kCodecHEVC,
+
+  kVideoCodecMin = kVideoCodecUnknown,
   kVideoCodecMax = kCodecHEVC,
 };
 
 // Profile for Video codec.
 enum VideoProfile {
-  kVideoProfileUnknown = -1,
-
-  kVideoProfileMin = 0,
-  kH264Baseline = kVideoProfileMin,
+  kVideoProfileUnknown = 0,
+  kH264Baseline,
   kH264Main,
   kH264Extended,
   kH264High,
@@ -70,6 +80,8 @@ enum VideoProfile {
   kH264MultiviewHigh,
   kVP8ProfileAny,
   kVP9ProfileAny,
+
+  kVideoProfileMin = kVideoProfileUnknown,
   kVideoProfileMax = kVP9ProfileAny,
 };
 
@@ -78,16 +90,22 @@ enum VideoProfile {
 // determine if the configuration is still valid or not.
 struct AudioConfig {
   AudioConfig()
-    : codec(kAudioCodecUnknown),
-      bytes_per_channel(0),
-      channel_number(0),
-      samples_per_second(0),
-      extra_data(nullptr),
-      extra_data_size(0),
-      is_encrypted(false) {}
+      : id(kPrimary),
+        codec(kAudioCodecUnknown),
+        sample_format(kUnknownSampleFormat),
+        bytes_per_channel(0),
+        channel_number(0),
+        samples_per_second(0),
+        extra_data(nullptr),
+        extra_data_size(0),
+        is_encrypted(false) {}
 
+  // Stream id.
+  StreamId id;
   // Audio codec.
   AudioCodec codec;
+  // The format of each audio sample.
+  SampleFormat sample_format;
   // Number of bytes in each channel.
   int bytes_per_channel;
   // Number of channels in this audio stream.
@@ -109,13 +127,16 @@ struct AudioConfig {
 // determine if the configuration is still valid or not.
 struct VideoConfig {
   VideoConfig()
-    : codec(kVideoCodecUnknown),
+    : id(kPrimary),
+      codec(kVideoCodecUnknown),
       profile(kVideoProfileUnknown),
       additional_config(nullptr),
       extra_data(nullptr),
       extra_data_size(0),
       is_encrypted(false) {}
 
+  // Stream Id.
+  StreamId id;
   // Video codec.
   VideoCodec codec;
   // Video codec profile.
@@ -140,6 +161,10 @@ struct VideoConfig {
 inline bool IsValidConfig(const AudioConfig& config) {
   return config.codec >= kAudioCodecMin &&
       config.codec <= kAudioCodecMax &&
+      config.codec != kAudioCodecUnknown &&
+      config.sample_format >= kSampleFormatMin &&
+      config.sample_format <= kSampleFormatMax &&
+      config.sample_format != kUnknownSampleFormat &&
       config.channel_number > 0 &&
       config.bytes_per_channel > 0 &&
       config.bytes_per_channel <= kMaxBytesPerSample &&
@@ -148,7 +173,9 @@ inline bool IsValidConfig(const AudioConfig& config) {
 }
 
 inline bool IsValidConfig(const VideoConfig& config) {
-  return config.codec >= kVideoCodecMin && config.codec <= kVideoCodecMax;
+  return config.codec >= kVideoCodecMin &&
+      config.codec <= kVideoCodecMax &&
+      config.codec != kVideoCodecUnknown;
 }
 
 }  // namespace media

@@ -53,12 +53,17 @@ CSSSelectorWatch::CSSSelectorWatch(Document& document)
 
 CSSSelectorWatch& CSSSelectorWatch::from(Document& document)
 {
-    CSSSelectorWatch* watch = static_cast<CSSSelectorWatch*>(WillBeHeapSupplement<Document>::from(document, kSupplementName));
+    CSSSelectorWatch* watch = fromIfExists(document);
     if (!watch) {
         watch = new CSSSelectorWatch(document);
         WillBeHeapSupplement<Document>::provideTo(document, kSupplementName, adoptPtrWillBeNoop(watch));
     }
     return *watch;
+}
+
+CSSSelectorWatch* CSSSelectorWatch::fromIfExists(Document& document)
+{
+    return static_cast<CSSSelectorWatch*>(WillBeHeapSupplement<Document>::from(document, kSupplementName));
 }
 
 void CSSSelectorWatch::callbackSelectorChangeTimerFired(Timer<CSSSelectorWatch>*)
@@ -153,10 +158,7 @@ void CSSSelectorWatch::watchCSSSelectors(const Vector<String>& selectors)
         if (!allCompound(selectorList))
             continue;
 
-        RefPtrWillBeRawPtr<StyleRule> rule = StyleRule::create();
-        rule->wrapperAdoptSelectorList(selectorList);
-        rule->setProperties(callbackPropertySet);
-        m_watchedCallbackSelectors.append(rule.release());
+        m_watchedCallbackSelectors.append(StyleRule::create(selectorList, callbackPropertySet));
     }
     document().changedSelectorWatch();
 }

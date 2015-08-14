@@ -103,7 +103,8 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
       copy_stream_data_(copy_stream_data),
       data_offset_(0),
       pending_failure_notification_(false),
-      request_id_(-1) {
+      request_id_(-1),
+      weak_factory_(this) {
   RequestInfo request_info;
   request_info.method = method;
   request_info.url = url;
@@ -131,7 +132,7 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
       if (!request_info.headers.empty())
         request_info.headers += "\r\n";
       request_info.headers += names[i] + ": " + values[i];
-      if (LowerCaseEqualsASCII(names[i], "content-type"))
+      if (base::LowerCaseEqualsASCII(names[i], "content-type"))
         content_type_found = true;
     }
 
@@ -327,14 +328,16 @@ void PluginURLFetcher::OnDownloadedData(int len,
                                         int encoded_data_length) {
 }
 
-void PluginURLFetcher::OnReceivedData(const char* data,
-                                      int data_length,
-                                      int encoded_data_length) {
+void PluginURLFetcher::OnReceivedData(scoped_ptr<ReceivedData> data) {
+  const char* payload = data->payload();
+  int data_length = data->length();
+  int encoded_data_length = data->encoded_length();
   if (!plugin_stream_)
     return;
 
   if (multipart_delegate_) {
-    multipart_delegate_->OnReceivedData(data, data_length, encoded_data_length);
+    multipart_delegate_->OnReceivedData(payload, data_length,
+                                        encoded_data_length);
   } else {
     int64 offset = data_offset_;
     data_offset_ += data_length;
@@ -344,10 +347,10 @@ void PluginURLFetcher::OnReceivedData(const char* data,
       // ResourceDispatcher it's not mapped for write access in this process.
       // http://crbug.com/308466.
       scoped_ptr<char[]> data_copy(new char[data_length]);
-      memcpy(data_copy.get(), data, data_length);
+      memcpy(data_copy.get(), payload, data_length);
       plugin_stream_->DidReceiveData(data_copy.get(), data_length, offset);
     } else {
-      plugin_stream_->DidReceiveData(data, data_length, offset);
+      plugin_stream_->DidReceiveData(payload, data_length, offset);
     }
     // DANGER: this instance may be deleted at this point.
   }
@@ -375,4 +378,28 @@ void PluginURLFetcher::OnCompletedRequest(
   }
 }
 
+void PluginURLFetcher::OnReceivedCompletedResponse(
+    const content::ResourceResponseInfo& info,
+    scoped_ptr<ReceivedData> data,
+    int error_code,
+    bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
+    const std::string& security_info,
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
+  // |this| can be deleted on each callback. |weak_this| is placed here to
+  // detect the deletion.
+  base::WeakPtr<PluginURLFetcher> weak_this = weak_factory_.GetWeakPtr();
+  OnReceivedResponse(info);
+
+  if (!weak_this)
+    return;
+  if (data)
+    OnReceivedData(data.Pass());
+
+  if (!weak_this)
+    return;
+  OnCompletedRequest(error_code, was_ignored_by_handler, stale_copy_in_cache,
+                     security_info, completion_time, total_transfer_size);
+}
 }  // namespace content

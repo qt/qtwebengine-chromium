@@ -88,17 +88,19 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/html/canvas/CanvasRenderingContext2D.h"
+#include "core/html/canvas/CanvasFontCache.h"
+#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/forms/FormController.h"
 #include "core/html/shadow/PluginPlaceholderElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "core/input/EventHandler.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorConsoleAgent.h"
-#include "core/inspector/InspectorCounters.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorOverlay.h"
+#include "core/inspector/InstanceCounters.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/layout/LayoutMenuList.h"
 #include "core/layout/LayoutObject.h"
@@ -108,9 +110,7 @@
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/NetworkStateNotifier.h"
 #include "core/page/Page.h"
@@ -118,6 +118,7 @@
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/plugins/testing/DictionaryPluginPlaceholder.h"
 #include "core/plugins/testing/DocumentFragmentPluginPlaceholder.h"
+#include "core/svg/SVGImageElement.h"
 #include "core/testing/DictionaryTest.h"
 #include "core/testing/GCObservation.h"
 #include "core/testing/InternalRuntimeFlags.h"
@@ -131,6 +132,7 @@
 #include "core/workers/WorkerThread.h"
 #include "platform/Cursor.h"
 #include "platform/Language.h"
+#include "platform/PlatformKeyboardEvent.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
@@ -193,9 +195,9 @@ static SpellCheckRequester* spellCheckRequester(Document* document)
 
 const char* Internals::internalsId = "internals";
 
-Internals* Internals::create(Document* document)
+Internals* Internals::create(ScriptState* scriptState)
 {
-    return new Internals(document);
+    return new Internals(scriptState);
 }
 
 Internals::~Internals()
@@ -219,10 +221,11 @@ void Internals::resetToConsistentState(Page* page)
         scrollingCoordinator->reset();
 
     page->deprecatedLocalMainFrame()->view()->clear();
+    PlatformKeyboardEvent::setCurrentCapsLockState(PlatformKeyboardEvent::OverrideCapsLockState::Default);
 }
 
-Internals::Internals(Document* document)
-    : ContextLifecycleObserver(document)
+Internals::Internals(ScriptState* scriptState)
+    : ContextLifecycleObserver(scriptState->executionContext())
     , m_runtimeFlags(InternalRuntimeFlags::create())
 {
 }
@@ -318,10 +321,59 @@ unsigned Internals::hitTestCount(Document* doc, ExceptionState& exceptionState) 
     return doc->layoutView()->hitTestCount();
 }
 
+unsigned Internals::hitTestCacheHits(Document* doc, ExceptionState& exceptionState) const
+{
+    if (!doc) {
+        exceptionState.throwDOMException(InvalidAccessError, "Must supply document to check");
+        return 0;
+    }
+
+    return doc->layoutView()->hitTestCacheHits();
+}
+
+Element* Internals::elementFromPoint(Document* doc, double x, double y, bool ignoreClipping, bool allowChildFrameContent, ExceptionState& exceptionState) const
+{
+    if (!doc) {
+        exceptionState.throwDOMException(InvalidAccessError, "Must supply document to check");
+        return 0;
+    }
+
+    if (!doc->layoutView())
+        return 0;
+
+    HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active;
+    if (ignoreClipping)
+        hitType |= HitTestRequest::IgnoreClipping;
+    if (allowChildFrameContent)
+        hitType |= HitTestRequest::AllowChildFrameContent;
+
+    HitTestRequest request(hitType);
+
+    return doc->hitTestPoint(x, y, request);
+}
+
+void Internals::clearHitTestCache(Document* doc, ExceptionState& exceptionState) const
+{
+    if (!doc) {
+        exceptionState.throwDOMException(InvalidAccessError, "Must supply document to check");
+        return;
+    }
+
+    if (!doc->layoutView())
+        return;
+
+    doc->layoutView()->clearHitTestCache();
+}
 
 bool Internals::isPreloaded(const String& url)
 {
-    Document* document = contextDocument();
+    return isPreloadedBy(url, contextDocument());
+}
+
+bool Internals::isPreloadedBy(const String& url, Document* document)
+{
+    if (!document)
+        return false;
     return document->fetcher()->isPreloaded(document->completeURL(url));
 }
 
@@ -418,8 +470,13 @@ void Internals::pauseAnimations(double pauseTime, ExceptionState& exceptionState
         return;
     }
 
-    frame()->view()->updateLayoutAndStyleForPainting();
+    frame()->view()->updateAllLifecyclePhases();
     frame()->document()->timeline().pauseAnimationsForTesting(pauseTime);
+}
+
+bool Internals::isCompositedAnimation(Animation* animation)
+{
+    return animation->hasActiveAnimationsOnCompositor();
 }
 
 void Internals::advanceTimeForImage(Element* image, double deltaTimeInSeconds, ExceptionState& exceptionState)
@@ -430,12 +487,16 @@ void Internals::advanceTimeForImage(Element* image, double deltaTimeInSeconds, E
         return;
     }
 
-    if (!isHTMLImageElement(*image)) {
+    ImageResource* resource = nullptr;
+    if (isHTMLImageElement(*image)) {
+        resource = toHTMLImageElement(*image).cachedImage();
+    } else if (isSVGImageElement(*image)) {
+        resource = toSVGImageElement(*image).cachedImage();
+    } else {
         exceptionState.throwDOMException(InvalidAccessError, "The element provided is not a image element.");
         return;
     }
 
-    ImageResource* resource = toHTMLImageElement(*image).cachedImage();
     if (!resource || !resource->hasImage()) {
         exceptionState.throwDOMException(InvalidAccessError, "The image resource is not available.");
         return;
@@ -598,9 +659,9 @@ String Internals::shadowRootType(const Node* root, ExceptionState& exceptionStat
     }
 
     switch (toShadowRoot(root)->type()) {
-    case ShadowRoot::UserAgentShadowRoot:
+    case ShadowRootType::UserAgent:
         return String("UserAgentShadowRoot");
-    case ShadowRoot::OpenShadowRoot:
+    case ShadowRootType::Open:
         return String("OpenShadowRoot");
     default:
         ASSERT_NOT_REACHED();
@@ -682,7 +743,7 @@ DOMWindow* Internals::pagePopupWindow() const
     if (!document)
         return nullptr;
     if (Page* page = document->page())
-        return page->chrome().client().pagePopupWindowForTesting();
+        return page->chromeClient().pagePopupWindowForTesting();
     return nullptr;
 }
 
@@ -799,14 +860,11 @@ void Internals::setFrameViewPosition(Document* document, long x, long y, Excepti
     }
 
     FrameView* frameView = document->view();
-    bool constrainsScrollingToContentEdgeOldValue = frameView->constrainsScrollingToContentEdge();
     bool scrollbarsSuppressedOldValue = frameView->scrollbarsSuppressed();
 
-    frameView->setConstrainsScrollingToContentEdge(false);
     frameView->setScrollbarsSuppressed(false);
     frameView->setScrollOffsetFromInternals(IntPoint(x, y));
     frameView->setScrollbarsSuppressed(scrollbarsSuppressedOldValue);
-    frameView->setConstrainsScrollingToContentEdge(constrainsScrollingToContentEdgeOldValue);
 }
 
 String Internals::viewportAsText(Document* document, float, int availableWidth, int availableHeight, ExceptionState& exceptionState)
@@ -1192,12 +1250,35 @@ static DeprecatedPaintLayer* findLayerForGraphicsLayer(DeprecatedPaintLayer* sea
 {
     *layerOffset = IntSize();
     if (searchRoot->hasCompositedDeprecatedPaintLayerMapping() && graphicsLayer == searchRoot->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()) {
+        // If the |graphicsLayer| sets the scrollingContent layer as its
+        // scroll parent, consider it belongs to the scrolling layer and
+        // mark the layer type as "scrolling".
+        if (!searchRoot->layoutObject()->hasTransformRelatedProperty() && searchRoot->scrollParent() && searchRoot->parent() == searchRoot->scrollParent()) {
+            *layerType = "scrolling";
+            // For hit-test rect visualization to work, the hit-test rect should
+            // be relative to the scrolling layer and in this case the hit-test
+            // rect is relative to the element's own GraphicsLayer. So we will have
+            // to adjust the rect to be relative to the scrolling layer here.
+            // Only when the element's offsetParent == scroller's offsetParent we
+            // can compute the element's relative position to the scrolling content
+            // in this way.
+            if (searchRoot->layoutObject()->offsetParent() == searchRoot->parent()->layoutObject()->offsetParent()) {
+                LayoutBoxModelObject* current = searchRoot->layoutObject();
+                LayoutBoxModelObject* parent = searchRoot->parent()->layoutObject();
+                layerOffset->setWidth((parent->offsetLeft() - current->offsetLeft()).toInt());
+                layerOffset->setHeight((parent->offsetTop() - current->offsetTop()).toInt());
+                return searchRoot->parent();
+            }
+        }
+
         LayoutRect rect;
         DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(searchRoot->layoutObject(), rect);
         *layerOffset = IntSize(rect.x(), rect.y());
         return searchRoot;
     }
 
+    // If the |graphicsLayer| is a scroller's scrollingContent layer,
+    // consider this is a scrolling layer.
     GraphicsLayer* layerForScrolling = searchRoot->scrollableArea() ? searchRoot->scrollableArea()->layerForScrolling() : 0;
     if (graphicsLayer == layerForScrolling) {
         *layerType = "scrolling";
@@ -1454,12 +1535,12 @@ void Internals::toggleOverwriteModeEnabled(Document* document)
 
 unsigned Internals::numberOfLiveNodes() const
 {
-    return InspectorCounters::counterValue(InspectorCounters::NodeCounter);
+    return InstanceCounters::counterValue(InstanceCounters::NodeCounter);
 }
 
 unsigned Internals::numberOfLiveDocuments() const
 {
-    return InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
+    return InstanceCounters::counterValue(InstanceCounters::DocumentCounter);
 }
 
 String Internals::dumpRefCountedInstanceCounts() const
@@ -1533,7 +1614,7 @@ String Internals::elementLayerTreeAsText(Element* element, ExceptionState& excep
 {
     ASSERT(element);
     FrameView* frameView = element->document().view();
-    frameView->updateLayoutAndStyleForPainting();
+    frameView->updateAllLifecyclePhases();
 
     return elementLayerTreeAsText(element, 0, exceptionState);
 }
@@ -1541,7 +1622,7 @@ String Internals::elementLayerTreeAsText(Element* element, ExceptionState& excep
 bool Internals::scrollsWithRespectTo(Element* element1, Element* element2, ExceptionState& exceptionState)
 {
     ASSERT(element1 && element2);
-    element1->document().view()->updateLayoutAndStyleForPainting();
+    element1->document().view()->updateAllLifecyclePhases();
 
     LayoutObject* layoutObject1 = element1->layoutObject();
     LayoutObject* layoutObject2 = element2->layoutObject();
@@ -1572,7 +1653,7 @@ String Internals::layerTreeAsText(Document* document, unsigned flags, ExceptionS
         return String();
     }
 
-    document->view()->updateLayoutAndStyleForPainting();
+    document->view()->updateAllLifecyclePhases();
 
     return document->frame()->layerTreeAsText(flags);
 }
@@ -1612,7 +1693,7 @@ String Internals::mainThreadScrollingReasons(Document* document, ExceptionState&
         return String();
     }
 
-    document->frame()->view()->updateLayoutAndStyleForPainting();
+    document->frame()->view()->updateAllLifecyclePhases();
 
     Page* page = document->page();
     if (!page)
@@ -1726,6 +1807,29 @@ void Internals::setDeviceScaleFactor(float scaleFactor, ExceptionState& exceptio
     page->setDeviceScaleFactor(scaleFactor);
 }
 
+void Internals::setPageScaleFactor(float scaleFactor, ExceptionState& exceptionState)
+{
+    Document* document = contextDocument();
+    if (!document || !document->page()) {
+        exceptionState.throwDOMException(InvalidAccessError, document ? "The document's page cannot be retrieved." : "No context document can be obtained.");
+        return;
+    }
+    Page* page = document->page();
+    page->frameHost().pinchViewport().setScale(scaleFactor);
+}
+
+void Internals::setPageScaleFactorLimits(float minScaleFactor, float maxScaleFactor, ExceptionState& exceptionState)
+{
+    Document* document = contextDocument();
+    if (!document || !document->page()) {
+        exceptionState.throwDOMException(InvalidAccessError, document ? "The document's page cannot be retrieved." : "No context document can be obtained.");
+        return;
+    }
+
+    Page* page = document->page();
+    page->frameHost().setDefaultPageScaleLimits(minScaleFactor, maxScaleFactor);
+}
+
 void Internals::setIsCursorVisible(Document* document, bool isVisible, ExceptionState& exceptionState)
 {
     ASSERT(document);
@@ -1734,12 +1838,6 @@ void Internals::setIsCursorVisible(Document* document, bool isVisible, Exception
         return;
     }
     document->page()->setIsCursorVisible(isVisible);
-}
-
-void Internals::mediaPlayerRequestFullscreen(HTMLMediaElement* mediaElement)
-{
-    ASSERT(mediaElement);
-    mediaElement->mediaPlayerRequestFullscreen();
 }
 
 double Internals::effectiveMediaVolume(HTMLMediaElement* mediaElement)
@@ -1820,7 +1918,7 @@ void Internals::startTrackingRepaints(Document* document, ExceptionState& except
     }
 
     FrameView* frameView = document->view();
-    frameView->updateLayoutAndStyleForPainting();
+    frameView->updateAllLifecyclePhases();
     frameView->setTracksPaintInvalidations(true);
 }
 
@@ -1833,7 +1931,7 @@ void Internals::stopTrackingRepaints(Document* document, ExceptionState& excepti
     }
 
     FrameView* frameView = document->view();
-    frameView->updateLayoutAndStyleForPainting();
+    frameView->updateAllLifecyclePhases();
     frameView->setTracksPaintInvalidations(false);
 }
 
@@ -1950,7 +2048,7 @@ static const char* cursorTypeToString(Cursor::Type cursorType)
 
 String Internals::getCurrentCursorInfo()
 {
-    Cursor cursor = frame()->page()->chrome().getLastSetCursorForTesting();
+    Cursor cursor = frame()->page()->chromeClient().lastSetCursorForTesting();
 
     StringBuilder result;
     result.appendLiteral("type=");
@@ -1996,7 +2094,7 @@ PassRefPtr<SerializedScriptValue> Internals::deserializeBuffer(PassRefPtr<DOMArr
 
 void Internals::forceReload(bool endToEnd)
 {
-    frame()->reload(endToEnd ? EndToEndReload : NormalReload, NotClientRedirect);
+    frame()->reload(endToEnd ? FrameLoadTypeReloadFromOrigin : FrameLoadTypeReload, NotClientRedirect);
 }
 
 ClientRect* Internals::selectionBounds(ExceptionState& exceptionState)
@@ -2103,7 +2201,7 @@ void Internals::forceCompositingUpdate(Document* document, ExceptionState& excep
         return;
     }
 
-    document->frame()->view()->updateLayoutAndStyleForPainting();
+    document->frame()->view()->updateAllLifecyclePhases();
 }
 
 void Internals::setZoomFactor(float factor)
@@ -2269,77 +2367,25 @@ void Internals::setNetworkConnectionInfo(const String& type, ExceptionState& exc
     networkStateNotifier().setWebConnectionTypeForTest(webtype);
 }
 
-unsigned Internals::countHitRegions(CanvasRenderingContext2D* context)
+unsigned Internals::countHitRegions(CanvasRenderingContext* context)
 {
     return context->hitRegionsCount();
+}
+
+bool Internals::isInCanvasFontCache(Document* document, const String& fontString)
+{
+    return document->canvasFontCache()->isInCache(fontString);
+}
+
+unsigned Internals::canvasFontCacheMaxFonts()
+{
+    return CanvasFontCache::maxFonts();
 }
 
 ClientRect* Internals::boundsInViewportSpace(Element* element)
 {
     ASSERT(element);
     return ClientRect::create(element->boundsInViewportSpace());
-}
-
-String Internals::serializeNavigationMarkup()
-{
-    Vector<Document::TransitionElementData> elementData;
-    frame()->document()->getTransitionElementData(elementData);
-
-    StringBuilder markup;
-    for (const auto& element : elementData)
-        markup.append(element.markup);
-
-    return markup.toString();
-}
-
-Vector<String> Internals::getTransitionElementIds()
-{
-    Vector<Document::TransitionElementData> elementData;
-    frame()->document()->getTransitionElementData(elementData);
-
-    Vector<String> ids;
-    for (size_t i = 0; i < elementData.size(); ++i) {
-        for (size_t j = 0; j < elementData[i].elements.size(); ++j)
-            ids.append(elementData[i].elements[j].id);
-    }
-
-    return ids;
-}
-
-ClientRectList* Internals::getTransitionElementRects()
-{
-    Vector<Document::TransitionElementData> elementData;
-    frame()->document()->getTransitionElementData(elementData);
-
-    Vector<IntRect> rects;
-    for (size_t i = 0; i < elementData.size(); ++i) {
-        for (size_t j = 0; j < elementData[i].elements.size(); ++j)
-            rects.append(elementData[i].elements[j].rect);
-    }
-    return ClientRectList::create(rects);
-}
-
-void Internals::hideAllTransitionElements()
-{
-    Vector<Document::TransitionElementData> elementData;
-    frame()->document()->getTransitionElementData(elementData);
-
-    for (const auto& element : elementData)
-        frame()->document()->hideTransitionElements(AtomicString(element.selector));
-}
-
-void Internals::showAllTransitionElements()
-{
-    Vector<Document::TransitionElementData> elementData;
-    frame()->document()->getTransitionElementData(elementData);
-
-    for (const auto& element : elementData)
-        frame()->document()->showTransitionElements(AtomicString(element.selector));
-}
-
-void Internals::setExitTransitionStylesheetsEnabled(bool enabled)
-{
-    frame()->document()->styleEngine().setExitTransitionStylesheetsEnabled(enabled);
 }
 
 void Internals::forcePluginPlaceholder(HTMLElement* element, PassRefPtrWillBeRawPtr<DocumentFragment> fragment, ExceptionState& exceptionState)
@@ -2408,6 +2454,12 @@ ClientRectList* Internals::focusRingRects(Element* element)
     if (element && element->layoutObject())
         element->layoutObject()->addFocusRingRects(rects, LayoutPoint());
     return ClientRectList::create(rects);
+}
+
+void Internals::setCapsLockState(bool enabled)
+{
+    PlatformKeyboardEvent::setCurrentCapsLockState(enabled ?
+        PlatformKeyboardEvent::OverrideCapsLockState::On : PlatformKeyboardEvent::OverrideCapsLockState::Off);
 }
 
 } // namespace blink

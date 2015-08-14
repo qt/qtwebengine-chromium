@@ -7,6 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+#include "./vp9_rtcd.h"
 #include "vp9/common/vp9_common.h"
 #include "vpx_ports/mem.h"
 
@@ -28,6 +29,8 @@ unsigned int vp9_avg_4x4_c(const uint8_t *s, int p) {
   return (sum + 8) >> 4;
 }
 
+// src_diff: first pass, 9 bit, dynamic range [-255, 255]
+//           second pass, 12 bit, dynamic range [-2040, 2040]
 static void hadamard_col8(const int16_t *src_diff, int src_stride,
                           int16_t *coeff) {
   int16_t b0 = src_diff[0 * src_stride] + src_diff[1 * src_stride];
@@ -64,15 +67,18 @@ void vp9_hadamard_8x8_c(int16_t const *src_diff, int src_stride,
   int16_t buffer[64];
   int16_t *tmp_buf = &buffer[0];
   for (idx = 0; idx < 8; ++idx) {
-    hadamard_col8(src_diff, src_stride, tmp_buf);
+    hadamard_col8(src_diff, src_stride, tmp_buf);  // src_diff: 9 bit
+                                                   // dynamic range [-255, 255]
     tmp_buf += 8;
     ++src_diff;
   }
 
   tmp_buf = &buffer[0];
   for (idx = 0; idx < 8; ++idx) {
-    hadamard_col8(tmp_buf, 8, coeff);
-    coeff += 8;
+    hadamard_col8(tmp_buf, 8, coeff);  // tmp_buf: 12 bit
+                                       // dynamic range [-2040, 2040]
+    coeff += 8;  // coeff: 15 bit
+                 // dynamic range [-16320, 16320]
     ++tmp_buf;
   }
 }
@@ -82,58 +88,68 @@ void vp9_hadamard_16x16_c(int16_t const *src_diff, int src_stride,
                           int16_t *coeff) {
   int idx;
   for (idx = 0; idx < 4; ++idx) {
+    // src_diff: 9 bit, dynamic range [-255, 255]
     int16_t const *src_ptr = src_diff + (idx >> 1) * 8 * src_stride
                                 + (idx & 0x01) * 8;
     vp9_hadamard_8x8_c(src_ptr, src_stride, coeff + idx * 64);
   }
 
+  // coeff: 15 bit, dynamic range [-16320, 16320]
   for (idx = 0; idx < 64; ++idx) {
     int16_t a0 = coeff[0];
     int16_t a1 = coeff[64];
     int16_t a2 = coeff[128];
     int16_t a3 = coeff[192];
 
-    int16_t b0 = a0 + a1;
-    int16_t b1 = a0 - a1;
-    int16_t b2 = a2 + a3;
-    int16_t b3 = a2 - a3;
+    int16_t b0 = (a0 + a1) >> 1;  // (a0 + a1): 16 bit, [-32640, 32640]
+    int16_t b1 = (a0 - a1) >> 1;  // b0-b3: 15 bit, dynamic range
+    int16_t b2 = (a2 + a3) >> 1;  // [-16320, 16320]
+    int16_t b3 = (a2 - a3) >> 1;
 
-    coeff[0]   = (b0 + b2) >> 1;
-    coeff[64]  = (b1 + b3) >> 1;
-    coeff[128] = (b0 - b2) >> 1;
-    coeff[192] = (b1 - b3) >> 1;
+    coeff[0]   = b0 + b2;  // 16 bit, [-32640, 32640]
+    coeff[64]  = b1 + b3;
+    coeff[128] = b0 - b2;
+    coeff[192] = b1 - b3;
 
     ++coeff;
   }
 }
 
+// coeff: 16 bits, dynamic range [-32640, 32640].
+// length: value range {16, 64, 256, 1024}.
 int16_t vp9_satd_c(const int16_t *coeff, int length) {
   int i;
   int satd = 0;
   for (i = 0; i < length; ++i)
     satd += abs(coeff[i]);
 
+  // satd: 26 bits, dynamic range [-32640 * 1024, 32640 * 1024]
   return (int16_t)satd;
 }
 
 // Integer projection onto row vectors.
-void vp9_int_pro_row_c(int16_t *hbuf, uint8_t const *ref,
+// height: value range {16, 32, 64}.
+void vp9_int_pro_row_c(int16_t hbuf[16], uint8_t const *ref,
                        const int ref_stride, const int height) {
   int idx;
-  const int norm_factor = MAX(8, height >> 1);
+  const int norm_factor = height >> 1;
   for (idx = 0; idx < 16; ++idx) {
     int i;
     hbuf[idx] = 0;
+    // hbuf[idx]: 14 bit, dynamic range [0, 16320].
     for (i = 0; i < height; ++i)
       hbuf[idx] += ref[i * ref_stride];
+    // hbuf[idx]: 9 bit, dynamic range [0, 510].
     hbuf[idx] /= norm_factor;
     ++ref;
   }
 }
 
+// width: value range {16, 32, 64}.
 int16_t vp9_int_pro_col_c(uint8_t const *ref, const int width) {
   int idx;
   int16_t sum = 0;
+  // sum: 14 bit, dynamic range [0, 16320]
   for (idx = 0; idx < width; ++idx)
     sum += ref[idx];
   return sum;

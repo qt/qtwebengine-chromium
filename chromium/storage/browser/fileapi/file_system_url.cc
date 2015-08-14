@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "net/base/escape.h"
-#include "storage/common/fileapi/file_system_types.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 namespace storage {
@@ -112,7 +111,7 @@ GURL FileSystemURL::ToGURL() const {
   std::string escaped = net::EscapeQueryParamValue(
       virtual_path_.NormalizePathSeparatorsTo('/').AsUTF8Unsafe(),
       false /* use_plus */);
-  ReplaceSubstringsAfterOffset(&escaped, 0, "%2F", "/");
+  base::ReplaceSubstringsAfterOffset(&escaped, 0, "%2F", "/");
   url.append(escaped);
 
   // Build nested GURL.

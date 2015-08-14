@@ -7,8 +7,8 @@
 #include "base/bind_helpers.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -598,7 +598,13 @@ TEST_F(DiskCacheEntryTest, ExternalAsyncIO) {
   ExternalAsyncIO();
 }
 
-TEST_F(DiskCacheEntryTest, ExternalAsyncIONoBuffer) {
+// TODO(ios): This test is flaky. http://crbug.com/497101
+#if defined(OS_IOS)
+#define MAYBE_ExternalAsyncIONoBuffer DISABLED_ExternalAsyncIONoBuffer
+#else
+#define MAYBE_ExternalAsyncIONoBuffer ExternalAsyncIONoBuffer
+#endif
+TEST_F(DiskCacheEntryTest, MAYBE_ExternalAsyncIONoBuffer) {
   InitCache();
   cache_impl_->SetFlags(disk_cache::kNoBuffering);
   ExternalAsyncIO();
@@ -3374,7 +3380,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
       // will be checked for outliving the eviction.
       AddDelay();
     }
-    ASSERT_EQ(net::OK, CreateEntry(key2 + base::StringPrintf("%d", i), &entry));
+    ASSERT_EQ(net::OK, CreateEntry(key2 + base::IntToString(i), &entry));
     ScopedEntryPtr entry_closer(entry);
     EXPECT_EQ(kWriteSize,
               WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
@@ -3389,8 +3395,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
     // Generally there is no guarantee that at this point the backround eviction
     // is finished. We are testing the positive case, i.e. when the eviction
     // never reaches this entry, should be non-flaky.
-    ASSERT_EQ(net::OK, OpenEntry(key2 + base::StringPrintf("%d", entry_no),
-                                 &entry))
+    ASSERT_EQ(net::OK, OpenEntry(key2 + base::IntToString(entry_no), &entry))
         << "Should not have evicted fresh entry " << entry_no;
     entry->Close();
   }
@@ -3526,38 +3531,6 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOpenCreateRaceWithNoIndex) {
   EXPECT_EQ(net::ERR_FAILED, cb1.GetResult(rv1));
   ASSERT_EQ(net::OK, cb2.GetResult(rv2));
   entry2->Close();
-}
-
-// Checks that reading two entries simultaneously does not discard a CRC check.
-// TODO(pasko): make it work with Simple Cache.
-TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheMultipleReadersCheckCRC) {
-  SetSimpleCacheMode();
-  InitCache();
-
-  const char key[] = "key";
-
-  int size;
-  ASSERT_TRUE(SimpleCacheMakeBadChecksumEntry(key, &size));
-
-  scoped_refptr<net::IOBuffer> read_buffer1(new net::IOBuffer(size));
-  scoped_refptr<net::IOBuffer> read_buffer2(new net::IOBuffer(size));
-
-  // Advance the first reader a little.
-  disk_cache::Entry* entry = NULL;
-  ASSERT_EQ(net::OK, OpenEntry(key, &entry));
-  EXPECT_EQ(1, ReadData(entry, 0, 0, read_buffer1.get(), 1));
-
-  // Make the second reader pass the point where the first one is, and close.
-  disk_cache::Entry* entry2 = NULL;
-  EXPECT_EQ(net::OK, OpenEntry(key, &entry2));
-  EXPECT_EQ(1, ReadData(entry2, 0, 0, read_buffer2.get(), 1));
-  EXPECT_EQ(1, ReadData(entry2, 0, 1, read_buffer2.get(), 1));
-  entry2->Close();
-
-  // Read the data till the end should produce an error.
-  EXPECT_GT(0, ReadData(entry, 0, 1, read_buffer1.get(), size));
-  entry->Close();
-  DisableIntegrityCheck();
 }
 
 // Checking one more scenario of overlapped reading of a bad entry.
@@ -4098,12 +4071,6 @@ TEST_F(DiskCacheEntryTest, SimpleCacheGetAvailableRange) {
   SetSimpleCacheMode();
   InitCache();
   GetAvailableRange();
-}
-
-TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheCouldBeSparse) {
-  SetSimpleCacheMode();
-  InitCache();
-  CouldBeSparse();
 }
 
 TEST_F(DiskCacheEntryTest, SimpleCacheUpdateSparseEntry) {

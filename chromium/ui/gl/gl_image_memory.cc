@@ -19,6 +19,11 @@ namespace {
 
 bool ValidInternalFormat(unsigned internalformat) {
   switch (internalformat) {
+    case GL_ATC_RGB_AMD:
+    case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:
+    case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+    case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
+    case GL_ETC1_RGB8_OES:
     case GL_R8:
     case GL_RGBA:
     case GL_BGRA_EXT:
@@ -36,6 +41,7 @@ bool ValidFormat(GpuMemoryBuffer::Format format) {
     case GpuMemoryBuffer::DXT5:
     case GpuMemoryBuffer::ETC1:
     case GpuMemoryBuffer::R_8:
+    case GpuMemoryBuffer::RGBA_4444:
     case GpuMemoryBuffer::RGBA_8888:
     case GpuMemoryBuffer::BGRA_8888:
       return true;
@@ -58,6 +64,7 @@ bool IsCompressedFormat(GpuMemoryBuffer::Format format) {
     case GpuMemoryBuffer::YUV_420:
       return true;
     case GpuMemoryBuffer::R_8:
+    case GpuMemoryBuffer::RGBA_4444:
     case GpuMemoryBuffer::RGBA_8888:
     case GpuMemoryBuffer::BGRA_8888:
     case GpuMemoryBuffer::RGBX_8888:
@@ -82,6 +89,7 @@ GLenum TextureFormat(GpuMemoryBuffer::Format format) {
       return GL_ETC1_RGB8_OES;
     case GpuMemoryBuffer::R_8:
       return GL_RED;
+    case GpuMemoryBuffer::RGBA_4444:
     case GpuMemoryBuffer::RGBA_8888:
       return GL_RGBA;
     case GpuMemoryBuffer::BGRA_8888:
@@ -102,6 +110,8 @@ GLenum DataFormat(GpuMemoryBuffer::Format format) {
 
 GLenum DataType(GpuMemoryBuffer::Format format) {
   switch (format) {
+    case GpuMemoryBuffer::RGBA_4444:
+      return GL_UNSIGNED_SHORT_4_4_4_4;
     case GpuMemoryBuffer::RGBA_8888:
     case GpuMemoryBuffer::BGRA_8888:
     case GpuMemoryBuffer::R_8:
@@ -179,6 +189,12 @@ bool GLImageMemory::StrideInBytes(size_t width,
         return false;
       *stride_in_bytes = checked_stride.ValueOrDie() & ~0x3;
       return true;
+    case GpuMemoryBuffer::RGBA_4444:
+      checked_stride *= 2;
+      if (!checked_stride.IsValid())
+        return false;
+      *stride_in_bytes = checked_stride.ValueOrDie();
+      return true;
     case GpuMemoryBuffer::RGBA_8888:
     case GpuMemoryBuffer::BGRA_8888:
       checked_stride *= 4;
@@ -238,6 +254,10 @@ Size GLImageMemory::GetSize() {
   return size_;
 }
 
+unsigned GLImageMemory::GetInternalFormat() {
+  return internalformat_;
+}
+
 bool GLImageMemory::BindTexImage(unsigned target) {
   if (target_ && target_ != target) {
     LOG(ERROR) << "GLImage can only be bound to one target";
@@ -255,28 +275,39 @@ bool GLImageMemory::BindTexImage(unsigned target) {
   return true;
 }
 
-bool GLImageMemory::CopyTexImage(unsigned target) {
-  TRACE_EVENT0("gpu", "GLImageMemory::CopyTexImage");
+bool GLImageMemory::CopyTexSubImage(unsigned target,
+                                    const Point& offset,
+                                    const Rect& rect) {
+  TRACE_EVENT2("gpu", "GLImageMemory::CopyTexSubImage", "width", rect.width(),
+               "height", rect.height());
 
-  // GL_TEXTURE_EXTERNAL_OES is not a supported CopyTexImage target.
+  // GL_TEXTURE_EXTERNAL_OES is not a supported CopyTexSubImage target.
   if (target == GL_TEXTURE_EXTERNAL_OES)
     return false;
 
+  // Sub width is not supported.
+  if (rect.width() != size_.width())
+    return false;
+
+  // Height must be a multiple of 4 if compressed.
+  if (IsCompressedFormat(format_) && rect.height() % 4)
+    return false;
+
+  size_t stride_in_bytes = 0;
+  bool rv = StrideInBytes(size_.width(), format_, &stride_in_bytes);
+  DCHECK(rv);
   DCHECK(memory_);
+  const unsigned char* data = memory_ + rect.y() * stride_in_bytes;
   if (IsCompressedFormat(format_)) {
     glCompressedTexSubImage2D(target,
                               0,  // level
-                              0,  // x-offset
-                              0,  // y-offset
-                              size_.width(), size_.height(),
-                              DataFormat(format_), SizeInBytes(size_, format_),
-                              memory_);
+                              offset.x(), offset.y(), rect.width(),
+                              rect.height(), DataFormat(format_),
+                              SizeInBytes(rect.size(), format_), data);
   } else {
     glTexSubImage2D(target, 0,  // level
-                    0,          // x
-                    0,          // y
-                    size_.width(), size_.height(), DataFormat(format_),
-                    DataType(format_), memory_);
+                    offset.x(), offset.y(), rect.width(), rect.height(),
+                    DataFormat(format_), DataType(format_), data);
   }
 
   return true;

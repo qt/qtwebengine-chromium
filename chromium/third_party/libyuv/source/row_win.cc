@@ -147,6 +147,7 @@ static YuvConstants SIMD_ALIGNED(kYuvJConstants) = {
 
 // 64 bit
 #if defined(_M_X64)
+#if defined(HAS_I422TOARGBROW_SSSE3)
 void I422ToARGBRow_SSSE3(const uint8* y_buf,
                          const uint8* u_buf,
                          const uint8* v_buf,
@@ -196,6 +197,7 @@ void I422ToARGBRow_SSSE3(const uint8* y_buf,
     width -= 8;
   }
 }
+#endif
 // 32 bit
 #else  // defined(_M_X64)
 #ifdef HAS_ARGBTOYROW_SSSE3
@@ -606,6 +608,8 @@ void ARGB1555ToARGBRow_AVX2(const uint8* src_argb1555, uint8* dst_argb,
     vpmulhuw   ymm0, ymm0, ymm6    // << 6 * (256 + 8)
     vpand      ymm2, ymm2, ymm7
     vpor       ymm0, ymm0, ymm2    // AG
+    vpermq     ymm0, ymm0, 0xd8    // mutate for unpack
+    vpermq     ymm1, ymm1, 0xd8
     vpunpckhbw ymm2, ymm1, ymm0
     vpunpcklbw ymm1, ymm1, ymm0
     vmovdqu    [eax * 2 + edx], ymm1  // store 8 pixels of ARGB
@@ -624,10 +628,10 @@ __declspec(naked)
 void ARGB4444ToARGBRow_AVX2(const uint8* src_argb4444, uint8* dst_argb,
                             int pix) {
   __asm {
-    mov        eax,  0x0f0f0f0f  // generate mask 0x0f0f0f0f
-    vmovd      xmm4, eax
+    mov       eax,  0x0f0f0f0f  // generate mask 0x0f0f0f0f
+    vmovd     xmm4, eax
     vbroadcastss ymm4, xmm4
-    vpslld     ymm5, ymm4, 4    // 0xf0f0f0f0 for high nibbles
+    vpslld    ymm5, ymm4, 4     // 0xf0f0f0f0 for high nibbles
     mov       eax,  [esp + 4]   // src_argb4444
     mov       edx,  [esp + 8]   // dst_argb
     mov       ecx,  [esp + 12]  // pix
@@ -642,6 +646,8 @@ void ARGB4444ToARGBRow_AVX2(const uint8* src_argb4444, uint8* dst_argb,
     vpsllw     ymm1, ymm0, 4
     vpor       ymm2, ymm2, ymm3
     vpor       ymm0, ymm0, ymm1
+    vpermq     ymm0, ymm0, 0xd8    // mutate for unpack
+    vpermq     ymm2, ymm2, 0xd8
     vpunpckhbw ymm1, ymm0, ymm2
     vpunpcklbw ymm0, ymm0, ymm2
     vmovdqu    [eax * 2 + edx], ymm0  // store 8 pixels of ARGB
@@ -4018,43 +4024,8 @@ void ARGBBlendRow_SSE2(const uint8* src_argb0, const uint8* src_argb1,
     psllw      xmm5, 8
     pcmpeqb    xmm4, xmm4       // generate mask 0xff000000
     pslld      xmm4, 24
-
-    sub        ecx, 1
-    je         convertloop1     // only 1 pixel?
-    jl         convertloop1b
-
-    // 1 pixel loop until destination pointer is aligned.
-  alignloop1:
-    test       edx, 15          // aligned?
-    je         alignloop1b
-    movd       xmm3, [eax]
-    lea        eax, [eax + 4]
-    movdqa     xmm0, xmm3       // src argb
-    pxor       xmm3, xmm4       // ~alpha
-    movd       xmm2, [esi]      // _r_b
-    psrlw      xmm3, 8          // alpha
-    pshufhw    xmm3, xmm3, 0F5h // 8 alpha words
-    pshuflw    xmm3, xmm3, 0F5h
-    pand       xmm2, xmm6       // _r_b
-    paddw      xmm3, xmm7       // 256 - alpha
-    pmullw     xmm2, xmm3       // _r_b * alpha
-    movd       xmm1, [esi]      // _a_g
-    lea        esi, [esi + 4]
-    psrlw      xmm1, 8          // _a_g
-    por        xmm0, xmm4       // set alpha to 255
-    pmullw     xmm1, xmm3       // _a_g * alpha
-    psrlw      xmm2, 8          // _r_b convert to 8 bits again
-    paddusb    xmm0, xmm2       // + src argb
-    pand       xmm1, xmm5       // a_g_ convert to 8 bits again
-    paddusb    xmm0, xmm1       // + src argb
-    movd       [edx], xmm0
-    lea        edx, [edx + 4]
-    sub        ecx, 1
-    jge        alignloop1
-
-  alignloop1b:
-    add        ecx, 1 - 4
-    jl         convertloop4b
+    sub        ecx, 4
+    jl         convertloop4b    // less than 4 pixels?
 
     // 4 pixel loop.
   convertloop4:
@@ -4152,41 +4123,8 @@ void ARGBBlendRow_SSSE3(const uint8* src_argb0, const uint8* src_argb1,
     psllw      xmm5, 8
     pcmpeqb    xmm4, xmm4       // generate mask 0xff000000
     pslld      xmm4, 24
-
-    sub        ecx, 1
-    je         convertloop1     // only 1 pixel?
-    jl         convertloop1b
-
-    // 1 pixel loop until destination pointer is aligned.
-  alignloop1:
-    test       edx, 15          // aligned?
-    je         alignloop1b
-    movd       xmm3, [eax]
-    lea        eax, [eax + 4]
-    movdqa     xmm0, xmm3       // src argb
-    pxor       xmm3, xmm4       // ~alpha
-    movd       xmm2, [esi]      // _r_b
-    pshufb     xmm3, kShuffleAlpha // alpha
-    pand       xmm2, xmm6       // _r_b
-    paddw      xmm3, xmm7       // 256 - alpha
-    pmullw     xmm2, xmm3       // _r_b * alpha
-    movd       xmm1, [esi]      // _a_g
-    lea        esi, [esi + 4]
-    psrlw      xmm1, 8          // _a_g
-    por        xmm0, xmm4       // set alpha to 255
-    pmullw     xmm1, xmm3       // _a_g * alpha
-    psrlw      xmm2, 8          // _r_b convert to 8 bits again
-    paddusb    xmm0, xmm2       // + src argb
-    pand       xmm1, xmm5       // a_g_ convert to 8 bits again
-    paddusb    xmm0, xmm1       // + src argb
-    movd       [edx], xmm0
-    lea        edx, [edx + 4]
-    sub        ecx, 1
-    jge        alignloop1
-
-  alignloop1b:
-    add        ecx, 1 - 4
-    jl         convertloop4b
+    sub        ecx, 4
+    jl         convertloop4b    // less than 4 pixels?
 
     // 4 pixel loop.
   convertloop4:
@@ -5871,36 +5809,6 @@ void InterpolateRow_SSE2(uint8* dst_ptr, const uint8* src_ptr,
 }
 #endif  // HAS_INTERPOLATEROW_SSE2
 
-// Specialized ARGB to Bayer that just isolates G channel.
-__declspec(naked)
-void ARGBToBayerGGRow_SSE2(const uint8* src_argb, uint8* dst_bayer,
-                           uint32 selector, int pix) {
-  __asm {
-    mov        eax, [esp + 4]    // src_argb
-    mov        edx, [esp + 8]    // dst_bayer
-                                 // selector
-    mov        ecx, [esp + 16]   // pix
-    pcmpeqb    xmm5, xmm5        // generate mask 0x000000ff
-    psrld      xmm5, 24
-
-  wloop:
-    movdqu     xmm0, [eax]
-    movdqu     xmm1, [eax + 16]
-    lea        eax, [eax + 32]
-    psrld      xmm0, 8  // Move green to bottom.
-    psrld      xmm1, 8
-    pand       xmm0, xmm5
-    pand       xmm1, xmm5
-    packssdw   xmm0, xmm1
-    packuswb   xmm0, xmm1
-    movq       qword ptr [edx], xmm0
-    lea        edx, [edx + 8]
-    sub        ecx, 8
-    jg         wloop
-    ret
-  }
-}
-
 // For BGRAToARGB, ABGRToARGB, RGBAToARGB, and ARGBToRGBA.
 __declspec(naked)
 void ARGBShuffleRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
@@ -6415,7 +6323,7 @@ void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
 #endif  // HAS_ARGBLUMACOLORTABLEROW_SSSE3
 
 #endif  // defined(_M_X64)
-#endif  // !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) ...
+#endif  // !defined(LIBYUV_DISABLE_X86) && (defined(_M_IX86) || defined(_M_X64))
 
 #ifdef __cplusplus
 }  // extern "C"

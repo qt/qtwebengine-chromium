@@ -51,6 +51,11 @@ struct NET_EXPORT SSLConfig {
   bool IsAllowedBadCert(const base::StringPiece& der_cert,
                         CertStatus* cert_status) const;
 
+  // Returns the set of flags to use for certificate verification, which is a
+  // bitwise OR of CertVerifier::VerifyFlags that represent this SSLConfig's
+  // configuration.
+  int GetCertVerifyFlags() const;
+
   // rev_checking_enabled is true if online certificate revocation checking is
   // enabled (i.e. OCSP and CRL fetching).
   //
@@ -112,9 +117,7 @@ struct NET_EXPORT SSLConfig {
   // TLS extension is enabled.
   bool signed_cert_timestamps_enabled;
 
-  // If true, causes only ECDHE cipher suites to be enabled. NOTE: This only
-  // applies to server sockets currently, although that could be extended if
-  // needed.
+  // If true, causes only ECDHE cipher suites to be enabled.
   bool require_ecdhe;
 
   // TODO(wtc): move the following members to a new SSLParams structure.  They

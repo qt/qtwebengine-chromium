@@ -5,9 +5,12 @@
 #include "content/renderer/browser_plugin/browser_plugin.h"
 
 #include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
+#include "cc/surfaces/surface.h"
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/view_messages.h"
@@ -58,8 +61,9 @@ BrowserPlugin* BrowserPlugin::GetFromNode(blink::WebNode& node) {
   return it == browser_plugins->end() ? nullptr : it->second;
 }
 
-BrowserPlugin::BrowserPlugin(RenderFrame* render_frame,
-                             scoped_ptr<BrowserPluginDelegate> delegate)
+BrowserPlugin::BrowserPlugin(
+    RenderFrame* render_frame,
+    const base::WeakPtr<BrowserPluginDelegate>& delegate)
     : attached_(false),
       render_frame_routing_id_(render_frame->GetRoutingID()),
       container_(nullptr),
@@ -71,7 +75,7 @@ BrowserPlugin::BrowserPlugin(RenderFrame* render_frame,
       ready_(false),
       browser_plugin_instance_id_(browser_plugin::kInstanceIDNone),
       contents_opaque_(true),
-      delegate_(delegate.Pass()),
+      delegate_(delegate),
       weak_ptr_factory_(this) {
   browser_plugin_instance_id_ =
       BrowserPluginManager::Get()->GetNextInstanceID();
@@ -83,6 +87,11 @@ BrowserPlugin::BrowserPlugin(RenderFrame* render_frame,
 BrowserPlugin::~BrowserPlugin() {
   if (compositing_helper_.get())
     compositing_helper_->OnContainerDestroy();
+
+  if (delegate_) {
+    delegate_->DidDestroyElement();
+    delegate_.reset();
+  }
 
   BrowserPluginManager::Get()->RemoveBrowserPlugin(browser_plugin_instance_id_);
 }
@@ -100,10 +109,31 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_ShouldAcceptTouchEvents,
                         OnShouldAcceptTouchEvents)
-    IPC_MESSAGE_UNHANDLED(
-        handled = delegate_ && delegate_->OnMessageReceived(message))
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetChildFrameSurface,
+                        OnSetChildFrameSurface)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void BrowserPlugin::OnSetChildFrameSurface(
+    int browser_plugin_instance_id,
+    const cc::SurfaceId& surface_id,
+    const gfx::Size& frame_size,
+    float scale_factor,
+    const cc::SurfaceSequence& sequence) {
+  if (!attached())
+    return;
+
+  EnableCompositing(true);
+  DCHECK(compositing_helper_.get());
+
+  compositing_helper_->OnSetSurface(surface_id, frame_size, scale_factor,
+                                    sequence);
+}
+
+void BrowserPlugin::SendSatisfySequence(const cc::SurfaceSequence& sequence) {
+  BrowserPluginManager::Get()->Send(new BrowserPluginHostMsg_SatisfySequence(
+      render_frame_routing_id_, browser_plugin_instance_id_, sequence));
 }
 
 void BrowserPlugin::UpdateDOMAttribute(const std::string& attribute_name,
@@ -180,15 +210,15 @@ void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
   guest_crashed_ = false;
 
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
-  get<1>(param).frame.AssignTo(frame.get());
+  base::get<1>(param).frame.AssignTo(frame.get());
 
   EnableCompositing(true);
   compositing_helper_->OnCompositorFrameSwapped(
       frame.Pass(),
-      get<1>(param).producing_route_id,
-      get<1>(param).output_surface_id,
-      get<1>(param).producing_host_id,
-      get<1>(param).shared_memory_handle);
+      base::get<1>(param).producing_route_id,
+      base::get<1>(param).output_surface_id,
+      base::get<1>(param).producing_host_id,
+      base::get<1>(param).shared_memory_handle);
 }
 
 void BrowserPlugin::OnGuestGone(int browser_plugin_instance_id) {
@@ -202,10 +232,9 @@ void BrowserPlugin::OnGuestGone(int browser_plugin_instance_id) {
   // to fire their listeners and potentially overlay the webview with custom
   // behavior. If the BrowserPlugin is destroyed in the meantime, then the
   // task will not be executed.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&BrowserPlugin::ShowSadGraphic,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&BrowserPlugin::ShowSadGraphic,
+                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 void BrowserPlugin::OnSetContentsOpaque(int browser_plugin_instance_id,
@@ -264,6 +293,16 @@ void BrowserPlugin::ShowSadGraphic() {
     container_->invalidate();
 }
 
+void BrowserPlugin::UpdateInternalInstanceId() {
+  // This is a way to notify observers of our attributes that this plugin is
+  // available in render tree.
+  // TODO(lazyboy): This should be done through the delegate instead. Perhaps
+  // by firing an event from there.
+  UpdateDOMAttribute(
+      "internalinstanceid",
+      base::UTF8ToUTF16(base::IntToString(browser_plugin_instance_id_)));
+}
+
 void BrowserPlugin::UpdateGuestFocusState(blink::WebFocusType focus_type) {
   if (!attached())
     return;
@@ -302,10 +341,9 @@ bool BrowserPlugin::initialize(WebPluginContainer* container) {
 
   // Defer attach call so that if there's any pending browser plugin
   // destruction, then it can progress first.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&BrowserPlugin::UpdateInternalInstanceId,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::Bind(&BrowserPlugin::UpdateInternalInstanceId,
+                            weak_ptr_factory_.GetWeakPtr()));
   return true;
 }
 
@@ -331,16 +369,6 @@ void BrowserPlugin::EnableCompositing(bool enable) {
   }
 }
 
-void BrowserPlugin::UpdateInternalInstanceId() {
-  // This is a way to notify observers of our attributes that this plugin is
-  // available in render tree.
-  // TODO(lazyboy): This should be done through the delegate instead. Perhaps
-  // by firing an event from there.
-  UpdateDOMAttribute(
-      "internalinstanceid",
-      base::UTF8ToUTF16(base::IntToString(browser_plugin_instance_id_)));
-}
-
 void BrowserPlugin::destroy() {
   if (container_) {
     // The BrowserPlugin's WebPluginContainer is deleted immediately after this
@@ -359,6 +387,9 @@ void BrowserPlugin::destroy() {
 }
 
 v8::Local<v8::Object> BrowserPlugin::v8ScriptableObject(v8::Isolate* isolate) {
+  if (!delegate_)
+    return v8::Local<v8::Object>();
+
   return delegate_->V8ScriptableObject(isolate);
 }
 
@@ -381,8 +412,7 @@ bool BrowserPlugin::canProcessDrag() const {
 void BrowserPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
   if (guest_crashed_) {
     if (!sad_guest_)  // Lazily initialize bitmap.
-      sad_guest_ = content::GetContentClient()->renderer()->
-          GetSadWebViewBitmap();
+      sad_guest_ = GetContentClient()->renderer()->GetSadWebViewBitmap();
     // content_shell does not have the sad plugin bitmap, so we'll paint black
     // instead to make it clear that something went wrong.
     if (sad_guest_) {

@@ -29,8 +29,8 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
+#include "platform/JSONValues.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "wtf/PassOwnPtr.h"
@@ -97,10 +97,10 @@ String EmailInputType::convertEmailAddressToUnicode(const String& address) const
     if (address.find("xn--", atPosition + 1) == kNotFound)
         return address;
 
-    if (!chrome())
+    if (!chromeClient())
         return address;
 
-    String languages = chrome()->client().acceptLanguages();
+    String languages = chromeClient()->acceptLanguages();
     String unicodeHost = Platform::current()->convertIDNToUnicode(address.substring(atPosition + 1), languages);
     StringBuilder builder;
     builder.append(address, 0, atPosition + 1);
@@ -238,27 +238,13 @@ String EmailInputType::typeMismatchText() const
     return locale().queryString(WebLocalizedString::ValidationTypeMismatchForEmail);
 }
 
-static String escapeNonASCII(const String& source)
-{
-    StringBuilder builder;
-    builder.reserveCapacity(source.length());
-    for (unsigned i = 0; i < source.length(); ++i) {
-        if (isASCIIPrintable(source[i])) {
-            builder.append(source[i]);
-            continue;
-        }
-        builder.append(String::format("\\u%04x", source[i]));
-    }
-    return builder.toString();
-}
-
 void EmailInputType::warnIfValueIsInvalid(const String& value) const
 {
     String invalidAddress = findInvalidAddress(value);
     if (invalidAddress.isNull())
         return;
     element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
-        String::format("The specified value '%s' is not a valid email address.", escapeNonASCII(invalidAddress).utf8().data())));
+        String::format("The specified value %s is not a valid email address.", JSONValue::quoteString(invalidAddress).utf8().data())));
 }
 
 bool EmailInputType::supportsSelectionAPI() const

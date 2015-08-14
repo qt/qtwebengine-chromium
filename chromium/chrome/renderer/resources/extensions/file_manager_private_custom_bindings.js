@@ -68,6 +68,24 @@ binding.registerCustomHook(function(bindingsAPI) {
       }));
     });
   });
+
+  apiFunctions.setHandleRequest('getEntryProperties',
+                                function(entries, names, callback) {
+    var urls = entries.map(function(entry) {
+      return fileBrowserHandlerNatives.GetEntryURL(entry);
+    });
+    fileManagerPrivateInternal.getEntryProperties(urls, names, callback);
+  });
+
+  apiFunctions.setHandleRequest('addFileWatch', function(entry, callback) {
+    var url = fileBrowserHandlerNatives.GetEntryURL(entry);
+    fileManagerPrivateInternal.addFileWatch(url, callback);
+  });
+
+  apiFunctions.setHandleRequest('removeFileWatch', function(entry, callback) {
+    var url = fileBrowserHandlerNatives.GetEntryURL(entry);
+    fileManagerPrivateInternal.removeFileWatch(url, callback);
+  });
 });
 
 eventBindings.registerArgumentMassager(

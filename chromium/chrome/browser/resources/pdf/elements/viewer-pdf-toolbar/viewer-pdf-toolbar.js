@@ -2,45 +2,84 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 (function() {
-  Polymer('viewer-pdf-toolbar', {
-    /**
-     * @type {string}
-     * The title of the PDF document.
-     */
-    docTitle: '',
+  Polymer({
+    is: 'viewer-pdf-toolbar',
 
-    /**
-     * @type {number}
-     * The current index of the page being viewed (0-based).
-     */
-    pageIndex: 0,
+    behaviors: [
+      Polymer.NeonAnimationRunnerBehavior
+    ],
 
-    /**
-     * @type {number}
-     * The current loading progress of the PDF document (0 - 100).
-     */
-    loadProgress: 0,
-
-    /**
-     * @type {boolean}
-     * Whether the document has bookmarks.
-     */
-    hasBookmarks: false,
-
-    /**
-     * @type {number}
-     * The number of pages in the PDF document.
-     */
-    docLength: 1,
-
-    ready: function() {
+    properties: {
       /**
-       * @type {Object}
-       * Used in core-transition to determine whether the animatable is open.
-       * TODO(tsergeant): Add core-transition back in once it is in Polymer 0.8.
+       * The current loading progress of the PDF document (0 - 100).
        */
-      this.state_ = { opened: false };
-      this.show();
+      loadProgress: {
+        type: Number,
+        observer: 'loadProgressChanged'
+      },
+
+      /**
+       * The title of the PDF document.
+       */
+      docTitle: String,
+
+      /**
+       * The number of the page being viewed (1-based).
+       */
+      pageNo: Number,
+
+      /**
+       * Tree of PDF bookmarks (or null if the document has no bookmarks).
+       */
+      bookmarks: {
+        type: Object,
+        value: null
+      },
+
+      /**
+       * The number of pages in the PDF document.
+       */
+      docLength: Number,
+
+      /**
+       * Whether the toolbar is opened and visible.
+       */
+      opened: {
+        type: Boolean,
+        value: true
+      },
+
+      animationConfig: {
+        value: function() {
+          return {
+            'entry': {
+              name: 'slide-down-animation',
+              node: this,
+              timing: {
+                easing: 'cubic-bezier(0, 0, 0.2, 1)',
+                duration: 250
+              }
+            },
+            'exit': {
+              name: 'slide-up-animation',
+              node: this,
+              timing: {
+                easing: 'cubic-bezier(0.4, 0, 1, 1)',
+                duration: 250
+              }
+            }
+          };
+        }
+      }
+    },
+
+    listeners: {
+      'neon-animation-finish': '_onAnimationFinished'
+    },
+
+    _onAnimationFinished: function() {
+      if (!this.opened)
+        this.style.visibility = 'hidden';
     },
 
     loadProgressChanged: function() {
@@ -52,29 +91,41 @@
     },
 
     hide: function() {
-      if (this.state_.opened)
+      if (this.opened)
         this.toggleVisibility();
     },
 
     show: function() {
-      if (!this.state_.opened)
+      if (!this.opened) {
         this.toggleVisibility();
+        this.style.visibility = 'initial';
+      }
     },
 
     toggleVisibility: function() {
-      this.state_.opened = !this.state_.opened;
+      this.opened = !this.opened;
+      this.cancelAnimation();
+      this.playAnimation(this.opened ? 'entry' : 'exit');
     },
 
     selectPageNumber: function() {
       this.$.pageselector.select();
     },
 
-    rotateRight: function() {
-      this.fire('rotate-right');
+    shouldKeepOpen: function() {
+      return this.$.bookmarks.dropdownOpen || this.loadProgress < 100;
     },
 
-    toggleBookmarks: function() {
-      this.fire('toggle-bookmarks');
+    setDropdownLowerBound: function(lowerBound) {
+      this.$.bookmarks.lowerBound = lowerBound;
+    },
+
+    rotateLeft: function() {
+      this.fire('rotate-left');
+    },
+
+    rotateRight: function() {
+      this.fire('rotate-right');
     },
 
     save: function() {

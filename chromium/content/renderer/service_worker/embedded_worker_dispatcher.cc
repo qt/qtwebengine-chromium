@@ -15,8 +15,8 @@
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/public/common/content_client.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/service_worker/embedded_worker_context_client.h"
 #include "content/renderer/service_worker/embedded_worker_devtools_agent.h"
+#include "content/renderer/service_worker/service_worker_context_client.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebEmbeddedWorker.h"
@@ -52,8 +52,6 @@ bool EmbeddedWorkerDispatcher::OnMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(EmbeddedWorkerDispatcher, message)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StartWorker, OnStartWorker)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StopWorker, OnStopWorker)
-    IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_ResumeAfterDownload,
-                        OnResumeAfterDownload)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -73,7 +71,7 @@ void EmbeddedWorkerDispatcher::OnStartWorker(
   RenderThread::Get()->EnsureWebKitInitialized();
   scoped_ptr<WorkerWrapper> wrapper(
       new WorkerWrapper(blink::WebEmbeddedWorker::create(
-                            new EmbeddedWorkerContextClient(
+                            new ServiceWorkerContextClient(
                                 params.embedded_worker_id,
                                 params.service_worker_version_id,
                                 params.scope,
@@ -85,10 +83,6 @@ void EmbeddedWorkerDispatcher::OnStartWorker(
   blink::WebEmbeddedWorkerStartData start_data;
   start_data.scriptURL = params.script_url;
   start_data.userAgent = base::UTF8ToUTF16(GetContentClient()->GetUserAgent());
-  start_data.pauseAfterDownloadMode =
-      params.pause_after_download ?
-          blink::WebEmbeddedWorkerStartData::PauseAfterDownload :
-          blink::WebEmbeddedWorkerStartData::DontPauseAfterDownload;
   start_data.waitForDebuggerMode =
       params.wait_for_debugger ?
           blink::WebEmbeddedWorkerStartData::WaitForDebugger :
@@ -112,17 +106,6 @@ void EmbeddedWorkerDispatcher::OnStopWorker(int embedded_worker_id) {
   // a delayed task to forcibly abort the worker context if we find it
   // necessary)
   wrapper->worker()->terminateWorkerContext();
-}
-
-void EmbeddedWorkerDispatcher::OnResumeAfterDownload(int embedded_worker_id) {
-  TRACE_EVENT0("ServiceWorker",
-               "EmbeddedWorkerDispatcher::OnResumeAfterDownload");
-  WorkerWrapper* wrapper = workers_.Lookup(embedded_worker_id);
-  if (!wrapper) {
-    LOG(WARNING) << "Got OnResumeAfterDownload for nonexistent worker";
-    return;
-  }
-  wrapper->worker()->resumeAfterDownload();
 }
 
 }  // namespace content

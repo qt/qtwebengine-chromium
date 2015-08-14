@@ -12,15 +12,16 @@
 #include "SkFlattenable.h"
 #include "SkMatrix.h"
 #include "SkRect.h"
+#include "SkSurfaceProps.h"
 #include "SkTemplates.h"
 
+class GrFragmentProcessor;
+class GrProcessorDataManager;
+class GrTexture;
+class SkBaseDevice;
 class SkBitmap;
 class SkColorFilter;
-class SkBaseDevice;
-class SkSurfaceProps;
 struct SkIPoint;
-class GrFragmentProcessor;
-class GrTexture;
 
 /**
  *  Base class for image filters. If one is installed in the paint, then
@@ -31,8 +32,6 @@ class GrTexture;
  */
 class SK_API SkImageFilter : public SkFlattenable {
 public:
-    SK_DECLARE_INST_COUNT(SkImageFilter)
-
     class CropRect {
     public:
         enum CropEdge {
@@ -61,6 +60,7 @@ public:
         static Cache* Get();
         virtual bool get(const Key& key, SkBitmap* result, SkIPoint* offset) const = 0;
         virtual void set(const Key& key, const SkBitmap& result, const SkIPoint& offset) = 0;
+        virtual void purge() {}
     };
 
     class Context {
@@ -74,23 +74,24 @@ public:
     private:
         SkMatrix fCTM;
         SkIRect  fClipBounds;
-        Cache* fCache;
+        Cache*   fCache;
     };
 
     class Proxy {
     public:
-        virtual ~Proxy() {};
+        Proxy(SkBaseDevice* device) : fDevice(device) { }
 
-        virtual SkBaseDevice* createDevice(int width, int height) = 0;
-        // returns true if the proxy can handle this filter natively
-        virtual bool canHandleImageFilter(const SkImageFilter*) = 0;
-        // returns true if the proxy handled the filter itself. if this returns
+        SkBaseDevice* createDevice(int width, int height);
+
+        // Returns true if the proxy handled the filter itself. If this returns
         // false then the filter's code will be called.
-        virtual bool filterImage(const SkImageFilter*, const SkBitmap& src,
-                                 const Context&,
-                                 SkBitmap* result, SkIPoint* offset) = 0;
-        virtual const SkSurfaceProps* surfaceProps() const = 0;
+        bool filterImage(const SkImageFilter*, const SkBitmap& src, const SkImageFilter::Context&,
+                         SkBitmap* result, SkIPoint* offset);
+
+    private:
+        SkBaseDevice* fDevice;
     };
+
 
     /**
      *  Request a new (result) image to be created from the src image.
@@ -189,6 +190,8 @@ public:
      *  drawn in the correct location.)
      */
     bool cropRectIsSet() const { return fCropRect.flags() != 0x0; }
+
+    CropRect getCropRect() const { return fCropRect; }
 
     // Default impl returns union of all input bounds.
     virtual void computeFastBounds(const SkRect&, SkRect*) const;
@@ -338,10 +341,13 @@ protected:
      *  will be called with (NULL, NULL, SkMatrix::I()) to query for support,
      *  so returning "true" indicates support for all possible matrices.
      */
-    virtual bool asFragmentProcessor(GrFragmentProcessor**, GrTexture*, const SkMatrix&,
-                                     const SkIRect& bounds) const;
+    virtual bool asFragmentProcessor(GrFragmentProcessor**, GrProcessorDataManager*, GrTexture*,
+                                     const SkMatrix&, const SkIRect& bounds) const;
 
 private:
+    friend class SkGraphics;
+    static void PurgeCache();
+
     bool usesSrcInput() const { return fUsesSrcInput; }
 
     typedef SkFlattenable INHERITED;

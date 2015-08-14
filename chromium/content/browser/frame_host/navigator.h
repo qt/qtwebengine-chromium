@@ -23,6 +23,7 @@ class TimeTicks;
 
 namespace content {
 
+class FrameNavigationEntry;
 class FrameTreeNode;
 class NavigationControllerImpl;
 class NavigationEntryImpl;
@@ -53,8 +54,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
 
   // The RenderFrameHostImpl started a provisional load.
   virtual void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
-                                       const GURL& url,
-                                       bool is_transition_navigation) {};
+                                       const GURL& url) {};
 
   // The RenderFrameHostImpl has failed a provisional load.
   virtual void DidFailProvisionalLoadWithError(
@@ -66,7 +66,8 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
       int error_code,
-      const base::string16& error_description) {}
+      const base::string16& error_description,
+      bool was_ignored_by_handler) {}
 
   // The RenderFrameHostImpl has committed a navigation.
   virtual void DidNavigate(
@@ -89,7 +90,9 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // initialization of Navigator and NavigationController is properly done.
   virtual bool NavigateToPendingEntry(
       FrameTreeNode* frame_tree_node,
-      NavigationController::ReloadType reload_type);
+      const FrameNavigationEntry& frame_entry,
+      NavigationController::ReloadType reload_type,
+      bool is_same_document_history_load);
 
   // Navigation requests -------------------------------------------------------
 
@@ -172,11 +175,6 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void LogBeforeUnloadTime(
       const base::TimeTicks& renderer_before_unload_start_time,
       const base::TimeTicks& renderer_before_unload_end_time) {}
-
-  // PlzNavigate
-  // Returns whether there is an ongoing navigation waiting for the BeforeUnload
-  // event to execute in the renderer process.
-  virtual bool IsWaitingForBeforeUnloadACK(FrameTreeNode* frame_tree_node);
 
  protected:
   friend class base::RefCounted<Navigator>;

@@ -28,8 +28,6 @@
 #include "core/svg/SVGFilterElement.h"
 #include "core/svg/graphics/filters/SVGFilter.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
-#include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 
 namespace blink {
 
@@ -63,8 +61,6 @@ public:
 
     RefPtrWillBeMember<SVGFilter> filter;
     RefPtrWillBeMember<SVGFilterBuilder> builder;
-    OwnPtr<DisplayItemList> m_displayItemList;
-    OwnPtr<GraphicsContext> m_context;
     FilterDataState m_state;
 
 private:
@@ -76,7 +72,6 @@ public:
     explicit LayoutSVGResourceFilter(SVGFilterElement*);
 
     virtual ~LayoutSVGResourceFilter();
-    virtual void destroy() override;
 
     virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
@@ -100,6 +95,9 @@ public:
 
     FilterData* getFilterDataForLayoutObject(LayoutObject* object) { return m_filter.get(object); }
     void setFilterDataForLayoutObject(LayoutObject* object, PassOwnPtrWillBeRawPtr<FilterData> filterData) { m_filter.set(object, filterData); }
+
+protected:
+    virtual void willBeDestroyed() override;
 
 private:
     void disposeFilterMap();

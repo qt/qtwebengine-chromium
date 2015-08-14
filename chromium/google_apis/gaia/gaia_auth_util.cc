@@ -43,6 +43,24 @@ std::string CanonicalizeEmailImpl(const std::string& email_address,
 
 }  // namespace
 
+
+ListedAccount::ListedAccount() {}
+
+ListedAccount::~ListedAccount() {}
+
+bool ListedAccount::operator==(const ListedAccount& other) const {
+  // Only use ids for comparison if they've been computed by some caller, since
+  // this class does not assign the id.
+  if (!id.empty() && !other.id.empty()) {
+    return id == other.id;
+  } else {
+    return email == other.email &&
+           gaia_id == other.gaia_id &&
+           valid == other.valid &&
+           raw_email == other.raw_email;
+  }
+}
+
 std::string CanonicalizeEmail(const std::string& email_address) {
   // CanonicalizeEmail() is called to process email strings that are eventually
   // shown to the user, and may also be used in persisting email strings.  To
@@ -94,12 +112,11 @@ bool IsGaiaSignonRealm(const GURL& url) {
 
 
 bool ParseListAccountsData(
-    const std::string& data,
-    std::vector<std::pair<std::string, bool> >* accounts) {
+    const std::string& data, std::vector<ListedAccount>* accounts) {
   accounts->clear();
 
   // Parse returned data and make sure we have data.
-  scoped_ptr<base::Value> value(base::JSONReader::Read(data));
+  scoped_ptr<base::Value> value = base::JSONReader::Read(data);
   if (!value)
     return false;
 
@@ -128,8 +145,16 @@ bool ParseListAccountsData(
         if (!account->GetInteger(9, &is_email_valid))
           is_email_valid = 1;
 
-        accounts->push_back(
-            std::make_pair(CanonicalizeEmail(email), is_email_valid != 0));
+        std::string gaia_id;
+        // ListAccounts must also return the Gaia Id.
+        if (account->GetString(10, &gaia_id) && !gaia_id.empty()) {
+          ListedAccount listed_account;
+          listed_account.email = CanonicalizeEmail(email);
+          listed_account.gaia_id = gaia_id;
+          listed_account.valid = is_email_valid != 0;
+          listed_account.raw_email = email;
+          accounts->push_back(listed_account);
+        }
       }
     }
   }

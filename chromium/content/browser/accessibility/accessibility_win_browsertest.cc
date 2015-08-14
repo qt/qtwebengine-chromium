@@ -60,18 +60,16 @@ class AccessibilityWinBrowserTest : public ContentBrowserTest {
   void SetUpTextareaField(
       base::win::ScopedComPtr<IAccessibleText>* textarea_text);
 
-
-  static base::win::ScopedComPtr<IAccessible>
-  AccessibilityWinBrowserTest::GetAccessibleFromVariant(
+  static base::win::ScopedComPtr<IAccessible> GetAccessibleFromVariant(
       IAccessible* parent,
       VARIANT* var);
   static HRESULT QueryIAccessible2(IAccessible* accessible,
-                                    IAccessible2** accessible2);
+                                   IAccessible2** accessible2);
   static void FindNodeInAccessibilityTree(IAccessible* node,
-                                           int32 expected_role,
-                                           const std::wstring& expected_name,
-                                           int32 depth,
-                                           bool* found);
+                                          int32 expected_role,
+                                          const std::wstring& expected_name,
+                                          int32 depth,
+                                          bool* found);
   static void CheckTextAtOffset(
       base::win::ScopedComPtr<IAccessibleText>& element,
       LONG offset,
@@ -885,8 +883,10 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   HRESULT hr = static_cast<IAccessible*>(document_accessible.get())
                    ->QueryInterface(service_provider.Receive());
   ASSERT_EQ(S_OK, hr);
-  const GUID refguid = {0x0c539790, 0x12e4, 0x11cf,
-                        0xb6, 0x61, 0x00, 0xaa, 0x00, 0x4c, 0xd6, 0xd8};
+  const GUID refguid = {0x0c539790,
+                        0x12e4,
+                        0x11cf,
+                        {0xb6, 0x61, 0x00, 0xaa, 0x00, 0x4c, 0xd6, 0xd8}};
   base::win::ScopedComPtr<ISimpleDOMNode> document_isimpledomnode;
   hr = static_cast<IServiceProvider*>(service_provider.get())
            ->QueryService(

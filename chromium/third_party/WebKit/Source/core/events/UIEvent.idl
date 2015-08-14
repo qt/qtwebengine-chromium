@@ -17,23 +17,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// https://w3c.github.io/uievents/#interface-UIEvent
+
 [
     Constructor(DOMString type, optional UIEventInit eventInitDict)
 ] interface UIEvent : Event {
     readonly attribute Window? view;
     readonly attribute long detail;
+    [RuntimeEnabled=InputDevice] readonly attribute InputDevice? sourceDevice;
 
-     void initUIEvent([Default=Undefined] optional DOMString type,
-                                    [Default=Undefined] optional boolean canBubble,
-                                    [Default=Undefined] optional boolean cancelable,
-                                    [Default=Undefined] optional Window view,
-                                    [Default=Undefined] optional long detail);
-
-    // Non-standard
-    [MeasureAs=UIEventLayerX] readonly attribute long layerX;
-    [MeasureAs=UIEventLayerY] readonly attribute long layerY;
-    [MeasureAs=UIEventPageX] readonly attribute long pageX;
-    [MeasureAs=UIEventPageY] readonly attribute long pageY;
+    // https://w3c.github.io/uievents/#idl-interface-UIEvent-initializers
+    // TODO(philipj): None of the initUIEvent() arguments should be optional.
+    [Measure] void initUIEvent([Default=Undefined] optional DOMString type,
+                               [Default=Undefined] optional boolean bubbles,
+                               [Default=Undefined] optional boolean cancelable,
+                               [Default=Undefined] optional Window? view,
+                               [Default=Undefined] optional long detail);
 
     // FIXME: these belong on the KeyboardEvent interface
     [MeasureAs=UIEventCharCode] readonly attribute long charCode;

@@ -13,13 +13,13 @@
 #include <stddef.h>  // For size_t.
 #include <string.h>  // For memcpy.
 
-// Put this in the private: declarations for a class to be uncopyable.
+// Put this in the declarations for a class to be uncopyable.
 #define DISALLOW_COPY(TypeName) \
-  TypeName(const TypeName&)
+  TypeName(const TypeName&) = delete
 
-// Put this in the private: declarations for a class to be unassignable.
+// Put this in the declarations for a class to be unassignable.
 #define DISALLOW_ASSIGN(TypeName) \
-  void operator=(const TypeName&)
+  void operator=(const TypeName&) = delete
 
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
@@ -41,7 +41,7 @@
 // that wants to prevent anyone from instantiating it. This is
 // especially useful for classes containing only static methods.
 #define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
-  TypeName();                                    \
+  TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
 // The arraysize(arr) macro returns the # of elements in an array arr.

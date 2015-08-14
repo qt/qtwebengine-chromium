@@ -140,8 +140,7 @@ hr {
     -webkit-margin-start: auto;
     -webkit-margin-end: auto;
     border-style: inset;
-    border-width: 1px;
-    box-sizing: border-box
+    border-width: 1px
 }
 
 map {
@@ -534,7 +533,6 @@ textarea {
 ::-webkit-input-placeholder {
     -webkit-text-security: none;
     color: darkGray;
-    display: block !important;
     pointer-events: none !important;
 }
 
@@ -1117,6 +1115,12 @@ dialog::backdrop {
     margin: auto;
     padding: 0px;
     border-width: 0px;
+}
+
+/* Disable multicol in printing, since it's not implemented properly. See crbug.com/99358 */
+
+@media print {
+    * { -webkit-columns: auto !important; }
 }
 
 /* noscript is handled internally, as it depends on settings. */

@@ -54,6 +54,17 @@ namespace blink {
 
 unsigned NavigationDisablerForBeforeUnload::s_navigationDisableCount = 0;
 
+FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame* frame)
+    : m_navigationScheduler(frame->navigationScheduler())
+{
+    m_navigationScheduler.disableFrameNavigation();
+}
+
+FrameNavigationDisabler::~FrameNavigationDisabler()
+{
+    m_navigationScheduler.enableFrameNavigation();
+}
+
 class ScheduledNavigation : public NoBaseWillBeGarbageCollectedFinalized<ScheduledNavigation> {
     WTF_MAKE_NONCOPYABLE(ScheduledNavigation); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScheduledNavigation);
 public:
@@ -112,7 +123,7 @@ protected:
             m_shouldCheckMainWorldContentSecurityPolicy = DoNotCheckContentSecurityPolicy;
     }
 
-    virtual void fire(LocalFrame* frame) override
+    void fire(LocalFrame* frame) override
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), m_url, "_self", m_shouldCheckMainWorldContentSecurityPolicy);
@@ -135,9 +146,9 @@ public:
         return adoptPtrWillBeNoop(new ScheduledRedirect(delay, originDocument, url, lockBackForwardList));
     }
 
-    virtual bool shouldStartTimer(LocalFrame* frame) override { return frame->document()->loadEventFinished(); }
+    bool shouldStartTimer(LocalFrame* frame) override { return frame->document()->loadEventFinished(); }
 
-    virtual void fire(LocalFrame* frame) override
+    void fire(LocalFrame* frame) override
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), url(), "_self");
@@ -174,10 +185,16 @@ public:
         return adoptPtrWillBeNoop(new ScheduledReload);
     }
 
-    virtual void fire(LocalFrame* frame) override
+    void fire(LocalFrame* frame) override
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
-        frame->loader().reload(NormalReload, KURL(), ClientRedirect);
+        ResourceRequest resourceRequest =
+            frame->loader().resourceRequestForReload(FrameLoadTypeReload, KURL(), ClientRedirect);
+        if (resourceRequest.isNull())
+            return;
+        FrameLoadRequest request = FrameLoadRequest(nullptr, resourceRequest);
+        request.setClientRedirect(ClientRedirect);
+        frame->loader().load(request, FrameLoadTypeReload);
     }
 
 private:
@@ -194,7 +211,7 @@ public:
         return adoptPtrWillBeNoop(new ScheduledPageBlock(originDocument, url));
     }
 
-    virtual void fire(LocalFrame* frame) override
+    void fire(LocalFrame* frame) override
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         SubstituteData substituteData(SharedBuffer::create(), "text/plain", "UTF-8", KURL(), ForceSynchronousLoad);
@@ -218,7 +235,7 @@ public:
         return adoptPtrWillBeNoop(new ScheduledFormSubmission(document, submission, lockBackForwardList));
     }
 
-    virtual void fire(LocalFrame* frame) override
+    void fire(LocalFrame* frame) override
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest frameRequest(originDocument());
@@ -249,6 +266,7 @@ private:
 NavigationScheduler::NavigationScheduler(LocalFrame* frame)
     : m_frame(frame)
     , m_timer(this, &NavigationScheduler::timerFired)
+    , m_navigationDisableCount(0)
 {
 }
 
@@ -263,12 +281,12 @@ bool NavigationScheduler::locationChangePending()
 
 inline bool NavigationScheduler::shouldScheduleReload() const
 {
-    return m_frame->page() && NavigationDisablerForBeforeUnload::isNavigationAllowed();
+    return m_frame->page() && isFrameNavigationAllowed() && NavigationDisablerForBeforeUnload::isNavigationAllowed();
 }
 
 inline bool NavigationScheduler::shouldScheduleNavigation(const String& url) const
 {
-    return m_frame->page() && (protocolIsJavaScript(url) || NavigationDisablerForBeforeUnload::isNavigationAllowed());
+    return m_frame->page() && isFrameNavigationAllowed() && (protocolIsJavaScript(url) || NavigationDisablerForBeforeUnload::isNavigationAllowed());
 }
 
 void NavigationScheduler::scheduleRedirect(double delay, const String& url)
@@ -290,14 +308,6 @@ bool NavigationScheduler::mustLockBackForwardList(LocalFrame* targetFrame)
     // Non-user navigation before the page has finished firing onload should not create a new back/forward item.
     // See https://webkit.org/b/42861 for the original motivation for this.
     if (!UserGestureIndicator::processingUserGesture() && !targetFrame->document()->loadEventFinished())
-        return true;
-
-    // From the HTML5 spec for location.assign():
-    //  "If the browsing context's session history contains only one Document,
-    //   and that was the about:blank Document created when the browsing context
-    //   was created, then the navigation must be done with replacement enabled."
-    if (!targetFrame->loader().stateMachine()->committedMultipleRealLoads()
-        && equalIgnoringCase(targetFrame->document()->url(), blankURL()))
         return true;
 
     // Navigation of a subframe during loading of an ancestor frame does not create a new back/forward item.

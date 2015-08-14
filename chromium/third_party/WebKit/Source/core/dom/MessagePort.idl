@@ -30,10 +30,11 @@
 [
     ActiveDOMObject,
     Exposed=(Window,Worker),
+    GarbageCollected,
 ] interface MessagePort : EventTarget {
-    [Custom, RaisesException] void postMessage(any message, optional sequence<Transferable> transfer);
-    void start();
-    void close();
+    [PostMessage, RaisesException, Measure] void postMessage(any message, optional sequence<Transferable> transfer);
+    [Measure] void start();
+    [Measure] void close();
 
     // event handlers
     attribute EventHandler onmessage;

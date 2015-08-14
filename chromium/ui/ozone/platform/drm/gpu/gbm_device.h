@@ -13,18 +13,17 @@ namespace ui {
 
 class GbmDevice : public DrmDevice {
  public:
-  GbmDevice(const base::FilePath& device_path);
   GbmDevice(const base::FilePath& device_path, base::File file);
 
   gbm_device* device() const { return device_; }
 
   // DrmDevice implementation:
-  bool Initialize() override;
+  bool Initialize(bool use_atomic) override;
 
  private:
   ~GbmDevice() override;
 
-  gbm_device* device_;
+  gbm_device* device_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(GbmDevice);
 };

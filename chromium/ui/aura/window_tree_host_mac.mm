@@ -4,8 +4,8 @@
 
 #include <Cocoa/Cocoa.h>
 
-#include "ui/aura/window_tree_host_mac.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/aura/window_tree_host_mac.h"
 
 namespace aura {
 
@@ -31,11 +31,11 @@ EventSource* WindowTreeHostMac::GetEventSource() {
 gfx::AcceleratedWidget WindowTreeHostMac::GetAcceleratedWidget() {
   return [window_ contentView];
 }
-void WindowTreeHostMac::Show() {
+void WindowTreeHostMac::ShowImpl() {
   [window_ makeKeyAndOrderFront:nil];
 }
 
-void WindowTreeHostMac::Hide() {
+void WindowTreeHostMac::HideImpl() {
   [window_ orderOut:nil];
 }
 

@@ -18,7 +18,11 @@
 #include "ipc/ipc_sync_channel.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
+}
+
+namespace IPC {
+class AttachmentBroker;
 }
 
 namespace content {
@@ -100,9 +104,13 @@ class NPChannelBase : public IPC::Listener,
   // must still ref count the returned value.  When there are no more routes
   // on the channel and its ref count is 0, the object deletes itself.
   static NPChannelBase* GetChannel(
-      const IPC::ChannelHandle& channel_handle, IPC::Channel::Mode mode,
-      ChannelFactory factory, base::MessageLoopProxy* ipc_message_loop,
-      bool create_pipe_now, base::WaitableEvent* shutdown_event);
+      const IPC::ChannelHandle& channel_handle,
+      IPC::Channel::Mode mode,
+      ChannelFactory factory,
+      base::SingleThreadTaskRunner* ipc_task_runner,
+      bool create_pipe_now,
+      base::WaitableEvent* shutdown_event,
+      IPC::AttachmentBroker* broker);
 
   // Sends a message to all instances.
   static void Broadcast(IPC::Message* message);
@@ -124,9 +132,10 @@ class NPChannelBase : public IPC::Listener,
     send_unblocking_only_during_unblock_dispatch_ = true;
   }
 
-  virtual bool Init(base::MessageLoopProxy* ipc_message_loop,
+  virtual bool Init(base::SingleThreadTaskRunner* ipc_task_runner,
                     bool create_pipe_now,
-                    base::WaitableEvent* shutdown_event);
+                    base::WaitableEvent* shutdown_event,
+                    IPC::AttachmentBroker* broker);
 
   scoped_ptr<IPC::SyncChannel> channel_;
   IPC::ChannelHandle channel_handle_;

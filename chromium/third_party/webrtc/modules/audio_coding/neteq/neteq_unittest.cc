@@ -343,7 +343,8 @@ void NetEqDecodingTest::Process(int* out_len) {
       ASSERT_EQ(0, neteq_->InsertPacket(
                        rtp_header, packet_->payload(),
                        packet_->payload_length_bytes(),
-                       packet_->time_ms() * (output_sample_rate_ / 1000)));
+                       static_cast<uint32_t>(
+                           packet_->time_ms() * (output_sample_rate_ / 1000))));
     }
     // Get next packet.
     packet_.reset(rtp_source_->NextPacket());
@@ -437,7 +438,8 @@ void NetEqDecodingTest::PopulateCng(int frame_index,
   *payload_len = 1;  // Only noise level, no spectral parameters.
 }
 
-TEST_F(NetEqDecodingTest, DISABLED_ON_ANDROID(TestBitExactness)) {
+TEST_F(NetEqDecodingTest,
+       DISABLED_ON_IOS(DISABLED_ON_ANDROID(TestBitExactness))) {
   const std::string input_rtp_file = webrtc::test::ProjectRootPath() +
       "resources/audio_coding/neteq_universal_new.rtp";
   // Note that neteq4_universal_ref.pcm and neteq4_universal_ref_win_32.pcm

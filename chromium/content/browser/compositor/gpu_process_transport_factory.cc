@@ -9,9 +9,9 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread.h"
 #include "cc/output/compositor_frame.h"
@@ -47,6 +47,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_constants.h"
 #include "ui/compositor/compositor_switches.h"
+#include "ui/compositor/layer.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -55,8 +56,10 @@
 #elif defined(USE_OZONE)
 #include "content/browser/compositor/browser_compositor_overlay_candidate_validator_ozone.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
+#include "ui/ozone/public/overlay_candidates_ozone.h"
+#include "ui/ozone/public/overlay_manager_ozone.h"
+#include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/ozone_switches.h"
-#include "ui/ozone/public/surface_factory_ozone.h"
 #elif defined(USE_X11)
 #include "content/browser/compositor/software_output_device_x11.h"
 #elif defined(OS_MACOSX)
@@ -101,13 +104,13 @@ GpuProcessTransportFactory::GpuProcessTransportFactory()
     : next_surface_id_namespace_(1u),
       task_graph_runner_(new cc::TaskGraphRunner),
       callback_factory_(this) {
+  ui::Layer::InitializeUILayerSettings();
+
   if (UseSurfacesEnabled())
     surface_manager_ = make_scoped_ptr(new cc::SurfaceManager);
 
-  if (ui::IsUIImplSidePaintingEnabled()) {
-    raster_thread_.reset(new RasterThread(task_graph_runner_.get()));
-    raster_thread_->Start();
-  }
+  raster_thread_.reset(new RasterThread(task_graph_runner_.get()));
+  raster_thread_->Start();
 #if defined(OS_WIN)
   software_backing_.reset(new OutputDeviceBacking);
 #endif
@@ -157,15 +160,17 @@ GpuProcessTransportFactory::CreateSoftwareOutputDevice(
 scoped_ptr<BrowserCompositorOverlayCandidateValidator>
 CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
 #if defined(USE_OZONE)
-  ui::OverlayCandidatesOzone* overlay_candidates =
-      ui::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
+  scoped_ptr<ui::OverlayCandidatesOzone> overlay_candidates =
+      ui::OzonePlatform::GetInstance()
+          ->GetOverlayManager()
+          ->CreateOverlayCandidates(widget);
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (overlay_candidates &&
       (command_line->HasSwitch(switches::kEnableHardwareOverlays) ||
        command_line->HasSwitch(switches::kOzoneTestSingleOverlaySupport))) {
     return scoped_ptr<BrowserCompositorOverlayCandidateValidator>(
         new BrowserCompositorOverlayCandidateValidatorOzone(
-            widget, overlay_candidates));
+            widget, overlay_candidates.Pass()));
   }
 #endif
   return scoped_ptr<BrowserCompositorOverlayCandidateValidator>();
@@ -191,11 +196,6 @@ void GpuProcessTransportFactory::CreateOutputSurface(
   DCHECK(!!compositor);
   PerCompositorData* data = per_compositor_data_[compositor.get()];
   if (!data) {
-    // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
-    // is fixed.
-    tracked_objects::ScopedTracker tracking_profile1(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "466870 GpuProcessTransportFactory::CreateOutputSurface1"));
     data = CreatePerCompositorData(compositor.get());
   } else {
     // TODO(piman): Use GpuSurfaceTracker to map ids to surfaces instead of an
@@ -204,21 +204,9 @@ void GpuProcessTransportFactory::CreateOutputSurface(
     data->surface = nullptr;
   }
 
-  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
-  // is fixed.
-  tracked_objects::ScopedTracker tracking_profile2(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "466870 GpuProcessTransportFactory::CreateOutputSurface2"));
-
   bool create_gpu_output_surface =
       ShouldCreateGpuOutputSurface(compositor.get());
   if (create_gpu_output_surface) {
-    // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
-    // is fixed.
-    tracked_objects::ScopedTracker tracking_profile3(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "466870 GpuProcessTransportFactory::CreateOutputSurface3"));
-
     CauseForGpuLaunch cause =
         CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
     BrowserGpuChannelHostFactory::instance()->EstablishGpuChannel(
@@ -226,12 +214,6 @@ void GpuProcessTransportFactory::CreateOutputSurface(
                           callback_factory_.GetWeakPtr(), compositor,
                           create_gpu_output_surface, 0));
   } else {
-    // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
-    // is fixed.
-    tracked_objects::ScopedTracker tracking_profile4(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "466870 GpuProcessTransportFactory::CreateOutputSurface4"));
-
     EstablishedGpuChannel(compositor, create_gpu_output_surface, 0);
   }
 }
@@ -294,8 +276,9 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
           scoped_ptr<BrowserCompositorOverlayCandidateValidator>()));
     } else
 #if defined(USE_OZONE)
-    if (ui::SurfaceFactoryOzone::GetInstance()
-            ->CanShowPrimaryPlaneAsOverlay()) {
+        if (ui::OzonePlatform::GetInstance()
+                ->GetOverlayManager()
+                ->CanShowPrimaryPlaneAsOverlay()) {
       surface =
           make_scoped_ptr(new GpuSurfacelessBrowserCompositorOutputSurface(
               context_provider, data->surface_id, compositor->vsync_manager(),
@@ -401,8 +384,10 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
 
 bool GpuProcessTransportFactory::DoesCreateTestContexts() { return false; }
 
-uint32 GpuProcessTransportFactory::GetImageTextureTarget() {
-  return BrowserGpuChannelHostFactory::GetImageTextureTarget();
+uint32 GpuProcessTransportFactory::GetImageTextureTarget(
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage) {
+  return BrowserGpuMemoryBufferManager::GetImageTextureTarget(format, usage);
 }
 
 cc::SharedBitmapManager* GpuProcessTransportFactory::GetSharedBitmapManager() {
@@ -432,8 +417,11 @@ gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
 
 scoped_ptr<cc::SurfaceIdAllocator>
 GpuProcessTransportFactory::CreateSurfaceIdAllocator() {
-  return make_scoped_ptr(
-      new cc::SurfaceIdAllocator(next_surface_id_namespace_++));
+  scoped_ptr<cc::SurfaceIdAllocator> allocator =
+      make_scoped_ptr(new cc::SurfaceIdAllocator(next_surface_id_namespace_++));
+  if (GetSurfaceManager())
+    allocator->RegisterSurfaceIdNamespace(GetSurfaceManager());
+  return allocator;
 }
 
 void GpuProcessTransportFactory::ResizeDisplay(ui::Compositor* compositor,
@@ -581,7 +569,7 @@ GpuProcessTransportFactory::CreateContextCommon(
 }
 
 void GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback() {
-  base::MessageLoop::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&GpuProcessTransportFactory::OnLostMainThreadSharedContext,
                  callback_factory_.GetWeakPtr()));

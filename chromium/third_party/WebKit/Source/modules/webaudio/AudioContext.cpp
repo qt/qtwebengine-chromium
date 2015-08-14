@@ -109,7 +109,6 @@ AudioContext::AudioContext(Document* document)
     , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_isOfflineContext(false)
     , m_contextState(Suspended)
-    , m_cachedSampleFrame(0)
 {
     m_didInitializeContextGraphMutex = true;
     m_destinationNode = DefaultAudioDestinationNode::create(this);
@@ -130,7 +129,6 @@ AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t
     , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_isOfflineContext(true)
     , m_contextState(Suspended)
-    , m_cachedSampleFrame(0)
 {
     m_didInitializeContextGraphMutex = true;
     // Create a new destination for offline rendering.
@@ -151,7 +149,6 @@ AudioContext::~AudioContext()
     ASSERT(!m_isInitialized);
     ASSERT(!m_activeSourceNodes.size());
     ASSERT(!m_finishedSourceHandlers.size());
-    ASSERT(!m_suspendResolvers.size());
     ASSERT(!m_isResolvingResumePromises);
     ASSERT(!m_resumeResolvers.size());
 }
@@ -680,22 +677,6 @@ PeriodicWave* AudioContext::createPeriodicWave(DOMFloat32Array* real, DOMFloat32
     return PeriodicWave::create(sampleRate(), real, imag);
 }
 
-size_t AudioContext::currentSampleFrame() const
-{
-    if (isAudioThread())
-        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentSampleFrame() : 0;
-
-    return m_cachedSampleFrame;
-}
-
-double AudioContext::currentTime() const
-{
-    if (isAudioThread())
-        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentTime() : 0;
-
-    return m_cachedSampleFrame / static_cast<double>(sampleRate());
-}
-
 String AudioContext::state() const
 {
     // These strings had better match the strings for AudioContextState in AudioContext.idl.
@@ -762,14 +743,17 @@ ScriptPromise AudioContext::suspendContext(ScriptState* scriptState)
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
-    // Save the resolver.  If the context is running, it will get resolved at the end of a rendering
-    // quantum.  Otherwise, resolve it now.
-    m_suspendResolvers.append(resolver);
+    if (m_contextState == Closed) {
+        resolver->reject(
+            DOMException::create(InvalidStateError, "Cannot suspend a context that has been closed"));
+    } else {
+        // Stop rendering now.
+        if (m_destinationNode)
+            stopRendering();
 
-    if (m_contextState != Running) {
-        // Context is not running so we can't wait for a rendering quantum to resolve the
-        // promise. Just resolve it now (along with any other pending suspend promises).
-        resolvePromisesForSuspendOnMainThread();
+        // Since we don't have any way of knowing when the hardware actually stops, we'll just
+        // resolve the promise now.
+        resolver->resolve();
     }
 
     return promise;
@@ -878,9 +862,6 @@ void AudioContext::handlePreRenderTasks()
         // Check to see if source nodes can be stopped because the end time has passed.
         handleStoppableSourceNodes();
 
-        // Update the cached sample frame value.
-        m_cachedSampleFrame = currentSampleFrame();
-
         unlock();
     }
 }
@@ -901,8 +882,6 @@ void AudioContext::handlePostRenderTasks()
 
         deferredTaskHandler().handleDeferredTasks();
         deferredTaskHandler().requestToDeleteHandlersOnMainThread();
-
-        resolvePromisesForSuspend();
 
         unlock();
     }
@@ -941,49 +920,11 @@ void AudioContext::resolvePromisesForResume()
     }
 }
 
-void AudioContext::resolvePromisesForSuspendOnMainThread()
-{
-    ASSERT(isMainThread());
-    AutoLocker locker(this);
-
-    // We can stop rendering now.
-    if (m_destinationNode)
-        stopRendering();
-
-    for (auto& resolver : m_suspendResolvers) {
-        if (m_contextState == Closed) {
-            resolver->reject(
-                DOMException::create(InvalidStateError, "Cannot suspend a context that has been closed"));
-        } else {
-            resolver->resolve();
-        }
-    }
-
-    m_suspendResolvers.clear();
-}
-
-void AudioContext::resolvePromisesForSuspend()
-{
-    // This runs inside the AudioContext's lock when handling pre-render tasks.
-    ASSERT(isAudioThread());
-    ASSERT(isGraphOwner());
-
-    // Resolve any pending promises created by suspend()
-    if (m_suspendResolvers.size() > 0)
-        Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(&AudioContext::resolvePromisesForSuspendOnMainThread, this));
-}
-
 void AudioContext::rejectPendingResolvers()
 {
     ASSERT(isMainThread());
 
-    // Audio context is closing down so reject any suspend or resume promises that are still
-    // pending.
-
-    for (auto& resolver : m_suspendResolvers) {
-        resolver->reject(DOMException::create(InvalidStateError, "Audio context is going away"));
-    }
-    m_suspendResolvers.clear();
+    // Audio context is closing down so reject any resume promises that are still pending.
 
     for (auto& resolver : m_resumeResolvers) {
         resolver->reject(DOMException::create(InvalidStateError, "Audio context is going away"));
@@ -1067,7 +1008,6 @@ DEFINE_TRACE(AudioContext)
         visitor->trace(m_activeSourceNodes);
     }
     visitor->trace(m_resumeResolvers);
-    visitor->trace(m_suspendResolvers);
     RefCountedGarbageCollectedEventTargetWithInlineData<AudioContext>::trace(visitor);
     ActiveDOMObject::trace(visitor);
 }

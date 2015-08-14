@@ -120,7 +120,7 @@ String Location::origin() const
 
 PassRefPtrWillBeRawPtr<DOMStringList> Location::ancestorOrigins() const
 {
-    RefPtrWillBeRawPtr<DOMStringList> origins = DOMStringList::create();
+    RefPtrWillBeRawPtr<DOMStringList> origins = DOMStringList::create(DOMStringList::Location);
     if (!m_frame)
         return origins.release();
     for (Frame* frame = m_frame->tree().parent(); frame; frame = frame->tree().parent())
@@ -238,7 +238,7 @@ void Location::reload(LocalDOMWindow* callingWindow)
         return;
     if (protocolIsJavaScript(toLocalFrame(m_frame)->document()->url()))
         return;
-    m_frame->reload(NormalReload, ClientRedirect);
+    m_frame->reload(FrameLoadTypeReload, ClientRedirect);
 }
 
 void Location::setLocation(const String& url, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, SetLocation locationPolicy)
@@ -270,7 +270,7 @@ void Location::setLocation(const String& url, LocalDOMWindow* callingWindow, Loc
         argv.append(completedURL);
         activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
     }
-    m_frame->navigate(*callingWindow->document(), completedURL, locationPolicy == SetLocation::ReplaceThisFrame);
+    m_frame->navigate(*callingWindow->document(), completedURL, locationPolicy == SetLocation::ReplaceThisFrame, UserGestureStatus::None);
 }
 
 } // namespace blink

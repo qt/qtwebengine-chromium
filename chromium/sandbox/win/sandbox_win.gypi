@@ -41,8 +41,6 @@
             'src/handle_interception.h',
             'src/handle_policy.cc',
             'src/handle_policy.h',
-            'src/handle_table.cc',
-            'src/handle_table.h',
             'src/interception.cc',
             'src/interception.h',
             'src/interception_agent.cc',
@@ -366,6 +364,23 @@
           'defines': [
             '<@(nacl_win64_defines)',
           ]
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'sbox_integration_tests_run',
+          'type': 'none',
+          'dependencies': [
+            'sbox_integration_tests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            '../sbox_integration_tests.isolate',
+          ],
         },
       ],
     }],

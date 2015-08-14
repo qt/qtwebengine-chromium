@@ -20,7 +20,9 @@ namespace {
 
 class LayerClipRecorderTest : public RenderingTest {
 public:
-    LayerClipRecorderTest() : m_layoutView(nullptr) { }
+    LayerClipRecorderTest()
+        : m_layoutView(nullptr)
+        , m_originalSlimmingPaintEnabled(RuntimeEnabledFeatures::slimmingPaintEnabled()) { }
 
 protected:
     LayoutView& layoutView() { return *m_layoutView; }
@@ -37,8 +39,13 @@ private:
         m_layoutView = document().view()->layoutView();
         ASSERT_TRUE(m_layoutView);
     }
+    virtual void TearDown() override
+    {
+        RuntimeEnabledFeatures::setSlimmingPaintEnabled(m_originalSlimmingPaintEnabled);
+    }
 
     LayoutView* m_layoutView;
+    bool m_originalSlimmingPaintEnabled;
 };
 
 void drawEmptyClip(GraphicsContext& context, LayoutView& layoutView, PaintPhase phase, const FloatRect& bound)
@@ -53,9 +60,10 @@ void drawRectInClip(GraphicsContext& context, LayoutView& layoutView, PaintPhase
     IntRect rect(1, 1, 9, 9);
     ClipRect clipRect((LayoutRect(rect)));
     LayerClipRecorder LayerClipRecorder(context, *layoutView.compositor()->rootLayer()->layoutObject(), DisplayItem::ClipLayerForeground, clipRect, 0, LayoutPoint(), PaintLayerFlags());
-    LayoutObjectDrawingRecorder drawingRecorder(context, layoutView, phase, bound);
-    if (!drawingRecorder.canUseCachedDrawing())
+    if (!LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(context, layoutView, phase)) {
+        LayoutObjectDrawingRecorder drawingRecorder(context, layoutView, phase, bound);
         context.drawRect(rect);
+    }
 }
 
 TEST_F(LayerClipRecorderTest, Single)
@@ -67,9 +75,9 @@ TEST_F(LayerClipRecorderTest, Single)
     drawRectInClip(context, layoutView(), PaintPhaseForeground, bound);
     rootDisplayItemList().commitNewDisplayItems();
     EXPECT_EQ((size_t)3, rootDisplayItemList().displayItems().size());
-    EXPECT_TRUE(rootDisplayItemList().displayItems()[0]->isClip());
-    EXPECT_TRUE(rootDisplayItemList().displayItems()[1]->isDrawing());
-    EXPECT_TRUE(rootDisplayItemList().displayItems()[2]->isEndClip());
+    EXPECT_TRUE(DisplayItem::isClipType(rootDisplayItemList().displayItems().elementAt(0)->type()));
+    EXPECT_TRUE(DisplayItem::isDrawingType(rootDisplayItemList().displayItems().elementAt(1)->type()));
+    EXPECT_TRUE(DisplayItem::isEndClipType(rootDisplayItemList().displayItems().elementAt(2)->type()));
 }
 
 TEST_F(LayerClipRecorderTest, Empty)

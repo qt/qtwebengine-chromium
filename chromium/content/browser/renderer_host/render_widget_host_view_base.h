@@ -5,10 +5,6 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_BASE_H_
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_BASE_H_
 
-#if defined(OS_MACOSX)
-#include <OpenGL/OpenGL.h>
-#endif
-
 #include <string>
 #include <vector>
 
@@ -23,7 +19,7 @@
 #include "content/public/browser/readback_types.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
+#include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_mode.h"

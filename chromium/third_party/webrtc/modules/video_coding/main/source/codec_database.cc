@@ -14,6 +14,9 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/engine_configurations.h"
+#ifdef VIDEOCODEC_H264
+#include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
+#endif
 #ifdef VIDEOCODEC_I420
 #include "webrtc/modules/video_coding/codecs/i420/main/interface/i420.h"
 #endif
@@ -28,6 +31,7 @@
 
 namespace {
 const size_t kDefaultPayloadSize = 1440;
+const uint8_t kDefaultPayloadType = 100;
 }
 
 namespace webrtc {
@@ -137,7 +141,7 @@ bool VCMCodecDataBase::Codec(int list_id,
       strncpy(settings->plName, "VP8", 4);
       settings->codecType = kVideoCodecVP8;
       // 96 to 127 dynamic payload types for video codecs.
-      settings->plType = VCM_VP8_PAYLOAD_TYPE;
+      settings->plType = kDefaultPayloadType;
       settings->startBitrate = kDefaultStartBitrateKbps;
       settings->minBitrate = VCM_MIN_BITRATE;
       settings->maxBitrate = 0;
@@ -155,7 +159,7 @@ bool VCMCodecDataBase::Codec(int list_id,
       strncpy(settings->plName, "VP9", 4);
       settings->codecType = kVideoCodecVP9;
       // 96 to 127 dynamic payload types for video codecs.
-      settings->plType = VCM_VP9_PAYLOAD_TYPE;
+      settings->plType = kDefaultPayloadType;
       settings->startBitrate = 100;
       settings->minBitrate = VCM_MIN_BITRATE;
       settings->maxBitrate = 0;
@@ -173,7 +177,7 @@ bool VCMCodecDataBase::Codec(int list_id,
       strncpy(settings->plName, "H264", 5);
       settings->codecType = kVideoCodecH264;
       // 96 to 127 dynamic payload types for video codecs.
-      settings->plType = VCM_H264_PAYLOAD_TYPE;
+      settings->plType = kDefaultPayloadType;
       settings->startBitrate = kDefaultStartBitrateKbps;
       settings->minBitrate = VCM_MIN_BITRATE;
       settings->maxBitrate = 0;
@@ -191,7 +195,7 @@ bool VCMCodecDataBase::Codec(int list_id,
       strncpy(settings->plName, "I420", 5);
       settings->codecType = kVideoCodecI420;
       // 96 to 127 dynamic payload types for video codecs.
-      settings->plType = VCM_I420_PAYLOAD_TYPE;
+      settings->plType = kDefaultPayloadType;
       // Bitrate needed for this size and framerate.
       settings->startBitrate = 3 * VCM_DEFAULT_CODEC_WIDTH *
                                VCM_DEFAULT_CODEC_HEIGHT * 8 *
@@ -661,10 +665,20 @@ VCMGenericEncoder* VCMCodecDataBase::CreateEncoder(
       return new VCMGenericEncoder(new I420Encoder(), encoder_rate_observer_,
                                    false);
 #endif
+#ifdef VIDEOCODEC_H264
+    case kVideoCodecH264:
+      if (H264Encoder::IsSupported()) {
+        return new VCMGenericEncoder(H264Encoder::Create(),
+                                     encoder_rate_observer_,
+                                     false);
+      }
+      break;
+#endif
     default:
-      LOG(LS_WARNING) << "No internal encoder of this type exists.";
-      return NULL;
+      break;
   }
+  LOG(LS_WARNING) << "No internal encoder of this type exists.";
+  return NULL;
 }
 
 void VCMCodecDataBase::DeleteEncoder() {
@@ -691,10 +705,18 @@ VCMGenericDecoder* VCMCodecDataBase::CreateDecoder(VideoCodecType type) const {
     case kVideoCodecI420:
       return new VCMGenericDecoder(*(new I420Decoder));
 #endif
+#ifdef VIDEOCODEC_H264
+    case kVideoCodecH264:
+      if (H264Decoder::IsSupported()) {
+        return new VCMGenericDecoder(*(H264Decoder::Create()));
+      }
+      break;
+#endif
     default:
-      LOG(LS_WARNING) << "No internal decoder of this type exists.";
-      return NULL;
+      break;
   }
+  LOG(LS_WARNING) << "No internal decoder of this type exists.";
+  return NULL;
 }
 
 const VCMDecoderMapItem* VCMCodecDataBase::FindDecoderItem(

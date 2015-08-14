@@ -16,6 +16,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
+// This module is for Visual C x86.
 #if !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) && \
     defined(_MSC_VER) && !defined(__clang__)
 
@@ -220,8 +221,7 @@ uint32 HashDjb2_AVX2(const uint8* src, int count, uint32 seed) {
   }
 }
 #endif  // _MSC_VER >= 1700
-
-#endif  // !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86) ...
+#endif  // !defined(LIBYUV_DISABLE_X86) && defined(_M_IX86)
 
 #ifdef __cplusplus
 }  // extern "C"

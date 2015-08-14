@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -129,7 +129,7 @@ class InputEventFilterTest : public testing::Test {
     filter_ = new InputEventFilter(
         base::Bind(base::IgnoreResult(&IPCMessageRecorder::OnMessageReceived),
                    base::Unretained(&message_recorder_)),
-        base::MessageLoopProxy::current(), message_loop_.message_loop_proxy());
+        base::ThreadTaskRunnerHandle::Get(), message_loop_.task_runner());
     filter_->SetBoundHandler(base::Bind(&InputEventRecorder::HandleInputEvent,
                                         base::Unretained(&event_recorder_)));
 
@@ -179,8 +179,8 @@ TEST_F(InputEventFilterTest, Basic) {
 
     InputHostMsg_HandleInputEvent_ACK::Param params;
     EXPECT_TRUE(InputHostMsg_HandleInputEvent_ACK::Read(message, &params));
-    WebInputEvent::Type event_type = get<0>(params).type;
-    InputEventAckState ack_result = get<0>(params).state;
+    WebInputEvent::Type event_type = base::get<0>(params).type;
+    InputEventAckState ack_result = base::get<0>(params).state;
 
     EXPECT_EQ(kEvents[i].type, event_type);
     EXPECT_EQ(ack_result, INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
@@ -205,7 +205,7 @@ TEST_F(InputEventFilterTest, Basic) {
     ASSERT_EQ(InputMsg_HandleInputEvent::ID, message.type());
     InputMsg_HandleInputEvent::Param params;
     EXPECT_TRUE(InputMsg_HandleInputEvent::Read(&message, &params));
-    const WebInputEvent* event = get<0>(params);
+    const WebInputEvent* event = base::get<0>(params);
 
     EXPECT_EQ(kEvents[i].size, event->size);
     EXPECT_TRUE(memcmp(&kEvents[i], event, event->size) == 0);
@@ -231,8 +231,8 @@ TEST_F(InputEventFilterTest, Basic) {
 
     InputHostMsg_HandleInputEvent_ACK::Param params;
     EXPECT_TRUE(InputHostMsg_HandleInputEvent_ACK::Read(message, &params));
-    WebInputEvent::Type event_type = get<0>(params).type;
-    InputEventAckState ack_result = get<0>(params).state;
+    WebInputEvent::Type event_type = base::get<0>(params).type;
+    InputEventAckState ack_result = base::get<0>(params).state;
     EXPECT_EQ(kEvents[i].type, event_type);
     EXPECT_EQ(ack_result, INPUT_EVENT_ACK_STATE_CONSUMED);
   }

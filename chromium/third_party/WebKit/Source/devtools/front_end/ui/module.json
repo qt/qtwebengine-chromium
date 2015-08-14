@@ -43,7 +43,8 @@
         "TextPrompt.js",
         "UIUtils.js",
         "ViewportControl.js",
-        "ZoomManager.js"
+        "ZoomManager.js",
+        "ThrottledWidget.js"
     ],
     "resources": [
         "checkboxTextLabel.css",
@@ -54,6 +55,8 @@
         "filter.css",
         "helpScreen.css",
         "infobar.css",
+        "inspectorCommon.css",
+        "inspectorSyntaxHighlight.css",
         "panelEnablerView.css",
         "progressIndicator.css",
         "propertiesSection.css",

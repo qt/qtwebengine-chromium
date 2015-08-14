@@ -13,6 +13,7 @@
 #include "vp9/common/vp9_onyxc_int.h"
 #include "vp9/common/vp9_reconinter.h"
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/mem.h"
 
 #include "vp9/common/vp9_seg_common.h"
 
@@ -266,8 +267,8 @@ void vp9_loop_filter_frame_init(VP9_COMMON *cm, int default_filt_lvl) {
 
   for (seg_id = 0; seg_id < MAX_SEGMENTS; seg_id++) {
     int lvl_seg = default_filt_lvl;
-    if (vp9_segfeature_active(seg, seg_id, SEG_LVL_ALT_LF)) {
-      const int data = vp9_get_segdata(seg, seg_id, SEG_LVL_ALT_LF);
+    if (segfeature_active(seg, seg_id, SEG_LVL_ALT_LF)) {
+      const int data = get_segdata(seg, seg_id, SEG_LVL_ALT_LF);
       lvl_seg = clamp(seg->abs_delta == SEGMENT_ABSDATA ?
                       data : default_filt_lvl + data,
                       0, MAX_LOOP_FILTER);

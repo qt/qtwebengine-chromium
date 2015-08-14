@@ -165,7 +165,7 @@ static bool shouldBypassMainWorldCSP(Element* element)
 
     // Main world CSP is bypassed for style elements in user agent shadow DOM.
     ShadowRoot* root = element->containingShadowRoot();
-    if (root && root->type() == ShadowRoot::UserAgentShadowRoot)
+    if (root && root->type() == ShadowRootType::UserAgent)
         return true;
 
     return false;
@@ -195,7 +195,7 @@ StyleElement::ProcessingResult StyleElement::createSheet(Element* e, const Strin
         if (screenEval.eval(mediaQueries.get()) || printEval.eval(mediaQueries.get())) {
             m_loading = true;
             TextPosition startPosition = m_startPosition == TextPosition::belowRangePosition() ? TextPosition::minimumPosition() : m_startPosition;
-            m_sheet = document.styleEngine().createSheet(e, text, startPosition, m_createdByParser);
+            m_sheet = document.styleEngine().createSheet(e, text, startPosition);
             m_sheet->setMediaQueries(mediaQueries.release());
             m_loading = false;
         }

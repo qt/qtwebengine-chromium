@@ -24,7 +24,8 @@ const int kSampleRateHz = 16000;
 }  // namespace
 
 bool AudioEncoderG722::Config::IsOk() const {
-  return (frame_size_ms % 10 == 0) && (num_channels >= 1);
+  return (frame_size_ms > 0) && (frame_size_ms % 10 == 0) &&
+      (num_channels >= 1);
 }
 
 AudioEncoderG722::EncoderState::EncoderState() {
@@ -79,6 +80,11 @@ int AudioEncoderG722::Num10MsFramesInNextPacket() const {
 
 int AudioEncoderG722::Max10MsFramesInAPacket() const {
   return num_10ms_frames_per_packet_;
+}
+
+int AudioEncoderG722::GetTargetBitrate() const {
+  // 4 bits/sample, 16000 samples/s/channel.
+  return 64000 * NumChannels();
 }
 
 AudioEncoder::EncodedInfo AudioEncoderG722::EncodeInternal(

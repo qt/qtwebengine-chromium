@@ -28,7 +28,7 @@ class DecodedImageCallback {
  public:
   virtual ~DecodedImageCallback() {}
 
-  virtual int32_t Decoded(I420VideoFrame& decodedImage) = 0;
+  virtual int32_t Decoded(VideoFrame& decodedImage) = 0;
   virtual int32_t ReceivedDecodedReferenceFrame(const uint64_t pictureId) {
     return -1;
   }
@@ -39,6 +39,7 @@ class DecodedImageCallback {
 class VideoDecoder {
  public:
   enum DecoderType {
+    kH264,
     kVp8,
     kVp9,
     kUnsupportedCodec,
@@ -62,13 +63,6 @@ class VideoDecoder {
 
   virtual int32_t Release() = 0;
   virtual int32_t Reset() = 0;
-
-  virtual int32_t SetCodecConfigParameters(const uint8_t* /*buffer*/,
-                                           int32_t /*size*/) {
-    return -1;
-  }
-
-  virtual VideoDecoder* Copy() { return NULL; }
 };
 
 // Class used to wrap external VideoDecoders to provide a fallback option on

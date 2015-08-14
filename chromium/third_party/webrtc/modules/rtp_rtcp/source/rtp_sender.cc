@@ -219,23 +219,6 @@ uint32_t RTPSender::NackOverheadRate() const {
   return nack_bitrate_.BitrateLast();
 }
 
-bool RTPSender::GetSendSideDelay(int* avg_send_delay_ms,
-                                 int* max_send_delay_ms) const {
-  CriticalSectionScoped lock(statistics_crit_.get());
-  SendDelayMap::const_iterator it = send_delays_.upper_bound(
-      clock_->TimeInMilliseconds() - kSendSideDelayWindowMs);
-  if (it == send_delays_.end())
-    return false;
-  int num_delays = 0;
-  for (; it != send_delays_.end(); ++it) {
-    *max_send_delay_ms = std::max(*max_send_delay_ms, it->second);
-    *avg_send_delay_ms += it->second;
-    ++num_delays;
-  }
-  *avg_send_delay_ms = (*avg_send_delay_ms + num_delays / 2) / num_delays;
-  return true;
-}
-
 int32_t RTPSender::SetTransmissionTimeOffset(int32_t transmission_time_offset) {
   if (transmission_time_offset > (0x800000 - 1) ||
       transmission_time_offset < -(0x800000 - 1)) {  // Word24.
@@ -975,12 +958,12 @@ bool RTPSender::IsFecPacket(const uint8_t* buffer,
 }
 
 size_t RTPSender::TimeToSendPadding(size_t bytes) {
+  if (bytes == 0)
+    return 0;
   {
     CriticalSectionScoped cs(send_critsect_.get());
     if (!sending_media_) return 0;
   }
-  if (bytes == 0)
-    return 0;
   size_t bytes_sent = TrySendRedundantPayloads(bytes);
   if (bytes_sent < bytes)
     bytes_sent += TrySendPadData(bytes - bytes_sent);
@@ -1061,6 +1044,9 @@ int32_t RTPSender::SendToNetwork(
 }
 
 void RTPSender::UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms) {
+  if (!send_side_delay_observer_)
+    return;
+
   uint32_t ssrc;
   int avg_delay_ms = 0;
   int max_delay_ms = 0;
@@ -1075,12 +1061,19 @@ void RTPSender::UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms) {
     send_delays_.erase(send_delays_.begin(),
                        send_delays_.lower_bound(now_ms -
                        kSendSideDelayWindowMs));
+    int num_delays = 0;
+    for (auto it = send_delays_.upper_bound(now_ms - kSendSideDelayWindowMs);
+         it != send_delays_.end(); ++it) {
+      max_delay_ms = std::max(max_delay_ms, it->second);
+      avg_delay_ms += it->second;
+      ++num_delays;
+    }
+    if (num_delays == 0)
+      return;
+    avg_delay_ms = (avg_delay_ms + num_delays / 2) / num_delays;
   }
-  if (send_side_delay_observer_ &&
-      GetSendSideDelay(&avg_delay_ms, &max_delay_ms)) {
-    send_side_delay_observer_->SendSideDelayUpdated(avg_delay_ms,
-        max_delay_ms, ssrc);
-  }
+  send_side_delay_observer_->SendSideDelayUpdated(avg_delay_ms, max_delay_ms,
+                                                  ssrc);
 }
 
 void RTPSender::ProcessBitrate() {
@@ -1106,26 +1099,6 @@ uint16_t RTPSender::AllocateSequenceNumber(uint16_t packets_to_send) {
   uint16_t first_allocated_sequence_number = sequence_number_;
   sequence_number_ += packets_to_send;
   return first_allocated_sequence_number;
-}
-
-void RTPSender::ResetDataCounters() {
-  uint32_t ssrc;
-  uint32_t ssrc_rtx;
-  bool report_rtx;
-  {
-    CriticalSectionScoped ssrc_lock(send_critsect_.get());
-    ssrc = ssrc_;
-    ssrc_rtx = ssrc_rtx_;
-    report_rtx = rtx_ != kRtxOff;
-  }
-  CriticalSectionScoped lock(statistics_crit_.get());
-  rtp_stats_ = StreamDataCounters();
-  rtx_rtp_stats_ = StreamDataCounters();
-  if (rtp_stats_callback_) {
-    rtp_stats_callback_->DataCountersUpdated(rtp_stats_, ssrc);
-    if (report_rtx)
-      rtp_stats_callback_->DataCountersUpdated(rtx_rtp_stats_, ssrc_rtx);
-  }
 }
 
 void RTPSender::GetDataCounters(StreamDataCounters* rtp_stats,

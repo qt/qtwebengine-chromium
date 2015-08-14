@@ -25,6 +25,7 @@
 #ifndef InspectorConsoleAgent_h
 #define InspectorConsoleAgent_h
 
+#include "core/CoreExport.h"
 #include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Forward.h"
@@ -35,15 +36,18 @@ namespace blink {
 class ConsoleMessage;
 class ConsoleMessageStorage;
 class InjectedScriptManager;
+class InspectorDebuggerAgent;
 
 typedef String ErrorString;
 
-class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent, InspectorFrontend::Console>, public InspectorBackendDispatcher::ConsoleCommandHandler {
+class CORE_EXPORT InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent, InspectorFrontend::Console>, public InspectorBackendDispatcher::ConsoleCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorConsoleAgent);
 public:
     explicit InspectorConsoleAgent(InjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
     DECLARE_VIRTUAL_TRACE();
+
+    void setDebuggerAgent(InspectorDebuggerAgent* debuggerAgent) { m_debuggerAgent = debuggerAgent; }
 
     void enable(ErrorString*) override;
     bool enabled() { return m_enabled; }
@@ -62,6 +66,7 @@ protected:
     virtual void disableStackCapturingIfNeeded() = 0;
 
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
+    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
     bool m_enabled;
 };
 

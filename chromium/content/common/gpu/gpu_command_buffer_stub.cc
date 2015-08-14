@@ -40,6 +40,7 @@
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_WIN)
+#include "base/win/win_util.h"
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -119,7 +120,7 @@ class DevToolsChannelData : public base::trace_event::ConvertableToTraceFormat {
 
   void AppendAsTraceFormat(std::string* out) const override {
     std::string tmp;
-    base::JSONWriter::Write(value_.get(), &tmp);
+    base::JSONWriter::Write(*value_, &tmp);
     *out += tmp;
   }
 
@@ -472,14 +473,6 @@ void GpuCommandBufferStub::OnInitialize(
   DCHECK(result);
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group_.get()));
-
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSingleProcess) &&
-      !base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kInProcessGPU)) {
-    decoder_->SetAllowExit(true);
-  }
-
   scheduler_.reset(new gpu::GpuScheduler(command_buffer_.get(),
                                          decoder_.get(),
                                          decoder_.get()));
@@ -1062,6 +1055,10 @@ gfx::Size GpuCommandBufferStub::GetSurfaceSize() const {
   return surface_->GetSize();
 }
 
+const gpu::gles2::FeatureInfo* GpuCommandBufferStub::GetFeatureInfo() const {
+  return context_group_->feature_info();
+}
+
 gpu::gles2::MemoryTracker* GpuCommandBufferStub::GetMemoryTracker() const {
   return context_group_->memory_tracker();
 }
@@ -1090,12 +1087,35 @@ bool GpuCommandBufferStub::CheckContextLost() {
   DCHECK(command_buffer_);
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   bool was_lost = state.error == gpu::error::kLostContext;
-  // Lose all other contexts if the reset was triggered by the robustness
-  // extension instead of being synthetic.
-  if (was_lost && decoder_ && decoder_->WasContextLostByRobustnessExtension() &&
-      (gfx::GLContext::LosesAllContextsOnContextLost() ||
-       use_virtualized_gl_context_))
-    channel_->LoseAllContexts();
+
+  if (was_lost) {
+    bool was_lost_by_robustness =
+        decoder_ && decoder_->WasContextLostByRobustnessExtension();
+
+    // Work around issues with recovery by allowing a new GPU process to launch.
+    if ((was_lost_by_robustness ||
+         context_group_->feature_info()->workarounds().exit_on_context_lost) &&
+        !base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess) &&
+        !base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kInProcessGPU)) {
+      LOG(ERROR) << "Exiting GPU process because some drivers cannot recover"
+                 << " from problems.";
+#if defined(OS_WIN)
+      base::win::SetShouldCrashOnProcessDetach(false);
+#endif
+      exit(0);
+    }
+
+    // Lose all other contexts if the reset was triggered by the robustness
+    // extension instead of being synthetic.
+    if (was_lost_by_robustness &&
+        (gfx::GLContext::LosesAllContextsOnContextLost() ||
+         use_virtualized_gl_context_)) {
+      channel_->LoseAllContexts();
+    }
+  }
+
   CheckCompleteWaits();
   return was_lost;
 }
@@ -1116,8 +1136,10 @@ uint64 GpuCommandBufferStub::GetMemoryUsage() const {
 }
 
 void GpuCommandBufferStub::SendSwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, latency_info));
+    const std::vector<ui::LatencyInfo>& latency_info,
+    gfx::SwapResult result) {
+  Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, latency_info,
+                                                    result));
 }
 
 void GpuCommandBufferStub::SendUpdateVSyncParameters(base::TimeTicks timebase,

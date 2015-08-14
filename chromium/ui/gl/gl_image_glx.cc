@@ -168,6 +168,8 @@ void GLImageGLX::Destroy(bool have_context) {
 
 gfx::Size GLImageGLX::GetSize() { return size_; }
 
+unsigned GLImageGLX::GetInternalFormat() { return internalformat_; }
+
 bool GLImageGLX::BindTexImage(unsigned target) {
   if (!glx_pixmap_)
     return false;
@@ -187,7 +189,9 @@ void GLImageGLX::ReleaseTexImage(unsigned target) {
   glXReleaseTexImageEXT(gfx::GetXDisplay(), glx_pixmap_, GLX_FRONT_LEFT_EXT);
 }
 
-bool GLImageGLX::CopyTexImage(unsigned target) {
+bool GLImageGLX::CopyTexSubImage(unsigned target,
+                                 const Point& offset,
+                                 const Rect& rect) {
   return false;
 }
 

@@ -256,7 +256,7 @@ void CompositeEditCommand::applyCommandToComposite(PassRefPtrWillBeRawPtr<EditCo
 void CompositeEditCommand::applyCommandToComposite(PassRefPtrWillBeRawPtr<CompositeEditCommand> command, const VisibleSelection& selection)
 {
     command->setParent(this);
-    if (selection != command->endingSelection()) {
+    if (!VisibleSelection::InDOMTree::equalSelections(selection, command->endingSelection())) {
         command->setStartingSelection(selection);
         command->setEndingSelection(selection);
     }
@@ -417,7 +417,7 @@ void CompositeEditCommand::moveRemainingSiblingsToNewParent(Node* node, Node* pa
 
 void CompositeEditCommand::updatePositionForNodeRemovalPreservingChildren(Position& position, Node& node)
 {
-    int offset = (position.anchorType() == Position::PositionIsOffsetInAnchor) ? position.offsetInContainerNode() : 0;
+    int offset = (position.anchorType() == PositionAnchorType::OffsetInAnchor) ? position.offsetInContainerNode() : 0;
     updatePositionForNodeRemoval(position, node);
     if (offset)
         position.moveToOffset(offset);
@@ -526,10 +526,11 @@ void CompositeEditCommand::replaceTextInNodePreservingMarkers(PassRefPtrWillBeRa
     Vector<String> descriptions;
     copyMarkerTypesAndDescriptions(markerController.markersInRange(Range::create(document(), node.get(), offset, node.get(), offset + count).get(), DocumentMarker::AllMarkers()), types, descriptions);
     replaceTextInNode(node, offset, count, replacementText);
-    RefPtrWillBeRawPtr<Range> newRange = Range::create(document(), node.get(), offset, node.get(), offset + replacementText.length());
+    Position startPosition(node.get(), offset);
+    Position endPosition(node.get(), offset + replacementText.length());
     ASSERT(types.size() == descriptions.size());
     for (size_t i = 0; i < types.size(); ++i)
-        markerController.addMarker(newRange.get(), types[i], descriptions[i]);
+        markerController.addMarker(startPosition, endPosition, types[i], descriptions[i]);
 }
 
 Position CompositeEditCommand::positionOutsideTabSpan(const Position& pos)
@@ -538,15 +539,15 @@ Position CompositeEditCommand::positionOutsideTabSpan(const Position& pos)
         return pos;
 
     switch (pos.anchorType()) {
-    case Position::PositionIsBeforeChildren:
-    case Position::PositionIsAfterChildren:
+    case PositionAnchorType::BeforeChildren:
+    case PositionAnchorType::AfterChildren:
         ASSERT_NOT_REACHED();
         return pos;
-    case Position::PositionIsOffsetInAnchor:
+    case PositionAnchorType::OffsetInAnchor:
         break;
-    case Position::PositionIsBeforeAnchor:
+    case PositionAnchorType::BeforeAnchor:
         return positionInParentBeforeNode(*pos.anchorNode());
-    case Position::PositionIsAfterAnchor:
+    case PositionAnchorType::AfterAnchor:
         return positionInParentAfterNode(*pos.anchorNode());
     }
 
@@ -614,7 +615,7 @@ bool CompositeEditCommand::shouldRebalanceLeadingWhitespaceFor(const String& tex
 bool CompositeEditCommand::canRebalance(const Position& position) const
 {
     Node* node = position.containerNode();
-    if (position.anchorType() != Position::PositionIsOffsetInAnchor || !node || !node->isTextNode())
+    if (position.anchorType() != PositionAnchorType::OffsetInAnchor || !node || !node->isTextNode())
         return false;
 
     Text* textNode = toText(node);
@@ -1208,15 +1209,10 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
     Position start = startOfParagraphToMove.deepEquivalent().downstream();
     Position end = endOfParagraphToMove.deepEquivalent().upstream();
 
-    // start and end can't be used directly to create a Range; they are "editing positions"
-    Position startRangeCompliant = start.parentAnchoredEquivalent();
-    Position endRangeCompliant = end.parentAnchoredEquivalent();
-    RefPtrWillBeRawPtr<Range> range = Range::create(document(), startRangeCompliant.deprecatedNode(), startRangeCompliant.deprecatedEditingOffset(), endRangeCompliant.deprecatedNode(), endRangeCompliant.deprecatedEditingOffset());
-
     // FIXME: This is an inefficient way to preserve style on nodes in the paragraph to move. It
     // shouldn't matter though, since moved paragraphs will usually be quite small.
     RefPtrWillBeRawPtr<DocumentFragment> fragment = startOfParagraphToMove != endOfParagraphToMove ?
-        createFragmentFromMarkup(document(), createMarkup(range.get(), DoNotAnnotateForInterchange, true, DoNotResolveURLs, constrainingAncestor), "") : nullptr;
+        createFragmentFromMarkup(document(), createMarkup(start.parentAnchoredEquivalent(), end.parentAnchoredEquivalent(), DoNotAnnotateForInterchange, ConvertBlocksToInlines::Convert, DoNotResolveURLs, constrainingAncestor), "") : nullptr;
 
     // A non-empty paragraph's style is moved when we copy and move it.  We don't move
     // anything if we're given an empty paragraph, but an empty paragraph can have style

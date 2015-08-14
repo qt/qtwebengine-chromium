@@ -108,6 +108,11 @@ class BaseChannel
   bool writable() const { return writable_; }
   bool IsStreamMuted(uint32 ssrc);
 
+  // Activate RTCP mux, regardless of the state so far.  Once
+  // activated, it can not be deactivated, and if the remote
+  // description doesn't support RTCP mux, setting the remote
+  // description will fail.
+  void ActivateRtcpMux();
   bool PushdownLocalDescription(const SessionDescription* local_desc,
                                 ContentAction action,
                                 std::string* error_desc);
@@ -141,72 +146,6 @@ class BaseChannel
 
   void set_srtp_signal_silent_time(uint32 silent_time) {
     srtp_filter_.set_signal_silent_time(silent_time);
-  }
-
-  template <class T>
-  void RegisterSendSink(T* sink,
-                        void (T::*OnPacket)(const void*, size_t, bool),
-                        SinkType type) {
-    rtc::CritScope cs(&signal_send_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      SignalSendPacketPostCrypto.disconnect(sink);
-      SignalSendPacketPostCrypto.connect(sink, OnPacket);
-    } else {
-      SignalSendPacketPreCrypto.disconnect(sink);
-      SignalSendPacketPreCrypto.connect(sink, OnPacket);
-    }
-  }
-
-  void UnregisterSendSink(sigslot::has_slots<>* sink,
-                          SinkType type) {
-    rtc::CritScope cs(&signal_send_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      SignalSendPacketPostCrypto.disconnect(sink);
-    } else {
-      SignalSendPacketPreCrypto.disconnect(sink);
-    }
-  }
-
-  bool HasSendSinks(SinkType type) {
-    rtc::CritScope cs(&signal_send_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      return !SignalSendPacketPostCrypto.is_empty();
-    } else {
-      return !SignalSendPacketPreCrypto.is_empty();
-    }
-  }
-
-  template <class T>
-  void RegisterRecvSink(T* sink,
-                        void (T::*OnPacket)(const void*, size_t, bool),
-                        SinkType type) {
-    rtc::CritScope cs(&signal_recv_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      SignalRecvPacketPostCrypto.disconnect(sink);
-      SignalRecvPacketPostCrypto.connect(sink, OnPacket);
-    } else {
-      SignalRecvPacketPreCrypto.disconnect(sink);
-      SignalRecvPacketPreCrypto.connect(sink, OnPacket);
-    }
-  }
-
-  void UnregisterRecvSink(sigslot::has_slots<>* sink,
-                          SinkType type) {
-    rtc::CritScope cs(&signal_recv_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      SignalRecvPacketPostCrypto.disconnect(sink);
-    } else {
-      SignalRecvPacketPreCrypto.disconnect(sink);
-    }
-  }
-
-  bool HasRecvSinks(SinkType type) {
-    rtc::CritScope cs(&signal_recv_packet_cs_);
-    if (SINK_POST_CRYPTO == type) {
-      return !SignalRecvPacketPostCrypto.is_empty();
-    } else {
-      return !SignalRecvPacketPreCrypto.is_empty();
-    }
   }
 
   BundleFilter* bundle_filter() { return &bundle_filter_; }
@@ -350,6 +289,7 @@ class BaseChannel
                  ContentAction action,
                  ContentSource src,
                  std::string* error_desc);
+  void ActivateRtcpMux_w();
   bool SetRtcpMux_w(bool enable,
                     ContentAction action,
                     ContentSource src,
@@ -371,13 +311,6 @@ class BaseChannel
   }
 
  private:
-  sigslot::signal3<const void*, size_t, bool> SignalSendPacketPreCrypto;
-  sigslot::signal3<const void*, size_t, bool> SignalSendPacketPostCrypto;
-  sigslot::signal3<const void*, size_t, bool> SignalRecvPacketPreCrypto;
-  sigslot::signal3<const void*, size_t, bool> SignalRecvPacketPostCrypto;
-  rtc::CriticalSection signal_send_packet_cs_;
-  rtc::CriticalSection signal_recv_packet_cs_;
-
   rtc::Thread* worker_thread_;
   MediaEngineInterface* media_engine_;
   BaseSession* session_;

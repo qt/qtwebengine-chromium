@@ -51,6 +51,7 @@ class OZONE_EXPORT CrtcController
   // Schedule a page flip event and present the overlays in |planes|.
   bool SchedulePageFlip(HardwareDisplayPlaneList* plane_list,
                         const OverlayPlaneList& planes,
+                        bool test_only,
                         scoped_refptr<PageFlipRequest> page_flip_request);
 
   // Called if the page flip for this CRTC fails after being scheduled.
@@ -94,10 +95,10 @@ class OZONE_EXPORT CrtcController
 
   // Keeps track of the CRTC state. If a surface has been bound, then the value
   // is set to false. Otherwise it is true.
-  bool is_disabled_;
+  bool is_disabled_ = true;
 
   // The time of the last page flip event as reported by the kernel callback.
-  uint64_t time_of_last_flip_;
+  uint64_t time_of_last_flip_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(CrtcController);
 };

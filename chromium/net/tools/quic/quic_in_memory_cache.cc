@@ -35,6 +35,9 @@ const QuicInMemoryCache::Response* QuicInMemoryCache::GetResponse(
     StringPiece path) const {
   ResponseMap::const_iterator it = responses_.find(GetKey(host, path));
   if (it == responses_.end()) {
+    if (default_response_.get()) {
+      return default_response_.get();
+    }
     return nullptr;
   }
   return it->second;
@@ -53,6 +56,10 @@ void QuicInMemoryCache::AddSimpleResponse(StringPiece host,
   response_headers["content-length"] =
       IntToString(static_cast<int>(body.length()));
   AddResponse(host, path, response_headers, body);
+}
+
+void QuicInMemoryCache::AddDefaultResponse(Response* response) {
+  default_response_.reset(response);
 }
 
 void QuicInMemoryCache::AddResponse(StringPiece host,
@@ -121,9 +128,11 @@ void QuicInMemoryCache::InitializeFromDirectory(const string& cache_directory) {
     if (response_headers->GetNormalizedHeader("X-Original-Url", &base)) {
       response_headers->RemoveHeader("X-Original-Url");
       // Remove the protocol so we can add it below.
-      if (StartsWithASCII(base, "https://", false)) {
+      if (base::StartsWith(base, "https://",
+                           base::CompareCase::INSENSITIVE_ASCII)) {
         base = base.substr(8);
-      } else if (StartsWithASCII(base, "http://", false)) {
+      } else if (base::StartsWith(base, "http://",
+                                  base::CompareCase::INSENSITIVE_ASCII)) {
         base = base.substr(7);
       }
     } else {

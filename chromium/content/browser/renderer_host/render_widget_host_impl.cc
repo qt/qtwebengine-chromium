@@ -14,9 +14,10 @@
 #include "base/containers/hash_tables.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
@@ -98,22 +99,6 @@ typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
     RoutingIDWidgetMap;
 base::LazyInstance<RoutingIDWidgetMap> g_routing_id_widget_map =
     LAZY_INSTANCE_INITIALIZER;
-
-int GetInputRouterViewFlagsFromCompositorFrameMetadata(
-    const cc::CompositorFrameMetadata metadata) {
-  int view_flags = InputRouter::VIEW_FLAGS_NONE;
-
-  if (metadata.min_page_scale_factor == metadata.max_page_scale_factor)
-    view_flags |= InputRouter::FIXED_PAGE_SCALE;
-
-  const float window_width_dip = std::ceil(
-      metadata.page_scale_factor * metadata.scrollable_viewport_size.width());
-  const float content_width_css = metadata.root_layer_size.width();
-  if (content_width_css <= window_width_dip)
-    view_flags |= InputRouter::MOBILE_VIEWPORT;
-
-  return view_flags;
-}
 
 // Implements the RenderWidgetHostIterator interface. It keeps a list of
 // RenderWidgetHosts, and makes sure it returns a live RenderWidgetHost at each
@@ -1195,6 +1180,9 @@ void RenderWidgetHostImpl::UpdateVSyncParameters(base::TimeTicks timebase,
 
 void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
                                           int exit_code) {
+  if (!renderer_initialized_)
+    return;
+
   // Clearing this flag causes us to re-create the renderer when recovering
   // from a crashed renderer.
   renderer_initialized_ = false;
@@ -1264,18 +1252,6 @@ void RenderWidgetHostImpl::NotifyTextDirection() {
 void RenderWidgetHostImpl::SetInputMethodActive(bool activate) {
   input_method_active_ = activate;
   Send(new ViewMsg_SetInputMethodActive(GetRoutingID(), activate));
-}
-
-void RenderWidgetHostImpl::CandidateWindowShown() {
-  Send(new ViewMsg_CandidateWindowShown(GetRoutingID()));
-}
-
-void RenderWidgetHostImpl::CandidateWindowUpdated() {
-  Send(new ViewMsg_CandidateWindowUpdated(GetRoutingID()));
-}
-
-void RenderWidgetHostImpl::CandidateWindowHidden() {
-  Send(new ViewMsg_CandidateWindowHidden(GetRoutingID()));
 }
 
 void RenderWidgetHostImpl::ImeSetComposition(
@@ -1458,20 +1434,17 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return false;
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
-  uint32 output_surface_id = get<0>(param);
-  get<1>(param).AssignTo(frame.get());
+  uint32 output_surface_id = base::get<0>(param);
+  base::get<1>(param).AssignTo(frame.get());
   std::vector<IPC::Message> messages_to_deliver_with_frame;
-  messages_to_deliver_with_frame.swap(get<2>(param));
+  messages_to_deliver_with_frame.swap(base::get<2>(param));
 
   latency_tracker_.OnSwapCompositorFrame(&frame->metadata.latency_info);
 
-  input_router_->OnViewUpdated(
-      GetInputRouterViewFlagsFromCompositorFrameMetadata(frame->metadata));
-
-  if (touch_emulator_) {
-    touch_emulator_->SetDoubleTapSupportForPageEnabled(
-        !IsMobileOptimizedFrame(frame->metadata));
-  }
+  bool is_mobile_optimized = IsMobileOptimizedFrame(frame->metadata);
+  input_router_->NotifySiteIsMobileOptimized(is_mobile_optimized);
+  if (touch_emulator_)
+    touch_emulator_->SetDoubleTapSupportForPageEnabled(!is_mobile_optimized);
 
   if (view_) {
     view_->OnSwapCompositorFrame(output_surface_id, frame.Pass());
@@ -1543,10 +1516,9 @@ void RenderWidgetHostImpl::OnUpdateRect(
     bool post_callback = new_auto_size_.IsEmpty();
     new_auto_size_ = params.view_size;
     if (post_callback) {
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&RenderWidgetHostImpl::DelayedAutoResized,
-                     weak_factory_.GetWeakPtr()));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(&RenderWidgetHostImpl::DelayedAutoResized,
+                                weak_factory_.GetWeakPtr()));
     }
   }
 

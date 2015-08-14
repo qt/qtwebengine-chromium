@@ -18,15 +18,15 @@ namespace net {
 class IPPattern::ComponentPattern {
  public:
   ComponentPattern();
-  void AppendRange(uint32 min, uint32 max);
-  bool Match(uint32 value) const;
+  void AppendRange(uint32_t min, uint32_t max);
+  bool Match(uint32_t value) const;
 
  private:
   struct Range {
    public:
-    Range(uint32 min, uint32 max) : minimum(min), maximum(max) {}
-    uint32 minimum;
-    uint32 maximum;
+    Range(uint32_t min, uint32_t max) : minimum(min), maximum(max) {}
+    uint32_t minimum;
+    uint32_t maximum;
   };
   typedef std::vector<Range> RangeVector;
 
@@ -37,11 +37,11 @@ class IPPattern::ComponentPattern {
 
 IPPattern::ComponentPattern::ComponentPattern() {}
 
-void IPPattern::ComponentPattern::AppendRange(uint32 min, uint32 max) {
+void IPPattern::ComponentPattern::AppendRange(uint32_t min, uint32_t max) {
   ranges_.push_back(Range(min, max));
 }
 
-bool IPPattern::ComponentPattern::Match(uint32 value) const {
+bool IPPattern::ComponentPattern::Match(uint32_t value) const {
   // Simple linear search should be fine, as we usually only have very few
   // distinct ranges to test.
   for (RangeVector::const_iterator range_it = ranges_.begin();
@@ -71,7 +71,7 @@ bool IPPattern::Match(const IPAddressNumber& address) const {
   // 8, so it is easier to count separately.
   int address_index = 0;
   for (size_t i = 0; i < ip_mask_.size(); ++i) {
-    uint32 value_to_test = address[address_index++];
+    uint32_t value_to_test = address[address_index++];
     if (!is_ipv4_) {
       value_to_test = (value_to_test << 8) + address[address_index++];
     }
@@ -92,44 +92,45 @@ bool IPPattern::ParsePattern(const std::string& ip_pattern) {
   if (ip_pattern.find(':') != std::string::npos) {
     is_ipv4_ = false;
   }
-  Strings components;
-  base::SplitString(ip_pattern, is_ipv4_ ? '.' : ':', &components);
+
+  std::vector<base::StringPiece> components =
+      base::SplitStringPiece(ip_pattern, is_ipv4_ ? "." : ":",
+                             base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (components.size() != (is_ipv4_ ? 4u : 8u)) {
     DVLOG(1) << "Invalid component count: " << ip_pattern;
     return false;
   }
-  for (Strings::iterator component_it = components.begin();
-       component_it != components.end(); ++component_it) {
-    if (component_it->empty()) {
+  for (base::StringPiece component : components) {
+    if (component.empty()) {
       DVLOG(1) << "Empty component: " << ip_pattern;
       return false;
     }
-    if (*component_it == "*") {
+    if (component == "*") {
       // Let standard code handle this below.
-      *component_it = is_ipv4_ ? "[0-255]" : "[0-FFFF]";
-    } else if ((*component_it)[0] != '[') {
+      component = is_ipv4_ ? "[0-255]" : "[0-FFFF]";
+    } else if (component[0] != '[') {
       // This value will just have a specific integer to match.
-      uint32 value;
-      if (!ValueTextToInt(*component_it, &value))
+      uint32_t value;
+      if (!ValueTextToInt(component, &value))
         return false;
       ip_mask_.push_back(true);
       component_values_.push_back(value);
       continue;
     }
-    if ((*component_it)[component_it->size() - 1] != ']') {
+    if (component[component.size() - 1] != ']') {
       DVLOG(1) << "Missing close bracket: " << ip_pattern;
       return false;
     }
     // Now we know the size() is at least 2.
-    if (component_it->size() == 2) {
+    if (component.size() == 2) {
       DVLOG(1) << "Empty bracket: " << ip_pattern;
       return false;
     }
     // We'll need a pattern to match this bracketed component.
     scoped_ptr<ComponentPattern> component_pattern(new ComponentPattern);
     // Trim leading and trailing bracket before calling for parsing.
-    if (!ParseComponentPattern(base::StringPiece(component_it->data() + 1,
-        component_it->size() - 2), component_pattern.get())) {
+    if (!ParseComponentPattern(component.substr(1, component.size() - 2),
+                               component_pattern.get())) {
       return false;
     }
     ip_mask_.push_back(false);
@@ -142,18 +143,16 @@ bool IPPattern::ParseComponentPattern(const base::StringPiece& text,
                                       ComponentPattern* pattern) const {
   // We're given a comma separated set of ranges, some of which may be simple
   // constants.
-  Strings ranges;
-  base::SplitString(text.as_string(), ',', &ranges);
-  for (Strings::iterator range_it = ranges.begin();
-        range_it != ranges.end(); ++range_it) {
-    base::StringTokenizer range_pair(*range_it, "-");
-    uint32 min = 0;
+  for (const std::string& range : base::SplitString(
+           text, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL)) {
+    base::StringTokenizer range_pair(range, "-");
+    uint32_t min = 0;
     range_pair.GetNext();
-    if (!ValueTextToInt(range_pair.token(), &min))
+    if (!ValueTextToInt(range_pair.token_piece(), &min))
       return false;
-    uint32 max = min;  // Sometimes we have no distinct max.
+    uint32_t max = min;  // Sometimes we have no distinct max.
     if (range_pair.GetNext()) {
-      if (!ValueTextToInt(range_pair.token(), &max))
+      if (!ValueTextToInt(range_pair.token_piece(), &max))
         return false;
     }
     if (range_pair.GetNext()) {
@@ -167,7 +166,7 @@ bool IPPattern::ParseComponentPattern(const base::StringPiece& text,
 }
 
 bool IPPattern::ValueTextToInt(const base::StringPiece& input,
-                               uint32* output) const {
+                               uint32_t* output) const {
   bool ok = is_ipv4_ ? base::StringToUint(input, output) :
                        base::HexStringToUInt(input, output);
   if (!ok) {

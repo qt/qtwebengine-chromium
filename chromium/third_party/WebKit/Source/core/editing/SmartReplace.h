@@ -29,11 +29,11 @@
 #ifndef SmartReplace_h
 #define SmartReplace_h
 
-#include "wtf/unicode/Unicode.h"
+#include "wtf/text/Unicode.h"
 
 namespace blink {
 
-bool isCharacterSmartReplaceExempt(UChar32 c, bool isPreviousCharacter);
+bool isCharacterSmartReplaceExempt(UChar32, bool isPreviousCharacter);
 
 } // namespace blink
 

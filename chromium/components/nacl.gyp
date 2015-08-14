@@ -90,6 +90,8 @@
           'target_name': 'nacl_browser',
           'type': 'static_library',
           'sources': [
+            'nacl/browser/bad_message.cc',
+            'nacl/browser/bad_message.h',
             'nacl/browser/nacl_broker_host_win.cc',
             'nacl/browser/nacl_broker_host_win.h',
             'nacl/browser/nacl_broker_service_win.cc',
@@ -449,6 +451,22 @@
         },
       ],
     }],
+    ['disable_nacl==0 and disable_nacl_untrusted==0 and enable_nacl_nonsfi_test==1', {
+      'targets': [
+        {
+          'target_name': 'nacl_helper_nonsfi_unittests',
+          'type': '<(gtest_target_type)',
+          'sources': [
+            'nacl/loader/nonsfi/nacl_helper_nonsfi_unittests.cc',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_launcher_nacl_nonsfi',
+            'nacl_nonsfi.gyp:nacl_helper_nonsfi_unittests_main',
+          ],
+        },
+      ],
+    }],
   ],
   'targets': [
     {
@@ -479,7 +497,7 @@
         'nacl/common/nacl_process_type.h',
         'nacl/common/nacl_renderer_messages.cc',
         'nacl/common/nacl_renderer_messages.h',
-        'nacl/common/nacl_sandbox_type_mac.h',
+        'nacl/common/nacl_sandbox_type.h',
         'nacl/common/nacl_types.cc',
         'nacl/common/nacl_types.h',
         'nacl/common/nacl_types_param_traits.cc',

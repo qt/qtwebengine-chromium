@@ -113,6 +113,20 @@ struct RTCPSender::RtcpContext {
   uint32_t position;
 };
 
+// TODO(sprang): Once all builders use RtcpPacket, call SendToNetwork() here.
+class RTCPSender::PacketBuiltCallback
+    : public rtcp::RtcpPacket::PacketReadyCallback {
+ public:
+  PacketBuiltCallback(RtcpContext* context) : context_(context) {}
+  virtual ~PacketBuiltCallback() {}
+  void OnPacketReady(uint8_t* data, size_t length) override {
+    context_->position += length;
+  }
+
+ private:
+  RtcpContext* const context_;
+};
+
 RTCPSender::RTCPSender(
     int32_t id,
     bool audio,
@@ -150,18 +164,18 @@ RTCPSender::RTCPSender(
       packet_oh_send_(0),
 
       app_sub_type_(0),
+      app_name_(0),
       app_data_(nullptr),
       app_length_(0),
 
       xr_send_receiver_reference_time_enabled_(false),
       packet_type_counter_observer_(packet_type_counter_observer) {
-  memset(cname_, 0, sizeof(cname_));
   memset(last_send_report_, 0, sizeof(last_send_report_));
   memset(last_rtcp_time_, 0, sizeof(last_rtcp_time_));
 
   builders_[kRtcpSr] = &RTCPSender::BuildSR;
   builders_[kRtcpRr] = &RTCPSender::BuildRR;
-  builders_[kRtcpSdes] = &RTCPSender::BuildSDEC;
+  builders_[kRtcpSdes] = &RTCPSender::BuildSDES;
   builders_[kRtcpTransmissionTimeOffset] =
       &RTCPSender::BuildExtendedJitterReport;
   builders_[kRtcpPli] = &RTCPSender::BuildPLI;
@@ -181,14 +195,6 @@ RTCPSender::RTCPSender(
 }
 
 RTCPSender::~RTCPSender() {
-  for (auto it : internal_report_blocks_)
-    delete it.second;
-
-  for (auto it : external_report_blocks_)
-    delete it.second;
-
-  for (auto it : csrc_cnames_)
-    delete it.second;
 }
 
 int32_t RTCPSender::RegisterSendTransport(Transport* outgoingTransport) {
@@ -318,39 +324,34 @@ void RTCPSender::SetRemoteSSRC(uint32_t ssrc) {
   remote_ssrc_ = ssrc;
 }
 
-int32_t RTCPSender::SetCNAME(const char cName[RTCP_CNAME_SIZE]) {
-  if (!cName)
+int32_t RTCPSender::SetCNAME(const char* c_name) {
+  if (!c_name)
     return -1;
 
+  DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  cname_[RTCP_CNAME_SIZE - 1] = 0;
-  strncpy(cname_, cName, RTCP_CNAME_SIZE - 1);
+  cname_ = c_name;
   return 0;
 }
 
-int32_t RTCPSender::AddMixedCNAME(uint32_t SSRC,
-                                  const char cName[RTCP_CNAME_SIZE]) {
-  assert(cName);
+int32_t RTCPSender::AddMixedCNAME(uint32_t SSRC, const char* c_name) {
+  assert(c_name);
+  DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  if (csrc_cnames_.size() >= kRtpCsrcSize) {
+  if (csrc_cnames_.size() >= kRtpCsrcSize)
     return -1;
-  }
-  RTCPCnameInformation* ptr = new RTCPCnameInformation();
-  ptr->name[RTCP_CNAME_SIZE - 1] = 0;
-  strncpy(ptr->name, cName, RTCP_CNAME_SIZE - 1);
-  csrc_cnames_[SSRC] = ptr;
+
+  csrc_cnames_[SSRC] = c_name;
   return 0;
 }
 
 int32_t RTCPSender::RemoveMixedCNAME(uint32_t SSRC) {
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  std::map<uint32_t, RTCPCnameInformation*>::iterator it =
-      csrc_cnames_.find(SSRC);
+  auto it = csrc_cnames_.find(SSRC);
 
   if (it == csrc_cnames_.end())
     return -1;
 
-  delete it->second;
   csrc_cnames_.erase(it);
   return 0;
 }
@@ -467,63 +468,24 @@ bool RTCPSender::SendTimeOfXrRrReport(uint32_t mid_ntp,
   return true;
 }
 
-int32_t RTCPSender::AddExternalReportBlock(
-    uint32_t SSRC,
-    const RTCPReportBlock* reportBlock) {
-  CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  return AddReportBlock(SSRC, &external_report_blocks_, reportBlock);
-}
-
-int32_t RTCPSender::AddReportBlock(
-    uint32_t SSRC,
-    std::map<uint32_t, RTCPReportBlock*>* report_blocks,
-    const RTCPReportBlock* reportBlock) {
-  assert(reportBlock);
-
-  if (report_blocks->size() >= RTCP_MAX_REPORT_BLOCKS) {
+int32_t RTCPSender::AddReportBlock(const RTCPReportBlock& report_block) {
+  if (report_blocks_.size() >= RTCP_MAX_REPORT_BLOCKS) {
     LOG(LS_WARNING) << "Too many report blocks.";
     return -1;
   }
-  std::map<uint32_t, RTCPReportBlock*>::iterator it =
-      report_blocks->find(SSRC);
-  if (it != report_blocks->end()) {
-    delete it->second;
-    report_blocks->erase(it);
-  }
-  RTCPReportBlock* copyReportBlock = new RTCPReportBlock();
-  memcpy(copyReportBlock, reportBlock, sizeof(RTCPReportBlock));
-  (*report_blocks)[SSRC] = copyReportBlock;
-  return 0;
-}
+  rtcp::ReportBlock* block = &report_blocks_[report_block.remoteSSRC];
+  block->To(report_block.remoteSSRC);
+  block->WithFractionLost(report_block.fractionLost);
+  block->WithCumulativeLost(report_block.cumulativeLost);
+  block->WithExtHighestSeqNum(report_block.extendedHighSeqNum);
+  block->WithJitter(report_block.jitter);
+  block->WithLastSr(report_block.lastSR);
+  block->WithDelayLastSr(report_block.delaySinceLastSR);
 
-int32_t RTCPSender::RemoveExternalReportBlock(uint32_t SSRC) {
-  CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-
-  std::map<uint32_t, RTCPReportBlock*>::iterator it =
-      external_report_blocks_.find(SSRC);
-
-  if (it == external_report_blocks_.end()) {
-    return -1;
-  }
-  delete it->second;
-  external_report_blocks_.erase(it);
   return 0;
 }
 
 RTCPSender::BuildResult RTCPSender::BuildSR(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 52 >= IP_PACKET_SIZE) {
-    LOG(LS_WARNING) << "Failed to build Sender Report.";
-    return BuildResult::kTruncated;
-  }
-  uint32_t RTPtime;
-
-  uint32_t posNumberOfReportBlocks = ctx->position;
-  *ctx->AllocateData(1) = 0x80;
-
-  // Sender report
-  *ctx->AllocateData(1) = 200;
-
   for (int i = (RTCP_NUMBER_OF_SR - 2); i >= 0; i--) {
     // shift old
     last_send_report_[i + 1] = last_send_report_[i];
@@ -537,161 +499,66 @@ RTCPSender::BuildResult RTCPSender::BuildSR(RtcpContext* ctx) {
   // the frame being captured at this moment. We are calculating that
   // timestamp as the last frame's timestamp + the time since the last frame
   // was captured.
-  RTPtime = start_timestamp_ + last_rtp_timestamp_ +
-            (clock_->TimeInMilliseconds() - last_frame_capture_time_ms_) *
-                (ctx->feedback_state.frequency_hz / 1000);
+  uint32_t rtp_timestamp =
+      start_timestamp_ + last_rtp_timestamp_ +
+      (clock_->TimeInMilliseconds() - last_frame_capture_time_ms_) *
+          (ctx->feedback_state.frequency_hz / 1000);
 
-  // Add sender data
-  // Save  for our length field
-  ctx->AllocateData(2);
+  rtcp::SenderReport report;
+  report.From(ssrc_);
+  report.WithNtpSec(ctx->ntp_sec);
+  report.WithNtpFrac(ctx->ntp_frac);
+  report.WithRtpTimestamp(rtp_timestamp);
+  report.WithPacketCount(ctx->feedback_state.packets_sent);
+  report.WithOctetCount(ctx->feedback_state.media_bytes_sent);
 
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-  // NTP
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ctx->ntp_sec);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ctx->ntp_frac);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), RTPtime);
+  for (auto it : report_blocks_)
+    report.WithReportBlock(it.second);
 
-  // sender's packet count
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                       ctx->feedback_state.packets_sent);
-
-  // sender's octet count
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                       ctx->feedback_state.media_bytes_sent);
-
-  uint8_t numberOfReportBlocks = 0;
-  BuildResult result = WriteAllReportBlocksToBuffer(ctx, &numberOfReportBlocks);
-  switch (result) {
-    case BuildResult::kError:
-    case BuildResult::kTruncated:
-    case BuildResult::kAborted:
-      return result;
-    case BuildResult::kSuccess:
-      break;
-    default:
-      abort();
+  PacketBuiltCallback callback(ctx);
+  if (!report.BuildExternalBuffer(&ctx->buffer[ctx->position],
+                                  ctx->buffer_size - ctx->position,
+                                  &callback)) {
+    return BuildResult::kTruncated;
   }
 
-  ctx->buffer[posNumberOfReportBlocks] += numberOfReportBlocks;
-
-  uint16_t len = static_cast<uint16_t>((ctx->position / 4) - 1);
-  ByteWriter<uint16_t>::WriteBigEndian(&ctx->buffer[2], len);
-
+  report_blocks_.clear();
   return BuildResult::kSuccess;
 }
 
-RTCPSender::BuildResult RTCPSender::BuildSDEC(RtcpContext* ctx) {
-  size_t lengthCname = strlen(cname_);
-  assert(lengthCname < RTCP_CNAME_SIZE);
+RTCPSender::BuildResult RTCPSender::BuildSDES(RtcpContext* ctx) {
+  size_t length_cname = cname_.length();
+  CHECK_LT(length_cname, static_cast<size_t>(RTCP_CNAME_SIZE));
 
-  // sanity
-  if (ctx->position + 12 + lengthCname >= IP_PACKET_SIZE) {
-    LOG(LS_WARNING) << "Failed to build SDEC.";
+  rtcp::Sdes sdes;
+  sdes.WithCName(ssrc_, cname_);
+
+  for (const auto it : csrc_cnames_)
+    sdes.WithCName(it.first, it.second);
+
+  PacketBuiltCallback callback(ctx);
+  if (!sdes.BuildExternalBuffer(&ctx->buffer[ctx->position],
+                                ctx->buffer_size - ctx->position, &callback)) {
     return BuildResult::kTruncated;
   }
-  // SDEC Source Description
 
-  // We always need to add SDES CNAME
-  size_t size = 0x80 + 1 + csrc_cnames_.size();
-  DCHECK_LE(size, std::numeric_limits<uint8_t>::max());
-  *ctx->AllocateData(1) = static_cast<uint8_t>(size);
-  *ctx->AllocateData(1) = 202;
-
-  // handle SDES length later on
-  uint32_t SDESLengthPos = ctx->position;
-  ctx->AllocateData(2);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // CNAME = 1
-  *ctx->AllocateData(1) = 1;
-  DCHECK_LE(lengthCname, std::numeric_limits<uint8_t>::max());
-  *ctx->AllocateData(1) = static_cast<uint8_t>(lengthCname);
-
-  uint16_t SDESLength = 10;
-
-  memcpy(ctx->AllocateData(lengthCname), cname_, lengthCname);
-  SDESLength += static_cast<uint16_t>(lengthCname);
-
-  uint16_t padding = 0;
-  // We must have a zero field even if we have an even multiple of 4 bytes
-  do {
-    ++padding;
-    *ctx->AllocateData(1) = 0;
-  } while ((ctx->position % 4) != 0);
-  SDESLength += padding;
-
-  for (auto it = csrc_cnames_.begin(); it != csrc_cnames_.end(); ++it) {
-    RTCPCnameInformation* cname = it->second;
-    uint32_t SSRC = it->first;
-
-    // Add SSRC
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), SSRC);
-
-    // CNAME = 1
-    *ctx->AllocateData(1) = 1;
-
-    size_t length = strlen(cname->name);
-    assert(length < RTCP_CNAME_SIZE);
-
-    *ctx->AllocateData(1) = static_cast<uint8_t>(length);
-    SDESLength += 6;
-
-    memcpy(ctx->AllocateData(length), cname->name, length);
-
-    SDESLength += length;
-    uint16_t padding = 0;
-
-    // We must have a zero field even if we have an even multiple of 4 bytes
-    do {
-      ++padding;
-      *ctx->AllocateData(1) = 0;
-    } while ((ctx->position % 4) != 0);
-    SDESLength += padding;
-  }
-  // in 32-bit words minus one and we don't count the header
-  uint16_t buffer_length = (SDESLength / 4) - 1;
-  ByteWriter<uint16_t>::WriteBigEndian(&ctx->buffer[SDESLengthPos],
-                                       buffer_length);
   return BuildResult::kSuccess;
 }
 
 RTCPSender::BuildResult RTCPSender::BuildRR(RtcpContext* ctx) {
-  // sanity one block
-  if (ctx->position + 32 >= IP_PACKET_SIZE)
+  rtcp::ReceiverReport report;
+  report.From(ssrc_);
+  for (auto it : report_blocks_)
+    report.WithReportBlock(it.second);
+
+  PacketBuiltCallback callback(ctx);
+  if (!report.BuildExternalBuffer(&ctx->buffer[ctx->position],
+                                  ctx->buffer_size - ctx->position,
+                                  &callback)) {
     return BuildResult::kTruncated;
-
-  uint32_t posNumberOfReportBlocks = ctx->position;
-
-  *ctx->AllocateData(1) = 0x80;
-  *ctx->AllocateData(1) = 201;
-
-  // Save  for our length field
-  uint32_t len_pos = ctx->position;
-  ctx->AllocateData(2);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  uint8_t numberOfReportBlocks = 0;
-  BuildResult result = WriteAllReportBlocksToBuffer(ctx, &numberOfReportBlocks);
-  switch (result) {
-    case BuildResult::kError:
-    case BuildResult::kTruncated:
-    case BuildResult::kAborted:
-      return result;
-    case BuildResult::kSuccess:
-      break;
-    default:
-      abort();
   }
 
-  ctx->buffer[posNumberOfReportBlocks] += numberOfReportBlocks;
-
-  uint16_t len = uint16_t((ctx->position) / 4 - 1);
-  ByteWriter<uint16_t>::WriteBigEndian(&ctx->buffer[len_pos], len);
+  report_blocks_.clear();
 
   return BuildResult::kSuccess;
 }
@@ -716,13 +583,6 @@ RTCPSender::BuildResult RTCPSender::BuildRR(RtcpContext* ctx) {
 
 RTCPSender::BuildResult RTCPSender::BuildExtendedJitterReport(
     RtcpContext* ctx) {
-  if (external_report_blocks_.size() > 0) {
-    // TODO(andresp): Remove external report blocks since they are not
-    // supported.
-    LOG(LS_ERROR) << "Handling of external report blocks not implemented.";
-    return BuildResult::kError;
-  }
-
   // sanity
   if (ctx->position + 8 >= IP_PACKET_SIZE)
     return BuildResult::kTruncated;
@@ -1482,7 +1342,7 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       SetFlag(sending_ ? kRtcpSr : kRtcpRr, true);
   }
 
-  if (IsFlagPresent(kRtcpSr) || (IsFlagPresent(kRtcpRr) && cname_[0] != 0))
+  if (IsFlagPresent(kRtcpSr) || (IsFlagPresent(kRtcpRr) && !cname_.empty()))
     SetFlag(kRtcpSdes, true);
 
   // We need to send our NTP even if we haven't received any reports.
@@ -1521,9 +1381,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
     if (!statisticians.empty()) {
       for (auto it = statisticians.begin(); it != statisticians.end(); ++it) {
         RTCPReportBlock report_block;
-        if (PrepareReport(feedback_state, it->second, &report_block,
-                          &context.ntp_sec, &context.ntp_frac)) {
-          AddReportBlock(it->first, &internal_report_blocks_, &report_block);
+        if (PrepareReport(feedback_state, it->first, it->second,
+                          &report_block)) {
+          AddReportBlock(report_block);
         }
       }
       if (extended_jitter_report_enabled_)
@@ -1542,7 +1402,7 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
     }
 
     uint32_t start_position = context.position;
-    BuildResult result = (*this.*(builder->second))(&context);
+    BuildResult result = (this->*(builder->second))(&context);
     switch (result) {
       case BuildResult::kError:
         return -1;
@@ -1569,9 +1429,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
 }
 
 bool RTCPSender::PrepareReport(const FeedbackState& feedback_state,
+                               uint32_t ssrc,
                                StreamStatistician* statistician,
-                               RTCPReportBlock* report_block,
-                               uint32_t* ntp_secs, uint32_t* ntp_frac) {
+                               RTCPReportBlock* report_block) {
   // Do we have receive statistics to send?
   RtcpStatistics stats;
   if (!statistician->GetStatistics(&stats, true))
@@ -1581,18 +1441,22 @@ bool RTCPSender::PrepareReport(const FeedbackState& feedback_state,
   report_block->extendedHighSeqNum =
       stats.extended_max_sequence_number;
   report_block->jitter = stats.jitter;
+  report_block->remoteSSRC = ssrc;
 
-  // get our NTP as late as possible to avoid a race
-  clock_->CurrentNtp(*ntp_secs, *ntp_frac);
+  // TODO(sprang): Do we really need separate time stamps for each report?
+  // Get our NTP as late as possible to avoid a race.
+  uint32_t ntp_secs;
+  uint32_t ntp_frac;
+  clock_->CurrentNtp(ntp_secs, ntp_frac);
 
-  // Delay since last received report
+  // Delay since last received report.
   uint32_t delaySinceLastReceivedSR = 0;
   if ((feedback_state.last_rr_ntp_secs != 0) ||
       (feedback_state.last_rr_ntp_frac != 0)) {
-    // get the 16 lowest bits of seconds and the 16 higest bits of fractions
-    uint32_t now = *ntp_secs & 0x0000FFFF;
+    // Get the 16 lowest bits of seconds and the 16 highest bits of fractions.
+    uint32_t now = ntp_secs & 0x0000FFFF;
     now <<= 16;
-    now += (*ntp_frac & 0xffff0000) >> 16;
+    now += (ntp_frac & 0xffff0000) >> 16;
 
     uint32_t receiveTime = feedback_state.last_rr_ntp_secs & 0x0000FFFF;
     receiveTime <<= 16;
@@ -1655,61 +1519,6 @@ void RTCPSender::SendRtcpXrReceiverReferenceTime(bool enable) {
 bool RTCPSender::RtcpXrReceiverReferenceTime() const {
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
   return xr_send_receiver_reference_time_enabled_;
-}
-
-// called under critsect critical_section_rtcp_sender_
-RTCPSender::BuildResult RTCPSender::WriteAllReportBlocksToBuffer(
-    RtcpContext* ctx,
-    uint8_t* numberOfReportBlocks) {
-  *numberOfReportBlocks = external_report_blocks_.size();
-  *numberOfReportBlocks += internal_report_blocks_.size();
-  if ((ctx->position + *numberOfReportBlocks * 24) >= IP_PACKET_SIZE) {
-    LOG(LS_WARNING) << "Can't fit all report blocks.";
-    return BuildResult::kError;
-  }
-  WriteReportBlocksToBuffer(ctx, internal_report_blocks_);
-  while (!internal_report_blocks_.empty()) {
-    delete internal_report_blocks_.begin()->second;
-    internal_report_blocks_.erase(internal_report_blocks_.begin());
-  }
-  WriteReportBlocksToBuffer(ctx, external_report_blocks_);
-  return BuildResult::kSuccess;
-}
-
-void RTCPSender::WriteReportBlocksToBuffer(
-    RtcpContext* ctx,
-    const std::map<uint32_t, RTCPReportBlock*>& report_blocks) {
-  std::map<uint32_t, RTCPReportBlock*>::const_iterator it =
-      report_blocks.begin();
-  for (; it != report_blocks.end(); it++) {
-    uint32_t remoteSSRC = it->first;
-    RTCPReportBlock* reportBlock = it->second;
-    if (reportBlock) {
-      // Remote SSRC
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remoteSSRC);
-
-      // fraction lost
-      *ctx->AllocateData(1) = reportBlock->fractionLost;
-
-      // cumulative loss
-      ByteWriter<uint32_t, 3>::WriteBigEndian(ctx->AllocateData(3),
-                                              reportBlock->cumulativeLost);
-
-      // extended highest seq_no, contain the highest sequence number received
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                           reportBlock->extendedHighSeqNum);
-
-      // Jitter
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                           reportBlock->jitter);
-
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                           reportBlock->lastSR);
-
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                           reportBlock->delaySinceLastSR);
-    }
-  }
 }
 
 // no callbacks allowed inside this function

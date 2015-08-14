@@ -27,9 +27,6 @@ extern "C" {
 // Maximum rate target ratio for setting segment delta-qp.
 #define CR_MAX_RATE_TARGET_RATIO 4.0
 
-// Boost factor for rate target ratio, for segment CR_SEGMENT_ID_BOOST2.
-#define CR_BOOST2_FAC 1.7
-
 struct VP9_COMP;
 
 struct CYCLIC_REFRESH;
@@ -77,6 +74,8 @@ void vp9_cyclic_refresh_update_parameters(struct VP9_COMP *const cpi);
 void vp9_cyclic_refresh_setup(struct VP9_COMP *const cpi);
 
 int vp9_cyclic_refresh_get_rdmult(const CYCLIC_REFRESH *cr);
+
+void vp9_cyclic_refresh_reset_resize(struct VP9_COMP *const cpi);
 
 static INLINE int cyclic_refresh_segment_id_boosted(int segment_id) {
   return segment_id == CR_SEGMENT_ID_BOOST1 ||

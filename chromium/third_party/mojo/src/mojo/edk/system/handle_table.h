@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "base/containers/hash_tables.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/system/system_impl_export.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace system {
@@ -21,7 +21,7 @@ class Core;
 class Dispatcher;
 class DispatcherTransport;
 
-typedef std::vector<scoped_refptr<Dispatcher>> DispatcherVector;
+using DispatcherVector = std::vector<scoped_refptr<Dispatcher>>;
 
 // Test-only function (defined/used in embedder/test_embedder.cc). Declared here
 // so it can be friended.
@@ -126,7 +126,7 @@ class MOJO_SYSTEM_IMPL_EXPORT HandleTable {
     scoped_refptr<Dispatcher> dispatcher;
     bool busy;
   };
-  typedef base::hash_map<MojoHandle, Entry> HandleToEntryMap;
+  using HandleToEntryMap = base::hash_map<MojoHandle, Entry>;
 
   // Adds the given dispatcher to the handle table, not doing any size checks.
   MojoHandle AddDispatcherNoSizeCheck(
@@ -135,7 +135,7 @@ class MOJO_SYSTEM_IMPL_EXPORT HandleTable {
   HandleToEntryMap handle_to_entry_map_;
   MojoHandle next_handle_;  // Invariant: never |MOJO_HANDLE_INVALID|.
 
-  DISALLOW_COPY_AND_ASSIGN(HandleTable);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(HandleTable);
 };
 
 }  // namespace system

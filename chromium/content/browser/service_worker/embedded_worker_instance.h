@@ -77,7 +77,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     virtual void OnStopped(Status old_status) {}
     // The browser-side IPC endpoint for communication with the worker died.
     virtual void OnDetached(Status old_status) {}
-    virtual void OnPausedAfterDownload() {}
     virtual void OnReportException(const base::string16& error_message,
                                    int line_number,
                                    int column_number,
@@ -101,7 +100,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void Start(int64 service_worker_version_id,
              const GURL& scope,
              const GURL& script_url,
-             bool pause_after_download,
              const StatusCallback& callback);
 
   // Stops the worker. It is invalid to call this when the worker is
@@ -119,8 +117,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // It is invalid to call this while the worker is not in STARTING or RUNNING
   // status.
   ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
-
-  void ResumeAfterDownload();
 
   int embedded_worker_id() const { return embedded_worker_id_; }
   Status status() const { return status_; }
@@ -146,7 +142,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   static std::string StartingPhaseToString(StartingPhase phase);
 
  private:
-  typedef ObserverList<Listener> ListenerList;
+  typedef base::ObserverList<Listener> ListenerList;
   class DevToolsProxy;
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
@@ -164,15 +160,18 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
       scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
       const EmbeddedWorkerInstance::StatusCallback& callback,
       ServiceWorkerStatusCode status,
-      int process_id);
+      int process_id,
+      bool is_new_process);
   void ProcessAllocated(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
                         const StatusCallback& callback,
                         int process_id,
+                        bool is_new_process,
                         ServiceWorkerStatusCode status);
   // Called back after ProcessAllocated() passes control to the UI thread to
   // register to WorkerDevToolsManager.
   void SendStartWorker(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
                        const StatusCallback& callback,
+                       bool is_new_process,
                        int worker_devtools_agent_route_id,
                        bool wait_for_debugger);
 
@@ -197,8 +196,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // called after OnScriptEvaluated.
   // This will change the internal status from STARTING to RUNNING.
   void OnStarted();
-
-  void OnPausedAfterDownload();
 
   // Called back from Registry when the worker instance has ack'ed that
   // its WorkerGlobalScope is actually stopped in the child process.

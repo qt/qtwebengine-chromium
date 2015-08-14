@@ -47,9 +47,8 @@ PrioritizedDispatcher::Limits HostResolver::Options::GetDispatcherLimits()
   // The format of the group name is a list of non-negative integers separated
   // by ':'. Each of the elements in the list corresponds to an element in
   // |reserved_slots|, except the last one which is the |total_jobs|.
-
-  std::vector<std::string> group_parts;
-  base::SplitString(group, ':', &group_parts);
+  std::vector<base::StringPiece> group_parts = base::SplitStringPiece(
+      group, ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   if (group_parts.size() != NUM_PRIORITIES + 1) {
     NOTREACHED();
     return limits;
@@ -98,10 +97,6 @@ HostResolver::RequestInfo::RequestInfo(const HostPortPair& host_port_pair)
       is_my_ip_address_(false) {}
 
 HostResolver::~HostResolver() {
-}
-
-AddressFamily HostResolver::GetDefaultAddressFamily() const {
-  return ADDRESS_FAMILY_UNSPECIFIED;
 }
 
 void HostResolver::SetDnsClientEnabled(bool enabled) {

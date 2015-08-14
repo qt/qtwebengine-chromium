@@ -7,9 +7,9 @@
 #include <string.h>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_io_thread.h"
@@ -20,6 +20,9 @@
 #include "mojo/edk/test/multiprocess_test_helper.h"
 #include "mojo/edk/test/scoped_ipc_support.h"
 #include "mojo/public/c/system/core.h"
+#include "mojo/public/cpp/system/handle.h"
+#include "mojo/public/cpp/system/macros.h"
+#include "mojo/public/cpp/system/message_pipe.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -33,22 +36,22 @@ const MojoHandleSignals kSignalAll = MOJO_HANDLE_SIGNAL_READABLE |
                                      MOJO_HANDLE_SIGNAL_WRITABLE |
                                      MOJO_HANDLE_SIGNAL_PEER_CLOSED;
 
+const char kConnectionIdFlag[] = "test-connection-id";
+
 class ScopedTestChannel {
  public:
-  // Creates a channel that lives on a given I/O thread (determined by the given
-  // |TaskRunner|) attached to the given |platform_handle|. After construction,
-  // |bootstrap_message_pipe()| gives the Mojo handle for the bootstrap message
-  // pipe on this channel; it is up to the caller to close this handle.
-  // Note: The I/O thread must outlive this object (and its message loop must
-  // continue pumping messages while this object is alive).
-  ScopedTestChannel(scoped_refptr<base::TaskRunner> io_thread_task_runner,
-                    ScopedPlatformHandle platform_handle)
-      : io_thread_task_runner_(io_thread_task_runner),
-        bootstrap_message_pipe_(MOJO_HANDLE_INVALID),
+  // Creates a channel, which lives on the I/O thread given to
+  // |InitIPCSupport()|. After construction, |bootstrap_message_pipe()| gives
+  // the Mojo handle for the bootstrap message pipe on this channel; it is up to
+  // the caller to close this handle. Note: The I/O thread must outlive this
+  // object (and its message loop must continue pumping messages while this
+  // object is alive).
+  explicit ScopedTestChannel(ScopedPlatformHandle platform_handle)
+      : bootstrap_message_pipe_(MOJO_HANDLE_INVALID),
         event_(true, false),  // Manual reset.
         channel_info_(nullptr) {
     bootstrap_message_pipe_ =
-        CreateChannel(platform_handle.Pass(), io_thread_task_runner_,
+        CreateChannel(platform_handle.Pass(),
                       base::Bind(&ScopedTestChannel::DidCreateChannel,
                                  base::Unretained(this)),
                       nullptr)
@@ -89,8 +92,6 @@ class ScopedTestChannel {
 
   void DidDestroyChannel() { event_.Signal(); }
 
-  scoped_refptr<base::TaskRunner> io_thread_task_runner_;
-
   // Valid from creation until whenever it gets closed (by the "owner" of this
   // object).
   // Note: We don't want use the C++ wrappers here, since we want to test the
@@ -105,7 +106,7 @@ class ScopedTestChannel {
   // Valid after channel creation completion until destruction.
   ChannelInfo* channel_info_;
 
-  DISALLOW_COPY_AND_ASSIGN(ScopedTestChannel);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(ScopedTestChannel);
 };
 
 class EmbedderTest : public testing::Test {
@@ -114,6 +115,7 @@ class EmbedderTest : public testing::Test {
   ~EmbedderTest() override {}
 
  protected:
+  base::TestIOThread& test_io_thread() { return test_io_thread_; }
   scoped_refptr<base::TaskRunner> test_io_task_runner() {
     return test_io_thread_.task_runner();
   }
@@ -125,19 +127,17 @@ class EmbedderTest : public testing::Test {
 
   base::TestIOThread test_io_thread_;
 
-  DISALLOW_COPY_AND_ASSIGN(EmbedderTest);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(EmbedderTest);
 };
 
 TEST_F(EmbedderTest, ChannelsBasic) {
   mojo::test::ScopedIPCSupport ipc_support(test_io_task_runner());
 
   PlatformChannelPair channel_pair;
-  ScopedTestChannel server_channel(test_io_task_runner(),
-                                   channel_pair.PassServerHandle());
+  ScopedTestChannel server_channel(channel_pair.PassServerHandle());
   MojoHandle server_mp = server_channel.bootstrap_message_pipe();
   EXPECT_NE(server_mp, MOJO_HANDLE_INVALID);
-  ScopedTestChannel client_channel(test_io_task_runner(),
-                                   channel_pair.PassClientHandle());
+  ScopedTestChannel client_channel(channel_pair.PassClientHandle());
   MojoHandle client_mp = client_channel.bootstrap_message_pipe();
   EXPECT_NE(client_mp, MOJO_HANDLE_INVALID);
 
@@ -198,7 +198,7 @@ class TestAsyncWaiter {
   mutable base::Lock wait_result_lock_;
   MojoResult wait_result_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestAsyncWaiter);
+  MOJO_DISALLOW_COPY_AND_ASSIGN(TestAsyncWaiter);
 };
 
 void WriteHello(MessagePipeHandle pipe) {
@@ -215,8 +215,7 @@ void CloseScopedHandle(ScopedMessagePipeHandle handle) {
 TEST_F(EmbedderTest, AsyncWait) {
   ScopedMessagePipeHandle client_mp;
   ScopedMessagePipeHandle server_mp;
-  EXPECT_EQ(MOJO_RESULT_OK,
-            mojo::CreateMessagePipe(nullptr, &client_mp, &server_mp));
+  EXPECT_EQ(MOJO_RESULT_OK, CreateMessagePipe(nullptr, &client_mp, &server_mp));
 
   TestAsyncWaiter waiter;
   EXPECT_EQ(MOJO_RESULT_OK,
@@ -261,12 +260,10 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
   mojo::test::ScopedIPCSupport ipc_support(test_io_task_runner());
 
   PlatformChannelPair channel_pair;
-  ScopedTestChannel server_channel(test_io_task_runner(),
-                                   channel_pair.PassServerHandle());
+  ScopedTestChannel server_channel(channel_pair.PassServerHandle());
   MojoHandle server_mp = server_channel.bootstrap_message_pipe();
   EXPECT_NE(server_mp, MOJO_HANDLE_INVALID);
-  ScopedTestChannel client_channel(test_io_task_runner(),
-                                   channel_pair.PassClientHandle());
+  ScopedTestChannel client_channel(channel_pair.PassClientHandle());
   MojoHandle client_mp = client_channel.bootstrap_message_pipe();
   EXPECT_NE(client_mp, MOJO_HANDLE_INVALID);
 
@@ -304,7 +301,7 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
   char buffer[1000] = {};
   uint32_t num_bytes = static_cast<uint32_t>(sizeof(buffer));
   MojoHandle handles[10] = {};
-  uint32_t num_handles = arraysize(handles);
+  uint32_t num_handles = MOJO_ARRAYSIZE(handles);
   EXPECT_EQ(MOJO_RESULT_OK,
             MojoReadMessage(client_mp, buffer, &num_bytes, handles,
                             &num_handles, MOJO_READ_MESSAGE_FLAG_NONE));
@@ -324,7 +321,7 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
   memset(buffer, 0, sizeof(buffer));
   num_bytes = static_cast<uint32_t>(sizeof(buffer));
   memset(handles, 0, sizeof(handles));
-  num_handles = arraysize(handles);
+  num_handles = MOJO_ARRAYSIZE(handles);
   EXPECT_EQ(MOJO_RESULT_OK,
             MojoReadMessage(h1, buffer, &num_bytes, handles, &num_handles,
                             MOJO_READ_MESSAGE_FLAG_NONE));
@@ -380,6 +377,115 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
   EXPECT_TRUE(client_channel.channel_info());
 }
 
+#if defined(OS_ANDROID)
+// Android multi-process tests are not executing the new process. This is flaky.
+// TODO(vtl): I'm guessing this is true of this test too?
+#define MAYBE_MultiprocessMasterSlave DISABLED_MultiprocessMasterSlave
+#else
+#define MAYBE_MultiprocessMasterSlave MultiprocessMasterSlave
+#endif  // defined(OS_ANDROID)
+TEST_F(EmbedderTest, MAYBE_MultiprocessMasterSlave) {
+  mojo::test::ScopedMasterIPCSupport ipc_support(test_io_task_runner());
+
+  mojo::test::MultiprocessTestHelper multiprocess_test_helper;
+  std::string connection_id;
+  base::WaitableEvent event(true, false);
+  ChannelInfo* channel_info = nullptr;
+  ScopedMessagePipeHandle mp = ConnectToSlave(
+      nullptr, multiprocess_test_helper.server_platform_handle.Pass(),
+      base::Bind(&base::WaitableEvent::Signal, base::Unretained(&event)),
+      nullptr, &connection_id, &channel_info);
+  ASSERT_TRUE(mp.is_valid());
+  EXPECT_TRUE(channel_info);
+  ASSERT_FALSE(connection_id.empty());
+
+  multiprocess_test_helper.StartChildWithExtraSwitch(
+      "MultiprocessMasterSlave", kConnectionIdFlag, connection_id);
+
+  // Send a message saying "hello".
+  EXPECT_EQ(MOJO_RESULT_OK, WriteMessageRaw(mp.get(), "hello", 5, nullptr, 0,
+                                            MOJO_WRITE_MESSAGE_FLAG_NONE));
+
+  // Wait for a response.
+  EXPECT_EQ(MOJO_RESULT_OK,
+            Wait(mp.get(), MOJO_HANDLE_SIGNAL_READABLE,
+                 mojo::system::test::ActionDeadline(), nullptr));
+
+  // The response message should say "world".
+  char buffer[100];
+  uint32_t num_bytes = static_cast<uint32_t>(sizeof(buffer));
+  EXPECT_EQ(MOJO_RESULT_OK,
+            ReadMessageRaw(mp.get(), buffer, &num_bytes, nullptr, nullptr,
+                           MOJO_READ_MESSAGE_FLAG_NONE));
+  EXPECT_EQ(5u, num_bytes);
+  EXPECT_EQ(0, memcmp(buffer, "world", 5));
+
+  mp.reset();
+
+  EXPECT_TRUE(multiprocess_test_helper.WaitForChildTestShutdown());
+
+  EXPECT_TRUE(event.TimedWait(TestTimeouts::action_timeout()));
+  test_io_thread().PostTaskAndWait(
+      FROM_HERE,
+      base::Bind(&DestroyChannelOnIOThread, base::Unretained(channel_info)));
+}
+
+MOJO_MULTIPROCESS_TEST_CHILD_TEST(MultiprocessMasterSlave) {
+  ScopedPlatformHandle client_platform_handle =
+      mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
+  EXPECT_TRUE(client_platform_handle.is_valid());
+
+  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
+  test::InitWithSimplePlatformSupport();
+
+  {
+    mojo::test::ScopedSlaveIPCSupport ipc_support(
+        test_io_thread.task_runner(), client_platform_handle.Pass());
+
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
+    ASSERT_TRUE(command_line.HasSwitch(kConnectionIdFlag));
+    std::string connection_id =
+        command_line.GetSwitchValueASCII(kConnectionIdFlag);
+    ASSERT_FALSE(connection_id.empty());
+    base::WaitableEvent event(true, false);
+    ChannelInfo* channel_info = nullptr;
+    ScopedMessagePipeHandle mp = ConnectToMaster(
+        connection_id,
+        base::Bind(&base::WaitableEvent::Signal, base::Unretained(&event)),
+        nullptr, &channel_info);
+    ASSERT_TRUE(mp.is_valid());
+    EXPECT_TRUE(channel_info);
+
+    // Wait for the master to send us a message.
+    EXPECT_EQ(MOJO_RESULT_OK,
+              Wait(mp.get(), MOJO_HANDLE_SIGNAL_READABLE,
+                   mojo::system::test::ActionDeadline(), nullptr));
+
+    // It should say "hello".
+    char buffer[100];
+    uint32_t num_bytes = static_cast<uint32_t>(sizeof(buffer));
+    EXPECT_EQ(MOJO_RESULT_OK,
+              ReadMessageRaw(mp.get(), buffer, &num_bytes, nullptr, nullptr,
+                             MOJO_READ_MESSAGE_FLAG_NONE));
+    EXPECT_EQ(5u, num_bytes);
+    EXPECT_EQ(0, memcmp(buffer, "hello", 5));
+
+    // In response send a message saying "world".
+    EXPECT_EQ(MOJO_RESULT_OK, WriteMessageRaw(mp.get(), "world", 5, nullptr, 0,
+                                              MOJO_WRITE_MESSAGE_FLAG_NONE));
+
+    mp.reset();
+
+    EXPECT_TRUE(event.TimedWait(TestTimeouts::action_timeout()));
+    test_io_thread.PostTaskAndWait(
+        FROM_HERE,
+        base::Bind(&DestroyChannelOnIOThread, base::Unretained(channel_info)));
+  }
+
+  EXPECT_TRUE(test::Shutdown());
+}
+
 // The sequence of messages sent is:
 //       server_mp   client_mp   mp0         mp1         mp2         mp3
 //   1.  "hello"
@@ -411,7 +517,6 @@ TEST_F(EmbedderTest, MAYBE_MultiprocessChannels) {
 
   {
     ScopedTestChannel server_channel(
-        test_io_task_runner(),
         multiprocess_test_helper.server_platform_handle.Pass());
     MojoHandle server_mp = server_channel.bootstrap_message_pipe();
     EXPECT_NE(server_mp, MOJO_HANDLE_INVALID);
@@ -533,8 +638,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_TEST(MultiprocessChannelsClient) {
     // probably.
     mojo::test::ScopedIPCSupport ipc_support(test_io_thread.task_runner());
 
-    ScopedTestChannel client_channel(test_io_thread.task_runner(),
-                                     client_platform_handle.Pass());
+    ScopedTestChannel client_channel(client_platform_handle.Pass());
     MojoHandle client_mp = client_channel.bootstrap_message_pipe();
     EXPECT_NE(client_mp, MOJO_HANDLE_INVALID);
     client_channel.WaitForChannelCreationCompletion();

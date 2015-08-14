@@ -611,8 +611,8 @@ bool KeySystemsImpl::UseAesDecryptor(
   KeySystemInfoMap::const_iterator key_system_iter =
       concrete_key_system_map_.find(concrete_key_system);
   if (key_system_iter == concrete_key_system_map_.end()) {
-      DLOG(FATAL) << concrete_key_system << " is not a known concrete system";
-      return false;
+    DLOG(ERROR) << concrete_key_system << " is not a known concrete system";
+    return false;
   }
 
   return key_system_iter->second.use_aes_decryptor;
@@ -674,12 +674,12 @@ EmeConfigRule KeySystemsImpl::GetContentTypeConfigRule(
   SupportedCodecs media_type_codec_mask = EME_CODEC_NONE;
   switch (media_type) {
     case EmeMediaType::AUDIO:
-      if (!StartsWithASCII(container_mime_type, "audio/", true))
+      if (!base::StartsWithASCII(container_mime_type, "audio/", true))
         return EmeConfigRule::NOT_SUPPORTED;
       media_type_codec_mask = audio_codec_mask_;
       break;
     case EmeMediaType::VIDEO:
-      if (!StartsWithASCII(container_mime_type, "video/", true))
+      if (!base::StartsWithASCII(container_mime_type, "video/", true))
         return EmeConfigRule::NOT_SUPPORTED;
       media_type_codec_mask = video_codec_mask_;
       break;

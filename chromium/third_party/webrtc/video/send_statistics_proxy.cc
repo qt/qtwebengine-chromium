@@ -16,6 +16,7 @@
 
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/metrics.h"
 
 namespace webrtc {
 
@@ -23,11 +24,24 @@ const int SendStatisticsProxy::kStatsTimeoutMs = 5000;
 
 SendStatisticsProxy::SendStatisticsProxy(Clock* clock,
                                          const VideoSendStream::Config& config)
-    : clock_(clock),
-      config_(config) {
+    : clock_(clock), config_(config), last_sent_frame_timestamp_(0) {
 }
 
-SendStatisticsProxy::~SendStatisticsProxy() {}
+SendStatisticsProxy::~SendStatisticsProxy() {
+  UpdateHistograms();
+}
+
+void SendStatisticsProxy::UpdateHistograms() {
+  int input_fps =
+      static_cast<int>(input_frame_rate_tracker_total_.units_second());
+  int sent_fps =
+      static_cast<int>(sent_frame_rate_tracker_total_.units_second());
+
+  if (input_fps > 0)
+    RTC_HISTOGRAM_COUNTS_100("WebRTC.Video.InputFramesPerSecond", input_fps);
+  if (sent_fps > 0)
+    RTC_HISTOGRAM_COUNTS_100("WebRTC.Video.SentFramesPerSecond", sent_fps);
+}
 
 void SendStatisticsProxy::OutgoingRate(const int video_channel,
                                        const unsigned int framerate,
@@ -58,17 +72,15 @@ VideoSendStream::Stats SendStatisticsProxy::GetStats() {
 }
 
 void SendStatisticsProxy::PurgeOldStats() {
-  int64_t current_time_ms = clock_->TimeInMilliseconds();
+  int64_t old_stats_ms = clock_->TimeInMilliseconds() - kStatsTimeoutMs;
   for (std::map<uint32_t, VideoSendStream::StreamStats>::iterator it =
            stats_.substreams.begin();
        it != stats_.substreams.end(); ++it) {
     uint32_t ssrc = it->first;
-    if (update_times_[ssrc].resolution_update_ms + kStatsTimeoutMs >
-        current_time_ms)
-      continue;
-
-    it->second.width = 0;
-    it->second.height = 0;
+    if (update_times_[ssrc].resolution_update_ms <= old_stats_ms) {
+      it->second.width = 0;
+      it->second.height = 0;
+    }
   }
 }
 
@@ -88,6 +100,18 @@ VideoSendStream::StreamStats* SendStatisticsProxy::GetStatsEntry(
   }
 
   return &stats_.substreams[ssrc];  // Insert new entry and return ptr.
+}
+
+void SendStatisticsProxy::OnInactiveSsrc(uint32_t ssrc) {
+  rtc::CritScope lock(&crit_);
+  VideoSendStream::StreamStats* stats = GetStatsEntry(ssrc);
+  if (stats == nullptr)
+    return;
+
+  stats->total_bitrate_bps = 0;
+  stats->retransmit_bitrate_bps = 0;
+  stats->height = 0;
+  stats->width = 0;
 }
 
 void SendStatisticsProxy::OnSetRates(uint32_t bitrate_bps, int framerate) {
@@ -115,11 +139,16 @@ void SendStatisticsProxy::OnSendEncodedImage(
   stats->width = encoded_image._encodedWidth;
   stats->height = encoded_image._encodedHeight;
   update_times_[ssrc].resolution_update_ms = clock_->TimeInMilliseconds();
+  if (encoded_image._timeStamp != last_sent_frame_timestamp_) {
+    last_sent_frame_timestamp_ = encoded_image._timeStamp;
+    sent_frame_rate_tracker_total_.Update(1);
+  }
 }
 
 void SendStatisticsProxy::OnIncomingFrame() {
   rtc::CritScope lock(&crit_);
   input_frame_rate_tracker_.Update(1);
+  input_frame_rate_tracker_total_.Update(1);
 }
 
 void SendStatisticsProxy::RtcpPacketTypesCounterUpdated(

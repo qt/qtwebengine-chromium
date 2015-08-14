@@ -6,6 +6,7 @@
 #include "base/time/time.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_message_enums.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/render_view_test.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
 #include "content/renderer/render_frame_impl.h"
@@ -50,6 +51,15 @@ class RendererAccessibilityTest : public RenderViewTest {
     sink_ = &render_thread_->sink();
   }
 
+  void TearDown() override {
+#if defined(LEAK_SANITIZER)
+     // Do this before shutting down V8 in RenderViewTest::TearDown().
+     // http://crbug.com/328552
+     __lsan_do_leak_check();
+#endif
+     RenderViewTest::TearDown();
+  }
+
   void SetMode(AccessibilityMode mode) {
     frame()->OnSetAccessibilityMode(mode);
   }
@@ -59,10 +69,10 @@ class RendererAccessibilityTest : public RenderViewTest {
     const IPC::Message* message =
         sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
     ASSERT_TRUE(message);
-    Tuple<std::vector<AccessibilityHostMsg_EventParams>, int> param;
+    base::Tuple<std::vector<AccessibilityHostMsg_EventParams>, int> param;
     AccessibilityHostMsg_Events::Read(message, &param);
-    ASSERT_GE(get<0>(param).size(), 1U);
-    *params = get<0>(param)[0];
+    ASSERT_GE(base::get<0>(param).size(), 1U);
+    *params = base::get<0>(param)[0];
   }
 
   int CountAccessibilityNodesSentToBrowser() {
@@ -156,6 +166,13 @@ TEST_F(RendererAccessibilityTest, SendFullAccessibilityTreeOnReload) {
 
 TEST_F(RendererAccessibilityTest,
        MAYBE_AccessibilityMessagesQueueWhileSwappedOut) {
+  // This test breaks down in --site-per-process, as swapping out destroys
+  // the main frame and it cannot be further navigated.
+  // TODO(nasko): Figure out what this behavior looks like when swapped out
+  // no longer exists.
+  if (RenderFrameProxy::IsSwappedOutStateForbidden()) {
+    return;
+  }
   std::string html =
       "<body>"
       "  <p>Hello, world.</p>"
@@ -404,9 +421,9 @@ TEST_F(RendererAccessibilityTest, EventOnObjectNotInTree) {
   const IPC::Message* message =
       sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
   ASSERT_TRUE(message);
-  Tuple<std::vector<AccessibilityHostMsg_EventParams>, int> param;
+  base::Tuple<std::vector<AccessibilityHostMsg_EventParams>, int> param;
   AccessibilityHostMsg_Events::Read(message, &param);
-  ASSERT_EQ(0U, get<0>(param).size());
+  ASSERT_EQ(0U, base::get<0>(param).size());
 }
 
 }  // namespace content

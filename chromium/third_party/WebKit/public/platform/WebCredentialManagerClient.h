@@ -26,7 +26,7 @@ public:
     // the following methods.
     virtual void dispatchFailedSignIn(const WebCredential&, NotificationCallbacks*) { }
     virtual void dispatchSignedIn(const WebCredential&, NotificationCallbacks*) { }
-    virtual void dispatchSignedOut(NotificationCallbacks*) { }
+    virtual void dispatchRequireUserMediation(NotificationCallbacks*) { }
     virtual void dispatchRequest(bool zeroClickOnly, const WebVector<WebURL>& federations, RequestCallbacks*) { }
 };
 

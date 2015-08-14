@@ -8,8 +8,10 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/security_style_explanations.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/bindings_policy.h"
+#include "content/public/common/security_style.h"
 #include "content/public/common/url_constants.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -72,7 +74,6 @@ bool WebContentsDelegate::TakeFocus(WebContents* source, bool reverse) {
 }
 
 void WebContentsDelegate::CanDownload(
-    RenderViewHost* render_view_host,
     const GURL& url,
     const std::string& request_method,
     const base::Callback<void(bool)>& callback) {
@@ -134,7 +135,7 @@ bool WebContentsDelegate::ShouldCreateWebContents(
     int route_id,
     int main_frame_route_id,
     WindowContainerType window_container_type,
-    const base::string16& frame_name,
+    const std::string& frame_name,
     const GURL& target_url,
     const std::string& partition_id,
     SessionStorageNamespace* session_storage_namespace) {
@@ -224,6 +225,12 @@ bool WebContentsDelegate::IsNeverVisible(WebContents* web_contents) {
 
 bool WebContentsDelegate::SaveFrame(const GURL& url, const Referrer& referrer) {
   return false;
+}
+
+SecurityStyle WebContentsDelegate::GetSecurityStyle(
+    WebContents* web_contents,
+    SecurityStyleExplanations* security_style_explanations) {
+  return content::SECURITY_STYLE_UNKNOWN;
 }
 
 }  // namespace content

@@ -29,8 +29,9 @@ class TestBasicJitterBuffer : public ::testing::Test {
  protected:
   virtual void SetUp() {
     clock_.reset(new SimulatedClock(0));
-    jitter_buffer_.reset(
-        new VCMJitterBuffer(clock_.get(), &event_factory_));
+    jitter_buffer_.reset(new VCMJitterBuffer(
+        clock_.get(),
+        rtc::scoped_ptr<EventWrapper>(event_factory_.CreateEvent())));
     jitter_buffer_->Start();
     seq_num_ = 1234;
     timestamp_ = 0;
@@ -128,8 +129,10 @@ class TestRunningJitterBuffer : public ::testing::Test {
     clock_.reset(new SimulatedClock(0));
     max_nack_list_size_ = 150;
     oldest_packet_to_nack_ = 250;
-    jitter_buffer_ = new VCMJitterBuffer(clock_.get(), &event_factory_);
-    stream_generator_ = new StreamGenerator(0, 0, clock_->TimeInMilliseconds());
+    jitter_buffer_ = new VCMJitterBuffer(
+        clock_.get(),
+        rtc::scoped_ptr<EventWrapper>(event_factory_.CreateEvent()));
+    stream_generator_ = new StreamGenerator(0, clock_->TimeInMilliseconds());
     jitter_buffer_->Start();
     jitter_buffer_->SetNackSettings(max_nack_list_size_,
                                     oldest_packet_to_nack_, 0);
@@ -549,6 +552,63 @@ TEST_F(TestBasicJitterBuffer, FrameReordering2Frames2PacketsEach) {
   frame_out = DecodeCompleteFrame();
   CheckOutFrame(frame_out, 2 * size_, false);
   EXPECT_EQ(kVideoFrameDelta, frame_out->FrameType());
+  jitter_buffer_->ReleaseFrame(frame_out);
+}
+
+TEST_F(TestBasicJitterBuffer, TestReorderingWithPadding) {
+  packet_->frameType = kVideoFrameKey;
+  packet_->isFirstPacket = true;
+  packet_->markerBit = true;
+
+  // Send in an initial good packet/frame (Frame A) to start things off.
+  bool retransmitted = false;
+  EXPECT_EQ(kCompleteSession,
+            jitter_buffer_->InsertPacket(*packet_, &retransmitted));
+  VCMEncodedFrame* frame_out = DecodeCompleteFrame();
+  EXPECT_TRUE(frame_out != NULL);
+  jitter_buffer_->ReleaseFrame(frame_out);
+
+  // Now send in a complete delta frame (Frame C), but with a sequence number
+  // gap. No pic index either, so no temporal scalability cheating :)
+  packet_->frameType = kVideoFrameDelta;
+  // Leave a gap of 2 sequence numbers and two frames.
+  packet_->seqNum = seq_num_ + 3;
+  packet_->timestamp = timestamp_ + (66 * 90);
+  // Still isFirst = marker = true.
+  // Session should be complete (frame is complete), but there's nothing to
+  // decode yet.
+  EXPECT_EQ(kCompleteSession,
+            jitter_buffer_->InsertPacket(*packet_, &retransmitted));
+  frame_out = DecodeCompleteFrame();
+  EXPECT_TRUE(frame_out == NULL);
+
+  // Now send in a complete delta frame (Frame B) that is continuous from A, but
+  // doesn't fill the full gap to C. The rest of the gap is going to be padding.
+  packet_->seqNum = seq_num_ + 1;
+  packet_->timestamp = timestamp_ + (33 * 90);
+  // Still isFirst = marker = true.
+  EXPECT_EQ(kCompleteSession,
+            jitter_buffer_->InsertPacket(*packet_, &retransmitted));
+  frame_out = DecodeCompleteFrame();
+  EXPECT_TRUE(frame_out != NULL);
+  jitter_buffer_->ReleaseFrame(frame_out);
+
+  // But Frame C isn't continuous yet.
+  frame_out = DecodeCompleteFrame();
+  EXPECT_TRUE(frame_out == NULL);
+
+  // Add in the padding. These are empty packets (data length is 0) with no
+  // marker bit and matching the timestamp of Frame B.
+  VCMPacket empty_packet(data_, 0, seq_num_ + 2, timestamp_ + (33 * 90), false);
+  EXPECT_EQ(kOldPacket,
+            jitter_buffer_->InsertPacket(empty_packet, &retransmitted));
+  empty_packet.seqNum += 1;
+  EXPECT_EQ(kOldPacket,
+            jitter_buffer_->InsertPacket(empty_packet, &retransmitted));
+
+  // But now Frame C should be ready!
+  frame_out = DecodeCompleteFrame();
+  EXPECT_TRUE(frame_out != NULL);
   jitter_buffer_->ReleaseFrame(frame_out);
 }
 
@@ -1853,21 +1913,14 @@ TEST_F(TestJitterBufferNack, NackTooOldPackets) {
                                           kVideoFrameDelta));
   EXPECT_FALSE(DecodeCompleteFrame());
 
-  uint16_t nack_list_length = max_nack_list_size_;
   bool request_key_frame = false;
-  uint16_t* nack_list = jitter_buffer_->GetNackList(&nack_list_length,
-                                                    &request_key_frame);
+  std::vector<uint16_t> nack_list =
+      jitter_buffer_->GetNackList(&request_key_frame);
   // No key frame will be requested since the jitter buffer is empty.
   EXPECT_FALSE(request_key_frame);
-  EXPECT_TRUE(nack_list == NULL);
-  EXPECT_EQ(0, nack_list_length);
+  EXPECT_EQ(0u, nack_list.size());
 
   EXPECT_GE(InsertFrame(kVideoFrameDelta), kNoError);
-  // Verify that the jitter buffer requests a key frame since we need one to
-  // start decoding.
-  EXPECT_FALSE(request_key_frame);
-  EXPECT_TRUE(nack_list == NULL);
-  EXPECT_EQ(0, nack_list_length);
   // Waiting for a key frame.
   EXPECT_FALSE(DecodeCompleteFrame());
   EXPECT_FALSE(DecodeIncompleteFrame());
@@ -1888,13 +1941,13 @@ TEST_F(TestJitterBufferNack, NackLargeJitterBuffer) {
   // Insert a frame which should trigger a recycle until the next key frame.
   EXPECT_GE(InsertFrames(oldest_packet_to_nack_, kVideoFrameDelta), kNoError);
 
-  uint16_t nack_list_length = max_nack_list_size_;
   bool request_key_frame = false;
-  jitter_buffer_->GetNackList(&nack_list_length, &request_key_frame);
+  std::vector<uint16_t> nack_list =
+      jitter_buffer_->GetNackList(&request_key_frame);
   // Verify that the jitter buffer does not request a key frame.
   EXPECT_FALSE(request_key_frame);
   // Verify that no packets are NACKed.
-  EXPECT_EQ(0, nack_list_length);
+  EXPECT_EQ(0u, nack_list.size());
   // Verify that we can decode the next frame.
   EXPECT_TRUE(DecodeCompleteFrame());
 }
@@ -1910,9 +1963,8 @@ TEST_F(TestJitterBufferNack, NackListFull) {
   EXPECT_EQ(kFlushIndicator, InsertFrame(kVideoFrameDelta));
   EXPECT_FALSE(DecodeCompleteFrame());
 
-  uint16_t nack_list_length = max_nack_list_size_;
   bool request_key_frame = false;
-  jitter_buffer_->GetNackList(&nack_list_length, &request_key_frame);
+  jitter_buffer_->GetNackList(&request_key_frame);
   // The jitter buffer is empty, so we won't request key frames until we get a
   // packet.
   EXPECT_FALSE(request_key_frame);
@@ -1920,7 +1972,7 @@ TEST_F(TestJitterBufferNack, NackListFull) {
   EXPECT_GE(InsertFrame(kVideoFrameDelta), kNoError);
   // Now we have a packet in the jitter buffer, a key frame will be requested
   // since it's not a key frame.
-  jitter_buffer_->GetNackList(&nack_list_length, &request_key_frame);
+  jitter_buffer_->GetNackList(&request_key_frame);
   // The jitter buffer is empty, so we won't request key frames until we get a
   // packet.
   EXPECT_TRUE(request_key_frame);
@@ -1937,33 +1989,29 @@ TEST_F(TestJitterBufferNack, NoNackListReturnedBeforeFirstDecode) {
   DropFrame(10);
   // Insert a frame and try to generate a NACK list. Shouldn't get one.
   EXPECT_GE(InsertFrame(kVideoFrameDelta), kNoError);
-  uint16_t nack_list_size = 0;
   bool request_key_frame = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size,
-                                                  &request_key_frame);
+  std::vector<uint16_t> nack_list =
+      jitter_buffer_->GetNackList(&request_key_frame);
   // No list generated, and a key frame request is signaled.
-  EXPECT_TRUE(list == NULL);
-  EXPECT_EQ(0, nack_list_size);
+  EXPECT_EQ(0u, nack_list.size());
   EXPECT_TRUE(request_key_frame);
 }
 
 TEST_F(TestJitterBufferNack, NackListBuiltBeforeFirstDecode) {
-  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(0, clock_->TimeInMilliseconds());
   InsertFrame(kVideoFrameKey);
   stream_generator_->GenerateFrame(kVideoFrameDelta, 2, 0,
                                   clock_->TimeInMilliseconds());
   stream_generator_->NextPacket(NULL);  // Drop packet.
   EXPECT_EQ(kIncomplete, InsertPacketAndPop(0));
   EXPECT_TRUE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(1, nack_list_size);
-  EXPECT_TRUE(list != NULL);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(1u, nack_list.size());
 }
 
 TEST_F(TestJitterBufferNack, VerifyRetransmittedFlag) {
-  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(0, clock_->TimeInMilliseconds());
   stream_generator_->GenerateFrame(kVideoFrameKey, 3, 0,
                                    clock_->TimeInMilliseconds());
   VCMPacket packet;
@@ -1976,13 +2024,11 @@ TEST_F(TestJitterBufferNack, VerifyRetransmittedFlag) {
   EXPECT_EQ(kIncomplete, jitter_buffer_->InsertPacket(packet, &retransmitted));
   EXPECT_FALSE(retransmitted);
   EXPECT_FALSE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(1, nack_list_size);
-  ASSERT_TRUE(list != NULL);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(1u, nack_list.size());
   stream_generator_->PopPacket(&packet, 0);
-  EXPECT_EQ(packet.seqNum, list[0]);
+  EXPECT_EQ(packet.seqNum, nack_list[0]);
   EXPECT_EQ(kCompleteSession, jitter_buffer_->InsertPacket(packet,
                                                            &retransmitted));
   EXPECT_TRUE(retransmitted);
@@ -1990,26 +2036,24 @@ TEST_F(TestJitterBufferNack, VerifyRetransmittedFlag) {
 }
 
 TEST_F(TestJitterBufferNack, UseNackToRecoverFirstKeyFrame) {
-  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(0, clock_->TimeInMilliseconds());
   stream_generator_->GenerateFrame(kVideoFrameKey, 3, 0,
                                   clock_->TimeInMilliseconds());
   EXPECT_EQ(kIncomplete, InsertPacketAndPop(0));
   // Drop second packet.
   EXPECT_EQ(kIncomplete, InsertPacketAndPop(1));
   EXPECT_FALSE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(1, nack_list_size);
-  ASSERT_TRUE(list != NULL);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(1u, nack_list.size());
   VCMPacket packet;
   stream_generator_->GetPacket(&packet, 0);
-  EXPECT_EQ(packet.seqNum, list[0]);
+  EXPECT_EQ(packet.seqNum, nack_list[0]);
 }
 
 TEST_F(TestJitterBufferNack, UseNackToRecoverFirstKeyFrameSecondInQueue) {
   VCMPacket packet;
-  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(0, clock_->TimeInMilliseconds());
   // First frame is delta.
   stream_generator_->GenerateFrame(kVideoFrameDelta, 3, 0,
                                    clock_->TimeInMilliseconds());
@@ -2024,13 +2068,11 @@ TEST_F(TestJitterBufferNack, UseNackToRecoverFirstKeyFrameSecondInQueue) {
   // Drop second packet in frame.
   EXPECT_EQ(kIncomplete, InsertPacketAndPop(1));
   EXPECT_FALSE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(1, nack_list_size);
-  ASSERT_TRUE(list != NULL);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(1u, nack_list.size());
   stream_generator_->GetPacket(&packet, 0);
-  EXPECT_EQ(packet.seqNum, list[0]);
+  EXPECT_EQ(packet.seqNum, nack_list[0]);
 }
 
 TEST_F(TestJitterBufferNack, NormalOperation) {
@@ -2060,15 +2102,14 @@ TEST_F(TestJitterBufferNack, NormalOperation) {
   EXPECT_EQ(0, stream_generator_->PacketsRemaining());
   EXPECT_FALSE(DecodeCompleteFrame());
   EXPECT_FALSE(DecodeIncompleteFrame());
-  uint16_t nack_list_size = 0;
   bool request_key_frame = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size,
-                                               &request_key_frame);
+  std::vector<uint16_t> nack_list =
+      jitter_buffer_->GetNackList(&request_key_frame);
   // Verify the NACK list.
-  const int kExpectedNackSize = 9;
-  ASSERT_EQ(kExpectedNackSize, nack_list_size);
-  for (int i = 0; i < nack_list_size; ++i)
-    EXPECT_EQ((1 + i) * 10, list[i]);
+  const size_t kExpectedNackSize = 9;
+  ASSERT_EQ(kExpectedNackSize, nack_list.size());
+  for (size_t i = 0; i < nack_list.size(); ++i)
+    EXPECT_EQ((1 + i) * 10, nack_list[i]);
 }
 
 TEST_F(TestJitterBufferNack, NormalOperationWrap) {
@@ -2076,7 +2117,7 @@ TEST_F(TestJitterBufferNack, NormalOperationWrap) {
   //  -------   ------------------------------------------------------------
   // | 65532 | | 65533 | 65534 | 65535 | x | 1 | .. | 9 | x | 11 |.....| 96 |
   //  -------   ------------------------------------------------------------
-  stream_generator_->Init(65532, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(65532, clock_->TimeInMilliseconds());
   InsertFrame(kVideoFrameKey);
   EXPECT_FALSE(request_key_frame);
   EXPECT_TRUE(DecodeCompleteFrame());
@@ -2096,14 +2137,13 @@ TEST_F(TestJitterBufferNack, NormalOperationWrap) {
   EXPECT_EQ(0, stream_generator_->PacketsRemaining());
   EXPECT_FALSE(DecodeCompleteFrame());
   EXPECT_FALSE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
   // Verify the NACK list.
-  const int kExpectedNackSize = 10;
-  ASSERT_EQ(kExpectedNackSize, nack_list_size);
-  for (int i = 0; i < nack_list_size; ++i)
-    EXPECT_EQ(i * 10, list[i]);
+  const size_t kExpectedNackSize = 10;
+  ASSERT_EQ(kExpectedNackSize, nack_list.size());
+  for (size_t i = 0; i < nack_list.size(); ++i)
+    EXPECT_EQ(i * 10, nack_list[i]);
 }
 
 TEST_F(TestJitterBufferNack, NormalOperationWrap2) {
@@ -2111,7 +2151,7 @@ TEST_F(TestJitterBufferNack, NormalOperationWrap2) {
   //  -----------------------------------
   // | 65532 | 65533 | 65534 | x | 0 | 1 |
   //  -----------------------------------
-  stream_generator_->Init(65532, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(65532, clock_->TimeInMilliseconds());
   InsertFrame(kVideoFrameKey);
   EXPECT_FALSE(request_key_frame);
   EXPECT_TRUE(DecodeCompleteFrame());
@@ -2131,39 +2171,37 @@ TEST_F(TestJitterBufferNack, NormalOperationWrap2) {
   }
   EXPECT_EQ(kCompleteSession, InsertPacketAndPop(0));
   EXPECT_FALSE(request_key_frame);
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  uint16_t* list = jitter_buffer_->GetNackList(&nack_list_size, &extended);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
   // Verify the NACK list.
-  ASSERT_EQ(1, nack_list_size);
-  EXPECT_EQ(65535, list[0]);
+  ASSERT_EQ(1u, nack_list.size());
+  EXPECT_EQ(65535, nack_list[0]);
 }
 
 TEST_F(TestJitterBufferNack, ResetByFutureKeyFrameDoesntError) {
-  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(0, clock_->TimeInMilliseconds());
   InsertFrame(kVideoFrameKey);
   EXPECT_TRUE(DecodeCompleteFrame());
-  uint16_t nack_list_size = 0;
   bool extended = false;
-  jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(0, nack_list_size);
+  std::vector<uint16_t> nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(0u, nack_list.size());
 
   // Far-into-the-future video frame, could be caused by resetting the encoder
   // or otherwise restarting. This should not fail when error when the packet is
   // a keyframe, even if all of the nack list needs to be flushed.
-  stream_generator_->Init(10000, 0, clock_->TimeInMilliseconds());
+  stream_generator_->Init(10000, clock_->TimeInMilliseconds());
   clock_->AdvanceTimeMilliseconds(kDefaultFramePeriodMs);
   InsertFrame(kVideoFrameKey);
   EXPECT_TRUE(DecodeCompleteFrame());
-  jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(0, nack_list_size);
+  nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(0u, nack_list.size());
 
   // Stream should be decodable from this point.
   clock_->AdvanceTimeMilliseconds(kDefaultFramePeriodMs);
   InsertFrame(kVideoFrameDelta);
   EXPECT_TRUE(DecodeCompleteFrame());
-  jitter_buffer_->GetNackList(&nack_list_size, &extended);
-  EXPECT_EQ(0, nack_list_size);
+  nack_list = jitter_buffer_->GetNackList(&extended);
+  EXPECT_EQ(0u, nack_list.size());
 }
 
 }  // namespace webrtc

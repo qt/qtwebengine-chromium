@@ -16,22 +16,25 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "cc/base/switches.h"
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/cast_sys_info_util.h"
+#include "chromecast/base/chromecast_switches.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/base/metrics/grouped_histogram.h"
 #include "chromecast/browser/cast_browser_context.h"
 #include "chromecast/browser/cast_browser_process.h"
+#include "chromecast/browser/cast_net_log.h"
 #include "chromecast/browser/devtools/remote_debugging_server.h"
 #include "chromecast/browser/metrics/cast_metrics_prefs.h"
 #include "chromecast/browser/metrics/cast_metrics_service_client.h"
 #include "chromecast/browser/pref_service_helper.h"
 #include "chromecast/browser/service/cast_service.h"
 #include "chromecast/browser/url_request_context_factory.h"
-#include "chromecast/common/chromecast_switches.h"
 #include "chromecast/common/platform_client_auth.h"
 #include "chromecast/media/base/key_systems_common.h"
+#include "chromecast/media/base/media_message_loop.h"
 #include "chromecast/net/connectivity_checker.h"
 #include "chromecast/public/cast_media_shlib.h"
 #include "chromecast/public/cast_sys_info.h"
@@ -41,11 +44,12 @@
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_manager_factory.h"
 #include "media/base/browser_cdm_factory.h"
-#include "media/base/media_switches.h"
+#include "media/base/media.h"
+#include "ui/compositor/compositor_switches.h"
 
 #if defined(OS_ANDROID)
+#include "chromecast/app/android/crash_handler.h"
 #include "chromecast/browser/media/cast_media_client_android.h"
-#include "chromecast/crash/android/crash_handler.h"
 #include "components/crash/browser/crash_dump_manager_android.h"
 #include "media/base/android/media_client_android.h"
 #include "net/android/network_change_notifier_factory_android.h"
@@ -55,8 +59,8 @@
 #endif
 
 #if defined(USE_AURA)
+#include "chromecast/graphics/cast_screen.h"
 #include "ui/aura/env.h"
-#include "ui/aura/test/test_screen.h"
 #include "ui/gfx/screen.h"
 #endif
 
@@ -163,7 +167,6 @@ DefaultCommandLineSwitch g_default_switches[] = {
   // Disables Chromecast-specific WiFi-related features on ATV for now.
   { switches::kNoWifi, "" },
   { switches::kEnableOverlayFullscreenVideo, ""},
-  { switches::kDisableInfobarForProtectedMediaIdentifier, ""},
   { switches::kDisableGestureRequirementForMediaPlayback, ""},
 #endif
   // Always enable HTMLMediaElement logs.
@@ -176,9 +179,12 @@ DefaultCommandLineSwitch g_default_switches[] = {
   // This is needed for now to enable the egltest Ozone platform to work with
   // current Linux/NVidia OpenGL drivers.
   { switches::kIgnoreGpuBlacklist, ""},
-#elif defined(ARCH_CPU_ARM_FAMILY) && !defined(DISABLE_DISPLAY)
+#elif defined(ARCH_CPU_ARM_FAMILY)
   // On Linux arm, enable CMA pipeline by default.
   { switches::kEnableCmaMediaPipeline, "" },
+#if !defined(DISABLE_DISPLAY)
+  { switches::kEnableHardwareOverlays, "" },
+#endif
 #endif
 #endif  // defined(OS_LINUX)
   // Needed to fix a bug where the raster thread doesn't get scheduled for a
@@ -207,7 +213,8 @@ CastBrowserMainParts::CastBrowserMainParts(
       cast_browser_process_(new CastBrowserProcess()),
       parameters_(parameters),
       url_request_context_factory_(url_request_context_factory),
-      audio_manager_factory_(audio_manager_factory.Pass()) {
+      audio_manager_factory_(audio_manager_factory.Pass()),
+      net_log_(new CastNetLog()) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   AddDefaultCommandLineSwitches(command_line);
 }
@@ -238,7 +245,7 @@ void CastBrowserMainParts::PreMainMessageLoopStart() {
 
 void CastBrowserMainParts::PostMainMessageLoopStart() {
   cast_browser_process_->SetMetricsHelper(make_scoped_ptr(
-      new metrics::CastMetricsHelper(base::MessageLoopProxy::current())));
+      new metrics::CastMetricsHelper(base::ThreadTaskRunnerHandle::Get())));
 
 #if defined(OS_ANDROID)
   base::MessageLoopForUI::current()->Start();
@@ -267,14 +274,13 @@ int CastBrowserMainParts::PreCreateThreads() {
   // is assumed as an interface to access display information, e.g. from metrics
   // code.  See CastContentWindow::CreateWindowTree for update when resolution
   // is available.
+  cast_browser_process_->SetCastScreen(make_scoped_ptr(new CastScreen));
   DCHECK(!gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE));
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
-                                 aura::TestScreen::Create(gfx::Size(0, 0)));
+                                 cast_browser_process_->cast_screen());
 #endif
-  return 0;
-}
 
-void CastBrowserMainParts::PreMainMessageLoopRun() {
+#if !defined(OS_ANDROID)
   // Set GL strings so GPU config code can make correct feature blacklisting/
   // whitelisting decisions.
   // Note: SetGLStrings MUST be called after GpuDataManager::Initialize.
@@ -282,7 +288,12 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
   content::GpuDataManager::GetInstance()->SetGLStrings(
       sys_info->GetGlVendor(), sys_info->GetGlRenderer(),
       sys_info->GetGlVersion());
+#endif  // !defined(OS_ANDROID)
 
+  return 0;
+}
+
+void CastBrowserMainParts::PreMainMessageLoopRun() {
   scoped_refptr<PrefRegistrySimple> pref_registry(new PrefRegistrySimple());
   metrics::RegisterPrefs(pref_registry.get());
   cast_browser_process_->SetPrefService(
@@ -297,11 +308,13 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
 #endif  // defined(OS_ANDROID)
 
   cast_browser_process_->SetConnectivityChecker(
-      make_scoped_refptr(new ConnectivityChecker(
+      ConnectivityChecker::Create(
           content::BrowserThread::GetMessageLoopProxyForThread(
-              content::BrowserThread::IO))));
+              content::BrowserThread::IO)));
 
-  url_request_context_factory_->InitializeOnUIThread();
+  cast_browser_process_->SetNetLog(net_log_.get());
+
+  url_request_context_factory_->InitializeOnUIThread(net_log_.get());
 
   cast_browser_process_->SetBrowserContext(
       make_scoped_ptr(new CastBrowserContext(url_request_context_factory_)));
@@ -317,7 +330,10 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
   cast_browser_process_->SetRemoteDebuggingServer(
       make_scoped_ptr(new RemoteDebuggingServer()));
 
-  media::CastMediaShlib::Initialize(cmd_line->argv());
+  media::MediaMessageLoop::GetTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&media::CastMediaShlib::Initialize, cmd_line->argv()));
+  ::media::InitializeMediaLibrary();
 
   cast_browser_process_->SetCastService(CastService::Create(
       cast_browser_process_->browser_context(),
@@ -382,7 +398,10 @@ void CastBrowserMainParts::PostMainMessageLoopRun() {
   DeregisterKillOnAlarm();
 #endif
 
-  media::CastMediaShlib::Finalize();
+  // Finalize CastMediaShlib on media thread to ensure it's not accessed
+  // after Finalize.
+  media::MediaMessageLoop::GetTaskRunner()->PostTask(
+      FROM_HERE, base::Bind(&media::CastMediaShlib::Finalize));
 }
 
 }  // namespace shell

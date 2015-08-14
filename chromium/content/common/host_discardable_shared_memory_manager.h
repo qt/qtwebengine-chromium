@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/containers/hash_tables.h"
+#include "base/format_macros.h"
 #include "base/memory/discardable_memory_allocator.h"
 #include "base/memory/discardable_shared_memory.h"
 #include "base/memory/memory_pressure_listener.h"
@@ -16,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/process/process_handle.h"
 #include "base/synchronization/lock.h"
+#include "base/trace_event/memory_dump_provider.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -25,7 +27,8 @@ typedef int32_t DiscardableSharedMemoryId;
 // discardable memory segments for the browser process and child processes.
 // This class is thread-safe and instances can safely be used on any thread.
 class CONTENT_EXPORT HostDiscardableSharedMemoryManager
-    : public base::DiscardableMemoryAllocator {
+    : public base::DiscardableMemoryAllocator,
+      public base::trace_event::MemoryDumpProvider {
  public:
   HostDiscardableSharedMemoryManager();
   ~HostDiscardableSharedMemoryManager() override;
@@ -37,23 +40,27 @@ class CONTENT_EXPORT HostDiscardableSharedMemoryManager
   scoped_ptr<base::DiscardableMemory> AllocateLockedDiscardableMemory(
       size_t size) override;
 
+  // Overridden from base::trace_event::MemoryDumpProvider:
+  bool OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd) override;
+
   // This allocates a discardable memory segment for |process_handle|.
   // A valid shared memory handle is returned on success.
   void AllocateLockedDiscardableSharedMemoryForChild(
       base::ProcessHandle process_handle,
+      int child_process_id,
       size_t size,
       DiscardableSharedMemoryId id,
       base::SharedMemoryHandle* shared_memory_handle);
 
   // Call this to notify the manager that child process associated with
-  // |process_handle| has deleted discardable memory segment with |id|.
+  // |child_process_id| has deleted discardable memory segment with |id|.
   void ChildDeletedDiscardableSharedMemory(DiscardableSharedMemoryId id,
-                                           base::ProcessHandle process_handle);
+                                           int child_process_id);
 
   // Call this to notify the manager that child process associated with
-  // |process_handle| has been removed. The manager will use this to release
+  // |child_process_id| has been removed. The manager will use this to release
   // memory segments allocated for child process to the OS.
-  void ProcessRemoved(base::ProcessHandle process_handle);
+  void ProcessRemoved(int child_process_id);
 
   // The maximum number of bytes of memory that may be allocated. This will
   // cause memory usage to be reduced if currently above |limit|.
@@ -90,11 +97,12 @@ class CONTENT_EXPORT HostDiscardableSharedMemoryManager
 
   void AllocateLockedDiscardableSharedMemory(
       base::ProcessHandle process_handle,
+      int client_process_id,
       size_t size,
       DiscardableSharedMemoryId id,
       base::SharedMemoryHandle* shared_memory_handle);
   void DeletedDiscardableSharedMemory(DiscardableSharedMemoryId id,
-                                      base::ProcessHandle process_handle);
+                                      int client_process_id);
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
   void ReduceMemoryUsageUntilWithinMemoryLimit();
@@ -109,7 +117,7 @@ class CONTENT_EXPORT HostDiscardableSharedMemoryManager
   base::Lock lock_;
   typedef base::hash_map<DiscardableSharedMemoryId,
                          scoped_refptr<MemorySegment>> MemorySegmentMap;
-  typedef base::hash_map<base::ProcessHandle, MemorySegmentMap> ProcessMap;
+  typedef base::hash_map<int, MemorySegmentMap> ProcessMap;
   ProcessMap processes_;
   // Note: The elements in |segments_| are arranged in such a way that they form
   // a heap. The LRU memory segment always first.

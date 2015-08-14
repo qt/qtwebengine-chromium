@@ -52,12 +52,14 @@ class SpdyFramerVisitor : public BufferedSpdyFramerVisitorInterface {
                     bool,
                     const SpdyHeaderBlock&));
   MOCK_METHOD3(OnSynReply, void(SpdyStreamId, bool, const SpdyHeaderBlock&));
-  MOCK_METHOD5(OnHeaders,
-               void(SpdyStreamId,
-                    bool,
-                    SpdyPriority,
-                    bool,
-                    const SpdyHeaderBlock&));
+  MOCK_METHOD7(OnHeaders,
+               void(SpdyStreamId stream_id,
+                    bool has_priority,
+                    SpdyPriority priority,
+                    SpdyStreamId parent_stream_id,
+                    bool exclusive,
+                    bool fin,
+                    const SpdyHeaderBlock& headers));
   MOCK_METHOD3(OnDataFrameHeader, void(SpdyStreamId, size_t, bool));
   MOCK_METHOD4(OnStreamFrameData, void(SpdyStreamId,
                                        const char*,
@@ -69,7 +71,7 @@ class SpdyFramerVisitor : public BufferedSpdyFramerVisitorInterface {
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
   MOCK_METHOD2(OnRstStream, void(SpdyStreamId, SpdyRstStreamStatus));
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId, SpdyGoAwayStatus));
-  MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId, uint32));
+  MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId, int));
   MOCK_METHOD3(OnPushPromise,
                void(SpdyStreamId, SpdyStreamId, const SpdyHeaderBlock&));
   MOCK_METHOD2(OnUnknownFrame, bool(SpdyStreamId stream_id, int frame_type));
@@ -205,10 +207,8 @@ class SpdySMServerTest : public SpdySMTestBase {
   virtual ~SpdySMServerTest() {}
 };
 
-INSTANTIATE_TEST_CASE_P(SpdySMProxyTest,
-                        SpdySMProxyTest,
-                        Values(SPDY3, SPDY4));
-INSTANTIATE_TEST_CASE_P(SpdySMServerTest, SpdySMServerTest, Values(SPDY4));
+INSTANTIATE_TEST_CASE_P(SpdySMProxyTest, SpdySMProxyTest, Values(SPDY3, HTTP2));
+INSTANTIATE_TEST_CASE_P(SpdySMServerTest, SpdySMServerTest, Values(HTTP2));
 
 TEST_P(SpdySMProxyTest, InitSMConnection) {
   {
@@ -307,9 +307,9 @@ TEST_P(SpdySMProxyTest, CreateFramer) {
   ASSERT_EQ(interface_->spdy_version(), SPDY3);
 
   interface_->ResetForNewConnection();
-  interface_->CreateFramer(SPDY4);
+  interface_->CreateFramer(HTTP2);
   ASSERT_TRUE(interface_->spdy_framer() != NULL);
-  ASSERT_EQ(interface_->spdy_version(), SPDY4);
+  ASSERT_EQ(interface_->spdy_version(), HTTP2);
 }
 
 TEST_P(SpdySMProxyTest, PostAcceptHook) {
@@ -363,14 +363,15 @@ TEST_P(SpdySMProxyTest, SendErrorNotFound) {
 
   {
     InSequence s;
-    if (GetParam() < SPDY4) {
+    if (GetParam() < HTTP2) {
       EXPECT_CALL(*spdy_framer_visitor_,
                   OnSynReply(stream_id, false, _))
           .WillOnce(SaveArg<2>(&actual_header_block));
     } else {
       EXPECT_CALL(*spdy_framer_visitor_,
-                  OnHeaders(stream_id, false, 0, false, _))
-          .WillOnce(SaveArg<4>(&actual_header_block));
+                  OnHeaders(stream_id, /*has_priority=*/false, _, _, _,
+                            /*fin=*/false, _))
+          .WillOnce(SaveArg<6>(&actual_header_block));
     }
     EXPECT_CALL(checkpoint, Call(0));
     EXPECT_CALL(*spdy_framer_visitor_,
@@ -443,13 +444,14 @@ TEST_P(SpdySMProxyTest, SendSynReply) {
 
   {
     InSequence s;
-    if (GetParam() < SPDY4) {
+    if (GetParam() < HTTP2) {
       EXPECT_CALL(*spdy_framer_visitor_, OnSynReply(stream_id, false, _))
           .WillOnce(SaveArg<2>(&actual_header_block));
     } else {
       EXPECT_CALL(*spdy_framer_visitor_,
-                  OnHeaders(stream_id, false, 0, false, _))
-          .WillOnce(SaveArg<4>(&actual_header_block));
+                  OnHeaders(stream_id, /*has_priority=*/false, _, _, _,
+                            /*fin=*/false, _))
+          .WillOnce(SaveArg<6>(&actual_header_block));
     }
   }
 
@@ -569,13 +571,14 @@ TEST_P(SpdySMServerTest, NewStreamError) {
 
   {
     InSequence s;
-    if (GetParam() < SPDY4) {
+    if (GetParam() < HTTP2) {
       EXPECT_CALL(*spdy_framer_visitor_, OnSynReply(stream_id, false, _))
           .WillOnce(SaveArg<2>(&actual_header_block));
     } else {
       EXPECT_CALL(*spdy_framer_visitor_,
-                  OnHeaders(stream_id, false, 0, false, _))
-          .WillOnce(SaveArg<4>(&actual_header_block));
+                  OnHeaders(stream_id, /*has_priority=*/false, _, _, _,
+                            /*fin=*/false, _))
+          .WillOnce(SaveArg<6>(&actual_header_block));
     }
     EXPECT_CALL(checkpoint, Call(0));
     EXPECT_CALL(*spdy_framer_visitor_,

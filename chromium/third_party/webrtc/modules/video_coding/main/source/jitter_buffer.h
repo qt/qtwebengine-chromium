@@ -54,8 +54,8 @@ struct VCMJitterSample {
 
 class TimestampLessThan {
  public:
-  bool operator() (const uint32_t& timestamp1,
-                   const uint32_t& timestamp2) const {
+  bool operator() (uint32_t timestamp1,
+                   uint32_t timestamp2) const {
     return IsNewerTimestamp(timestamp2, timestamp1);
   }
 };
@@ -76,9 +76,9 @@ class FrameList
 
 class VCMJitterBuffer {
  public:
-  VCMJitterBuffer(Clock* clock,
-                  EventFactory* event_factory);
-  virtual ~VCMJitterBuffer();
+  VCMJitterBuffer(Clock* clock, rtc::scoped_ptr<EventWrapper> event);
+
+  ~VCMJitterBuffer();
 
   // Initializes and starts jitter buffer.
   void Start();
@@ -155,12 +155,12 @@ class VCMJitterBuffer {
   // Updates the round-trip time estimate.
   void UpdateRtt(int64_t rtt_ms);
 
-  // Set the NACK mode. |highRttNackThreshold| is an RTT threshold in ms above
-  // which NACK will be disabled if the NACK mode is |kNackHybrid|, -1 meaning
-  // that NACK is always enabled in the hybrid mode.
-  // |lowRttNackThreshold| is an RTT threshold in ms below which we expect to
-  // rely on NACK only, and therefore are using larger buffers to have time to
-  // wait for retransmissions.
+  // Set the NACK mode. |high_rtt_nack_threshold_ms| is an RTT threshold in ms
+  // above which NACK will be disabled if the NACK mode is |kNack|, -1 meaning
+  // that NACK is always enabled in the |kNack| mode.
+  // |low_rtt_nack_threshold_ms| is an RTT threshold in ms below which we expect
+  // to rely on NACK only, and therefore are using larger buffers to have time
+  // to wait for retransmissions.
   void SetNackMode(VCMNackMode mode, int64_t low_rtt_nack_threshold_ms,
                    int64_t high_rtt_nack_threshold_ms);
 
@@ -172,7 +172,7 @@ class VCMJitterBuffer {
   VCMNackMode nack_mode() const;
 
   // Returns a list of the sequence numbers currently missing.
-  uint16_t* GetNackList(uint16_t* nack_list_size, bool* request_key_frame);
+  std::vector<uint16_t> GetNackList(bool* request_key_frame);
 
   // Set decode error mode - Should not be changed in the middle of the
   // session. Changes will not influence frames already in the buffer.
@@ -213,6 +213,12 @@ class VCMJitterBuffer {
   // Returns true if |frame| is continuous in the |last_decoded_state_|, taking
   // all decodable frames into account.
   bool IsContinuous(const VCMFrameBuffer& frame) const
+      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
+  // Looks for frames in |incomplete_frames_| which are continuous in the
+  // provided |decoded_state|. Starts the search from the timestamp of
+  // |decoded_state|.
+  void FindAndInsertContinuousFramesWithState(
+      const VCMDecodingState& decoded_state)
       EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
   // Looks for frames in |incomplete_frames_| which are continuous in
   // |last_decoded_state_| taking all decodable frames into account. Starts
@@ -340,7 +346,6 @@ class VCMJitterBuffer {
   // Holds the internal NACK list (the missing sequence numbers).
   SequenceNumberSet missing_sequence_numbers_;
   uint16_t latest_received_sequence_number_;
-  std::vector<uint16_t> nack_seq_nums_;
   size_t max_nack_list_size_;
   int max_packet_age_to_nack_;  // Measured in sequence numbers.
   int max_incomplete_time_ms_;

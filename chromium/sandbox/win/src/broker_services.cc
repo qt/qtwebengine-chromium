@@ -125,8 +125,10 @@ uint32_t GenerateTokenCacheKey(const sandbox::PolicyBase* policy) {
 namespace sandbox {
 
 BrokerServicesBase::BrokerServicesBase()
-    : thread_pool_(NULL), job_port_(NULL), no_targets_(NULL),
-      job_thread_(NULL) {
+    : job_port_(NULL),
+      no_targets_(NULL),
+      job_thread_(NULL),
+      thread_pool_(NULL) {
 }
 
 // The broker uses a dedicated worker thread that services the job completion
@@ -355,8 +357,8 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
 
   // Construct the tokens and the job object that we are going to associate
   // with the soon to be created target process.
-  HANDLE initial_token_temp;
-  HANDLE lockdown_token_temp;
+  base::win::ScopedHandle initial_token;
+  base::win::ScopedHandle lockdown_token;
   ResultCode result = SBOX_ALL_OK;
 
   if (IsTokenCacheable(policy_base)) {
@@ -365,36 +367,38 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
     // process launch.
     uint32_t token_key = GenerateTokenCacheKey(policy_base);
     TokenCacheMap::iterator it = token_cache_.find(token_key);
+    HANDLE initial_token_temp;
+    HANDLE lockdown_token_temp;
     if (it != token_cache_.end()) {
       initial_token_temp = it->second.first;
       lockdown_token_temp = it->second.second;
     } else {
-      result =
-          policy_base->MakeTokens(&initial_token_temp, &lockdown_token_temp);
+      result = policy_base->MakeTokens(&initial_token, &lockdown_token);
       if (SBOX_ALL_OK != result)
         return result;
       token_cache_[token_key] =
-          std::pair<HANDLE, HANDLE>(initial_token_temp, lockdown_token_temp);
+          std::make_pair(initial_token.Get(), lockdown_token.Get());
+      initial_token_temp = initial_token.Take();
+      lockdown_token_temp = lockdown_token.Take();
     }
 
     if (!::DuplicateToken(initial_token_temp, SecurityImpersonation,
                           &initial_token_temp)) {
       return SBOX_ERROR_GENERIC;
     }
+    initial_token.Set(initial_token_temp);
 
     if (!::DuplicateTokenEx(lockdown_token_temp, TOKEN_ALL_ACCESS, 0,
                             SecurityIdentification, TokenPrimary,
                             &lockdown_token_temp)) {
       return SBOX_ERROR_GENERIC;
     }
+    lockdown_token.Set(lockdown_token_temp);
   } else {
-    result = policy_base->MakeTokens(&initial_token_temp, &lockdown_token_temp);
+    result = policy_base->MakeTokens(&initial_token, &lockdown_token);
     if (SBOX_ALL_OK != result)
       return result;
   }
-
-  base::win::ScopedHandle initial_token(initial_token_temp);
-  base::win::ScopedHandle lockdown_token(lockdown_token_temp);
 
   HANDLE job_temp;
   result = policy_base->MakeJobObject(&job_temp);
@@ -444,10 +448,10 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
     if (stderr_handle != stdout_handle && stderr_handle != INVALID_HANDLE_VALUE)
       inherited_handle_list.push_back(stderr_handle);
 
-    HandleList policy_handle_list = policy_base->GetHandlesBeingShared();
+    const HandleList& policy_handle_list = policy_base->GetHandlesBeingShared();
 
     for (auto handle : policy_handle_list)
-      inherited_handle_list.push_back(handle);
+      inherited_handle_list.push_back(handle->Get());
 
     if (inherited_handle_list.size())
       ++attribute_count;
@@ -494,8 +498,8 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
   // Create the TargetProces object and spawn the target suspended. Note that
   // Brokerservices does not own the target object. It is owned by the Policy.
   base::win::ScopedProcessInformation process_info;
-  TargetProcess* target = new TargetProcess(initial_token.Take(),
-                                            lockdown_token.Take(),
+  TargetProcess* target = new TargetProcess(initial_token.Pass(),
+                                            lockdown_token.Pass(),
                                             job.Get(),
                                             thread_pool_);
 
@@ -520,8 +524,11 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
   policy_base->AddRef();
   if (job.IsValid()) {
     scoped_ptr<JobTracker> tracker(new JobTracker(job.Take(), policy_base));
-    if (!AssociateCompletionPort(tracker->job, job_port_, tracker.get()))
-      return SpawnCleanup(target, 0);
+
+    // There is no obvious recovery after failure here. Previous version with
+    // SpawnCleanup() caused deletion of TargetProcess twice. crbug.com/480639
+    CHECK(AssociateCompletionPort(tracker->job, job_port_, tracker.get()));
+
     // Save the tracker because in cleanup we might need to force closing
     // the Jobs.
     tracker_list_.push_back(tracker.release());

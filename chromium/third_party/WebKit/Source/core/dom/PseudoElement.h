@@ -27,22 +27,23 @@
 #ifndef PseudoElement_h
 #define PseudoElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Element.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
 
-class PseudoElement : public Element {
+class CORE_EXPORT PseudoElement : public Element {
 public:
     static PassRefPtrWillBeRawPtr<PseudoElement> create(Element* parent, PseudoId);
 
-    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
-    virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
+    void attach(const AttachContext& = AttachContext()) override;
+    bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
-    virtual bool canStartSelection() const override { return false; }
-    virtual bool canContainRangeEndPoint() const override { return false; }
-    virtual PseudoId pseudoId() const override { return m_pseudoId; }
+    bool canStartSelection() const override { return false; }
+    bool canContainRangeEndPoint() const override { return false; }
+    PseudoId pseudoId() const override { return m_pseudoId; }
 
     static String pseudoElementNameForEvents(PseudoId);
 
@@ -54,7 +55,7 @@ protected:
     PseudoElement(Element*, PseudoId);
 
 private:
-    virtual void didRecalcStyle(StyleRecalcChange) override;
+    void didRecalcStyle(StyleRecalcChange) override;
 
     PseudoId m_pseudoId;
 };

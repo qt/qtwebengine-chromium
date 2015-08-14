@@ -219,8 +219,8 @@ public:
     {
         return adoptPtrWillBeNoop(new HTMLTextDecorationEquivalent(primitiveValue, tagName));
     }
-    virtual bool propertyExistsInStyle(const StylePropertySet*) const override;
-    virtual bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const override;
+    bool propertyExistsInStyle(const StylePropertySet*) const override;
+    bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const override;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { HTMLElementEquivalent::trace(visitor); }
 
@@ -259,10 +259,10 @@ public:
         return adoptPtrWillBeNoop(new HTMLAttributeEquivalent(propertyID, attrName));
     }
 
-    virtual bool matches(const Element* element) const override { return HTMLElementEquivalent::matches(element) && element->hasAttribute(m_attrName); }
-    virtual bool hasAttribute() const override { return true; }
-    virtual bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const override;
-    virtual void addToStyle(Element*, EditingStyle*) const override;
+    bool matches(const Element* element) const override { return HTMLElementEquivalent::matches(element) && element->hasAttribute(m_attrName); }
+    bool hasAttribute() const override { return true; }
+    bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const override;
+    void addToStyle(Element*, EditingStyle*) const override;
     virtual PassRefPtrWillBeRawPtr<CSSValue> attributeValueAsCSSValue(Element*) const;
     inline const QualifiedName& attributeName() const { return m_attrName; }
 
@@ -319,7 +319,7 @@ public:
     {
         return adoptPtrWillBeNoop(new HTMLFontSizeEquivalent());
     }
-    virtual PassRefPtrWillBeRawPtr<CSSValue> attributeValueAsCSSValue(Element*) const override;
+    PassRefPtrWillBeRawPtr<CSSValue> attributeValueAsCSSValue(Element*) const override;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { HTMLAttributeEquivalent::trace(visitor); }
 
@@ -594,14 +594,45 @@ PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::copy() const
     return copy;
 }
 
+// This is the list of CSS properties that apply specially to block-level elements.
+static const CSSPropertyID staticBlockProperties[] = {
+    CSSPropertyOrphans,
+    CSSPropertyOverflow, // This can be also be applied to replaced elements
+    CSSPropertyWebkitColumnCount,
+    CSSPropertyWebkitColumnGap,
+    CSSPropertyWebkitColumnRuleColor,
+    CSSPropertyWebkitColumnRuleStyle,
+    CSSPropertyWebkitColumnRuleWidth,
+    CSSPropertyWebkitColumnBreakBefore,
+    CSSPropertyWebkitColumnBreakAfter,
+    CSSPropertyWebkitColumnBreakInside,
+    CSSPropertyWebkitColumnWidth,
+    CSSPropertyPageBreakAfter,
+    CSSPropertyPageBreakBefore,
+    CSSPropertyPageBreakInside,
+    CSSPropertyTextAlign,
+    CSSPropertyTextAlignLast,
+    CSSPropertyTextIndent,
+    CSSPropertyTextJustify,
+    CSSPropertyWidows
+};
+
+static const Vector<CSSPropertyID>& blockPropertiesVector()
+{
+    DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
+    if (properties.isEmpty())
+        CSSPropertyMetadata::filterEnabledCSSPropertiesIntoVector(staticBlockProperties, WTF_ARRAY_LENGTH(staticBlockProperties), properties);
+    return properties;
+}
+
 PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::extractAndRemoveBlockProperties()
 {
     RefPtrWillBeRawPtr<EditingStyle> blockProperties = EditingStyle::create();
     if (!m_mutableStyle)
         return blockProperties;
 
-    blockProperties->m_mutableStyle = m_mutableStyle->copyBlockProperties();
-    m_mutableStyle->removeBlockProperties();
+    blockProperties->m_mutableStyle = m_mutableStyle->copyPropertiesInSet(blockPropertiesVector());
+    removeBlockProperties();
 
     return blockProperties;
 }
@@ -625,7 +656,7 @@ void EditingStyle::removeBlockProperties()
     if (!m_mutableStyle)
         return;
 
-    m_mutableStyle->removeBlockProperties();
+    m_mutableStyle->removePropertiesInSet(blockPropertiesVector().data(), blockPropertiesVector().size());
 }
 
 void EditingStyle::removeStyleAddedByElement(Element* element)
@@ -1060,24 +1091,25 @@ void EditingStyle::mergeInlineAndImplicitStyleOfElement(Element* element, CSSPro
     }
 }
 
-PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::wrappingStyleForSerialization(ContainerNode* context, bool shouldAnnotate)
+PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::wrappingStyleForAnnotatedSerialization(ContainerNode* context)
 {
-    RefPtrWillBeRawPtr<EditingStyle> wrappingStyle = nullptr;
-    if (shouldAnnotate) {
-        wrappingStyle = EditingStyle::create(context, EditingStyle::EditingPropertiesInEffect);
+    RefPtrWillBeRawPtr<EditingStyle> wrappingStyle = EditingStyle::create(context, EditingStyle::EditingPropertiesInEffect);
 
-        // Styles that Mail blockquotes contribute should only be placed on the Mail blockquote,
-        // to help us differentiate those styles from ones that the user has applied.
-        // This helps us get the color of content pasted into blockquotes right.
-        wrappingStyle->removeStyleAddedByElement(toHTMLElement(enclosingNodeOfType(firstPositionInOrBeforeNode(context), isMailHTMLBlockquoteElement, CanCrossEditingBoundary)));
+    // Styles that Mail blockquotes contribute should only be placed on the Mail
+    // blockquote, to help us differentiate those styles from ones that the user
+    // has applied. This helps us get the color of content pasted into
+    // blockquotes right.
+    wrappingStyle->removeStyleAddedByElement(toHTMLElement(enclosingNodeOfType(firstPositionInOrBeforeNode(context), isMailHTMLBlockquoteElement, CanCrossEditingBoundary)));
 
-        // Call collapseTextDecorationProperties first or otherwise it'll copy the value over from in-effect to text-decorations.
-        wrappingStyle->collapseTextDecorationProperties();
+    // Call collapseTextDecorationProperties first or otherwise it'll copy the value over from in-effect to text-decorations.
+    wrappingStyle->collapseTextDecorationProperties();
 
-        return wrappingStyle.release();
-    }
+    return wrappingStyle.release();
+}
 
-    wrappingStyle = EditingStyle::create();
+PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::wrappingStyleForSerialization(ContainerNode* context)
+{
+    RefPtrWillBeRawPtr<EditingStyle> wrappingStyle = EditingStyle::create();
 
     // When not annotating for interchange, we only preserve inline style declarations.
     for (ContainerNode* node = context; node && !node->isDocumentNode(); node = node->parentNode()) {
@@ -1089,7 +1121,6 @@ PassRefPtrWillBeRawPtr<EditingStyle> EditingStyle::wrappingStyleForSerialization
 
     return wrappingStyle.release();
 }
-
 
 static void mergeTextDecorationValues(CSSValueList* mergedValue, const CSSValueList* valueToMerge)
 {
@@ -1136,8 +1167,8 @@ static PassRefPtrWillBeRawPtr<MutableStylePropertySet> styleFromMatchedRulesForE
     RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     RefPtrWillBeRawPtr<StyleRuleList> matchedRules = element->document().ensureStyleResolver().styleRulesForElement(element, rulesToInclude);
     if (matchedRules) {
-        for (unsigned i = 0; i < matchedRules->m_list.size(); ++i)
-            style->mergeAndOverrideOnConflict(&matchedRules->m_list[i]->properties());
+        for (unsigned i = 0; i < matchedRules->size(); ++i)
+            style->mergeAndOverrideOnConflict(&matchedRules->at(i)->properties());
     }
     return style.release();
 }

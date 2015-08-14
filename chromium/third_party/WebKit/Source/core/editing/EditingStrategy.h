@@ -20,9 +20,6 @@ class PositionIteratorAlgorithm;
 template <typename Traversal>
 class EditingAlgorithm : public Traversal {
 public:
-    // |disconnected| is optional output parameter having true if specified
-    // positions don't have common ancestor.
-    static short comparePositions(Node* containerA, int offsetA, Node* containerB, int offsetB, bool* disconnected = nullptr);
     static bool isEmptyNonEditableNodeInEditable(const Node*);
     static bool editingIgnoresContent(const Node*);
     static int lastOffsetForEditing(const Node*);
@@ -31,21 +28,13 @@ public:
 // DOM tree version of editing algorithm
 class EditingStrategy : public EditingAlgorithm<NodeTraversal> {
 public:
-    using PositionIteratorType = PositionIteratorAlgorithm<EditingStrategy>;
     using PositionType = PositionAlgorithm<EditingStrategy>;
 };
 
 // Composed tree version of editing algorithm
 class EditingInComposedTreeStrategy : public EditingAlgorithm<ComposedTreeTraversal> {
 public:
-    using PositionIteratorType = PositionIteratorAlgorithm<EditingInComposedTreeStrategy>;
     using PositionType = PositionAlgorithm<EditingInComposedTreeStrategy>;
-
-    // Don't use |parentOrShadowHostNode()| in composed tree specific algorithm.
-    // This function is provided here for sharing algorithm with
-    // |TextIteratorAlgorithm|, which handles shadow tree within in
-    // DOM traversal.
-    static ContainerNode* parentOrShadowHostNode(const Node&);
 };
 
 extern template class EditingAlgorithm<NodeTraversal>;

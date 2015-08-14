@@ -237,10 +237,29 @@ PassRefPtrWillBeRawPtr<Node> Text::cloneNode(bool /*deep*/)
     return cloneWithData(data());
 }
 
+static inline bool hasGeneratedAnonymousTableCells(const LayoutObject& parent)
+{
+    // We're checking whether the table part has generated anonymous table
+    // part wrappers to hold its contents, so inspecting its first child will suffice.
+    LayoutObject* child = parent.slowFirstChild();
+    if (!child || !child->isAnonymous())
+        return false;
+    if (child->isTableCell())
+        return true;
+    if (child->isTableSection() || child->isTableRow())
+        return hasGeneratedAnonymousTableCells(*child);
+    return false;
+}
+
 static inline bool canHaveWhitespaceChildren(const LayoutObject& parent)
 {
     // <button> should allow whitespace even though LayoutFlexibleBox doesn't.
     if (parent.isLayoutButton())
+        return true;
+
+    // Allow whitespace when the text is inside a table, section or row element that
+    // has generated anonymous table cells to hold its contents.
+    if (hasGeneratedAnonymousTableCells(parent))
         return true;
 
     if (parent.isTable() || parent.isTableRow() || parent.isTableSection()
@@ -274,7 +293,12 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
     if (!canHaveWhitespaceChildren(parent))
         return false;
 
-    if (style.preserveNewline()) // pre/pre-wrap/pre-line always make layoutObjects.
+    // pre-wrap in SVG never makes layoutObject.
+    if (style.whiteSpace() == PRE_WRAP && parent.isSVG())
+        return false;
+
+    // pre/pre-wrap/pre-line always make layoutObjects.
+    if (style.preserveNewline())
         return true;
 
     // childNeedsDistributionRecalc() here is rare, only happens JS calling surroundContents() etc. from DOMNodeInsertedIntoDocument etc.
@@ -287,7 +311,7 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
 
     if (parent.isLayoutInline()) {
         // <span><div/> <div/></span>
-        if (prev && !prev->isInline())
+        if (prev && !prev->isInline() && !prev->isOutOfFlowPositioned())
             return false;
     } else {
         if (parent.isLayoutBlock() && !parent.childrenInline() && (!prev || !prev->isInline()))
@@ -300,10 +324,11 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
         LayoutObject* first = parent.slowFirstChild();
         while (first && first->isFloatingOrOutOfFlowPositioned() && maxSiblingsToVisit--)
             first = first->nextSibling();
-        if (!first || first == layoutObject() || LayoutTreeBuilderTraversal::nextSiblingLayoutObject(*this) == first)
+        if (!first || first == layoutObject() || LayoutTreeBuilderTraversal::nextSiblingLayoutObject(*this) == first) {
             // Whitespace at the start of a block just goes away.  Don't even
             // make a layout object for this text.
             return false;
+        }
     }
     return true;
 }

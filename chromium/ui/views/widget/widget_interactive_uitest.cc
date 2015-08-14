@@ -22,7 +22,6 @@
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_test_api.h"
 #include "ui/views/focus/focus_manager.h"
-#include "ui/views/ime/input_method.h"
 #include "ui/views/test/focus_manager_test.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/touchui/touch_selection_controller_impl.h"
@@ -284,22 +283,16 @@ class WidgetTestInteractive : public WidgetTest {
   }
 
  protected:
+#if defined(USE_AURA)
   static void ShowQuickMenuImmediately(
       TouchSelectionControllerImpl* controller) {
     DCHECK(controller);
-    if (controller->context_menu_timer_.IsRunning()) {
-      controller->context_menu_timer_.Stop();
-// TODO(tapted): Enable this when porting ui/views/touchui to Mac.
-#if !defined(OS_MACOSX)
-      controller->ContextMenuTimerFired();
-#endif
+    if (controller->quick_menu_timer_.IsRunning()) {
+      controller->quick_menu_timer_.Stop();
+      controller->QuickMenuTimerFired();
     }
   }
-
-  static bool IsQuickMenuVisible(TouchSelectionControllerImpl* controller) {
-    DCHECK(controller);
-    return controller->context_menu_ && controller->context_menu_->visible();
-  }
+#endif  // defined (USE_AURA)
 
   Widget* CreateWidget() {
     Widget* widget = CreateNativeDesktopWidget();
@@ -894,21 +887,13 @@ TEST_F(WidgetTestInteractive, CanActivateFlagIsHonored) {
   EXPECT_FALSE(widget.IsActive());
 }
 
-// No touch on desktop Mac. Tracked in http://crbug.com/445520.
-#if defined(OS_MACOSX) && !defined(USE_AURA)
-#define MAYBE_TouchSelectionQuickMenuIsNotActivated \
-    DISABLED_TouchSelectionQuickMenuIsNotActivated
-#else
-#define MAYBE_TouchSelectionQuickMenuIsNotActivated \
-    TouchSelectionQuickMenuIsNotActivated
-#endif
-
+#if defined(USE_AURA)
 // Test that touch selection quick menu is not activated when opened.
-TEST_F(WidgetTestInteractive, MAYBE_TouchSelectionQuickMenuIsNotActivated) {
+TEST_F(WidgetTestInteractive, TouchSelectionQuickMenuIsNotActivated) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableTouchEditing);
 #if defined(OS_WIN)
-  views_delegate().set_use_desktop_native_widgets(true);
+  views_delegate()->set_use_desktop_native_widgets(true);
 #endif  // !defined(OS_WIN)
 
   Widget* widget = CreateWidget();
@@ -932,14 +917,14 @@ TEST_F(WidgetTestInteractive, MAYBE_TouchSelectionQuickMenuIsNotActivated) {
 
   EXPECT_TRUE(textfield->HasFocus());
   EXPECT_TRUE(widget->IsActive());
-  EXPECT_TRUE(IsQuickMenuVisible(static_cast<TouchSelectionControllerImpl*>(
-      textfield_test_api.touch_selection_controller())));
+  EXPECT_TRUE(ui::TouchSelectionMenuRunner::GetInstance()->IsRunning());
   widget->CloseNow();
 }
+#endif  // defined(USE_AURA)
 
 TEST_F(WidgetTestInteractive, DisableViewDoesNotActivateWidget) {
 #if defined(OS_WIN)
-  views_delegate().set_use_desktop_native_widgets(true);
+  views_delegate()->set_use_desktop_native_widgets(true);
 #endif  // !defined(OS_WIN)
 
   // Create first widget and view, activate the widget, and focus the view.
@@ -1578,43 +1563,6 @@ TEST_F(WidgetInputMethodInteractiveTest, TwoWindows) {
 #endif
 
   parent->CloseNow();
-}
-
-// Test input method focus changes affected by focus changes cross 2 top
-// windows.
-TEST_F(WidgetInputMethodInteractiveTest, TwoTopWindows) {
-  Widget* widget1 = CreateWidget();
-  Widget* widget2 = CreateWidget();
-  Textfield* textfield1 = new Textfield;
-  Textfield* textfield2 = new Textfield;
-  textfield2->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
-  widget1->GetRootView()->AddChildView(textfield1);
-  widget2->GetRootView()->AddChildView(textfield2);
-
-  // Do the initial shows synchronously. Otherwise, on X11, the window server
-  // messages may be interleaved with the activation requests below.
-  ShowSync(widget1);
-  ShowSync(widget2);
-
-  textfield1->RequestFocus();
-  textfield2->RequestFocus();
-
-  ActivateSync(widget1);
-
-  EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT,
-            widget1->GetInputMethod()->GetTextInputType());
-  EXPECT_EQ(ui::TEXT_INPUT_TYPE_NONE,
-            widget2->GetInputMethod()->GetTextInputType());
-
-  ActivateSync(widget2);
-
-  EXPECT_EQ(ui::TEXT_INPUT_TYPE_NONE,
-            widget1->GetInputMethod()->GetTextInputType());
-  EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD,
-            widget2->GetInputMethod()->GetTextInputType());
-
-  widget2->CloseNow();
-  widget1->CloseNow();
 }
 
 // Test input method focus changes affected by textfield's state changes.

@@ -159,9 +159,9 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   return *this;
 }
 
-bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
+bool HttpResponseInfo::InitFromPickle(const base::Pickle& pickle,
                                       bool* response_truncated) {
-  PickleIterator iter(pickle);
+  base::PickleIterator iter(pickle);
 
   // Read flags and verify version
   int flags;
@@ -287,7 +287,7 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
   return true;
 }
 
-void HttpResponseInfo::Persist(Pickle* pickle,
+void HttpResponseInfo::Persist(base::Pickle* pickle,
                                bool skip_transient_headers,
                                bool response_truncated) const {
   int flags = RESPONSE_INFO_VERSION;
@@ -377,9 +377,9 @@ HttpResponseInfo::ConnectionInfo HttpResponseInfo::ConnectionInfoFromNextProto(
     case kProtoSPDY3:
     case kProtoSPDY31:
       return CONNECTION_INFO_SPDY3;
-    case kProtoSPDY4_14:
+    case kProtoHTTP2_14:
       return CONNECTION_INFO_HTTP2_14;
-    case kProtoSPDY4:
+    case kProtoHTTP2:
       return CONNECTION_INFO_HTTP2;
     case kProtoQUIC1SPDY3:
       return CONNECTION_INFO_QUIC1_SPDY3;

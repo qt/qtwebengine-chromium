@@ -82,7 +82,7 @@ void GetAdapterState(HANDLE adapter_handle,
   std::string name;
   std::string address;
   bool powered = false;
-  BLUETOOTH_RADIO_INFO adapter_info = { sizeof(BLUETOOTH_RADIO_INFO), 0 };
+  BLUETOOTH_RADIO_INFO adapter_info = {sizeof(BLUETOOTH_RADIO_INFO)};
   if (adapter_handle &&
       ERROR_SUCCESS == BluetoothGetRadioInfo(adapter_handle,
                                              &adapter_info)) {
@@ -125,10 +125,10 @@ BluetoothTaskManagerWin::ServiceRecordState::~ServiceRecordState() {
 }
 
 BluetoothTaskManagerWin::DeviceState::DeviceState()
-    : bluetooth_class(0),
-      visible(false),
+    : visible(false),
       connected(false),
-      authenticated(false) {
+      authenticated(false),
+      bluetooth_class(0) {
 }
 
 BluetoothTaskManagerWin::DeviceState::~DeviceState() {

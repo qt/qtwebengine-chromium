@@ -23,28 +23,28 @@
 #ifndef HTMLImageLoader_h
 #define HTMLImageLoader_h
 
+#include "core/CoreExport.h"
 #include "core/loader/ImageLoader.h"
 
 namespace blink {
 
-class HTMLImageLoader final : public ImageLoader {
+class CORE_EXPORT HTMLImageLoader final : public ImageLoader {
 public:
     static PassOwnPtrWillBeRawPtr<HTMLImageLoader> create(Element* element)
     {
         return adoptPtrWillBeNoop(new HTMLImageLoader(element));
     }
-    virtual ~HTMLImageLoader();
+    ~HTMLImageLoader() override;
 
-    virtual void dispatchLoadEvent() override;
-    virtual String sourceURI(const AtomicString&) const override;
+    void dispatchLoadEvent() override;
 
-    virtual void notifyFinished(Resource*) override;
+    void notifyFinished(Resource*) override;
 
 private:
     Timer<HTMLImageLoader> m_loadFallbackContentTimer;
     void timerFired(Timer<HTMLImageLoader>*);
     explicit HTMLImageLoader(Element*);
-    virtual void noImageResourceToLoad() override;
+    void noImageResourceToLoad() override;
     void ensureFallbackContent();
 };
 

@@ -28,6 +28,10 @@ class SurfaceFactoryCast : public SurfaceFactoryOzone {
   scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget) override;
   const int32* GetEGLSurfaceProperties(const int32* desired_list) override;
+  scoped_refptr<NativePixmap> CreateNativePixmap(gfx::AcceleratedWidget w,
+                                                 gfx::Size size,
+                                                 BufferFormat format,
+                                                 BufferUsage usage) override;
   bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) override;
@@ -54,6 +58,7 @@ class SurfaceFactoryCast : public SurfaceFactoryOzone {
 
   void CreateDisplayTypeAndWindowIfNeeded();
   void DestroyDisplayTypeAndWindow();
+  void DestroyWindow();
   void InitializeHardware();
   void ShutdownHardware();
 

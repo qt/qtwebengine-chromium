@@ -10,8 +10,6 @@
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/base/ime/text_input_focus_manager.h"
-#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 
 namespace ui {
@@ -51,9 +49,6 @@ void InputMethodBase::DetachTextInputClient(TextInputClient* client) {
 }
 
 TextInputClient* InputMethodBase::GetTextInputClient() const {
-  if (switches::IsTextInputFocusManagerEnabled())
-    return TextInputFocusManager::GetInstance()->GetFocusedTextInputClient();
-
   return system_toplevel_window_focused_ ? text_input_client_ : NULL;
 }
 
@@ -132,9 +127,6 @@ void InputMethodBase::NotifyTextInputCaretBoundsChanged(
 
 void InputMethodBase::SetFocusedTextInputClientInternal(
     TextInputClient* client) {
-  if (switches::IsTextInputFocusManagerEnabled())
-    return;
-
   TextInputClient* old = text_input_client_;
   if (old == client)
     return;
@@ -142,40 +134,6 @@ void InputMethodBase::SetFocusedTextInputClientInternal(
   text_input_client_ = client;  // NULL allowed.
   OnDidChangeFocusedClient(old, client);
   NotifyTextInputStateChanged(text_input_client_);
-}
-
-void InputMethodBase::OnCandidateWindowShown() {
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&InputMethodBase::CandidateWindowShownCallback, AsWeakPtr()));
-}
-
-void InputMethodBase::OnCandidateWindowUpdated() {
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&InputMethodBase::CandidateWindowUpdatedCallback,
-                 AsWeakPtr()));
-}
-
-void InputMethodBase::OnCandidateWindowHidden() {
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&InputMethodBase::CandidateWindowHiddenCallback, AsWeakPtr()));
-}
-
-void InputMethodBase::CandidateWindowShownCallback() {
-  if (TextInputClient* text_input_client = GetTextInputClient())
-    text_input_client->OnCandidateWindowShown();
-}
-
-void InputMethodBase::CandidateWindowUpdatedCallback() {
-  if (TextInputClient* text_input_client = GetTextInputClient())
-    text_input_client->OnCandidateWindowUpdated();
-}
-
-void InputMethodBase::CandidateWindowHiddenCallback() {
-  if (TextInputClient* text_input_client = GetTextInputClient())
-    text_input_client->OnCandidateWindowHidden();
 }
 
 }  // namespace ui

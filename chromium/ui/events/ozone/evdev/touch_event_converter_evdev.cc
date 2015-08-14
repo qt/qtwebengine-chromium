@@ -21,6 +21,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -33,6 +34,8 @@
 #include "ui/events/ozone/evdev/device_event_dispatcher_evdev.h"
 #include "ui/events/ozone/evdev/touch_evdev_types.h"
 #include "ui/events/ozone/evdev/touch_noise/touch_noise_finder.h"
+#include "ui/ozone/public/input_controller.h"
+#include "ui/ozone/public/ozone_platform.h"
 
 namespace {
 
@@ -46,10 +49,11 @@ struct TouchCalibration {
 };
 
 void GetTouchCalibration(TouchCalibration* cal) {
-  std::vector<std::string> parts;
-  if (Tokenize(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-                   switches::kTouchCalibration),
-               ",", &parts) >= 4) {
+  std::vector<std::string> parts = base::SplitString(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kTouchCalibration),
+      ",", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  if (parts.size() >= 4) {
     if (!base::StringToInt(parts[0], &cal->bezel_left))
       LOG(ERROR) << "Incorrect left border calibration value passed.";
     if (!base::StringToInt(parts[1], &cal->bezel_right))
@@ -96,21 +100,15 @@ TouchEventConverterEvdev::TouchEventConverterEvdev(
                           devinfo.name(),
                           devinfo.vendor_id(),
                           devinfo.product_id()),
-      dispatcher_(dispatcher),
-      syn_dropped_(false),
-      has_mt_(false),
-      touch_points_(0),
-      next_tracking_id_(0),
-      current_slot_(0) {
+      dispatcher_(dispatcher) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kExtraTouchNoiseFiltering)) {
     touch_noise_finder_.reset(new TouchNoiseFinder);
   }
+  touch_evdev_debug_buffer_.Initialize(devinfo);
 }
 
 TouchEventConverterEvdev::~TouchEventConverterEvdev() {
-  Stop();
-  close(fd_);
 }
 
 void TouchEventConverterEvdev::Initialize(const EventDeviceInfo& info) {
@@ -193,13 +191,16 @@ void TouchEventConverterEvdev::Initialize(const EventDeviceInfo& info) {
   }
 }
 
-bool TouchEventConverterEvdev::Reinitialize() {
+void TouchEventConverterEvdev::Reinitialize() {
   EventDeviceInfo info;
-  if (info.Initialize(fd_)) {
-    Initialize(info);
-    return true;
+  if (!info.Initialize(fd_)) {
+    LOG(ERROR) << "Failed to synchronize state for touch device: "
+               << path_.value();
+    Stop();
+    return;
   }
-  return false;
+
+  Initialize(info);
 }
 
 bool TouchEventConverterEvdev::HasTouchscreen() const {
@@ -214,7 +215,11 @@ int TouchEventConverterEvdev::GetTouchPoints() const {
   return touch_points_;
 }
 
-void TouchEventConverterEvdev::OnStopped() {
+void TouchEventConverterEvdev::OnEnabled() {
+  ReportEvents(EventTimeForNow());
+}
+
+void TouchEventConverterEvdev::OnDisabled() {
   ReleaseTouches();
 }
 
@@ -234,8 +239,10 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
-  if (ignore_events_)
+  if (!enabled_) {
+    dropped_events_ = true;
     return;
+  }
 
   for (unsigned i = 0; i < read_size / sizeof(*inputs); i++) {
     if (!has_mt_) {
@@ -248,11 +255,22 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
   }
 }
 
+void TouchEventConverterEvdev::DumpTouchEventLog(const char* filename) {
+  touch_evdev_debug_buffer_.DumpLog(filename);
+}
+
+void TouchEventConverterEvdev::SetTouchEventLoggingEnabled(bool enabled) {
+  touch_logging_enabled_ = enabled;
+}
+
 void TouchEventConverterEvdev::ProcessMultitouchEvent(
     const input_event& input) {
+  if (touch_logging_enabled_)
+    touch_evdev_debug_buffer_.ProcessEvent(current_slot_, &input);
+
   if (input.type == EV_SYN) {
     ProcessSyn(input);
-  } else if (syn_dropped_) {
+  } else if (dropped_events_) {
     // Do nothing. This branch indicates we have lost sync with the driver.
   } else if (input.type == EV_ABS) {
     if (events_.size() <= current_slot_) {
@@ -342,21 +360,12 @@ void TouchEventConverterEvdev::ProcessAbs(const input_event& input) {
 void TouchEventConverterEvdev::ProcessSyn(const input_event& input) {
   switch (input.code) {
     case SYN_REPORT:
-      if (syn_dropped_) {
-        // Have to re-initialize.
-        if (Reinitialize()) {
-          syn_dropped_ = false;
-        } else {
-          LOG(ERROR) << "failed to re-initialize device info";
-        }
-      } else {
-        ReportEvents(EventConverterEvdev::TimeDeltaFromInputEvent(input));
-      }
+      ReportEvents(EventConverterEvdev::TimeDeltaFromInputEvent(input));
       break;
     case SYN_DROPPED:
       // Some buffer has overrun. We ignore all events up to and
       // including the next SYN_REPORT.
-      syn_dropped_ = true;
+      dropped_events_ = true;
       break;
     default:
       NOTIMPLEMENTED() << "invalid code for EV_SYN: " << input.code;
@@ -389,6 +398,11 @@ void TouchEventConverterEvdev::ReportEvent(const InProgressTouchEvdev& event,
 }
 
 void TouchEventConverterEvdev::ReportEvents(base::TimeDelta delta) {
+  if (dropped_events_) {
+    Reinitialize();
+    dropped_events_ = false;
+  }
+
   if (touch_noise_finder_)
     touch_noise_finder_->HandleTouches(events_, delta);
 

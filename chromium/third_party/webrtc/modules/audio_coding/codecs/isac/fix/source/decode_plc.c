@@ -175,7 +175,10 @@ static void MemshipValQ15( int16_t in, int16_t *A, int16_t *B )
 
 
 
-static void LinearResampler( int16_t *in, int16_t *out, int16_t lenIn, int16_t lenOut )
+static void LinearResampler(int16_t* in,
+                            int16_t* out,
+                            int16_t lenIn,
+                            int16_t lenOut)
 {
   int32_t n = (lenIn - 1) * RESAMP_RES;
   int16_t resOut, i, j, relativePos, diff; /* */
@@ -230,12 +233,11 @@ static void LinearResampler( int16_t *in, int16_t *out, int16_t lenIn, int16_t l
 
 
 
-int16_t WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
-                                    IsacFixDecoderInstance *ISACdec_obj,
-                                    int16_t *current_framesamples )
+void WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
+                                 IsacFixDecoderInstance *ISACdec_obj,
+                                 int16_t *current_framesamples )
 {
   int subframecnt;
-  int16_t len = 0;
 
   int16_t* Vector_Word16_1;
   int16_t  Vector_Word16_Extended_1[FRAMESAMPLES_HALF + NOISE_FILTER_LEN];
@@ -309,7 +311,7 @@ int16_t WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
         &((ISACdec_obj->plcstr_obj).prevPitchInvIn[FRAMESAMPLES_HALF - lag0]);
     minCorr = WEBRTC_SPL_WORD32_MAX;
 
-    if ( (FRAMESAMPLES_HALF - 2*lag0 - 10) > 0 )
+    if ((FRAMESAMPLES_HALF - 10) > 2 * lag0)
     {
       minIdx = 11;
       for( i = 0; i < 21; i++ )
@@ -447,7 +449,7 @@ int16_t WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
   /* inverse pitch filter */
 
   pitchLags_Q7[0] = pitchLags_Q7[1] = pitchLags_Q7[2] = pitchLags_Q7[3] =
-      ((ISACdec_obj->plcstr_obj).stretchLag<<7);
+      (int16_t)((ISACdec_obj->plcstr_obj).stretchLag<<7);
   pitchGains_Q12[3] = ( (ISACdec_obj->plcstr_obj).lastPitchGain_Q12);
   pitchGains_Q12[2] = (int16_t)(pitchGains_Q12[3] * 1010 >> 10);
   pitchGains_Q12[1] = (int16_t)(pitchGains_Q12[2] * 1010 >> 10);
@@ -749,7 +751,8 @@ int16_t WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
     k = ( k < ((ISACdec_obj->plcstr_obj).stretchLag - 1) )? (k+1):0;
   }
 
-  (ISACdec_obj->plcstr_obj).lastPitchLag_Q7 = (ISACdec_obj->plcstr_obj).stretchLag << 7;
+  (ISACdec_obj->plcstr_obj).lastPitchLag_Q7 =
+      (int16_t)((ISACdec_obj->plcstr_obj).stretchLag << 7);
 
 
   /* --- Inverse Pitch Filter --- */
@@ -796,6 +799,4 @@ int16_t WebRtcIsacfix_DecodePlcImpl(int16_t *signal_out16,
 
   (ISACdec_obj->plcstr_obj).used = PLC_WAS_USED;
   *current_framesamples = 480;
-
-  return len;
 }

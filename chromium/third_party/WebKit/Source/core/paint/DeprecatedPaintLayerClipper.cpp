@@ -73,7 +73,7 @@ static void applyClipRects(const ClipRectsContext& context, LayoutObject& layout
     LayoutView* view = layoutObject.view();
     ASSERT(view);
     if (clipRects.fixed() && context.rootLayer->layoutObject() == view)
-        offset -= view->frameView()->scrollOffsetForViewportConstrainedObjects();
+        offset -= toIntSize(view->frameView()->scrollPosition());
 
     if (layoutObject.hasOverflowClip()) {
         ClipRect newOverflowClip = toLayoutBox(layoutObject).overflowClipRect(offset, context.scrollbarRelevancy);
@@ -81,6 +81,8 @@ static void applyClipRects(const ClipRectsContext& context, LayoutObject& layout
         clipRects.setOverflowClipRect(intersection(newOverflowClip, clipRects.overflowClipRect()));
         if (layoutObject.isPositioned())
             clipRects.setPosClipRect(intersection(newOverflowClip, clipRects.posClipRect()));
+        if (layoutObject.isLayoutView())
+            clipRects.setFixedClipRect(intersection(newOverflowClip, clipRects.fixedClipRect()));
     }
 
     if (layoutObject.hasClip()) {
@@ -234,7 +236,7 @@ void DeprecatedPaintLayerClipper::calculateRects(const ClipRectsContext& context
     // Update the clip rects that will be passed to child layers.
     if (m_layoutObject.hasOverflowClip()) {
         // This layer establishes a clip of some kind.
-        if (!isClippingRoot || context.respectOverflowClip == RespectOverflowClip) {
+        if (shouldRespectOverflowClip(context)) {
             foregroundRect.intersect(toLayoutBox(m_layoutObject).overflowClipRect(offset, context.scrollbarRelevancy));
             if (m_layoutObject.style()->hasBorderRadius())
                 foregroundRect.setHasRadius(true);
@@ -251,12 +253,12 @@ void DeprecatedPaintLayerClipper::calculateRects(const ClipRectsContext& context
             LayoutRect layerBoundsWithVisualOverflow = toLayoutBox(m_layoutObject).visualOverflowRect();
             toLayoutBox(m_layoutObject).flipForWritingMode(layerBoundsWithVisualOverflow); // DeprecatedPaintLayer are in physical coordinates, so the overflow has to be flipped.
             layerBoundsWithVisualOverflow.moveBy(offset);
-            if (!isClippingRoot || context.respectOverflowClip == RespectOverflowClip)
+            if (shouldRespectOverflowClip(context))
                 backgroundRect.intersect(layerBoundsWithVisualOverflow);
         } else {
             LayoutRect bounds = toLayoutBox(m_layoutObject).borderBoxRect();
             bounds.moveBy(offset);
-            if (!isClippingRoot || context.respectOverflowClip == RespectOverflowClip)
+            if (shouldRespectOverflowClip(context))
                 backgroundRect.intersect(bounds);
         }
     }
@@ -300,7 +302,7 @@ void DeprecatedPaintLayerClipper::calculateClipRects(const ClipRectsContext& con
 
     adjustClipRectsForChildren(m_layoutObject, clipRects);
 
-    if ((m_layoutObject.hasOverflowClip() && (context.respectOverflowClip == RespectOverflowClip || !isClippingRoot)) || m_layoutObject.hasClip()) {
+    if ((m_layoutObject.hasOverflowClip() && shouldRespectOverflowClip(context)) || m_layoutObject.hasClip()) {
         // This offset cannot use convertToLayerCoords, because sometimes our rootLayer may be across
         // some transformed layer boundary, for example, in the DeprecatedPaintLayerCompositor overlapMap, where
         // clipRects are needed in view space.
@@ -334,7 +336,7 @@ ClipRect DeprecatedPaintLayerClipper::backgroundClipRect(const ClipRectsContext&
 
     // Note: infinite clipRects should not be scrolled here, otherwise they will accidentally no longer be considered infinite.
     if (parentClipRects->fixed() && context.rootLayer->layoutObject() == m_layoutObject.view() && result != LayoutRect(LayoutRect::infiniteIntRect()))
-        result.move(m_layoutObject.view()->frameView()->scrollOffsetForViewportConstrainedObjects());
+        result.move(toIntSize(m_layoutObject.view()->frameView()->scrollPosition()));
 
     return result;
 }
@@ -369,6 +371,21 @@ DeprecatedPaintLayer* DeprecatedPaintLayerClipper::clippingRootForPainting() con
 
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+bool DeprecatedPaintLayerClipper::shouldRespectOverflowClip(const ClipRectsContext& context) const
+{
+    DeprecatedPaintLayer* layer = m_layoutObject.layer();
+    if (layer != context.rootLayer)
+        return true;
+
+    if (context.respectOverflowClip == IgnoreOverflowClip)
+        return false;
+
+    if (layer->isRootLayer() && context.respectOverflowClipForViewport == IgnoreOverflowClip)
+        return false;
+
+    return true;
 }
 
 } // namespace blink

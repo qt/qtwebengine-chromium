@@ -15,7 +15,6 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
@@ -25,11 +24,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
-#include "jni/AndroidKeyStoreTestUtil_jni.h"
 #include "net/android/keystore.h"
 #include "net/android/keystore_openssl.h"
 #include "net/base/test_data_directory.h"
 #include "net/ssl/scoped_openssl_types.h"
+#include "net/test/jni/AndroidKeyStoreTestUtil_jni.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Technical note:
@@ -98,7 +97,7 @@ std::string GetOpenSSLErrorString(void) {
 // Return the string's new buffer in memory, as an 'unsigned char*'
 // pointer.
 unsigned char* OpenSSLWriteInto(std::string* str, size_t size) {
-  return reinterpret_cast<unsigned char*>(WriteInto(str, size + 1));
+  return reinterpret_cast<unsigned char*>(base::WriteInto(str, size + 1));
 }
 
 // Load a given private key file into an EVP_PKEY.
@@ -177,8 +176,7 @@ ScopedJava GetPKCS8PrivateKeyJava(PrivateKeyType key_type,
   JNIEnv* env = InitEnv();
   base::android::ScopedJavaLocalRef<jbyteArray> bytes(
       base::android::ToJavaByteArray(
-          env,
-          reinterpret_cast<const uint8*>(pkcs8_key.data()),
+          env, reinterpret_cast<const uint8_t*>(pkcs8_key.data()),
           pkcs8_key.size()));
 
   ScopedJava key(
@@ -375,7 +373,7 @@ void DoKeySigning(jobject android_key,
                   const base::StringPiece& message,
                   std::string* result) {
   // First, get the platform signature.
-  std::vector<uint8> android_signature;
+  std::vector<uint8_t> android_signature;
   ASSERT_TRUE(
       RawSignDigestWithPrivateKey(android_key,
                                   message,
@@ -428,7 +426,7 @@ TEST(AndroidKeyStore,GetRSAKeyModulus) {
   ASSERT_FALSE(key_java.is_null());
 
   // Retrieve the corresponding modulus through JNI
-  std::vector<uint8> modulus_java;
+  std::vector<uint8_t> modulus_java;
   ASSERT_TRUE(GetRSAKeyModulus(key_java.obj(), &modulus_java));
 
   // Create an OpenSSL BIGNUM from it.

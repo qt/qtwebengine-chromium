@@ -25,11 +25,10 @@
 ] interface Element : Node {
     readonly attribute DOMString? namespaceURI;
     readonly attribute DOMString? prefix;
-    // FIXME: localName/tagName should not be nullable.
-    readonly attribute DOMString? localName;
-    readonly attribute DOMString? tagName;
+    readonly attribute DOMString localName;
+    readonly attribute DOMString tagName;
 
-    [Reflect, ExposeJSAccessors] attribute DOMString id;
+    [Reflect] attribute DOMString id;
     [Reflect=class] attribute DOMString className;
     [SameObject, PerWorldBindings] readonly attribute DOMTokenList classList;
 
@@ -59,13 +58,14 @@
 
     // DOM Parsing and Serialization
     // https://dvcs.w3.org/hg/innerhtml/raw-file/tip/index.html#extensions-to-the-element-interface
-    [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, ExposeJSAccessors] attribute DOMString innerHTML;
+    [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter] attribute DOMString innerHTML;
     [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter] attribute DOMString outerHTML;
     [CustomElementCallbacks, RaisesException, MeasureAs=InsertAdjacentHTML] void insertAdjacentHTML(DOMString position, DOMString text);
 
     // Shadow DOM
     // http://w3c.github.io/webcomponents/spec/shadow/#extensions-to-element-interface
     [RaisesException, CallWith=ScriptState, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
+    [RuntimeEnabled=CreateShadowRootWithParameter, RaisesException, CallWith=ScriptState, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot(ShadowRootInit shadowRootInitDict);
     NodeList getDestinationInsertionPoints();
     [PerWorldBindings] readonly attribute ShadowRoot? shadowRoot;
 
@@ -103,28 +103,12 @@
     [MeasureAs=ElementOffsetWidth] readonly attribute long offsetWidth;
     [MeasureAs=ElementOffsetHeight] readonly attribute long offsetHeight;
 
-    // CSS Object Model (CSSOM)
-    // http://dev.w3.org/csswg/cssom/#the-elementcssinlinestyle-interface
-    // FIXME: style should be on HTMLElement and SVGElement.
-    // FIXME: style should have [PutForwards=cssText].
-    [SameObject, PerWorldBindings] readonly attribute CSSStyleDeclaration style;
-
-    // HTML
-    // https://html.spec.whatwg.org/#htmlelement
-    // FIXME: dataset, focus() and blur() should be on HTMLElement.
-    [SameObject, PerWorldBindings] readonly attribute DOMStringMap dataset;
-    void focus();
-    void blur();
-
     // Non-standard APIs
     // https://www.w3.org/Bugs/Public/show_bug.cgi?id=19962
     [RaisesException, CustomElementCallbacks, MeasureAs=InsertAdjacentElement] Element insertAdjacentElement(DOMString where, Element element);
     [RaisesException, MeasureAs=InsertAdjacentText] void insertAdjacentText(DOMString where, DOMString text);
     [MeasureAs=ElementScrollIntoViewIfNeeded] void scrollIntoViewIfNeeded(optional boolean centerIfNeeded);
     [RaisesException, ImplementedAs=matches, MeasureAs=ElementPrefixedMatchesSelector] boolean webkitMatchesSelector(DOMString selectors);
-
-    // Experimental isTapStop API
-    [RuntimeEnabled=TabStopAttribute, MeasureAs=TabStopProperty] attribute boolean tabStop;
 
     // Experimental accessibility API
     [RuntimeEnabled=ComputedAccessibilityInfo] readonly attribute DOMString? computedRole;

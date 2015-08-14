@@ -37,6 +37,7 @@
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSImportRule.h"
+#include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValueList.h"
@@ -56,10 +57,11 @@
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLStyleElement.h"
+#include "core/html/ImageDocument.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/page/Page.h"
 #include "core/style/StyleFetchedImage.h"
 #include "core/style/StyleImage.h"
-#include "core/page/Page.h"
 #include "platform/SerializedResource.h"
 #include "platform/graphics/Image.h"
 #include "wtf/OwnPtr.h"
@@ -97,10 +99,10 @@ static const QualifiedName& frameOwnerURLAttributeName(const HTMLFrameOwnerEleme
     return isHTMLObjectElement(frameOwner) ? HTMLNames::dataAttr : HTMLNames::srcAttr;
 }
 
-class SerializerMarkupAccumulator final : public MarkupAccumulator {
+class SerializerMarkupAccumulator : public MarkupAccumulator {
     STACK_ALLOCATED();
 public:
-    SerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node>>*);
+    SerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node>>&);
     virtual ~SerializerMarkupAccumulator();
 
 protected:
@@ -111,18 +113,20 @@ protected:
     virtual void appendStartTag(Node&, Namespaces* = nullptr) override;
     virtual void appendEndTag(const Element&) override;
 
+    const Document& document();
+
 private:
-    RawPtrWillBeMember<PageSerializer> m_serializer;
+    PageSerializer* m_serializer;
     RawPtrWillBeMember<const Document> m_document;
 
     // FIXME: |PageSerializer| uses |m_nodes| for collecting nodes in document
     // included into serialized text then extracts image, object, etc. The size
     // of this vector isn't small for large document. It is better to use
     // callback like functionality.
-    RawPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Node>>> const m_nodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node>>& m_nodes;
 };
 
-SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node>>* nodes)
+SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node>>& nodes)
     : MarkupAccumulator(ResolveAllURLs)
     , m_serializer(serializer)
     , m_document(&document)
@@ -134,11 +138,11 @@ SerializerMarkupAccumulator::~SerializerMarkupAccumulator()
 {
 }
 
-void SerializerMarkupAccumulator::appendText(StringBuilder& out, Text& text)
+void SerializerMarkupAccumulator::appendText(StringBuilder& result, Text& text)
 {
     Element* parent = text.parentElement();
     if (parent && !shouldIgnoreElement(*parent))
-        MarkupAccumulator::appendText(out, text);
+        MarkupAccumulator::appendText(result, text);
 }
 
 bool SerializerMarkupAccumulator::shouldIgnoreAttribute(const Attribute& attribute)
@@ -150,21 +154,27 @@ bool SerializerMarkupAccumulator::shouldIgnoreAttribute(const Attribute& attribu
     return MarkupAccumulator::shouldIgnoreAttribute(attribute);
 }
 
-void SerializerMarkupAccumulator::appendElement(StringBuilder& out, Element& element, Namespaces* namespaces)
+void SerializerMarkupAccumulator::appendElement(StringBuilder& result, Element& element, Namespaces* namespaces)
 {
     if (!shouldIgnoreElement(element))
-        MarkupAccumulator::appendElement(out, element, namespaces);
+        MarkupAccumulator::appendElement(result, element, namespaces);
 
+    // TODO(tiger): Refactor MarkupAccumulator so it is easier to append an element like this, without special cases for XHTML
     if (isHTMLHeadElement(element)) {
-        out.appendLiteral("<meta charset=\"");
-        out.append(m_document->charset());
-        out.appendLiteral("\">");
+        result.appendLiteral("<meta http-equiv=\"Content-Type\" content=\"");
+        MarkupFormatter::appendAttributeValue(result, m_document->suggestedMIMEType(), m_document->isHTMLDocument());
+        result.appendLiteral("; charset=");
+        MarkupFormatter::appendAttributeValue(result, m_document->charset(), m_document->isHTMLDocument());
+        if (m_document->isXHTMLDocument())
+            result.appendLiteral("\" />");
+        else
+            result.appendLiteral("\">");
     }
 
     // FIXME: For object (plugins) tags and video tag we could replace them by an image of their current contents.
 }
 
-void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& out, const Element& element, Namespaces* namespaces)
+void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& result, const Element& element, Namespaces* namespaces)
 {
     if (!element.isFrameOwnerElement())
         return;
@@ -181,14 +191,13 @@ void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& out, con
 
     // We need to give a fake location to blank frames so they can be referenced by the serialized frame.
     url = m_serializer->urlForBlankFrame(toLocalFrame(frame));
-    appendAttribute(out, element, Attribute(frameOwnerURLAttributeName(frameOwner), AtomicString(url.string())), namespaces);
+    appendAttribute(result, element, Attribute(frameOwnerURLAttributeName(frameOwner), AtomicString(url.string())), namespaces);
 }
 
 void SerializerMarkupAccumulator::appendStartTag(Node& node, Namespaces* namespaces)
 {
     MarkupAccumulator::appendStartTag(node, namespaces);
-    if (m_nodes)
-        m_nodes->append(&node);
+    m_nodes.append(&node);
 }
 
 void SerializerMarkupAccumulator::appendEndTag(const Element& element)
@@ -196,6 +205,99 @@ void SerializerMarkupAccumulator::appendEndTag(const Element& element)
     if (!shouldIgnoreElement(element))
         MarkupAccumulator::appendEndTag(element);
 }
+
+const Document& SerializerMarkupAccumulator::document()
+{
+    return *m_document;
+}
+
+// TODO(tiger): Right now there is no support for rewriting URLs inside CSS
+// documents which leads to bugs like <https://crbug.com/251898>. Not being
+// able to rewrite URLs inside CSS documents means that resources imported from
+// url(...) statements in CSS might not work when rewriting links for the
+// "Webpage, Complete" method of saving a page. It will take some work but it
+// needs to be done if we want to continue to support non-MHTML saved pages.
+//
+// Once that is fixed it would make sense to make link rewriting a bit more
+// general. A new method, String& rewriteURL(String&) or similar, could be added
+// to PageSerializer.Delegate that would allow clients to control this. Some of
+// the change link logic could be moved back to WebPageSerializer.
+//
+// The remaining code in LinkChangeSerializerMarkupAccumulator could probably
+// be merged back into SerializerMarkupAccumulator with additional methods in
+// PageSerializer.Delegate to control MOTW and Base tag rewrite.
+class LinkChangeSerializerMarkupAccumulator final : public SerializerMarkupAccumulator {
+    STACK_ALLOCATED();
+public:
+    LinkChangeSerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node>>&, HashMap<String, String>& rewriteURLs, const String& rewriteFolder);
+
+private:
+    void appendElement(StringBuilder&, Element&, Namespaces*) override;
+    void appendAttribute(StringBuilder&, const Element&, const Attribute&, Namespaces*) override;
+
+    // m_rewriteURLs include all pairs of local resource paths and corresponding original links.
+    HashMap<String, String> m_rewriteURLs;
+    String m_rewriteFolder;
+};
+
+LinkChangeSerializerMarkupAccumulator::LinkChangeSerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node>>& nodes, HashMap<String, String>& rewriteURLs, const String& rewriteFolder)
+    : SerializerMarkupAccumulator(serializer, document, nodes)
+    , m_rewriteURLs(rewriteURLs)
+    , m_rewriteFolder(rewriteFolder)
+{
+}
+
+void LinkChangeSerializerMarkupAccumulator::appendElement(StringBuilder& result, Element& element, Namespaces* namespaces)
+{
+    if (element.hasTagName(HTMLNames::htmlTag)) {
+        // Add MOTW (Mark of the Web) declaration before html tag.
+        // See http://msdn2.microsoft.com/en-us/library/ms537628(VS.85).aspx.
+        result.append('\n');
+        MarkupFormatter::appendComment(result, String::format(" saved from url=(%04d)%s ",
+            static_cast<int>(document().url().string().utf8().length()),
+            document().url().string().utf8().data()));
+        result.append('\n');
+    }
+
+    if (element.hasTagName(HTMLNames::baseTag)) {
+        // TODO(tiger): Refactor MarkupAccumulator so it is easier to append an element like this, without special cases for XHTML
+        // Append a new base tag declaration.
+        result.appendLiteral("<base href=\".\"");
+        if (!document().baseTarget().isEmpty()) {
+            result.appendLiteral(" target=\"");
+            MarkupFormatter::appendAttributeValue(result, document().baseTarget(), document().isHTMLDocument());
+            result.append('"');
+        }
+        if (document().isXHTMLDocument())
+            result.appendLiteral(" />");
+        else
+            result.appendLiteral(">");
+    } else {
+        SerializerMarkupAccumulator::appendElement(result, element, namespaces);
+    }
+}
+
+void LinkChangeSerializerMarkupAccumulator::appendAttribute(StringBuilder& result, const Element& element, const Attribute& attribute, Namespaces* namespaces)
+{
+    if (!m_rewriteURLs.isEmpty() && element.isURLAttribute(attribute)) {
+
+        String completeURL = document().completeURL(attribute.value());
+
+        if (m_rewriteURLs.contains(completeURL)) {
+            // TODO(tiger): Refactor MarkupAccumulator so it is easier to append an attribute like this.
+            result.append(' ');
+            result.append(attribute.name().toString());
+            result.appendLiteral("=\"");
+            if (!m_rewriteFolder.isEmpty())
+                MarkupFormatter::appendAttributeValue(result, m_rewriteFolder + "/", document().isHTMLDocument());
+            MarkupFormatter::appendAttributeValue(result, m_rewriteURLs.get(completeURL), document().isHTMLDocument());
+            result.appendLiteral("\"");
+            return;
+        }
+    }
+    MarkupAccumulator::appendAttribute(result, element, attribute, namespaces);
+}
+
 
 PageSerializer::PageSerializer(Vector<SerializedResource>* resources, PassOwnPtr<Delegate> delegate)
     : m_resources(resources)
@@ -227,16 +329,24 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
         return;
     }
 
-    WTF::TextEncoding textEncoding(document.charset());
-    if (!textEncoding.isValid()) {
-        // FIXME: iframes used as images trigger this. We should deal with them correctly.
+    // If frame is an image document, add the image and don't continue
+    if (document.isImageDocument()) {
+        ImageDocument& imageDocument = toImageDocument(document);
+        addImageToResources(imageDocument.cachedImage(), imageDocument.imageElement()->layoutObject(), url);
         return;
     }
 
     WillBeHeapVector<RawPtrWillBeMember<Node>> serializedNodes;
-    SerializerMarkupAccumulator accumulator(this, document, &serializedNodes);
-    String text = serializeNodes<EditingStrategy>(accumulator, document, IncludeNode);
-    CString frameHTML = textEncoding.normalizeAndEncode(text, WTF::EntitiesForUnencodables);
+    String text;
+    if (!m_rewriteURLs.isEmpty()) {
+        LinkChangeSerializerMarkupAccumulator accumulator(this, document, serializedNodes, m_rewriteURLs, m_rewriteFolder);
+        text = serializeNodes<EditingStrategy>(accumulator, document, IncludeNode);
+    } else {
+        SerializerMarkupAccumulator accumulator(this, document, serializedNodes);
+        text = serializeNodes<EditingStrategy>(accumulator, document, IncludeNode);
+    }
+
+    CString frameHTML = document.encoding().normalizeAndEncode(text, WTF::EntitiesForUnencodables);
     m_resources->append(SerializedResource(url, document.suggestedMIMEType(), SharedBuffer::create(frameHTML.data(), frameHTML.length())));
     m_resourceURLs.add(url);
 
@@ -247,8 +357,10 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
 
         Element& element = toElement(*node);
         // We have to process in-line style as it might contain some resources (typically background images).
-        if (element.isStyledElement())
+        if (element.isStyledElement()) {
             retrieveResourcesForProperties(element.inlineStyle(), document);
+            retrieveResourcesForProperties(element.presentationAttributeStyle(), document);
+        }
 
         if (isHTMLImageElement(element)) {
             HTMLImageElement& imageElement = toHTMLImageElement(element);
@@ -293,21 +405,9 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet& styleSheet, const KUR
             if (i < styleSheet.length() - 1)
                 cssText.appendLiteral("\n\n");
         }
-        ASSERT(styleSheet.ownerDocument());
-        Document& document = *styleSheet.ownerDocument();
+
         // Some rules have resources associated with them that we need to retrieve.
-        if (rule->type() == CSSRule::IMPORT_RULE) {
-            CSSImportRule* importRule = toCSSImportRule(rule);
-            KURL importURL = document.completeURL(importRule->href());
-            if (m_resourceURLs.contains(importURL))
-                continue;
-            if (importRule->styleSheet())
-                serializeCSSStyleSheet(*importRule->styleSheet(), importURL);
-        } else if (rule->type() == CSSRule::FONT_FACE_RULE) {
-            retrieveResourcesForProperties(&toCSSFontFaceRule(rule)->styleRule()->properties(), document);
-        } else if (rule->type() == CSSRule::STYLE_RULE) {
-            retrieveResourcesForProperties(&toCSSStyleRule(rule)->styleRule()->properties(), document);
-        }
+        serializeCSSRule(rule);
     }
 
     if (url.isValid() && !m_resourceURLs.contains(url)) {
@@ -318,6 +418,54 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet& styleSheet, const KUR
         CString text = textEncoding.normalizeAndEncode(textString, WTF::EntitiesForUnencodables);
         m_resources->append(SerializedResource(url, String("text/css"), SharedBuffer::create(text.data(), text.length())));
         m_resourceURLs.add(url);
+    }
+}
+
+void PageSerializer::serializeCSSRule(CSSRule* rule)
+{
+    ASSERT(rule->parentStyleSheet()->ownerDocument());
+    Document& document = *rule->parentStyleSheet()->ownerDocument();
+
+    switch (rule->type()) {
+    case CSSRule::STYLE_RULE:
+        retrieveResourcesForProperties(&toCSSStyleRule(rule)->styleRule()->properties(), document);
+        break;
+
+    case CSSRule::IMPORT_RULE: {
+        CSSImportRule* importRule = toCSSImportRule(rule);
+        KURL sheetBaseURL = rule->parentStyleSheet()->baseURL();
+        ASSERT(sheetBaseURL.isValid());
+        KURL importURL = KURL(sheetBaseURL, importRule->href());
+        if (m_resourceURLs.contains(importURL))
+            break;
+        if (importRule->styleSheet())
+            serializeCSSStyleSheet(*importRule->styleSheet(), importURL);
+        break;
+    }
+
+    // Rules inheriting CSSGroupingRule
+    case CSSRule::MEDIA_RULE:
+    case CSSRule::SUPPORTS_RULE: {
+        CSSRuleList* ruleList = rule->cssRules();
+        for (unsigned i = 0; i < ruleList->length(); ++i)
+            serializeCSSRule(ruleList->item(i));
+        break;
+    }
+
+    case CSSRule::FONT_FACE_RULE:
+        retrieveResourcesForProperties(&toCSSFontFaceRule(rule)->styleRule()->properties(), document);
+        break;
+
+    // Rules in which no external resources can be referenced
+    case CSSRule::CHARSET_RULE:
+    case CSSRule::PAGE_RULE:
+    case CSSRule::KEYFRAMES_RULE:
+    case CSSRule::KEYFRAME_RULE:
+    case CSSRule::VIEWPORT_RULE:
+        break;
+
+    default:
+        ASSERT_NOT_REACHED();
     }
 }
 
@@ -343,7 +491,7 @@ void PageSerializer::addImageToResources(ImageResource* image, LayoutObject* ima
     if (!shouldAddURL(url))
         return;
 
-    if (!image || image->image() == Image::nullImage() || image->errorOccurred())
+    if (!image || !image->hasImage() || image->errorOccurred())
         return;
 
     RefPtr<SharedBuffer> data = imageLayoutObject ? image->imageForLayoutObject(imageLayoutObject)->data() : nullptr;
@@ -400,6 +548,16 @@ void PageSerializer::retrieveResourcesForCSSValue(CSSValue* cssValue, Document& 
         for (unsigned i = 0; i < cssValueList->length(); i++)
             retrieveResourcesForCSSValue(cssValueList->item(i), document);
     }
+}
+
+void PageSerializer::registerRewriteURL(const String& from, const String& to)
+{
+    m_rewriteURLs.set(from, to);
+}
+
+void PageSerializer::setRewriteURLFolder(const String& rewriteFolder)
+{
+    m_rewriteFolder = rewriteFolder;
 }
 
 KURL PageSerializer::urlForBlankFrame(LocalFrame* frame)

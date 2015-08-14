@@ -12,24 +12,26 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 #include <v8.h>
 
-using namespace blink;
-
-namespace {
+namespace blink {
 
 class AnimationEffectInputTest : public ::testing::Test {
 protected:
     AnimationEffectInputTest()
-        : document(Document::create())
-        , element(document->createElement("foo", ASSERT_NO_EXCEPTION))
+        : pageHolder(DummyPageHolder::create())
+        , document(pageHolder->document())
+        , element(document.createElement("foo", ASSERT_NO_EXCEPTION))
         , m_isolate(v8::Isolate::GetCurrent())
         , m_scope(m_isolate)
     {
+        document.documentElement()->appendChild(element.get());
     }
 
-    RefPtrWillBePersistent<Document> document;
+    OwnPtr<DummyPageHolder> pageHolder;
+    Document& document;
     RefPtrWillBePersistent<Element> element;
     TrackExceptionState exceptionState;
     v8::Isolate* m_isolate;
@@ -148,4 +150,4 @@ TEST_F(AnimationEffectInputTest, Invalid)
     EXPECT_EQ(InvalidModificationError, exceptionState.code());
 }
 
-}
+} // namespace blink

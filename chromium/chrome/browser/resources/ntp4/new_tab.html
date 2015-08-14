@@ -27,7 +27,6 @@
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/trash.css">
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/widgets.css">
 <link rel="stylesheet" href="apps_page.css">
-<link rel="stylesheet" href="most_visited_page.css">
 <link rel="stylesheet" href="nav_dot.css">
 <link rel="stylesheet" href="new_tab.css">
 <link rel="stylesheet" href="footer_menu.css">
@@ -58,14 +57,12 @@
 <script src="tile_page.js"></script>
 <script src="apps_page.js"></script>
 <script src="dot_list.js"></script>
-<script src="most_visited_page.js"></script>
 <script src="trash.js"></script>
 <script src="page_list_view.js"></script>
 <script src="page_switcher.js"></script>
 
 <script src="nav_dot.js"></script>
 <script src="new_tab.js"></script>
-<script src="other_sessions.js"></script>
 </head>
 
 <body>
@@ -116,16 +113,10 @@
       </ul>
 
       <div id="footer-menu-container" class="menu-container">
-        <button id="other-sessions-menu-button"
-            class="footer-menu-button custom-appearance" hidden>
-          <span i18n-content="otherSessions"></span>
-          <div class="disclosure-triangle"></div>
-        </button>
         <a id="chrome-web-store-link">
           <span id="chrome-web-store-title" i18n-content="webStoreTitleShort">
           </span>
         </a>
-        <div id="vertical-separator"></div>
       </div>
 
       <div id="trash" class="trash">
@@ -181,16 +172,6 @@
     <div class="color-stripe"></div>
   </div>
   <span class="title"></span>
-</div>
-
-<!-- Message shown in the other sessions menu when the user is signed in but
-     there is no session data (e.g. they have tab sync turned off). -->
-<div id="other-sessions-promo-template" class="other-sessions-promo-message">
-  <span i18n-content="otherSessionsEmpty"></span>
-  <p>
-    <a i18n-values="href:otherSessionsLearnMoreUrl" i18n-content="learnMore">
-    </a>
-  </p>
 </div>
 
 </div>

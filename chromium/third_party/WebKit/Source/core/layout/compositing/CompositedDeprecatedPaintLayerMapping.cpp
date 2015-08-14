@@ -39,13 +39,12 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutEmbeddedObject.h"
+#include "core/layout/LayoutHTMLCanvas.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutVideo.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
-#include "core/style/KeyframeList.h"
-#include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
@@ -75,10 +74,12 @@ static IntRect contentsRect(const LayoutObject* layoutObject)
 {
     if (!layoutObject->isBox())
         return IntRect();
+    if (layoutObject->isCanvas())
+        return pixelSnappedIntRect(toLayoutHTMLCanvas(layoutObject)->replacedContentRect());
+    if (layoutObject->isVideo())
+        return toLayoutVideo(layoutObject)->videoBox();
 
-    return layoutObject->isVideo() ?
-        toLayoutVideo(layoutObject)->videoBox() :
-        pixelSnappedIntRect(toLayoutBox(layoutObject)->contentBoxRect());
+    return pixelSnappedIntRect(toLayoutBox(layoutObject)->contentBoxRect());
 }
 
 static IntRect backgroundRect(const LayoutObject* layoutObject)
@@ -139,10 +140,10 @@ static bool contentLayerSupportsDirectBackgroundComposition(const LayoutObject* 
 static WebLayer* platformLayerForPlugin(LayoutObject* layoutObject)
 {
     if (!layoutObject->isEmbeddedObject())
-        return 0;
+        return nullptr;
     Widget* widget = toLayoutEmbeddedObject(layoutObject)->widget();
     if (!widget || !widget->isPluginView())
-        return 0;
+        return nullptr;
     return toPluginView(widget)->platformLayer();
 
 }
@@ -158,10 +159,7 @@ static inline bool isAcceleratedContents(LayoutObject* layoutObject)
 static ScrollingCoordinator* scrollingCoordinatorFromLayer(DeprecatedPaintLayer& layer)
 {
     Page* page = layer.layoutObject()->frame()->page();
-    if (!page)
-        return 0;
-
-    return page->scrollingCoordinator();
+    return (!page) ? nullptr : page->scrollingCoordinator();
 }
 
 CompositedDeprecatedPaintLayerMapping::CompositedDeprecatedPaintLayerMapping(DeprecatedPaintLayer& layer)
@@ -186,8 +184,10 @@ CompositedDeprecatedPaintLayerMapping::~CompositedDeprecatedPaintLayerMapping()
     // Do not leave the destroyed pointer dangling on any Layers that painted to this mapping's squashing layer.
     for (size_t i = 0; i < m_squashedLayers.size(); ++i) {
         DeprecatedPaintLayer* oldSquashedLayer = m_squashedLayers[i].paintLayer;
+        // Assert on incorrect mappings between layers and groups
+        ASSERT(oldSquashedLayer->groupedMapping() == this);
         if (oldSquashedLayer->groupedMapping() == this) {
-            oldSquashedLayer->setGroupedMapping(0, true);
+            oldSquashedLayer->setGroupedMapping(0, DeprecatedPaintLayer::DoNotInvalidateLayerAndRemoveFromMapping);
             oldSquashedLayer->setLostGroupedMapping(true);
         }
     }
@@ -206,9 +206,9 @@ CompositedDeprecatedPaintLayerMapping::~CompositedDeprecatedPaintLayerMapping()
 
 PassOwnPtr<GraphicsLayer> CompositedDeprecatedPaintLayerMapping::createGraphicsLayer(CompositingReasons reasons)
 {
-    GraphicsLayerFactory* graphicsLayerFactory = 0;
+    GraphicsLayerFactory* graphicsLayerFactory = nullptr;
     if (Page* page = layoutObject()->frame()->page())
-        graphicsLayerFactory = page->chrome().client().graphicsLayerFactory();
+        graphicsLayerFactory = page->chromeClient().graphicsLayerFactory();
 
     OwnPtr<GraphicsLayer> graphicsLayer = GraphicsLayer::create(graphicsLayerFactory, this);
 
@@ -270,7 +270,7 @@ void CompositedDeprecatedPaintLayerMapping::updateTransform(const ComputedStyle&
     // baked into it, and we don't want that.
     TransformationMatrix t;
     if (m_owningLayer.hasTransformRelatedProperty()) {
-        style.applyTransform(t, LayoutSize(toLayoutBox(layoutObject())->pixelSnappedSize()), ComputedStyle::ExcludeTransformOrigin);
+        style.applyTransform(t, LayoutSize(toLayoutBox(layoutObject())->pixelSnappedSize()), ComputedStyle::ExcludeTransformOrigin, ComputedStyle::IncludeMotionPath, ComputedStyle::IncludeIndependentTransformProperties);
         makeMatrixRenderable(t, compositor()->hasAcceleratedCompositing());
     }
 
@@ -507,7 +507,7 @@ bool CompositedDeprecatedPaintLayerMapping::updateGraphicsLayerConfiguration()
             m_graphicsLayer->setReplicatedByLayer(reflectionLayer);
         }
     } else {
-        m_graphicsLayer->setReplicatedByLayer(0);
+        m_graphicsLayer->setReplicatedByLayer(nullptr);
     }
 
     updateBackgroundColor();
@@ -516,7 +516,7 @@ bool CompositedDeprecatedPaintLayerMapping::updateGraphicsLayerConfiguration()
         if (isDirectlyCompositedImage()) {
             updateImageContents();
         } else if (m_graphicsLayer->hasContentsLayer()) {
-            m_graphicsLayer->setContentsToImage(0);
+            m_graphicsLayer->setContentsToImage(nullptr);
         }
     }
 
@@ -1067,7 +1067,8 @@ void CompositedDeprecatedPaintLayerMapping::updateInternalHierarchy()
 
     // Layer to which children should be attached as we build the hierarchy.
     GraphicsLayer* bottomLayer = m_graphicsLayer.get();
-    auto updateBottomLayer = [&bottomLayer](GraphicsLayer* layer) {
+    auto updateBottomLayer = [&bottomLayer](GraphicsLayer* layer)
+    {
         if (layer) {
             bottomLayer->addChild(layer);
             bottomLayer = layer;
@@ -1743,11 +1744,7 @@ float CompositedDeprecatedPaintLayerMapping::compositingOpacity(float layoutObje
 
 Color CompositedDeprecatedPaintLayerMapping::layoutObjectBackgroundColor() const
 {
-    LayoutObject* backgroundLayoutObject = layoutObject();
-    if (backgroundLayoutObject->isDocumentElement())
-        backgroundLayoutObject = backgroundLayoutObject->layoutObjectForRootBackground();
-
-    return backgroundLayoutObject->resolveColor(CSSPropertyBackgroundColor);
+    return layoutObject()->resolveColor(CSSPropertyBackgroundColor);
 }
 
 void CompositedDeprecatedPaintLayerMapping::updateBackgroundColor()
@@ -1886,10 +1883,6 @@ void CompositedDeprecatedPaintLayerMapping::updateImageContents()
 
     Image* image = cachedImage->imageForLayoutObject(imageLayoutObject);
     if (!image)
-        return;
-
-    // We have to wait until the image is fully loaded before setting it on the layer.
-    if (!cachedImage->isLoaded())
         return;
 
     // This is a no-op if the layer doesn't have an inner layer for the image.
@@ -2057,7 +2050,7 @@ const GraphicsLayerPaintInfo* CompositedDeprecatedPaintLayerMapping::containingS
         if (layoutObject->isDescendantOf(layers[i].paintLayer->layoutObject()))
             return &layers[i];
     }
-    return 0;
+    return nullptr;
 }
 
 const GraphicsLayerPaintInfo* CompositedDeprecatedPaintLayerMapping::containingSquashedLayer(const LayoutObject* layoutObject, unsigned maxSquashedLayerIndex)
@@ -2134,24 +2127,28 @@ void CompositedDeprecatedPaintLayerMapping::doPaintTask(const GraphicsLayerPaint
         // FIXME: Combine similar code here and LayerClipRecorder.
         dirtyRect.intersect(paintInfo.localClipRectForSquashedLayer);
         {
-            OwnPtr<DisplayItem> clipDisplayItem = ClipDisplayItem::create(*this, DisplayItem::ClipLayerOverflowControls, dirtyRect);
             if (context->displayItemList()) {
                 ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
                 if (!context->displayItemList()->displayItemConstructionIsDisabled())
-                    context->displayItemList()->add(clipDisplayItem.release());
+                    context->displayItemList()->createAndAppend<ClipDisplayItem>(*this, DisplayItem::ClipLayerOverflowControls, dirtyRect);
             } else {
-                clipDisplayItem->replay(*context);
+                ClipDisplayItem clipDisplayItem(*this, DisplayItem::ClipLayerOverflowControls, dirtyRect);
+                clipDisplayItem.replay(*context);
             }
         }
         DeprecatedPaintLayerPainter(*paintInfo.paintLayer).paintLayer(context, paintingInfo, paintLayerFlags);
         {
-            OwnPtr<DisplayItem> endClipDisplayItem = EndClipDisplayItem::create(*this, DisplayItem::clipTypeToEndClipType(DisplayItem::ClipLayerOverflowControls));
             if (context->displayItemList()) {
                 ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
-                if (!context->displayItemList()->displayItemConstructionIsDisabled())
-                    context->displayItemList()->add(endClipDisplayItem.release());
+                if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
+                    if (context->displayItemList()->lastDisplayItemIsNoopBegin())
+                        context->displayItemList()->removeLastDisplayItem();
+                    else
+                        context->displayItemList()->createAndAppend<EndClipDisplayItem>(*this, DisplayItem::clipTypeToEndClipType(DisplayItem::ClipLayerOverflowControls));
+                }
             } else {
-                endClipDisplayItem->replay(*context);
+                EndClipDisplayItem endClipDisplayItem(*this, DisplayItem::clipTypeToEndClipType(DisplayItem::ClipLayerOverflowControls));
+                endClipDisplayItem.replay(*context);
             }
         }
     }
@@ -2179,7 +2176,7 @@ void CompositedDeprecatedPaintLayerMapping::paintContents(const GraphicsLayer* g
     if (Page* page = layoutObject()->frame()->page())
         page->setIsPainting(true);
 #endif
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Paint", "data", InspectorPaintEvent::data(m_owningLayer.layoutObject(), LayoutRect(clip), graphicsLayer));
+    TRACE_EVENT1("devtools.timeline", "Paint", "data", InspectorPaintEvent::data(m_owningLayer.layoutObject(), LayoutRect(clip), graphicsLayer));
 
     PaintLayerFlags paintLayerFlags = 0;
     if (graphicsLayerPaintingPhase & GraphicsLayerPaintBackground)
@@ -2259,7 +2256,22 @@ IntRect CompositedDeprecatedPaintLayerMapping::pixelSnappedCompositedBounds() co
     return pixelSnappedIntRect(bounds);
 }
 
-bool CompositedDeprecatedPaintLayerMapping::updateSquashingLayerAssignment(DeprecatedPaintLayer* squashedLayer, const DeprecatedPaintLayer& owningLayer, size_t nextSquashedLayerIndex)
+void CompositedDeprecatedPaintLayerMapping::clearLayerGroupingIfNoPrecedingEntry(size_t indexToClear)
+{
+    DeprecatedPaintLayer* layerToRemove = m_squashedLayers[indexToClear].paintLayer;
+    size_t previousIndex = 0;
+    for (; previousIndex < indexToClear; ++previousIndex) {
+        if (m_squashedLayers[previousIndex].paintLayer == layerToRemove)
+            break;
+    }
+    if (previousIndex == indexToClear) {
+        // Assert on incorrect mappings between layers and groups
+        ASSERT(layerToRemove->groupedMapping() == this);
+        layerToRemove->setGroupedMapping(nullptr, DeprecatedPaintLayer::DoNotInvalidateLayerAndRemoveFromMapping);
+    }
+}
+
+bool CompositedDeprecatedPaintLayerMapping::updateSquashingLayerAssignment(DeprecatedPaintLayer* squashedLayer, size_t nextSquashedLayerIndex)
 {
     GraphicsLayerPaintInfo paintInfo;
     paintInfo.paintLayer = squashedLayer;
@@ -2268,44 +2280,61 @@ bool CompositedDeprecatedPaintLayerMapping::updateSquashingLayerAssignment(Depre
 
     // Change tracking on squashing layers: at the first sign of something changed, just invalidate the layer.
     // FIXME: Perhaps we can find a tighter more clever mechanism later.
-    bool updatedAssignment = false;
     if (nextSquashedLayerIndex < m_squashedLayers.size()) {
-        if (paintInfo.paintLayer != m_squashedLayers[nextSquashedLayerIndex].paintLayer) {
-            compositor()->paintInvalidationOnCompositingChange(squashedLayer);
-            updatedAssignment = true;
-            m_squashedLayers[nextSquashedLayerIndex] = paintInfo;
-        }
+        if (paintInfo.paintLayer == m_squashedLayers[nextSquashedLayerIndex].paintLayer)
+            return false;
+
+        // Must invalidate before adding the squashed layer to the mapping.
+        compositor()->paintInvalidationOnCompositingChange(squashedLayer);
+
+        m_squashedLayers.insert(nextSquashedLayerIndex, paintInfo);
     } else {
+        // Must invalidate before adding the squashed layer to the mapping.
         compositor()->paintInvalidationOnCompositingChange(squashedLayer);
         m_squashedLayers.append(paintInfo);
-        updatedAssignment = true;
     }
-    squashedLayer->setGroupedMapping(this);
-    return updatedAssignment;
+    squashedLayer->setGroupedMapping(this, DeprecatedPaintLayer::InvalidateLayerAndRemoveFromMapping);
+
+    return true;
 }
 
 void CompositedDeprecatedPaintLayerMapping::removeLayerFromSquashingGraphicsLayer(const DeprecatedPaintLayer* layer)
 {
-    size_t layerIndex = kNotFound;
-
-    for (size_t i = 0; i < m_squashedLayers.size(); ++i) {
-        if (m_squashedLayers[i].paintLayer == layer) {
-            layerIndex = i;
+    size_t layerIndex = 0;
+    for (; layerIndex < m_squashedLayers.size(); ++layerIndex)
+        if (m_squashedLayers[layerIndex].paintLayer == layer)
             break;
-        }
-    }
 
-    if (layerIndex == kNotFound)
+    // Assert on incorrect mappings between layers and groups
+    ASSERT(layerIndex < m_squashedLayers.size());
+    if (layerIndex == m_squashedLayers.size())
         return;
 
     m_squashedLayers.remove(layerIndex);
 }
 
+#if ENABLE(ASSERT)
+bool CompositedDeprecatedPaintLayerMapping::verifyLayerInSquashingVector(const DeprecatedPaintLayer* layer)
+{
+    for (size_t layerIndex = 0; layerIndex < m_squashedLayers.size(); ++layerIndex) {
+        if (m_squashedLayers[layerIndex].paintLayer == layer)
+            return true;
+    }
+
+    return false;
+}
+#endif
+
 void CompositedDeprecatedPaintLayerMapping::finishAccumulatingSquashingLayers(size_t nextSquashedLayerIndex)
 {
-    // Any additional squashed Layers in the array no longer exist, and removing invalidates the squashingLayer contents.
-    if (nextSquashedLayerIndex < m_squashedLayers.size())
+    if (nextSquashedLayerIndex < m_squashedLayers.size()) {
+        // Any additional squashed Layers in the array no longer belong here, but they might have been
+        // added already at an earlier index. Clear pointers on those that do not appear in the valid set
+        // before removing all the extra entries.
+        for (size_t i = nextSquashedLayerIndex; i < m_squashedLayers.size(); ++i)
+            clearLayerGroupingIfNoPrecedingEntry(i);
         m_squashedLayers.remove(nextSquashedLayerIndex, m_squashedLayers.size() - nextSquashedLayerIndex);
+    }
 }
 
 String CompositedDeprecatedPaintLayerMapping::debugName(const GraphicsLayer* graphicsLayer)

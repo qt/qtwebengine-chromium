@@ -11,7 +11,8 @@
 #include "webrtc/modules/audio_coding/main/acm2/codec_manager.h"
 
 #include "webrtc/base/checks.h"
-#include "webrtc/modules/audio_coding/main/acm2/audio_coding_module_impl.h"
+#include "webrtc/engine_configurations.h"
+#include "webrtc/modules/audio_coding/main/acm2/acm_codec_database.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
 namespace webrtc {
@@ -152,9 +153,8 @@ bool CodecSupported(const CodecInst& codec) {
 const CodecInst kEmptyCodecInst = {-1, "noCodecRegistered", 0, 0, 0, 0};
 }  // namespace
 
-CodecManager::CodecManager(AudioCodingModuleImpl* acm)
-    : acm_(acm),
-      cng_nb_pltype_(255),
+CodecManager::CodecManager()
+    : cng_nb_pltype_(255),
       cng_wb_pltype_(255),
       cng_swb_pltype_(255),
       cng_fb_pltype_(255),
@@ -187,7 +187,7 @@ CodecManager::CodecManager(AudioCodingModuleImpl* acm)
 
 CodecManager::~CodecManager() = default;
 
-int CodecManager::RegisterSendCodec(const CodecInst& send_codec) {
+int CodecManager::RegisterEncoder(const CodecInst& send_codec) {
   DCHECK(thread_checker_.CalledOnValidThread());
   int codec_id = IsValidSendCodec(send_codec, true);
 
@@ -321,7 +321,32 @@ int CodecManager::RegisterSendCodec(const CodecInst& send_codec) {
   return 0;
 }
 
-int CodecManager::SendCodec(CodecInst* current_codec) const {
+void CodecManager::RegisterEncoder(
+    AudioEncoderMutable* external_speech_encoder) {
+  // Make up a CodecInst.
+  send_codec_inst_.channels = external_speech_encoder->NumChannels();
+  send_codec_inst_.plfreq = external_speech_encoder->SampleRateHz();
+  send_codec_inst_.pacsize =
+      rtc::CheckedDivExact(external_speech_encoder->Max10MsFramesInAPacket() *
+                               send_codec_inst_.plfreq,
+                           100);
+  send_codec_inst_.pltype = -1;  // Not valid.
+  send_codec_inst_.rate = -1;    // Not valid.
+  static const char kName[] = "external";
+  memcpy(send_codec_inst_.plname, kName, sizeof(kName));
+
+  if (stereo_send_)
+    dtx_enabled_ = false;
+  codec_fec_enabled_ = codec_fec_enabled_ &&
+                       codec_owner_.SpeechEncoder()->SetFec(codec_fec_enabled_);
+  int cng_pt = dtx_enabled_
+                   ? CngPayloadType(external_speech_encoder->SampleRateHz())
+                   : -1;
+  int red_pt = red_enabled_ ? RedPayloadType(send_codec_inst_.plfreq) : -1;
+  codec_owner_.SetEncoders(external_speech_encoder, cng_pt, vad_mode_, red_pt);
+}
+
+int CodecManager::GetCodecInst(CodecInst* current_codec) const {
   int dummy_id = 0;
   WEBRTC_TRACE(webrtc::kTraceStream, webrtc::kTraceAudioCoding, dummy_id,
                "SendCodec()");
@@ -333,37 +358,6 @@ int CodecManager::SendCodec(CodecInst* current_codec) const {
   }
   *current_codec = send_codec_inst_;
   return 0;
-}
-
-// Register possible receive codecs, can be called multiple times,
-// for codecs, CNG (NB, WB and SWB), DTMF, RED.
-int CodecManager::RegisterReceiveCodec(const CodecInst& codec) {
-  if (codec.channels > 2 || codec.channels < 0) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, 0,
-                 "Unsupported number of channels, %d.", codec.channels);
-    return -1;
-  }
-
-  int codec_id = ACMCodecDB::ReceiverCodecNumber(codec);
-
-  if (codec_id < 0 || codec_id >= ACMCodecDB::kNumCodecs) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, 0,
-                 "Wrong codec params to be registered as receive codec");
-    return -1;
-  }
-
-  // Check if the payload-type is valid.
-  if (!ACMCodecDB::ValidPayloadType(codec.pltype)) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, 0,
-                 "Invalid payload-type %d for %s.", codec.pltype, codec.plname);
-    return -1;
-  }
-
-  // Get |decoder| associated with |codec|. |decoder| can be NULL if |codec|
-  // does not own its decoder.
-  //  uint8_t payload_type = static_cast<uint8_t>(codec.pltype);
-  return acm_->RegisterDecoder(codec_id, codec.pltype, codec.channels,
-                               GetAudioDecoder(codec));
 }
 
 bool CodecManager::SetCopyRed(bool enable) {
@@ -379,12 +373,11 @@ bool CodecManager::SetCopyRed(bool enable) {
   }
   if (red_enabled_ != enable) {
     red_enabled_ = enable;
-    if (codec_owner_.Encoder())
-      codec_owner_.SetEncoders(
-          send_codec_inst_,
-          dtx_enabled_ ? CngPayloadType(send_codec_inst_.plfreq) : -1,
-          vad_mode_,
-          red_enabled_ ? RedPayloadType(send_codec_inst_.plfreq) : -1);
+    if (codec_owner_.Encoder()) {
+      int cng_pt = dtx_enabled_ ? CngPayloadType(send_codec_inst_.plfreq) : -1;
+      int red_pt = red_enabled_ ? RedPayloadType(send_codec_inst_.plfreq) : -1;
+      codec_owner_.ChangeCngAndRed(cng_pt, vad_mode_, red_pt);
+    }
   }
   return true;
 }
@@ -413,12 +406,11 @@ int CodecManager::SetVAD(bool enable, ACMVADMode mode) {
   if (dtx_enabled_ != enable || vad_mode_ != mode) {
     dtx_enabled_ = enable;
     vad_mode_ = mode;
-    if (codec_owner_.Encoder())
-      codec_owner_.SetEncoders(
-          send_codec_inst_,
-          dtx_enabled_ ? CngPayloadType(send_codec_inst_.plfreq) : -1,
-          vad_mode_,
-          red_enabled_ ? RedPayloadType(send_codec_inst_.plfreq) : -1);
+    if (codec_owner_.Encoder()) {
+      int cng_pt = dtx_enabled_ ? CngPayloadType(send_codec_inst_.plfreq) : -1;
+      int red_pt = red_enabled_ ? RedPayloadType(send_codec_inst_.plfreq) : -1;
+      codec_owner_.ChangeCngAndRed(cng_pt, vad_mode_, red_pt);
+    }
   }
   return 0;
 }

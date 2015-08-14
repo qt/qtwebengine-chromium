@@ -17,15 +17,11 @@
 #include "storage/browser/fileapi/file_system_backend.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_file_util.h"
-#include "storage/browser/fileapi/file_system_operation_context.h"
-#include "storage/browser/fileapi/file_system_url.h"
-#include "storage/browser/fileapi/file_writer_delegate.h"
 #include "storage/browser/fileapi/remove_operation_delegate.h"
 #include "storage/browser/fileapi/sandbox_file_system_backend.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/fileapi/file_system_types.h"
 #include "storage/common/fileapi/file_system_util.h"
-#include "storage/common/quota/quota_types.h"
 
 using storage::ScopedFile;
 
@@ -92,21 +88,18 @@ void FileSystemOperationImpl::Copy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
     CopyOrMoveOption option,
+    ErrorBehavior error_behavior,
     const CopyProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
   DCHECK(!recursive_operation_delegate_);
 
-  // TODO(hidehiko): Support |progress_callback|. (crbug.com/278038).
-  recursive_operation_delegate_.reset(
-      new CopyOrMoveOperationDelegate(
-          file_system_context(),
-          src_url, dest_url,
-          CopyOrMoveOperationDelegate::OPERATION_COPY,
-          option,
-          progress_callback,
-          base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                     weak_factory_.GetWeakPtr(), callback)));
+  recursive_operation_delegate_.reset(new CopyOrMoveOperationDelegate(
+      file_system_context(), src_url, dest_url,
+      CopyOrMoveOperationDelegate::OPERATION_COPY, option, error_behavior,
+      progress_callback,
+      base::Bind(&FileSystemOperationImpl::DidFinishOperation,
+                 weak_factory_.GetWeakPtr(), callback)));
   recursive_operation_delegate_->RunRecursively();
 }
 
@@ -116,15 +109,12 @@ void FileSystemOperationImpl::Move(const FileSystemURL& src_url,
                                    const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationMove));
   DCHECK(!recursive_operation_delegate_);
-  recursive_operation_delegate_.reset(
-      new CopyOrMoveOperationDelegate(
-          file_system_context(),
-          src_url, dest_url,
-          CopyOrMoveOperationDelegate::OPERATION_MOVE,
-          option,
-          FileSystemOperation::CopyProgressCallback(),
-          base::Bind(&FileSystemOperationImpl::DidFinishOperation,
-                     weak_factory_.GetWeakPtr(), callback)));
+  recursive_operation_delegate_.reset(new CopyOrMoveOperationDelegate(
+      file_system_context(), src_url, dest_url,
+      CopyOrMoveOperationDelegate::OPERATION_MOVE, option, ERROR_BEHAVIOR_ABORT,
+      FileSystemOperation::CopyProgressCallback(),
+      base::Bind(&FileSystemOperationImpl::DidFinishOperation,
+                 weak_factory_.GetWeakPtr(), callback)));
   recursive_operation_delegate_->RunRecursively();
 }
 
@@ -555,7 +545,7 @@ void FileSystemOperationImpl::DidWrite(
   if (complete && write_status != FileWriterDelegate::ERROR_WRITE_NOT_STARTED) {
     DCHECK(operation_context_);
     operation_context_->change_observers()->Notify(
-        &FileChangeObserver::OnModifyFile, MakeTuple(url));
+        &FileChangeObserver::OnModifyFile, base::MakeTuple(url));
   }
 
   StatusCallback cancel_callback = cancel_callback_;

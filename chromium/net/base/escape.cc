@@ -33,7 +33,7 @@ struct Charmap {
     return ((map[c >> 5] & (1 << (c & 31))) != 0);
   }
 
-  uint32 map[8];
+  uint32_t map[8];
 };
 
 // Given text to escape and a Charmap defining which values to escape,
@@ -52,7 +52,7 @@ std::string Escape(const std::string& text,
     if (use_plus && ' ' == c) {
       escaped.push_back('+');
     } else if (keep_escaped && '%' == c && i + 2 < text.length() &&
-               IsHexDigit(text[i + 1]) && IsHexDigit(text[i + 2])) {
+               base::IsHexDigit(text[i + 1]) && base::IsHexDigit(text[i + 2])) {
       escaped.push_back('%');
     } else if (charmap.Contains(c)) {
       escaped.push_back('%');
@@ -118,9 +118,9 @@ bool UnescapeUnsignedCharAtIndex(const STR& escaped_text,
       static_cast<typename STR::value_type>(escaped_text[index + 1]));
   const typename STR::value_type least_sig_digit(
       static_cast<typename STR::value_type>(escaped_text[index + 2]));
-  if (IsHexDigit(most_sig_digit) && IsHexDigit(least_sig_digit)) {
-    *value = HexDigitToInt(most_sig_digit) * 16 +
-        HexDigitToInt(least_sig_digit);
+  if (base::IsHexDigit(most_sig_digit) && base::IsHexDigit(least_sig_digit)) {
+    *value = base::HexDigitToInt(most_sig_digit) * 16 +
+             base::HexDigitToInt(least_sig_digit);
     return true;
   }
   return false;
@@ -162,6 +162,38 @@ bool HasThreeByteBidiControlCharAtIndex(const STR& escaped_text,
            (third_byte >= 0xAA && third_byte <= 0xAE);
   }
   return third_byte >= 0xA6 && third_byte <= 0xA9;
+}
+
+// Returns true if there is a four-byte banned char at |index|. |first_byte| is
+// the byte at |index|.
+template <typename STR>
+bool HasFourByteBannedCharAtIndex(const STR& escaped_text,
+                                  unsigned char first_byte,
+                                  size_t index) {
+  // The following characters are blacklisted for spoofability concerns.
+  // U+1F50F LOCK WITH INK PEN         (%F0%9F%94%8F)
+  // U+1F510 CLOSED LOCK WITH KEY      (%F0%9F%94%90)
+  // U+1F512 LOCK                      (%F0%9F%94%92)
+  // U+1F513 OPEN LOCK                 (%F0%9F%94%93)
+  if (first_byte != 0xF0)
+    return false;
+
+  unsigned char second_byte;
+  if (!UnescapeUnsignedCharAtIndex(escaped_text, index + 3, &second_byte) ||
+      second_byte != 0x9F) {
+    return false;
+  }
+
+  unsigned char third_byte;
+  if (!UnescapeUnsignedCharAtIndex(escaped_text, index + 6, &third_byte) ||
+      third_byte != 0x94) {
+    return false;
+  }
+
+  unsigned char fourth_byte;
+  return UnescapeUnsignedCharAtIndex(escaped_text, index + 9, &fourth_byte) &&
+         (fourth_byte == 0x8F || fourth_byte == 0x90 || fourth_byte == 0x92 ||
+          fourth_byte == 0x93);
 }
 
 // Unescapes |escaped_text| according to |rules|, returning the resulting
@@ -217,12 +249,20 @@ STR UnescapeURLWithAdjustmentsImpl(
       // U+2068 FIRST STRONG ISOLATE       (%E2%81%A8)
       // U+2069 POP DIRECTIONAL ISOLATE    (%E2%81%A9)
       //
+      // The following spoofable characters are also banned, because they could
+      // be used to imitate parts of a web browser's UI.
+      //
+      // U+1F50F LOCK WITH INK PEN         (%F0%9F%94%8F)
+      // U+1F510 CLOSED LOCK WITH KEY      (%F0%9F%94%90)
+      // U+1F512 LOCK                      (%F0%9F%94%92)
+      // U+1F513 OPEN LOCK                 (%F0%9F%94%93)
+      //
       // However, some schemes such as data: and file: need to parse the exact
-      // binary data when loading the URL. For that reason, CONTROL_CHARS allows
-      // unescaping BiDi control characters.
-      // DO NOT use CONTROL_CHARS if the parsed URL is going to be displayed
-      // in the UI.
-      if (!(rules & UnescapeRule::CONTROL_CHARS)) {
+      // binary data when loading the URL. For that reason,
+      // SPOOFING_AND_CONTROL_CHARS allows unescaping BiDi control characters.
+      // DO NOT use SPOOFING_AND_CONTROL_CHARS if the parsed URL is going to be
+      // displayed in the UI.
+      if (!(rules & UnescapeRule::SPOOFING_AND_CONTROL_CHARS)) {
         if (HasArabicLanguageMarkAtIndex(escaped_text, first_byte, i)) {
           // Keep Arabic Language Mark escaped.
           result.append(escaped_text, i, 6);
@@ -235,6 +275,12 @@ STR UnescapeURLWithAdjustmentsImpl(
           i += 8;
           continue;
         }
+        if (HasFourByteBannedCharAtIndex(escaped_text, first_byte, i)) {
+          // Keep banned char escaped.
+          result.append(escaped_text, i, 12);
+          i += 11;
+          continue;
+        }
       }
 
       if (first_byte >= 0x80 ||  // Unescape all high-bit characters.
@@ -245,8 +291,9 @@ STR UnescapeURLWithAdjustmentsImpl(
            // Allow any of the prohibited but non-control characters when
            // we're doing "special" chars.
            (first_byte > ' ' && (rules & UnescapeRule::URL_SPECIAL_CHARS)) ||
-           // Additionally allow control characters if requested.
-           (first_byte < ' ' && (rules & UnescapeRule::CONTROL_CHARS)))) {
+           // Additionally allow non-display characters if requested.
+           (first_byte < ' ' &&
+            (rules & UnescapeRule::SPOOFING_AND_CONTROL_CHARS)))) {
         // Use the unescaped version of the character.
         if (adjustments)
           adjustments->push_back(base::OffsetAdjuster::Adjustment(i, 3, 1));

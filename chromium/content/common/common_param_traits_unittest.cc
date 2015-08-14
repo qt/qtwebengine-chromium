@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "content/public/common/common_param_traits.h"
+#include "content/public/common/url_utils.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/host_port_pair.h"
@@ -32,7 +33,7 @@ TEST(IPCMessageTest, Serialize) {
     IPC::ParamTraits<GURL>::Write(&msg, input);
 
     GURL output;
-    PickleIterator iter(msg);
+    base::PickleIterator iter(msg);
     EXPECT_TRUE(IPC::ParamTraits<GURL>::Read(&msg, &iter, &output));
 
     // We want to test each component individually to make sure its range was
@@ -49,12 +50,26 @@ TEST(IPCMessageTest, Serialize) {
     EXPECT_EQ(input.ref(), output.ref());
   }
 
+  // Test an excessively long GURL.
+  {
+    const std::string url = std::string("http://example.org/").append(
+        content::GetMaxURLChars() + 1, 'a');
+    GURL input(url.c_str());
+    IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
+    IPC::ParamTraits<GURL>::Write(&msg, input);
+
+    GURL output;
+    base::PickleIterator iter(msg);
+    EXPECT_TRUE(IPC::ParamTraits<GURL>::Read(&msg, &iter, &output));
+    EXPECT_TRUE(output.is_empty());
+  }
+
   // Test an invalid GURL.
   {
     IPC::Message msg;
     msg.WriteString("#inva://idurl/");
     GURL output;
-    PickleIterator iter(msg);
+    base::PickleIterator iter(msg);
     EXPECT_FALSE(IPC::ParamTraits<GURL>::Read(&msg, &iter, &output));
   }
 
@@ -62,7 +77,7 @@ TEST(IPCMessageTest, Serialize) {
   IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   msg.WriteInt(99);
   GURL output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_FALSE(IPC::ParamTraits<GURL>::Read(&msg, &iter, &output));
 }
 
@@ -75,7 +90,7 @@ TEST(IPCMessageTest, Pair) {
   IPC::ParamTraits<TestPair>::Write(&msg, input);
 
   TestPair output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<TestPair>::Read(&msg, &iter, &output));
   EXPECT_EQ(output.first, "foo");
   EXPECT_EQ(output.second, "bar");
@@ -92,7 +107,7 @@ TEST(IPCMessageTest, Bitmap) {
   IPC::ParamTraits<SkBitmap>::Write(&msg, bitmap);
 
   SkBitmap output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<SkBitmap>::Read(&msg, &iter, &output));
 
   EXPECT_EQ(bitmap.colorType(), output.colorType());
@@ -108,7 +123,7 @@ TEST(IPCMessageTest, Bitmap) {
   // Copy the first message block over to |bad_msg|.
   const char* fixed_data;
   int fixed_data_size;
-  iter = PickleIterator(msg);
+  iter = base::PickleIterator(msg);
   EXPECT_TRUE(iter.ReadData(&fixed_data, &fixed_data_size));
   bad_msg.WriteData(fixed_data, fixed_data_size);
   // Add some bogus pixel data.
@@ -118,7 +133,7 @@ TEST(IPCMessageTest, Bitmap) {
   bad_msg.WriteData(bogus_pixels.get(), bogus_pixels_size);
   // Make sure we don't read out the bitmap!
   SkBitmap bad_output;
-  iter = PickleIterator(bad_msg);
+  iter = base::PickleIterator(bad_msg);
   EXPECT_FALSE(IPC::ParamTraits<SkBitmap>::Read(&bad_msg, &iter, &bad_output));
 }
 
@@ -132,7 +147,7 @@ TEST(IPCMessageTest, ListValue) {
   IPC::WriteParam(&msg, input);
 
   base::ListValue output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ReadParam(&msg, &iter, &output));
 
   EXPECT_TRUE(input.Equals(&output));
@@ -140,7 +155,7 @@ TEST(IPCMessageTest, ListValue) {
   // Also test the corrupt case.
   IPC::Message bad_msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   bad_msg.WriteInt(99);
-  iter = PickleIterator(bad_msg);
+  iter = base::PickleIterator(bad_msg);
   EXPECT_FALSE(IPC::ReadParam(&bad_msg, &iter, &output));
 }
 
@@ -166,7 +181,7 @@ TEST(IPCMessageTest, DictionaryValue) {
   IPC::WriteParam(&msg, input);
 
   base::DictionaryValue output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ReadParam(&msg, &iter, &output));
 
   EXPECT_TRUE(input.Equals(&output));
@@ -174,7 +189,7 @@ TEST(IPCMessageTest, DictionaryValue) {
   // Also test the corrupt case.
   IPC::Message bad_msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   bad_msg.WriteInt(99);
-  iter = PickleIterator(bad_msg);
+  iter = base::PickleIterator(bad_msg);
   EXPECT_FALSE(IPC::ReadParam(&bad_msg, &iter, &output));
 }
 
@@ -186,7 +201,7 @@ TEST(IPCMessageTest, HostPortPair) {
   IPC::ParamTraits<net::HostPortPair>::Write(&msg, input);
 
   net::HostPortPair output;
-  PickleIterator iter(msg);
+  base::PickleIterator iter(msg);
   EXPECT_TRUE(IPC::ParamTraits<net::HostPortPair>::Read(&msg, &iter, &output));
   EXPECT_EQ(input.host(), output.host());
   EXPECT_EQ(input.port(), output.port());

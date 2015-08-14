@@ -20,6 +20,7 @@
 #include "content/browser/compositor/delegated_frame_host.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/compositor/owned_mailbox.h"
+#include "content/browser/renderer_host/begin_frame_observer_proxy.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
@@ -80,6 +81,7 @@ class RenderWidgetHostView;
 class CONTENT_EXPORT RenderWidgetHostViewAura
     : public RenderWidgetHostViewBase,
       public DelegatedFrameHostClient,
+      public BeginFrameObserverProxyClient,
       public ui::TextInputClient,
       public gfx::DisplayObserver,
       public aura::WindowTreeHostObserver,
@@ -238,7 +240,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ClearCompositionText() override;
   void InsertText(const base::string16& text) override;
   void InsertChar(base::char16 ch, int flags) override;
-  gfx::NativeWindow GetAttachedWindow() const override;
   ui::TextInputType GetTextInputType() const override;
   ui::TextInputMode GetTextInputMode() const override;
   int GetTextInputFlags() const override;
@@ -259,9 +260,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       base::i18n::TextDirection direction) override;
   void ExtendSelectionAndDelete(size_t before, size_t after) override;
   void EnsureCaretInRect(const gfx::Rect& rect) override;
-  void OnCandidateWindowShown() override;
-  void OnCandidateWindowUpdated() override;
-  void OnCandidateWindowHidden() override;
   bool IsEditCommandEnabled(int command_id) override;
   void SetEditCommandForNextKeyEvent(int command_id) override;
 
@@ -276,7 +274,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Size GetMaximumSize() const override;
   void OnBoundsChanged(const gfx::Rect& old_bounds,
                        const gfx::Rect& new_bounds) override;
-  ui::TextInputClient* GetFocusedTextInputClient() override;
   gfx::NativeCursor GetCursor(const gfx::Point& point) override;
   int GetNonClientComponent(const gfx::Point& point) const override;
   bool ShouldDescendIntoChildForEventHandling(
@@ -366,6 +363,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   const ui::MotionEventAura& pointer_state() const { return pointer_state_; }
 
  private:
+  friend class RenderWidgetHostViewAuraCopyRequestTest;
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            PopupRetainsCaptureAfterMouseRelease);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
@@ -386,10 +384,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SoftwareDPIChange);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            UpdateCursorIfOverSelf);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
-                           DedupeFrameSubscriberRequests);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
-                           DestroyedAfterCopyRequest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            VisibleViewportTest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -476,6 +470,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const base::TimeTicks& timebase,
       const base::TimeDelta& interval) override;
 
+  // BeginFrameObserverProxyClient implementation.
+  void SendBeginFrame(const cc::BeginFrameArgs& args) override;
+
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();
 
@@ -496,6 +493,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Helper function to set keyboard focus to the main window.
   void SetKeyboardFocus();
+
+  // Called when RenderWidget wants to start BeginFrame scheduling or stop.
+  void OnSetNeedsBeginFrames(bool needs_begin_frames);
 
   RenderFrameHostImpl* GetFocusedFrame();
 
@@ -670,6 +670,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // view, so we can ensure the window hasn't moved between copying from the
   // compositing surface and showing the disambiguation popup.
   gfx::Vector2dF disambiguation_scroll_offset_;
+
+  BeginFrameObserverProxy begin_frame_observer_proxy_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);

@@ -4,23 +4,44 @@
 
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 
+#include "base/command_line.h"
+#include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_manager.h"
+#include "cc/surfaces/surface_sequence.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/browser_plugin/browser_plugin_guest.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
+#include "content/browser/gpu/compositor_util.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_switches.h"
 
 namespace content {
 
 RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
     RenderWidgetHost* widget_host)
     : host_(RenderWidgetHostImpl::From(widget_host)),
-      frame_connector_(NULL) {
+      use_surfaces_(UseSurfacesEnabled()),
+      next_surface_sequence_(1u),
+      last_output_surface_id_(0),
+      current_surface_scale_factor_(1.f),
+      ack_pending_count_(0),
+      frame_connector_(nullptr),
+      weak_factory_(this) {
+  if (use_surfaces_)
+    id_allocator_ = CreateSurfaceIdAllocator();
+
   host_->SetView(this);
 }
 
 RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
+  if (!surface_id_.is_null())
+    surface_factory_->Destroy(surface_id_);
 }
 
 void RenderWidgetHostViewChildFrame::InitAsChild(
@@ -134,6 +155,18 @@ void RenderWidgetHostViewChildFrame::UpdateCursor(const WebCursor& cursor) {
 }
 
 void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
+  // It is valid for an inner WebContents's SetIsLoading() to end up here.
+  // This is because an inner WebContents's main frame's RenderWidgetHostView
+  // is a RenderWidgetHostViewChildFrame. In contrast, when there is no
+  // inner/outer WebContents, only subframe's RenderWidgetHostView can be a
+  // RenderWidgetHostViewChildFrame which do not get a SetIsLoading() call.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess) &&
+      BrowserPluginGuest::IsGuest(
+          static_cast<RenderViewHostImpl*>(RenderViewHost::From(host_)))) {
+    return;
+  }
+
   NOTREACHED();
 }
 
@@ -186,21 +219,92 @@ void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 }
 #endif
 
+void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32 output_surface_id,
+                                                  cc::SurfaceDrawStatus drawn) {
+  cc::CompositorFrameAck ack;
+  DCHECK(ack_pending_count_ > 0);
+  if (!surface_returned_resources_.empty())
+    ack.resources.swap(surface_returned_resources_);
+  if (host_) {
+    host_->Send(new ViewMsg_SwapCompositorFrameAck(host_->GetRoutingID(),
+                                                   output_surface_id, ack));
+  }
+  ack_pending_count_--;
+}
+
 void RenderWidgetHostViewChildFrame::OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) {
   last_scroll_offset_ = frame->metadata.root_scroll_offset;
-  if (frame_connector_) {
+
+  if (!frame_connector_)
+    return;
+
+  // When not using surfaces, the frame just gets proxied to
+  // the embedder's renderer to be composited.
+  if (!frame->delegated_frame_data || !use_surfaces_) {
     frame_connector_->ChildFrameCompositorFrameSwapped(
         output_surface_id,
         host_->GetProcess()->GetID(),
         host_->GetRoutingID(),
         frame.Pass());
+    return;
   }
+
+  cc::RenderPass* root_pass =
+      frame->delegated_frame_data->render_pass_list.back();
+
+  gfx::Size frame_size = root_pass->output_rect.size();
+  float scale_factor = frame->metadata.device_scale_factor;
+
+  // Check whether we need to recreate the cc::Surface, which means the child
+  // frame renderer has changed its output surface, or size, or scale factor.
+  if (output_surface_id != last_output_surface_id_ && surface_factory_) {
+    surface_factory_->Destroy(surface_id_);
+    surface_factory_.reset();
+  }
+  if (output_surface_id != last_output_surface_id_ ||
+      frame_size != current_surface_size_ ||
+      scale_factor != current_surface_scale_factor_) {
+    ClearCompositorSurfaceIfNecessary();
+    last_output_surface_id_ = output_surface_id;
+    current_surface_size_ = frame_size;
+    current_surface_scale_factor_ = scale_factor;
+  }
+
+  if (!surface_factory_) {
+    cc::SurfaceManager* manager = GetSurfaceManager();
+    surface_factory_ = make_scoped_ptr(new cc::SurfaceFactory(manager, this));
+  }
+
+  if (surface_id_.is_null()) {
+    surface_id_ = id_allocator_->GenerateId();
+    surface_factory_->Create(surface_id_);
+
+    cc::SurfaceSequence sequence = cc::SurfaceSequence(
+        id_allocator_->id_namespace(), next_surface_sequence_++);
+    // The renderer process will satisfy this dependency when it creates a
+    // SurfaceLayer.
+    cc::SurfaceManager* manager = GetSurfaceManager();
+    manager->GetSurfaceForId(surface_id_)->AddDestructionDependency(sequence);
+    frame_connector_->SetChildFrameSurface(surface_id_, frame_size,
+                                           scale_factor, sequence);
+  }
+
+  cc::SurfaceFactory::DrawCallback ack_callback =
+      base::Bind(&RenderWidgetHostViewChildFrame::SurfaceDrawn, AsWeakPtr(),
+                 output_surface_id);
+  ack_pending_count_++;
+  // If this value grows very large, something is going wrong.
+  DCHECK(ack_pending_count_ < 1000);
+  surface_factory_->SubmitFrame(surface_id_, frame.Pass(), ack_callback);
 }
 
 void RenderWidgetHostViewChildFrame::GetScreenInfo(
     blink::WebScreenInfo* results) {
+  if (!frame_connector_)
+    return;
+  frame_connector_->GetScreenInfo(results);
 }
 
 gfx::Rect RenderWidgetHostViewChildFrame::GetBoundsInRootWindow() {
@@ -223,9 +327,10 @@ void RenderWidgetHostViewChildFrame::UnlockMouse() {
 }
 
 uint32_t RenderWidgetHostViewChildFrame::GetSurfaceIdNamespace() {
-  // TODO(kenrb): Create SurfaceFactory here when RWHVChildFrame
-  // gets compositor surface support.
-  return 0;
+  if (!use_surfaces_)
+    return 0;
+
+  return id_allocator_->id_namespace();
 }
 
 #if defined(OS_MACOSX)
@@ -301,11 +406,36 @@ gfx::NativeViewId RenderWidgetHostViewChildFrame::GetParentForWindowlessPlugin()
 }
 #endif // defined(OS_WIN)
 
+// cc::SurfaceFactoryClient implementation.
+void RenderWidgetHostViewChildFrame::ReturnResources(
+    const cc::ReturnedResourceArray& resources) {
+  if (resources.empty())
+    return;
+
+  if (!ack_pending_count_ && host_) {
+    cc::CompositorFrameAck ack;
+    std::copy(resources.begin(), resources.end(),
+              std::back_inserter(ack.resources));
+    host_->Send(new ViewMsg_ReclaimCompositorResources(
+        host_->GetRoutingID(), last_output_surface_id_, ack));
+    return;
+  }
+
+  std::copy(resources.begin(), resources.end(),
+            std::back_inserter(surface_returned_resources_));
+}
+
 BrowserAccessibilityManager*
 RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
     BrowserAccessibilityDelegate* delegate) {
   return BrowserAccessibilityManager::Create(
       BrowserAccessibilityManager::GetEmptyDocument(), delegate);
+}
+
+void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {
+  if (surface_factory_ && !surface_id_.is_null())
+    surface_factory_->Destroy(surface_id_);
+  surface_id_ = cc::SurfaceId();
 }
 
 }  // namespace content
