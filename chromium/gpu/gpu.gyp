@@ -96,7 +96,6 @@
         'command_buffer_client',
       ],
       'export_dependent_settings': [
-        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         'command_buffer_client',
       ],
       'defines': [

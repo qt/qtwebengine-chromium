@@ -57,6 +57,7 @@
       'target_name': 'media',
       'type': '<(component)',
       'dependencies': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',

@@ -15,6 +15,7 @@
             'enable_wexit_time_destructors': 1,
           },
           'dependencies': [
+            '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/cc/cc.gyp:cc',
             '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
