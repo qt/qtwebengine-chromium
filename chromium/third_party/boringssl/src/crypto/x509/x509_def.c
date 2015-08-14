@@ -59,10 +59,12 @@
 
 /* TODO(fork): cleanup */
 
+#ifndef OPENSSLDIR
 #if defined(OPENSSL_FUCHSIA)
 #define OPENSSLDIR "/config/ssl"
 #else
 #define OPENSSLDIR "/etc/ssl"
+#endif
 #endif
 
 #define X509_CERT_AREA          OPENSSLDIR
