@@ -5926,7 +5926,7 @@
         ['CXX.host', '<(host_cxx)'],
       ],
     }],
-    ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and chromeos==0 and clang==0', {
+    ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and chromeos==0 and clang==0 and use_qt==0', {
       # Set default ARM cross compiling on linux.  These can be overridden
       # using CC/CXX/etc environment variables.
       'make_global_settings': [
