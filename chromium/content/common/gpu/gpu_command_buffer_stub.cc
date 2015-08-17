@@ -37,6 +37,7 @@
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_WIN)
@@ -113,6 +114,15 @@ const int64 kHandleMoreWorkPeriodBusyMs = 1;
 // Prevents idle work from being starved.
 const int64 kMaxTimeSinceIdleMs = 10;
 
+void DestroyGLFence(GpuChannelManager::SyncPointGLFences &fences, uint32 sync_point)
+{
+  GpuChannelManager::SyncPointGLFences::iterator it = fences.find(sync_point);
+  if (it != fences.end()) {
+    delete it->second;
+    fences.erase(it);
+  }
+}
+
 class DevToolsChannelData : public base::trace_event::ConvertableToTraceFormat {
  public:
   static scoped_refptr<base::trace_event::ConvertableToTraceFormat>
@@ -176,6 +186,7 @@ GpuCommandBufferStub::GpuCommandBufferStub(
       last_memory_allocation_valid_(false),
       watchdog_(watchdog),
       sync_point_wait_count_(0),
+      last_fence_sync_point_(0),
       delayed_work_scheduled_(false),
       previous_messages_processed_(0),
       active_url_(active_url),
@@ -242,7 +253,10 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
       message.type() != GpuCommandBufferMsg_WaitForGetOffsetInRange::ID &&
       message.type() != GpuCommandBufferMsg_RegisterTransferBuffer::ID &&
       message.type() != GpuCommandBufferMsg_DestroyTransferBuffer::ID &&
+#if !defined(TOOLKIT_QT)
+      // Qt needs the context to be current here to insert/destroy fences.
       message.type() != GpuCommandBufferMsg_RetireSyncPoint::ID &&
+#endif
       message.type() != GpuCommandBufferMsg_SignalSyncPoint::ID &&
       message.type() !=
           GpuCommandBufferMsg_SetClientHasMemoryAllocationChangedCallback::ID) {
@@ -440,6 +454,7 @@ void GpuCommandBufferStub::Destroy() {
                     OnWillDestroyStub());
 
   if (decoder_) {
+    DestroyGLFence(channel_->gpu_channel_manager()->sync_point_gl_fences_, last_fence_sync_point_);
     decoder_->Destroy(have_context);
     decoder_.reset();
   }
@@ -871,6 +886,28 @@ void GpuCommandBufferStub::OnRetireSyncPoint(uint32 sync_point) {
   DCHECK(!sync_points_.empty() && sync_points_.front() == sync_point);
   sync_points_.pop_front();
   GpuChannelManager* manager = channel_->gpu_channel_manager();
+
+#if defined(TOOLKIT_QT)
+  bool has_current_context = !!gfx::GLContext::GetCurrent();
+  if (has_current_context) {
+    // Only keep the last fence alive to keep its temporary ownership in GpuCommandBufferStub
+    // simple in case where Qt would not pick this fence to eventually destroy it.
+    DestroyGLFence(manager->sync_point_gl_fences_, last_fence_sync_point_);
+    // We submitted all resource-producing GL commands, convert the logical sync point into a GL fence
+    // to allow Qt's GL context to wait for the results of commands submitted in this context using the
+    // sync point as reference.
+    scoped_ptr<gfx::GLFence> fence = scoped_ptr<gfx::GLFence>(gfx::GLFence::Create());
+    if (fence)
+      manager->sync_point_gl_fences_.insert(std::make_pair(sync_point, fence.release()));
+    else {
+      // Flush regardless of the success of the fence creation to at least make sure that commands
+      // producing our textures are in the pipe before the scene graph inserts its own on the other thread.
+      glFlush();
+    }
+    last_fence_sync_point_ = sync_point;
+  }
+#endif
+
   manager->sync_point_manager()->RetireSyncPoint(sync_point);
 }
 

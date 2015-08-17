@@ -640,6 +640,7 @@ class MsvsSettings(object):
       ldflags.append('/NXCOMPAT')
 
     have_def_file = filter(lambda x: x.startswith('/DEF:'), ldflags)
+    build_dir = os.path.normpath(build_dir)
     manifest_flags, intermediate_manifest, manifest_files = \
         self._GetLdManifestFlags(config, manifest_base_name, gyp_to_build_path,
                                  is_executable and not have_def_file, build_dir)
@@ -1009,6 +1010,10 @@ def GenerateEnvironmentFiles(toplevel_build_dir, generator_flags,
     cl_paths = {}
     for arch in archs:
       cl_paths[arch] = 'cl.exe'
+      env_block = _FormatAsEnvironmentBlock(os.environ)
+      f = open_out(os.path.join(toplevel_build_dir, 'environment.' + arch), 'wb')
+      f.write(env_block)
+      f.close()
     return cl_paths
   vs = GetVSVersion(generator_flags)
   cl_paths = {}

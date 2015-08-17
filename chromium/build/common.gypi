@@ -1496,6 +1496,9 @@
     # rlz codes for searches but do not use the library.
     'enable_rlz%': 0,
 
+    # Compile with libc++ instead of libstdc++.
+    'use_libcpp%' : 0,
+
     # Turns on the i18n support in V8.
     'v8_enable_i18n_support': 1,
 
@@ -2047,7 +2050,7 @@
       ['chromeos==1', {
         'grit_defines': ['-D', 'chromeos', '-D', 'scale_factors=2x'],
       }],
-      ['desktop_linux==1', {
+      ['desktop_linux==1 or qt_os=="embedded_linux"', {
         'grit_defines': ['-D', 'desktop_linux'],
       }],
       ['toolkit_views==1', {
@@ -2704,6 +2707,18 @@
       }],
       ['use_clipboard_aurax11==1', {
         'defines': ['USE_CLIPBOARD_AURAX11=1'],
+      }],
+      ['use_libcpp==1', {
+        'cflags_cc': [
+          '-Wno-deprecated',
+          '-Wno-newline-eof',
+          '-Wno-unknown-warning-option',
+          '-Wno-unused-value',
+          '-Wno-unused-variable',
+          '-Wno-unused-function',
+          '-Wno-header-hygiene',
+          '-stdlib=libc++'
+        ],
       }],
       ['enable_one_click_signin==1', {
         'defines': ['ENABLE_ONE_CLICK_SIGNIN'],
@@ -5003,7 +5018,7 @@
           'GCC_OBJC_CALL_CXX_CDTORS': 'YES',        # -fobjc-call-cxx-cdtors
           'GCC_SYMBOLS_PRIVATE_EXTERN': 'YES',      # -fvisibility=hidden
           'GCC_THREADSAFE_STATICS': 'NO',           # -fno-threadsafe-statics
-          'GCC_TREAT_WARNINGS_AS_ERRORS': 'YES',    # -Werror
+          'GCC_TREAT_WARNINGS_AS_ERRORS': 'NO',    # -Werror
           'GCC_VERSION': '4.2',
           'GCC_WARN_ABOUT_MISSING_NEWLINE': 'YES',  # -Wnewline-eof
           'USE_HEADERMAP': 'NO',
@@ -5036,6 +5051,20 @@
                 # cfe-dev discussion.
                 '-Wno-selector-type-mismatch',
               ],
+            }],
+            ['use_libcpp==1', {
+              'OTHER_CPLUSPLUSFLAGS': ['-stdlib=libc++'],
+              'USE_LIBCPP': 'YES',
+              'WARNING_CFLAGS': [
+                '-Wno-deprecated',
+                '-Wno-newline-eof',
+                '-Wno-unknown-warning-option',
+                '-Wno-unused-value',
+                '-Wno-unused-variable',
+                '-Wno-unused-function',
+                '-Wno-header-hygiene',
+              ],
+
               'conditions': [
                 ['clang_xcode==0', {
                   'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
@@ -5644,7 +5673,7 @@
             'EnableFunctionLevelLinking': 'true',
             'RuntimeTypeInfo': 'false',
             'WarningLevel': '4',
-            'WarnAsError': 'true',
+            'WarnAsError': 'false',
             'DebugInformationFormat': '3',
             # ExceptionHandling must match _HAS_EXCEPTIONS above.
             'ExceptionHandling': '0',
@@ -5970,7 +5999,7 @@
         ['CXX.host', '<(host_cxx)'],
       ],
     }],
-    ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and chromeos==0 and clang==0', {
+    ['OS=="linux" and target_arch=="arm" and host_arch!="arm" and chromeos==0 and clang==0 and use_qt==0', {
       # Set default ARM cross compiling on linux.  These can be overridden
       # using CC/CXX/etc environment variables.
       'make_global_settings': [

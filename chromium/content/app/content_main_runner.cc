@@ -80,7 +80,9 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event_etw_export_win.h"
+#if !defined(TOOLKIT_QT)
 #include "ui/base/win/atl_module.h"
+#endif
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -450,7 +452,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     base::EnableTerminationOnOutOfMemory();
 #if defined(OS_WIN)
     RegisterInvalidParamHandler();
+#if !defined(TOOLKIT_QT)
     ui::win::CreateATLModuleIfNeeded();
+#endif
 
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
@@ -512,7 +516,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // in correct encoding.
     setlocale(LC_ALL, "");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers) {
+      SetupSignalHandlers();
+    } else {
+        // Ignore SIGPIPE even if we are not resetting the other signal handlers.
+        CHECK(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
+    }
+
     g_fds->Set(kPrimaryIPCChannel,
                kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor);
 #endif  // !OS_ANDROID && !OS_IOS
@@ -546,11 +556,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // and a loop that's destroyed in shutdown interleaves badly with the event
     // loop pool on iOS.
 #if defined(OS_MACOSX) && !defined(OS_IOS)
+#if !defined(TOOLKIT_QT)
     // We need this pool for all the objects created before we get to the
     // event loop, but we don't want to leave them hanging around until the
     // app quits. Each "main" needs to flush this pool right before it goes into
     // its main event loop to get rid of the cruft.
     autorelease_pool_.reset(new base::mac::ScopedNSAutoreleasePool());
+#endif
     InitializeMac();
 #endif
 
@@ -569,7 +581,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     base::CommandLine::Init(argc, argv);
 
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnHeapCorruption();
+#endif
 
     // TODO(yiyaoliu, vadimt): Remove this once crbug.com/453640 is fixed.
     // Enable profiler recording right after command line is initialized so that
@@ -800,7 +814,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
     main_params.sandbox_info = &sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     main_params.autorelease_pool = autorelease_pool_.get();
 #endif
 
@@ -830,7 +844,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif  // _CRTDBG_MAP_ALLOC
 #endif  // OS_WIN
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_MACOSX) && !defined(OS_IOS) && !defined(TOOLKIT_QT)
     autorelease_pool_.reset(NULL);
 #endif
 
@@ -859,7 +873,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   scoped_ptr<base::AtExitManager> exit_manager_;
 #if defined(OS_WIN)
   sandbox::SandboxInterfaceInfo sandbox_info_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   scoped_ptr<base::mac::ScopedNSAutoreleasePool> autorelease_pool_;
 #endif
 

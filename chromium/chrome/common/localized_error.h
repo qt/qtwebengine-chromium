@@ -53,9 +53,11 @@ class LocalizedError {
   // field trial. This promotes the Google cached copy suggestion from under
   // the details section to a blue button. Also experiments with the
   // button label.
+#if !defined(TOOLKIT_QT)
   static void EnableGoogleCachedCopyButtonExperiment(
       base::ListValue* suggestions,
       base::DictionaryValue* error_strings);
+#endif
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(LocalizedError);
 };

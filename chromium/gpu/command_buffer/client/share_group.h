@@ -5,7 +5,6 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_SHARE_GROUP_H_
 #define GPU_COMMAND_BUFFER_CLIENT_SHARE_GROUP_H_
 
-#include <GLES2/gl2.h>
 #include "base/memory/scoped_ptr.h"
 #include "gles2_impl_export.h"
 #include "gpu/command_buffer/client/ref_counted.h"

@@ -143,6 +143,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool should_print_backgrounds;
   bool should_clear_document_background;
   bool enable_scroll_animator;
+  bool enable_error_page;
   bool css_variables_enabled;
   bool touch_enabled;
   // TODO(mustaq): Nuke when the new API is ready
@@ -208,6 +209,8 @@ struct CONTENT_EXPORT WebPreferences {
   bool clobber_user_agent_initial_scale_quirk;
   bool ignore_main_frame_overflow_hidden_quirk;
   bool report_screen_size_in_physical_pixels_quirk;
+#elif defined(TOOLKIT_QT)
+  bool fullscreen_supported;
 #endif
 
   // Default (used if the page or UA doesn't override these) values for page

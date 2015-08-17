@@ -27,7 +27,7 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
     return WebUI::kNoWebUI;
 
   if (url.host() == kChromeUIWebRTCInternalsHost ||
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
       url.host() == kChromeUITracingHost ||
 #endif
       url.host() == kChromeUIGpuHost ||
@@ -61,11 +61,13 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new IndexedDBInternalsUI(web_ui);
   if (url.host() == kChromeUIMediaInternalsHost)
     return new MediaInternalsUI(web_ui);
+#if !defined(TOOLKIT_QT)
   if (url.host() == kChromeUIAccessibilityHost)
     return new AccessibilityUI(web_ui);
+#endif
   if (url.host() == kChromeUIServiceWorkerInternalsHost)
     return new ServiceWorkerInternalsUI(web_ui);
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   if (url.host() == kChromeUITracingHost)
     return new TracingUI(web_ui);
 #endif

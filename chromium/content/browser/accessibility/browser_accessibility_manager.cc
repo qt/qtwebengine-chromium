@@ -46,7 +46,11 @@ ui::AXTreeUpdate MakeAXTreeUpdate(
 }
 
 BrowserAccessibility* BrowserAccessibilityFactory::Create() {
+#if !defined(TOOLKIT_QT)
   return BrowserAccessibility::Create();
+#else
+  return 0;
+#endif
 }
 
 BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()
@@ -61,6 +65,7 @@ BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()
 #if !defined(OS_MACOSX) && \
     !defined(OS_WIN) && \
     !defined(OS_ANDROID) \
+    && !defined(TOOLKIT_QT)
 // We have subclassess of BrowserAccessibilityManager on Mac, and Win. For any
 // other platform, instantiate the base class.
 // static

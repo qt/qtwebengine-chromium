@@ -21,6 +21,7 @@
 #include "gpu/command_buffer/common/gles2_cmd_ids.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
+#ifndef GL_VERSION_1_5
 // GL types are forward declared to avoid including the GL headers. The problem
 // is determining which GL headers to include from code that is common to the
 // client and service sides (GLES2 or one of several GL implementations).
@@ -40,8 +41,15 @@ typedef float GLclampf;
 typedef double GLdouble;
 typedef double GLclampd;
 typedef void GLvoid;
+
+#ifdef _WIN64
+typedef signed long long int GLintptr;
+typedef signed long long int GLsizeiptr;
+#else
 typedef khronos_intptr_t GLintptr;
 typedef khronos_ssize_t  GLsizeiptr;
+#endif
+#endif
 typedef struct __GLsync *GLsync;
 typedef int64_t GLint64;
 typedef uint64_t GLuint64;

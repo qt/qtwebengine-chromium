@@ -92,6 +92,12 @@
             '<(angle_path)/src/angle.gyp:libGLESv2',
           ],
         }],
+        ['use_aura == 1 and qt_os=="win32" and qt_gl=="angle"', {
+          'libraries': [
+            '-l<(qt_egl_library)',
+            '-l<(qt_glesv2_library)',
+          ],
+        }],
       ],
     },
     {

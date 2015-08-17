@@ -1798,6 +1798,7 @@
         '../components/scheduler/scheduler.gyp:scheduler_common',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
         '../gin/gin.gyp:gin',
+        '../gpu/gpu.gyp:gpu_ipc',
         '../net/net.gyp:http_server',
         '../storage/storage_browser.gyp:storage',
         '../storage/storage_common.gyp:storage_common',
@@ -1832,7 +1833,7 @@
         '../sandbox/sandbox.gyp:sandbox',
       ],
     }],
-    ['OS!="android" and OS!="ios"', {
+    ['OS!="android" and OS!="ios" and use_qt==0', {
       'dependencies': [
         'browser/tracing/tracing_resources.gyp:tracing_resources',
         '../ui/compositor/compositor.gyp:compositor',
@@ -1848,6 +1849,15 @@
         'browser/compositor/surface_utils.cc',
         'browser/compositor/surface_utils.h',
       ]
+    }],
+    ['use_qt==1', {
+      'dependencies': [
+        '../ui/compositor/compositor.gyp:compositor',
+      ],
+      'sources': [ '<@(compositor_browser_sources)' ],
+      'sources!': [
+        'browser/tracing/tracing_ui.cc',
+      ],
     }],
     ['OS!="ios"', {
       'dependencies': [

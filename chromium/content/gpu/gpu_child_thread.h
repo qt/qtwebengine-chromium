@@ -60,6 +60,10 @@ class GpuChildThread : public ChildThreadImpl {
   bool Send(IPC::Message* msg) override;
   bool OnControlMessageReceived(const IPC::Message& msg) override;
 
+  GpuChannelManager* ChannelManager() const { return gpu_channel_manager_.get(); }
+
+  static GpuChildThread* instance() { return instance_; }
+
  private:
   // Message handlers.
   void OnInitialize();
@@ -101,6 +105,8 @@ class GpuChildThread : public ChildThreadImpl {
 
   // The GpuMemoryBufferFactory instance used to allocate GpuMemoryBuffers.
   GpuMemoryBufferFactory* const gpu_memory_buffer_factory_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

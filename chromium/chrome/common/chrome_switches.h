@@ -10,10 +10,12 @@
 #include "build/build_config.h"
 
 #include "base/base_switches.h"
+#ifndef TOOLKIT_QT
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
 #include "components/signin/core/common/signin_switches.h"
+#endif
 #include "content/public/common/content_switches.h"
 
 namespace switches {

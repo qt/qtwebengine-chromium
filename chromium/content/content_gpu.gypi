@@ -6,6 +6,7 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../skia/skia.gyp:skia',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
     '../ui/gl/gl.gyp:gl',
   ],
   'sources': [
@@ -33,6 +34,20 @@
       'link_settings': {
         'libraries': [
           '-lsetupapi.lib',
+        ],
+      },
+    }],
+    ['qt_os=="mac"', {
+      'export_dependent_settings': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
+    }],
+    ['qt_os=="win32" and qt_gl=="angle"', {
+      'link_settings': {
+        'libraries': [
+          '-lsetupapi.lib',
+          '-l<(qt_egl_library)',
+          '-l<(qt_glesv2_library)',
         ],
       },
     }],

@@ -240,6 +240,12 @@ class NinjaWriter(object):
     base_to_top = gyp.common.InvertRelativePath(base_dir, toplevel_dir)
     self.base_to_build = os.path.join(base_to_top, build_dir)
 
+    # Override relative paths and use absolute paths instead.
+    # It is necessary to prevent python IOError on Windows due to long
+    # relative paths while building QtWebEngine.
+    self.build_to_base = os.path.join(toplevel_dir, base_dir)
+    self.base_to_build = os.path.normpath(toplevel_build)
+
   def ExpandSpecial(self, path, product_dir=None):
     """Expand specials like $!PRODUCT_DIR in |path|.
 
@@ -330,8 +336,8 @@ class NinjaWriter(object):
       obj += '.' + self.toolset
 
     path_dir, path_basename = os.path.split(path)
-    assert not os.path.isabs(path_dir), (
-        "'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
+    #assert not os.path.isabs(path_dir), (
+        #"'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
 
     if qualified:
       path_basename = self.name + '.' + path_basename
@@ -1088,6 +1094,8 @@ class NinjaWriter(object):
 
     implicit_deps = set()
     solibs = set()
+    objects = list(link_deps)
+    libs = list()
 
     if 'dependencies' in spec:
       # Two kinds of dependencies:
@@ -1121,6 +1129,7 @@ class NinjaWriter(object):
         final_output = target.FinalOutput()
         if not linkable or final_output != target.binary:
           implicit_deps.add(final_output)
+      libs.extend(extra_link_deps)
 
     extra_bindings = []
     if self.uses_cpp and self.flavor != 'win':
@@ -1238,6 +1247,56 @@ class NinjaWriter(object):
       if pdbname:
         output = [output, pdbname]
 
+
+    if config.get('let_qmake_do_the_linking', 0):
+      def toAbsPaths(paths):
+        return [os.path.relpath(path, self.toplevel_build) if os.path.isabs(path) else path
+                for path in paths]
+      def qmakeLiteral(s):
+        return s.replace('"', '\\"')
+
+      # Generate this file for all solink targets, this assumes that
+      # a .pro file will pick up this pri file and do the rest of the work.
+      pri_file = open(os.path.join(self.toplevel_build, self.name + "_linking.pri"), 'w')
+
+      if self.flavor == 'win':
+        # qmake will take care of the manifest
+        ldflags = filter(lambda x: not x.lower().startswith('/manifest'), ldflags)
+        # replace the pdb file name in debug to prevent it from being overwritten by the release build
+        if self.config_name.lower().startswith('debug'):
+            if '/PDB:QtWebEngineCore.dll.pdb' in ldflags:
+                pdb_index = ldflags.index('/PDB:QtWebEngineCore.dll.pdb')
+                ldflags[pdb_index] = '/PDB:QtWebEngineCored.dll.pdb'
+
+      # Replace "$!PRODUCT_DIR" with "$$PWD" in link flags (which might contain some -L directives).
+      prefixed_lflags = [self.ExpandSpecial(f, '$$PWD') for f in ldflags]
+      prefixed_library_dirs = ['-L' + self.ExpandSpecial(f, '$$PWD') for f in config.get('library_dirs', [])]
+      prefixed_libraries = gyp.common.uniquer([self.ExpandSpecial(f, '$$PWD') for f in spec.get('libraries', [])])
+      if self.flavor == 'mac':
+        prefixed_libraries = self.xcode_settings.AdjustLibraries(prefixed_libraries)
+      elif self.flavor == 'win':
+        prefixed_libraries = self.msvs_settings.AdjustLibraries(prefixed_libraries)
+
+      # Make sure that we have relative paths to our out/(Release|Debug), where we generate our .pri file, and then prepend $$PWD to them.
+      prefixed_objects = ['$$PWD/' + o for o in toAbsPaths(objects)]
+      prefixed_archives = ['$$PWD/' + o for o in toAbsPaths(libs)]
+
+      pri_file.write("QMAKE_LFLAGS += %s\n" % qmakeLiteral(' '.join(prefixed_lflags)))
+      pri_file.write("OBJECTS += %s\n" % qmakeLiteral(' '.join(prefixed_objects)))
+      # Follow the logic of the solink rule.
+      if self.flavor != 'mac' and self.flavor != 'win':
+        pri_file.write("LIBS_PRIVATE += -Wl,--whole-archive %s -Wl,--no-whole-archive\n" % qmakeLiteral(' '.join(prefixed_archives)))
+      else:
+        pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_archives)))
+      # External libs have to come after objects/archives, the linker resolve them in order.
+      pri_file.write("LIBS_PRIVATE += %s\n" % qmakeLiteral(' '.join(prefixed_library_dirs + prefixed_libraries)))
+      # Make sure that if ninja modifies one of the inputs, qmake/make will link again.
+      pri_file.write("POST_TARGETDEPS += %s\n" % qmakeLiteral(' '.join(prefixed_objects + prefixed_archives)))
+      pri_file.close()
+
+      # In this mode we prevent letting ninja link at all.
+      command = 'phony'
+      command_suffix = ''
 
     if len(solibs):
       extra_bindings.append(('solibs', gyp.common.EncodePOSIXShellList(solibs)))
@@ -1627,8 +1686,13 @@ def CalculateVariables(default_variables, params):
     default_variables.setdefault('SHARED_LIB_SUFFIX', '.so')
     default_variables.setdefault('SHARED_LIB_DIR',
                                  os.path.join('$!PRODUCT_DIR', 'lib'))
+    # Take into account the fact that toplevel_dir might not be equal to depth
+    toplevel_offset = ''
+    if 'options' in params:
+      options = params['options']
+      toplevel_offset = os.path.relpath(options.depth, options.toplevel_dir)
     default_variables.setdefault('LIB_DIR',
-                                 os.path.join('$!PRODUCT_DIR', 'obj'))
+                                 os.path.join('$!PRODUCT_DIR', 'obj', toplevel_offset))
 
 def ComputeOutputDir(params):
   """Returns the path from the toplevel_dir to the build output directory."""

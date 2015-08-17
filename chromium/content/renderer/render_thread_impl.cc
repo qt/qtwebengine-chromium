@@ -589,7 +589,7 @@ void RenderThreadImpl::Init() {
       base::PlatformThread::CurrentId(),
       kTraceEventRendererMainThreadSortIndex);
 
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
+#if (defined(OS_MACOSX) || defined(OS_ANDROID)) && !defined(TOOLKIT_QT)
   // On Mac and Android, the select popups are rendered by the browser.
   blink::WebView::setUseExternalPopupMenus(true);
 #endif

@@ -5,7 +5,6 @@
 {
   'dependencies': [
     '../base/base.gyp:base',
-    '../courgette/courgette.gyp:courgette_lib',
     '../mojo/mojo_base.gyp:mojo_application_base',
     '../mojo/mojo_base.gyp:mojo_application_bindings',
     '../mojo/mojo_base.gyp:mojo_common_lib',

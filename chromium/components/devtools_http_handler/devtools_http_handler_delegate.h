@@ -9,11 +9,17 @@
 
 #include "url/gurl.h"
 
+namespace net {
+class IPEndPoint;
+}
+
 namespace devtools_http_handler {
 
 class DevToolsHttpHandlerDelegate {
  public:
   virtual ~DevToolsHttpHandlerDelegate() {}
+
+  virtual void Initialized(const net::IPEndPoint* ip_address) = 0;
 
   // Should return discovery page HTML that should list available tabs
   // and provide attach links.

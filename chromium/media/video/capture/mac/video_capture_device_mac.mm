@@ -20,7 +20,9 @@
 #import "media/base/mac/avfoundation_glue.h"
 #import "media/video/capture/mac/platform_video_capturing_mac.h"
 #import "media/video/capture/mac/video_capture_device_avfoundation_mac.h"
+#ifndef TOOLKIT_QT
 #import "media/video/capture/mac/video_capture_device_qtkit_mac.h"
+#endif
 #include "ui/gfx/geometry/size.h"
 
 @implementation DeviceNameAndTransportType
@@ -453,9 +455,11 @@ bool VideoCaptureDeviceMac::Init(
   if (capture_api_type == Name::AVFOUNDATION) {
     capture_device_ =
         [[VideoCaptureDeviceAVFoundation alloc] initWithFrameReceiver:this];
+#ifndef TOOLKIT_QT
   } else {
     capture_device_ =
         [[VideoCaptureDeviceQTKit alloc] initWithFrameReceiver:this];
+#endif
   }
 
   if (!capture_device_)

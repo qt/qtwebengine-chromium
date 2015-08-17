@@ -75,7 +75,7 @@
     'msvs_disabled_warnings': [4005, 4068, 4355, 4996, 4267],
   },
   'conditions': [
-    ['use_system_icu==0 or want_separate_host_toolset==1', {
+    ['use_system_icu==0', {
       'targets': [
         {
           'target_name': 'copy_icudtl_dat',
@@ -368,26 +368,22 @@
         {
           'target_name': 'system_icu',
           'type': 'none',
-          'conditions': [
-            ['OS=="qnx"', {
-              'link_settings': {
-                'libraries': [
-                  '-licui18n',
-                  '-licuuc',
-                ],
-              },
-            }],
-            ['OS!="qnx"', {
-              'link_settings': {
-                'ldflags': [
-                  '<!@(icu-config --ldflags)',
-                ],
-                'libraries': [
-                  '<!@(icu-config --ldflags-libsonly)',
-                ],
-              },
-            }],
-          ],
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags icu-uc icu-i18n)',
+            ],
+            'defines': [
+              'U_USING_ICU_NAMESPACE=0',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other icu-uc icu-i18n)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l icu-uc icu-i18n)',
+            ],
+          },
         },
         {
           'target_name': 'icudata',

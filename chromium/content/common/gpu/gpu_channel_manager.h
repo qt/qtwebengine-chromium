@@ -28,6 +28,7 @@ class WaitableEvent;
 }
 
 namespace gfx {
+class GLFence;
 class GLShareGroup;
 }
 
@@ -92,6 +93,8 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   gpu::gles2::ProgramCache* program_cache();
   gpu::gles2::ShaderTranslatorCache* shader_translator_cache();
 
+  gpu::gles2::MailboxManager* mailbox_manager() { return mailbox_manager_.get(); }
+
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
   GpuChannel* LookupChannel(int32 client_id);
@@ -99,6 +102,9 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   gpu::SyncPointManager* sync_point_manager() {
     return sync_point_manager_.get();
   }
+
+  typedef base::hash_map<uint32, gfx::GLFence*> SyncPointGLFences;
+  SyncPointGLFences sync_point_gl_fences_;
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
 

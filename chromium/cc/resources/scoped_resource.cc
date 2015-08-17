@@ -4,6 +4,8 @@
 
 #include "cc/resources/scoped_resource.h"
 
+#include "cc/base/util.h"
+
 namespace cc {
 
 ScopedResource::ScopedResource(ResourceProvider* resource_provider)

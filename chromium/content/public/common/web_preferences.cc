@@ -131,6 +131,7 @@ WebPreferences::WebPreferences()
       should_print_backgrounds(false),
       should_clear_document_background(true),
       enable_scroll_animator(false),
+      enable_error_page(true),
       touch_enabled(false),
       device_supports_touch(false),
       device_supports_mouse(true),
@@ -195,6 +196,8 @@ WebPreferences::WebPreferences()
       clobber_user_agent_initial_scale_quirk(false),
       ignore_main_frame_overflow_hidden_quirk(false),
       report_screen_size_in_physical_pixels_quirk(false),
+#elif defined(TOOLKIT_QT)
+      fullscreen_supported(false),
 #endif
 #if defined(OS_ANDROID)
       default_minimum_page_scale_factor(0.25f),

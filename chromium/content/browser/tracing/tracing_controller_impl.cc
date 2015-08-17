@@ -892,7 +892,7 @@ void TracingControllerImpl::OnMonitoringStateChanged(bool is_monitoring) {
     return;
 
   is_monitoring_ = is_monitoring;
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   for (std::set<TracingUI*>::iterator it = tracing_uis_.begin();
        it != tracing_uis_.end(); it++) {
     (*it)->OnMonitoringStateChanged(is_monitoring);
