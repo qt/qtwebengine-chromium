@@ -403,14 +403,14 @@ MessageLoop::MessageLoop(Type type, MessagePumpFactoryCallback pump_factory)
 }
 
 void MessageLoop::BindToCurrentThread() {
+  DCHECK(!current()) << "should only have one message loop per thread";
+  lazy_tls_ptr.Pointer()->Set(this);
+
   DCHECK(!pump_);
   if (!pump_factory_.is_null())
     pump_ = pump_factory_.Run();
   else
     pump_ = CreateMessagePumpForType(type_);
-
-  DCHECK(!current()) << "should only have one message loop per thread";
-  lazy_tls_ptr.Pointer()->Set(this);
 
   incoming_task_queue_->StartScheduling();
   unbound_task_runner_->BindToCurrentThread();
