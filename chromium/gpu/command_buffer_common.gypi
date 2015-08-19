@@ -6,8 +6,12 @@
   'dependencies': [
     '../third_party/khronos/khronos.gyp:khronos_headers',
   ],
-  'export_dependent_settings': [
-    '../third_party/khronos/khronos.gyp:khronos_headers',
+  'conditions': [
+    ['qt_os=="mac"', {
+        'export_dependent_settings': [
+          '../third_party/khronos/khronos.gyp:khronos_headers',
+        ],
+    }],
   ],
   'sources': [
     'command_buffer/common/bitfield_helpers.h',

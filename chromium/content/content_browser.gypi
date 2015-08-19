@@ -4,6 +4,7 @@
 
 {
   'dependencies': [
+    '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
     '../base/base.gyp:base_static',
     '../crypto/crypto.gyp:crypto',
     '../device/battery/battery.gyp:device_battery',

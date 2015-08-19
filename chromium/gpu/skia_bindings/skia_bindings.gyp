@@ -12,6 +12,7 @@
       'target_name': 'gpu_skia_bindings',
       'type': 'static_library',
       'dependencies': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '../gpu.gyp:gles2_c_lib',
         '../../skia/skia.gyp:skia',
       ],

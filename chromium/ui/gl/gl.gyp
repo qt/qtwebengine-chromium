@@ -27,7 +27,6 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
-        '<(DEPTH)/third_party/khronos',
       ],
       'export_dependent_settings': [
         '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
@@ -140,9 +139,6 @@
             'gl_image_egl.h',
             'gl_surface_egl.cc',
             'gl_surface_egl.h',
-          ],
-          'export_dependent_settings': [
-            '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
           ],
         }],
         ['OS in ("android", "linux")', {
