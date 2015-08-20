@@ -268,12 +268,12 @@ bool CanUseIOSurface() {
     // Create the IOSurface to set as the CALayer's contents.
     uint32_t ioSurfacePixelFormat = 'BGRA';
     NSDictionary* properties = @{
-        static_cast<NSString*>(kIOSurfaceWidth) : @(pixelSize.width()),
-        static_cast<NSString*>(kIOSurfaceHeight) : @(pixelSize.height()),
-        static_cast<NSString*>(kIOSurfacePixelFormat) : @(ioSurfacePixelFormat),
-        static_cast<NSString*>(kIOSurfaceBytesPerElement) : @(4),
+        (__bridge NSString *)(kIOSurfaceWidth) : @(pixelSize.width()),
+        (__bridge NSString *)(kIOSurfaceHeight) : @(pixelSize.height()),
+        (__bridge NSString *)(kIOSurfacePixelFormat) : @(ioSurfacePixelFormat),
+        (__bridge NSString *)(kIOSurfaceBytesPerElement) : @(4),
     };
-    ioSurface_.reset(IOSurfaceCreate(static_cast<CFDictionaryRef>(properties)));
+    ioSurface_.reset(IOSurfaceCreate((__bridge CFDictionaryRef)properties));
     if (!ioSurface_) {
       LOG(ERROR) << "Failed to allocate IOSurface";
       [self release];
