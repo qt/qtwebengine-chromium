@@ -15,7 +15,7 @@
         # chrome os, where we have the system harfbuzz under control.
         'use_system_harfbuzz%': '<!(python ../../build/check_return_value.py <(pkg-config) --atleast-version=1.31.0 pangoft2)',
       }, {
-        'use_system_harfbuzz': 0,
+        'use_system_harfbuzz%': 0,
       }],
     ],
   },
