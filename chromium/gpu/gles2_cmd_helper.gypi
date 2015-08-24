@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'dependencies': [
+    '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
+  ],
   # Library helps make GLES2 command buffers.
   'sources': [
     'command_buffer/client/gles2_cmd_helper.cc',
