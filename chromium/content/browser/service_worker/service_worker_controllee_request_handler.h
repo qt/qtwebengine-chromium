@@ -68,6 +68,8 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   // For sub resource case.
   void PrepareForSubResource();
 
+  void FallbackToNetwork();
+
   bool is_main_resource_load_;
   scoped_refptr<ServiceWorkerURLRequestJob> job_;
   FetchRequestMode request_mode_;
@@ -79,6 +81,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   GURL stripped_url_;
   base::TimeTicks worker_start_time_;
   base::TimeTicks worker_ready_time_;
+  bool skip_service_worker_;
   base::WeakPtrFactory<ServiceWorkerControlleeRequestHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerControlleeRequestHandler);
