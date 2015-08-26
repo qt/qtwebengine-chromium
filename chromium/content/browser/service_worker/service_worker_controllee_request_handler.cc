@@ -43,8 +43,8 @@ ServiceWorkerControlleeRequestHandler::ServiceWorkerControlleeRequestHandler(
       request_context_type_(request_context_type),
       frame_type_(frame_type),
       body_(body),
-      weak_factory_(this) {
-}
+      skip_service_worker_(false),
+      weak_factory_(this) {}
 
 ServiceWorkerControlleeRequestHandler::
     ~ServiceWorkerControlleeRequestHandler() {
@@ -86,8 +86,8 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
 
   // We've come here by restart, we already have original request and it
   // tells we should fallback to network. (Case B-c)
-  if (job_.get() && job_->ShouldFallbackToNetwork()) {
-    job_ = NULL;
+  if ((job_.get() && job_->ShouldFallbackToNetwork()) || skip_service_worker_) {
+    FallbackToNetwork();
     return NULL;
   }
 
@@ -109,7 +109,7 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
     // If we know we can fallback to network at this point (in case
     // the storage lookup returned immediately), just return NULL here to
     // fallback to network.
-    job_ = NULL;
+    FallbackToNetwork();
     return NULL;
   }
 
@@ -271,6 +271,15 @@ void ServiceWorkerControlleeRequestHandler::PrepareForSubResource() {
   DCHECK(context_);
   DCHECK(provider_host_->active_version());
   job_->ForwardToServiceWorker();
+}
+
+void ServiceWorkerControlleeRequestHandler::FallbackToNetwork() {
+  // Once a subresource request was fallbacked to the network, we set
+  // |skip_service_worker_| because the request should not go to the service
+  // worker.
+  if (!is_main_resource_load_)
+    skip_service_worker_ = true;
+  job_ = NULL;
 }
 
 }  // namespace content
