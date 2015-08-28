@@ -2049,7 +2049,7 @@ resolveImplicitLevels(UBiDi *pBiDi,
     /* The isolates[] entries contain enough information to
        resume the bidi algorithm in the same state as it was
        when it was interrupted by an isolate sequence. */
-    if(dirProps[start]==PDI) {
+    if(dirProps[start]==PDI && pBiDi->isolateCount >= 0) {
         start1=pBiDi->isolates[pBiDi->isolateCount].start1;
         stateImp=pBiDi->isolates[pBiDi->isolateCount].stateImp;
         levState.state=pBiDi->isolates[pBiDi->isolateCount].state;

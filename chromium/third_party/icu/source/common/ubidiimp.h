@@ -193,8 +193,8 @@ typedef struct BracketData {
 
 typedef struct Isolate {
     int32_t start1;
+    int32_t state;
     int16_t stateImp;
-    int16_t state;
 } Isolate;
 
 typedef struct Run {
