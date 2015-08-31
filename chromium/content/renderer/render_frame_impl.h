@@ -700,7 +700,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
   // selection handles in sync with the webpage.
-  void SyncSelectionIfRequired() override;
+  void SyncSelectionIfRequired(bool is_empty_selection) override;
   void ScrollFocusedEditableElementIntoRect(const gfx::Rect& rect) override;
   void ResetHasScrolledFocusedEditableIntoView() override;
   void CreateAudioInputStream(

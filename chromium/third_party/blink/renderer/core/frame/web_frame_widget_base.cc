@@ -2607,7 +2607,7 @@ void WebFrameWidgetBase::Replace(const String& word) {
   if (!focused_frame->HasSelection())
     focused_frame->SelectWordAroundCaret();
   focused_frame->ReplaceSelection(word);
-  focused_frame->Client()->SyncSelectionIfRequired();
+  focused_frame->Client()->SyncSelectionIfRequired(false);
 }
 
 void WebFrameWidgetBase::ReplaceMisspelling(const String& word) {
