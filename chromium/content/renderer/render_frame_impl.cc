@@ -4399,8 +4399,6 @@ void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
       !GetLocalRootWebFrameWidget()->HandlingSelectRange())
     return;
 
-  if (is_empty_selection)
-    selection_text_.clear();
 
   // UpdateTextInputState should be called before SyncSelectionIfRequired.
   // UpdateTextInputState may send TextInputStateChanged to notify the focus
@@ -4408,7 +4406,7 @@ void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
   // to notify the selection was changed.  Focus change should be notified
   // before selection change.
   GetLocalRootWebFrameWidget()->UpdateTextInputState();
-  SyncSelectionIfRequired(force_sync);
+  SyncSelectionIfRequired(force_sync, is_empty_selection);
 }
 
 void RenderFrameImpl::OnMainFrameIntersectionChanged(
@@ -6029,11 +6027,11 @@ void RenderFrameImpl::UpdateEncoding(WebFrame* frame,
   }
 }
 
-void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync) {
+void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync, bool is_empty_selection) {
   std::u16string text;
-  size_t offset;
+  size_t offset = 0;
   gfx::Range range;
-  {
+  if (!is_empty_selection) {
     WebInputMethodController* controller = frame_->GetInputMethodController();
     WebRange selection = controller->GetSelectionOffsets();
     if (selection.IsNull())
