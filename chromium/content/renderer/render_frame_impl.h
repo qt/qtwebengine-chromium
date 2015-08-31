@@ -918,7 +918,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
   // selection handles in sync with the webpage.
-  void SyncSelectionIfRequired();
+  void SyncSelectionIfRequired(bool is_empty_selection);
 
   void ScrollFocusedEditableElementIntoRect(const gfx::Rect& rect);
   void ResetHasScrolledFocusedEditableIntoView();
