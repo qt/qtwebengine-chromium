@@ -865,7 +865,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
   // selection handles in sync with the webpage.
-  void SyncSelectionIfRequired();
+  void SyncSelectionIfRequired(bool is_empty_selection);
 
   // Sets the custom URLLoaderFactory instance to be used for network requests.
   void SetCustomURLLoaderFactory(network::mojom::URLLoaderFactoryPtr factory);
