@@ -630,7 +630,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // it has changed or if the forced flag is passed. The forced flag is used
   // when the browser selection may be out of sync with the renderer due to
   // incorrect prediction.
-  void SyncSelectionIfRequired(blink::SyncCondition force_sync) override;
+  void SyncSelectionIfRequired(blink::SyncCondition force_sync, bool is_empty_selection) override;
   void CreateAudioInputStream(
       blink::CrossVariantMojoRemote<
           blink::mojom::RendererAudioInputStreamFactoryClientInterfaceBase>

@@ -2077,7 +2077,7 @@ void RenderFrameImpl::PepperSelectionChanged(
   // We have no reason to believe the locally cached last synced selection is
   // invalid so we do not need to force the update if it matches our last synced
   // value.
-  SyncSelectionIfRequired(blink::SyncCondition::kNotForced);
+  SyncSelectionIfRequired(blink::SyncCondition::kNotForced, false);
 }
 
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
@@ -4245,8 +4245,6 @@ void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
       !GetLocalRootWebFrameWidget()->HandlingSelectRange())
     return;
 
-  if (is_empty_selection)
-    selection_text_.clear();
 
   // UpdateTextInputState should be called before SyncSelectionIfRequired.
   // UpdateTextInputState may send TextInputStateChanged to notify the focus
@@ -4254,7 +4252,7 @@ void RenderFrameImpl::DidChangeSelection(bool is_empty_selection,
   // to notify the selection was changed.  Focus change should be notified
   // before selection change.
   GetLocalRootWebFrameWidget()->UpdateTextInputState();
-  SyncSelectionIfRequired(force_sync);
+  SyncSelectionIfRequired(force_sync, is_empty_selection);
 }
 
 void RenderFrameImpl::OnMainFrameIntersectionChanged(
@@ -5636,9 +5634,9 @@ void RenderFrameImpl::UpdateEncoding(WebFrame* frame,
   }
 }
 
-void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync) {
+void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync, bool is_empty_selection) {
   std::u16string text;
-  size_t offset;
+  size_t offset = 0;
   gfx::Range range;
 #if BUILDFLAG(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
@@ -5647,7 +5645,7 @@ void RenderFrameImpl::SyncSelectionIfRequired(blink::SyncCondition force_sync) {
     // TODO(kinaba): cut as needed.
   } else
 #endif
-  {
+  if (!is_empty_selection) {
     WebRange selection =
         frame_->GetInputMethodController()->GetSelectionOffsets();
     if (selection.IsNull())
