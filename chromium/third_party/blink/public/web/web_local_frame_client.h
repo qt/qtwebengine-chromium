@@ -700,7 +700,7 @@ class BLINK_EXPORT WebLocalFrameClient {
   }
 
   // Update the current frame selection to the browser.
-  virtual void SyncSelectionIfRequired() {}
+  virtual void SyncSelectionIfRequired(bool is_empty_selection) {}
 
   // TODO(https://crbug.com/787252): Remove the methods below and use the
   // Supplement mechanism.
