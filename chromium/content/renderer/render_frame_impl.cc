@@ -898,7 +898,7 @@ void RenderFrameImpl::PepperSelectionChanged(
     PepperPluginInstanceImpl* instance) {
   if (instance != render_view_->focused_pepper_plugin())
     return;
-  SyncSelectionIfRequired();
+  SyncSelectionIfRequired(false);
 }
 
 RenderWidgetFullscreenPepper* RenderFrameImpl::CreatePepperFullscreenContainer(
@@ -3104,8 +3104,6 @@ void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
   if (!GetRenderWidget()->handling_input_event() && !handling_select_range_)
     return;
 
-  if (is_empty_selection)
-    selection_text_.clear();
 
   // UpdateTextInputState should be called before SyncSelectionIfRequired.
   // UpdateTextInputState may send TextInputStateChanged to notify the focus
@@ -3114,7 +3112,7 @@ void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
   // before selection change.
   GetRenderWidget()->UpdateTextInputState(
       RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
-  SyncSelectionIfRequired();
+  SyncSelectionIfRequired(is_empty_selection);
 }
 
 blink::WebColorChooser* RenderFrameImpl::createColorChooser(
@@ -4742,9 +4740,9 @@ void RenderFrameImpl::UpdateEncoding(WebFrame* frame,
     Send(new FrameHostMsg_UpdateEncoding(routing_id_, encoding_name));
 }
 
-void RenderFrameImpl::SyncSelectionIfRequired() {
+void RenderFrameImpl::SyncSelectionIfRequired(bool is_empty_selection) {
   base::string16 text;
-  size_t offset;
+  size_t offset = 0;
   gfx::Range range;
 #if defined(ENABLE_PLUGINS)
   if (render_view_->focused_pepper_plugin_) {
@@ -4753,7 +4751,7 @@ void RenderFrameImpl::SyncSelectionIfRequired() {
     // TODO(kinaba): cut as needed.
   } else
 #endif
-  {
+  if (!is_empty_selection) {
     size_t location, length;
     if (!GetRenderWidget()->webwidget()->caretOrSelectionRange(
             &location, &length)) {
