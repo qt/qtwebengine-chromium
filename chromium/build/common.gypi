@@ -2622,6 +2622,11 @@
 
         # TODO(thakis): https://crbug.com/617318
         '-Wno-nonportable-include-path',
+
+        # QtWebEngine: To support other clang versions:
+        '-Wno-tautological-compare',
+        '-Wno-unknown-attributes',
+        '-Wno-unknown-warning-option',
       ],
     },
     'includes': [ 'set_clang_warning_flags.gypi', ],
@@ -5990,7 +5995,7 @@
         ],
       },
     }],
-    ['clang==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) '
+    ['clang==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) and use_qt==0'
         'and OS!="win"', {
       'make_global_settings': [
         ['CC', '<(make_clang_dir)/bin/clang'],
@@ -6025,7 +6030,7 @@
         ['CXX.host', '<(host_cxx)'],
       ],
     }],
-    ['OS=="linux" and target_arch=="mipsel" and host_arch!="mipsel" and chromeos==0 and clang==0', {
+    ['OS=="linux" and target_arch=="mipsel" and host_arch!="mipsel" and chromeos==0 and clang==0 and use_qt==0', {
       # Set default mips cross tools on linux.  These can be overridden
       # using CC,CXX,CC.host and CXX.host environment variables.
       'make_global_settings': [
