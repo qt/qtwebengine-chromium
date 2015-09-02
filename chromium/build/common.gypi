@@ -2659,8 +2659,7 @@
         # TODO(hans): Get this cleaned up, http://crbug.com/428099
         '-Wno-inconsistent-missing-override',
 
-        # TODO(thakis): Enable this, crbug.com/507717
-        '-Wno-shift-negative-value',
+        '-Wno-tautological-compare',
       ],
     },
     'includes': [ 'set_clang_warning_flags.gypi', ],
@@ -3110,6 +3109,12 @@
       ['enable_wexit_time_destructors==1 and OS!="win"', {
         # TODO: Enable on Windows too, http://crbug.com/404525
         'variables': { 'clang_warning_flags': ['-Wexit-time-destructors']},
+      }],
+      ['use_qt!=1', {
+        # TODO(thakis): Move this to the global clang_warning_flags block once
+        # clang is rolled far enough that the pinned clang understands this flag
+        # TODO(thakis): Enable this, crbug.com/507717
+        'variables': { 'clang_warning_flags': ['-Wno-shift-negative-value']},
       }],
       ['chromium_code==0', {
         'variables': {
@@ -6038,8 +6043,8 @@
     ['clang==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) '
         'and OS!="win"', {
       'make_global_settings': [
-        ['CC', '<(make_clang_dir)/bin/clang'],
-        ['CXX', '<(make_clang_dir)/bin/clang++'],
+        ['CC', '<!(which clang)'],
+        ['CXX', '<!(which clang++)'],
         ['CC.host', '$(CC)'],
         ['CXX.host', '$(CXX)'],
       ],
