@@ -2399,8 +2399,8 @@
       }],
 
       ['host_clang==1', {
-        'host_cc': '<(make_clang_dir)/bin/clang',
-        'host_cxx': '<(make_clang_dir)/bin/clang++',
+        'host_cc': '<!(which clang)',
+        'host_cxx': '<!(which clang++)',
       }, {
         'host_cc': '<!(which gcc)',
         'host_cxx': '<!(which g++)',
@@ -2607,6 +2607,8 @@
 
         # TODO(hans): Get this cleaned up, http://crbug.com/428099
         '-Wno-inconsistent-missing-override',
+
+        '-Wno-tautological-compare',
       ],
     },
     'includes': [ 'set_clang_warning_flags.gypi', ],
@@ -3114,7 +3116,7 @@
         # TODO: Enable on Windows too, http://crbug.com/404525
         'variables': { 'clang_warning_flags': ['-Wexit-time-destructors']},
       }],
-      ['"<!(python <(DEPTH)/tools/clang/scripts/update.py --print-revision)"!="239674-1"', {
+      ['use_qt!=1 and "<!(python <(DEPTH)/tools/clang/scripts/update.py --print-revision)"!="239674-1"', {
         # TODO(thakis): Move this to the global clang_warning_flags block once
         # clang is rolled far enough that the pinned clang understands this flag
         # TODO(thakis): Enable this, crbug.com/507717
@@ -5968,10 +5970,10 @@
     ['clang==1 and ((OS!="mac" and OS!="ios") or clang_xcode==0) '
         'and OS!="win"', {
       'make_global_settings': [
-        ['CC', '<(make_clang_dir)/bin/clang'],
-        ['CXX', '<(make_clang_dir)/bin/clang++'],
-        ['CC.host', '$(CC)'],
-        ['CXX.host', '$(CXX)'],
+        ['CC', '<!(which clang)'],
+        ['CXX', '<!(which clang++)'],
+        ['CC.host', '<(host_cc)'],
+        ['CXX.host', '<(host_cxx)'],
       ],
     }],
     ['clang==1 and OS=="win"', {
