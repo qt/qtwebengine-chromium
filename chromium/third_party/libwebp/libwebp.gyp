@@ -283,15 +283,15 @@
           'ENABLE_WEBP',
         ],
         'cflags': [
-          '<!@(pkg-config --cflags libwebp libwebpdemux)',
+          '<!@(<(pkg-config) --cflags libwebp libwebpdemux)',
         ],
       },
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other libwebp libwebpdemux)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other libwebp libwebpdemux)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l libwebp libwebpdemux)',
+          '<!@(<(pkg-config) --libs-only-l libwebp libwebpdemux)',
         ],
       },
     }

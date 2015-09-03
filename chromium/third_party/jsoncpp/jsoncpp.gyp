@@ -42,15 +42,15 @@
       ],
       'direct_dependent_settings': {
         'cflags': [
-          '<!@(pkg-config --cflags jsoncpp)',
+          '<!@(<(pkg-config) --cflags jsoncpp)',
         ],
       },
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other jsoncpp)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other jsoncpp)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l jsoncpp)',
+          '<!@(<(pkg-config) --libs-only-l jsoncpp)',
         ],
       },
     }
