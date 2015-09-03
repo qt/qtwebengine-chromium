@@ -107,15 +107,15 @@
       ],
       'direct_dependent_settings': {
         'cflags': [
-          '<!@(pkg-config --cflags libpng)',
+          '<!@(<(pkg-config) --cflags libpng)',
         ],
       },
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other libpng)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other libpng)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l libpng)',
+          '<!@(<(pkg-config) --libs-only-l libpng)',
         ],
       },
       'variables': {

@@ -483,7 +483,7 @@
       'type': 'none',
       'direct_dependent_settings': {
         'cflags': [
-          '<!@(pkg-config --cflags libavcodec libavformat libavutil)',
+          '<!@(<(pkg-config) --cflags libavcodec libavformat libavutil)',
 
           '<!(python <(DEPTH)/tools/compile_test/compile_test.py '
               '--code "#define __STDC_CONSTANT_MACROS\n'
@@ -517,10 +517,10 @@
       },
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other libavcodec libavformat libavutil)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other libavcodec libavformat libavutil)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l libavcodec libavformat libavutil)',
+          '<!@(<(pkg-config) --libs-only-l libavcodec libavformat libavutil)',
         ],
       },
     },
