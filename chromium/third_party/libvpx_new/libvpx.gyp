@@ -300,7 +300,7 @@
       'type': 'none',
       'direct_dependent_settings': {
         'cflags': [
-          '<!@(pkg-config --cflags vpx)',
+          '<!@(<(pkg-config) --cflags vpx)',
         ],
       },
       'variables': {
@@ -324,10 +324,10 @@
       ],
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other vpx)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other vpx)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l vpx)',
+          '<!@(<(pkg-config) --libs-only-l vpx)',
         ],
       },
     },

@@ -111,10 +111,10 @@
       ],
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other flac)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other flac)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l flac)',
+          '<!@(<(pkg-config) --libs-only-l flac)',
         ],
       },
     },

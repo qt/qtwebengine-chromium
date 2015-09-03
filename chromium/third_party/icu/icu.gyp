@@ -373,7 +373,7 @@
           'type': 'none',
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(pkg-config --cflags icu-uc icu-i18n)',
+              '<!@(<(pkg-config) --cflags icu-uc icu-i18n)',
             ],
             'defines': [
               'U_USING_ICU_NAMESPACE=0',
@@ -381,10 +381,10 @@
           },
           'link_settings': {
             'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other icu-uc icu-i18n)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other icu-uc icu-i18n)',
             ],
             'libraries': [
-              '<!@(pkg-config --libs-only-l icu-uc icu-i18n)',
+              '<!@(<(pkg-config) --libs-only-l icu-uc icu-i18n)',
             ],
           },
         },
