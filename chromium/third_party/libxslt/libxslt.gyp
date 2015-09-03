@@ -25,15 +25,15 @@
           'type': 'none',
           'direct_dependent_settings': {
             'cflags': [
-              '<!@(pkg-config --cflags libxslt)',
+              '<!@(<(pkg-config) --cflags libxslt)',
             ],
           },
           'link_settings': {
             'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other libxslt)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other libxslt)',
             ],
             'libraries': [
-              '<!@(pkg-config --libs-only-l libxslt)',
+              '<!@(<(pkg-config) --libs-only-l libxslt)',
             ],
           },
         }, { # else: os_posix != 1 or OS == "mac" or ! use_system_libxml

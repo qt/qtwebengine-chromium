@@ -28,14 +28,14 @@
                 'chromium/libxml_utils.cc',
               ],
               'cflags': [
-                '<!@(pkg-config --cflags libxml-2.0)',
+                '<!@(<(pkg-config) --cflags libxml-2.0)',
               ],
               'defines': [
                 'USE_SYSTEM_LIBXML',
               ],
               'direct_dependent_settings': {
                 'cflags': [
-                  '<!@(pkg-config --cflags libxml-2.0)',
+                  '<!@(<(pkg-config) --cflags libxml-2.0)',
                 ],
                 'defines': [
                   'USE_SYSTEM_LIBXML',
@@ -43,10 +43,10 @@
               },
               'link_settings': {
                 'ldflags': [
-                  '<!@(pkg-config --libs-only-L --libs-only-other libxml-2.0)',
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other libxml-2.0)',
                 ],
                 'libraries': [
-                  '<!@(pkg-config --libs-only-l libxml-2.0)',
+                  '<!@(<(pkg-config) --libs-only-l libxml-2.0)',
                 ],
               },
             }],
