@@ -26,6 +26,7 @@
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/Event.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
@@ -252,6 +253,9 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     }
 
     if (!SubframeLoadingDisabler::canLoadFrame(*this))
+        return false;
+
+    if (document().frame()->host()->subframeCount() >= FrameHost::maxNumberOfFrames)
         return false;
 
     return parentFrame->loader().client()->createFrame(url, frameName, this);
