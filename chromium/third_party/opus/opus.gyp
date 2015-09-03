@@ -250,7 +250,7 @@
       'type': 'none',
       'direct_dependent_settings': {
         'cflags': [
-          '<!@(pkg-config --cflags opus)',
+          '<!@(<(pkg-config) --cflags opus)',
         ],
       },
       'variables': {
@@ -268,10 +268,10 @@
       ],
       'link_settings': {
         'ldflags': [
-          '<!@(pkg-config --libs-only-L --libs-only-other opus)',
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other opus)',
         ],
         'libraries': [
-          '<!@(pkg-config --libs-only-l opus)',
+          '<!@(<(pkg-config) --libs-only-l opus)',
         ],
       },
     },
