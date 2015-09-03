@@ -965,7 +965,39 @@ void LoadIC::UpdateCaches(LookupIterator* lookup) {
       code = slow_stub();
     }
   } else {
-    code = ComputeHandler(lookup);
+    if (lookup->state() == LookupIterator::ACCESSOR) {
+      Handle<Object> accessors = lookup->GetAccessors();
+      Handle<HeapType> type = receiver_type();
+      if (accessors->IsExecutableAccessorInfo()) {
+        Handle<ExecutableAccessorInfo> info =
+            Handle<ExecutableAccessorInfo>::cast(accessors);
+        if ((v8::ToCData<Address>(info->getter()) != 0) &&
+            !ExecutableAccessorInfo::IsCompatibleReceiverType(isolate(), info,
+                                                             type)) {
+          TRACE_GENERIC_IC(isolate(), "LoadIC", "incompatible receiver type");
+          code = slow_stub();
+        }
+      } else if (accessors->IsAccessorPair()) {
+        Handle<Object> getter(Handle<AccessorPair>::cast(accessors)->getter(),
+                              isolate());
+        Handle<JSObject> holder = lookup->GetHolder<JSObject>();
+        Handle<Object> receiver = lookup->GetReceiver();
+        if (getter->IsJSFunction() && holder->HasFastProperties()) {
+          Handle<JSFunction> function = Handle<JSFunction>::cast(getter);
+          if (receiver->IsJSObject() || function->IsBuiltin() ||
+              function->shared()->strict_mode() != SLOPPY) {
+            CallOptimization call_optimization(function);
+            if (call_optimization.is_simple_api_call() &&
+                !call_optimization.IsCompatibleReceiver(receiver, holder)) {
+              TRACE_GENERIC_IC(isolate(), "LoadIC",
+                               "incompatible receiver type");
+              code = slow_stub();
+            }
+          }
+        }
+      }
+    }
+    if (code.is_null()) code = ComputeHandler(lookup);
   }
 
   PatchCache(lookup->name(), code);
@@ -1096,6 +1128,8 @@ Handle<Code> LoadIC::CompileHandler(LookupIterator* lookup,
         if (v8::ToCData<Address>(info->getter()) == 0) break;
         if (!ExecutableAccessorInfo::IsCompatibleReceiverType(isolate(), info,
                                                               type)) {
+          // This case should be already handled in LoadIC::UpdateCaches.
+          UNREACHABLE();
           break;
         }
         if (!holder->HasFastProperties()) break;
@@ -1118,10 +1152,14 @@ Handle<Code> LoadIC::CompileHandler(LookupIterator* lookup,
         CallOptimization call_optimization(function);
         NamedLoadHandlerCompiler compiler(isolate(), receiver_type(), holder,
                                           cache_holder);
-        if (call_optimization.is_simple_api_call() &&
-            call_optimization.IsCompatibleReceiver(receiver, holder)) {
-          return compiler.CompileLoadCallback(lookup->name(),
-                                              call_optimization);
+        if (call_optimization.is_simple_api_call()) {
+          if (call_optimization.IsCompatibleReceiver(receiver, holder)) {
+            return compiler.CompileLoadCallback(lookup->name(),
+                                                call_optimization);
+          } else {
+            // This case should be already handled in LoadIC::UpdateCaches.
+            UNREACHABLE();
+          }
         }
         return compiler.CompileLoadViaGetter(lookup->name(), function);
       }
