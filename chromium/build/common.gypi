@@ -2399,8 +2399,8 @@
       }],
 
       ['host_clang==1', {
-        'host_cc': '<!(which clang)',
-        'host_cxx': '<!(which clang++)',
+        'host_cc': '<(make_clang_dir)/bin/clang',
+        'host_cxx': '<(make_clang_dir)/bin/clang++',
       }, {
         'host_cc': '<!(which gcc)',
         'host_cxx': '<!(which g++)',
@@ -5972,8 +5972,8 @@
       'make_global_settings': [
         ['CC', '<!(which clang)'],
         ['CXX', '<!(which clang++)'],
-        ['CC.host', '<(host_cc)'],
-        ['CXX.host', '<(host_cxx)'],
+        ['CC.host', '$(CC)'],
+        ['CXX.host', '$(CXX)'],
       ],
     }],
     ['clang==1 and OS=="win"', {
