@@ -79,7 +79,12 @@ class CC_EXPORT DrawQuad {
   bool IsDebugQuad() const { return material == DEBUG_BORDER; }
 
   bool ShouldDrawWithBlending() const {
-    if (needs_blending || shared_quad_state->opacity < 1.0f)
+    if (needs_blending
+#if !defined(TOOLKIT_QT)
+// Qt handles this case through QSGOpacityNodes
+      || shared_quad_state->opacity < 1.0f
+#endif
+      )
       return true;
     if (visible_rect.IsEmpty())
       return false;
