@@ -44,7 +44,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
+#ifndef TOOLKIT_QT
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
 #include "components/spellcheck/browser/word_trimmer.h"
 #include "components/spellcheck/common/spellcheck_common.h"
 #include "components/spellcheck/common/spellcheck_marker.h"
@@ -444,8 +446,10 @@ void FeedbackSender::SendFeedback(const std::vector<Misspelling>& feedback_data,
   net::URLFetcher* sender =
       net::URLFetcher::Create(kUrlFetcherId, feedback_service_url_,
                               net::URLFetcher::POST, this).release();
+#ifndef TOOLKIT_QT
   data_use_measurement::DataUseUserData::AttachToFetcher(
       sender, data_use_measurement::DataUseUserData::SPELL_CHECKER);
+#endif
   sender->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                        net::LOAD_DO_NOT_SAVE_COOKIES);
   sender->SetUploadData("application/json", feedback);

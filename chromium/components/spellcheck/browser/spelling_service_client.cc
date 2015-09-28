@@ -17,7 +17,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#ifndef TOOLKIT_QT
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
 #include "components/prefs/pref_service.h"
 #include "components/spellcheck/browser/pref_names.h"
 #include "components/spellcheck/common/spellcheck_common.h"
@@ -103,8 +105,10 @@ bool SpellingServiceClient::RequestTextCheck(
 
   GURL url = GURL(kSpellingServiceURL);
   net::URLFetcher* fetcher = CreateURLFetcher(url).release();
+#ifndef TOOLKIT_QT
   data_use_measurement::DataUseUserData::AttachToFetcher(
       fetcher, data_use_measurement::DataUseUserData::SPELL_CHECKER);
+#endif
   fetcher->SetRequestContext(
       content::BrowserContext::GetDefaultStoragePartition(context)
           ->GetURLRequestContext());
