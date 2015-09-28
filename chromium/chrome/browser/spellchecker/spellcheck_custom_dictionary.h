@@ -17,10 +17,12 @@
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
 #include "components/spellcheck/browser/spellcheck_dictionary.h"
+#ifndef TOOLKIT_QT
 #include "components/sync/model/sync_data.h"
 #include "components/sync/model/sync_error.h"
 #include "components/sync/model/sync_merge_result.h"
 #include "components/sync/model/syncable_service.h"
+#endif
 
 namespace base {
 class Location;
@@ -40,8 +42,13 @@ class SyncChangeProcessor;
 //   foo
 //   checksum_v1 = ec3df4034567e59e119fcf87f2d9bad4
 //
+#ifndef TOOLKIT_QT
 class SpellcheckCustomDictionary : public SpellcheckDictionary,
                                    public syncer::SyncableService {
+#else
+class SpellcheckCustomDictionary : public SpellcheckDictionary {
+#endif
+
  public:
   // A change to the dictionary.
   class Change {
@@ -140,12 +147,15 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // Returns true if the dictionary has been loaded. Otherwise returns false.
   bool IsLoaded();
 
+#ifndef TOOLKIT_QT
   // Returns true if the dictionary is being synced. Otherwise returns false.
   bool IsSyncing();
+#endif
 
   // Overridden from SpellcheckDictionary:
   void Load() override;
 
+#ifndef TOOLKIT_QT
   // Overridden from syncer::SyncableService:
   void WaitUntilReadyToSync(base::OnceClosure done) override;
   syncer::SyncMergeResult MergeDataAndStartSyncing(
@@ -158,6 +168,7 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   syncer::SyncError ProcessSyncChanges(
       const base::Location& from_here,
       const syncer::SyncChangeList& change_list) override;
+#endif
 
  private:
   friend class DictionarySyncIntegrationTestHelper;
@@ -190,10 +201,12 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // |dictionary_change| to pass it to the FILE thread.
   void Save(std::unique_ptr<Change> dictionary_change);
 
+#ifndef TOOLKIT_QT
   // Notifies the sync service of the |dictionary_change|. Syncs up to the
   // maximum syncable words on the server. Disables syncing of this dictionary
   // if the server contains the maximum number of syncable words.
   syncer::SyncError Sync(const Change& dictionary_change);
+#endif
 
   // Notifies observers of the dictionary change if the dictionary has been
   // changed.
@@ -211,11 +224,13 @@ class SpellcheckCustomDictionary : public SpellcheckDictionary,
   // Observers for dictionary load and content changes.
   base::ObserverList<Observer>::Unchecked observers_;
 
+#ifndef TOOLKIT_QT
   // Used to send local changes to the sync infrastructure.
   std::unique_ptr<syncer::SyncChangeProcessor> sync_processor_;
 
   // Used to send sync-related errors to the sync infrastructure.
   std::unique_ptr<syncer::SyncErrorFactory> sync_error_handler_;
+#endif
 
   // True if the dictionary has been loaded. Otherwise false.
   bool is_loaded_;
