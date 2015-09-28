@@ -17,7 +17,9 @@
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#ifndef TOOLKIT_QT
 #include "chrome/common/channel_info.h"
+#endif
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
