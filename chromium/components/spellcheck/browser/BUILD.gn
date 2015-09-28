@@ -5,6 +5,7 @@
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
+import("//build/config/features.gni")
 
 source_set("browser") {
   sources = [
@@ -42,6 +43,11 @@ source_set("browser") {
     "//net",
     "//services/network/public/cpp",
   ]
+  if (use_qt) {
+    deps -= [
+      "//components/data_use_measurement/core",
+    ]
+  }
 
   if (is_android) {
     deps += [ "android:jni_headers" ]
