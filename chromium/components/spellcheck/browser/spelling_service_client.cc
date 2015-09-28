@@ -100,7 +100,7 @@ bool SpellingServiceClient::RequestTextCheck(
   std::string api_key = google_apis::GetAPIKey();
   std::string encoded_text = base::GetQuotedJSONString(text_copy);
   std::string request_body;
-
+#ifdef TOOLKIT_QT
   if (base::FeatureList::IsEnabled(spellcheck::kSpellingServiceRestApi)) {
     static const char kSpellingRequestRestBodyTemplate[] =
         "{"
@@ -190,6 +190,7 @@ bool SpellingServiceClient::RequestTextCheck(
       base::BindOnce(&SpellingServiceClient::OnSimpleLoaderComplete,
                      base::Unretained(this), std::move(it),
                      base::TimeTicks::Now()));
+#endif
   return true;
 }
 
