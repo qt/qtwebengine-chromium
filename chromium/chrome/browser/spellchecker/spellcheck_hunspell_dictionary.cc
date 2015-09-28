@@ -10,9 +10,11 @@
 #include "base/path_service.h"
 #include "chrome/browser/spellchecker/spellcheck_platform.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
+#ifndef TOOLKIT_QT
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/spellcheck_common.h"
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
+#include "chrome/common/spellcheck_common.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "net/base/load_flags.h"
@@ -47,7 +49,7 @@ bool SaveDictionaryData(scoped_ptr<std::string> data,
     bool success = false;
 #if defined(OS_WIN)
     base::FilePath dict_dir;
-    PathService::Get(chrome::DIR_USER_DATA, &dict_dir);
+    PathService::Get(base::DIR_USER_DATA, &dict_dir);
     base::FilePath fallback_file_path =
         dict_dir.Append(path.BaseName());
     bytes_written =
@@ -245,8 +247,10 @@ void SpellcheckHunspellDictionary::DownloadDictionary(GURL url) {
                     OnHunspellDictionaryDownloadBegin(language_));
 
   fetcher_ = net::URLFetcher::Create(url, net::URLFetcher::GET, this);
+#ifndef TOOLKIT_QT
   data_use_measurement::DataUseUserData::AttachToFetcher(
       fetcher_.get(), data_use_measurement::DataUseUserData::SPELL_CHECKER);
+#endif
   fetcher_->SetRequestContext(request_context_getter_);
   fetcher_->SetLoadFlags(
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES);
@@ -271,7 +275,7 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(const base::FilePath& path) {
   // Check if the dictionary exists in the fallback location. If so, use it
   // rather than downloading anew.
   base::FilePath user_dir;
-  PathService::Get(chrome::DIR_USER_DATA, &user_dir);
+  PathService::Get(base::DIR_USER_DATA, &user_dir);
   base::FilePath fallback = user_dir.Append(path.BaseName());
   if (!base::PathExists(path) && base::PathExists(fallback))
     dictionary.path = fallback;
@@ -307,7 +311,7 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(const base::FilePath& path) {
 }
 
 // The default place where the spellcheck dictionary resides is
-// chrome::DIR_APP_DICTIONARIES.
+// base::DIR_APP_DICTIONARIES.
 SpellcheckHunspellDictionary::DictionaryFile
 SpellcheckHunspellDictionary::InitializeDictionaryLocation(
     const std::string& language) {
@@ -316,7 +320,7 @@ SpellcheckHunspellDictionary::InitializeDictionaryLocation(
   // Initialize the BDICT path. Initialization should be in the FILE thread
   // because it checks if there is a "Dictionaries" directory and create it.
   base::FilePath dict_dir;
-  PathService::Get(chrome::DIR_APP_DICTIONARIES, &dict_dir);
+  PathService::Get(base::DIR_APP_DICTIONARIES, &dict_dir);
   base::FilePath dict_path =
       chrome::spellcheck_common::GetVersionedFileName(language, dict_dir);
 

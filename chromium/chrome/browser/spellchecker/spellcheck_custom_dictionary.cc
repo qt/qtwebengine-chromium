@@ -13,12 +13,21 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
+#ifndef TOOLKIT_QT
 #include "chrome/common/chrome_constants.h"
+#endif
 #include "chrome/common/spellcheck_common.h"
 #include "content/public/browser/browser_thread.h"
+#ifndef TOOLKIT_QT
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/protocol/sync.pb.h"
+#else
+#include "base/stl_util.h"
+namespace chrome {
+    const base::FilePath::CharType kCustomDictionaryFileName[] = FILE_PATH_LITERAL("Custom Dictionary.txt");
+}
+#endif
 
 using content::BrowserThread;
 
@@ -220,7 +229,9 @@ bool SpellcheckCustomDictionary::AddWord(const std::string& word) {
   int result = dictionary_change->Sanitize(GetWords());
   Apply(*dictionary_change);
   Notify(*dictionary_change);
+#ifndef TOOLKIT_QT
   Sync(*dictionary_change);
+#endif
   Save(dictionary_change.Pass());
   return result == VALID_CHANGE;
 }
@@ -232,7 +243,9 @@ bool SpellcheckCustomDictionary::RemoveWord(const std::string& word) {
   int result = dictionary_change->Sanitize(GetWords());
   Apply(*dictionary_change);
   Notify(*dictionary_change);
+#ifndef TOOLKIT_QT
   Sync(*dictionary_change);
+#endif
   Save(dictionary_change.Pass());
   return result == VALID_CHANGE;
 }
@@ -258,10 +271,12 @@ bool SpellcheckCustomDictionary::IsLoaded() {
   return is_loaded_;
 }
 
+#ifndef TOOLKIT_QT
 bool SpellcheckCustomDictionary::IsSyncing() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return !!sync_processor_.get();
 }
+#endif
 
 void SpellcheckCustomDictionary::Load() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -274,6 +289,7 @@ void SpellcheckCustomDictionary::Load() {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
+#ifndef TOOLKIT_QT
 syncer::SyncMergeResult SpellcheckCustomDictionary::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
@@ -371,6 +387,7 @@ syncer::SyncError SpellcheckCustomDictionary::ProcessSyncChanges(
 
   return syncer::SyncError();
 }
+#endif
 
 // static
 scoped_ptr<std::set<std::string>>
@@ -418,7 +435,9 @@ void SpellcheckCustomDictionary::OnLoaded(
   dictionary_change.AddWords(*custom_words);
   dictionary_change.Sanitize(GetWords());
   Apply(dictionary_change);
+#ifndef TOOLKIT_QT
   Sync(dictionary_change);
+#endif
   is_loaded_ = true;
   FOR_EACH_OBSERVER(Observer, observers_, OnCustomDictionaryLoaded());
 }
@@ -445,6 +464,7 @@ void SpellcheckCustomDictionary::Save(scoped_ptr<Change> dictionary_change) {
                  base::Passed(&dictionary_change), custom_dictionary_path_));
 }
 
+#ifndef TOOLKIT_QT
 syncer::SyncError SpellcheckCustomDictionary::Sync(
     const Change& dictionary_change) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -498,6 +518,7 @@ syncer::SyncError SpellcheckCustomDictionary::Sync(
 
   return error;
 }
+#endif
 
 void SpellcheckCustomDictionary::Notify(const Change& dictionary_change) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);

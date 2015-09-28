@@ -14,14 +14,18 @@
 #include "base/single_thread_task_runner.h"
 #include "base/sys_info.h"
 #include "base/thread_task_runner_handle.h"
+#ifndef TOOLKIT_QT
 #include "chrome/common/channel_info.h"
+#endif
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck_language.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
+#ifndef TOOLKIT_QT
 #include "components/version_info/version_info.h"
+#endif
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"

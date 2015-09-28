@@ -63,7 +63,7 @@ void HunspellEngine::InitializeHunspell() {
   bdict_file_.reset(new base::MemoryMappedFile);
 
   if (bdict_file_->Initialize(file_.Pass())) {
-    hunspell_.reset(new Hunspell(bdict_file_->data(), bdict_file_->length()));
+    hunspell_.reset(new Hunspell(reinterpret_cast<const unsigned char *>(bdict_file_->data()), bdict_file_->length()));
   } else {
     NOTREACHED() << "Could not mmap spellchecker dictionary.";
   }
