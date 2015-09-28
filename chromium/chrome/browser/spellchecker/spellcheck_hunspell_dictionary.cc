@@ -23,7 +23,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
+#ifndef TOOLKIT_QT
 #include "chrome/common/chrome_paths.h"
+#endif
 #include "components/spellcheck/browser/spellcheck_platform.h"
 #include "components/spellcheck/common/spellcheck_common.h"
 #include "components/spellcheck/common/spellcheck_features.h"
@@ -71,7 +73,7 @@ bool SaveDictionaryData(std::unique_ptr<std::string> data,
     bool success = false;
 #if BUILDFLAG(IS_WIN)
     base::FilePath dict_dir;
-    base::PathService::Get(chrome::DIR_USER_DATA, &dict_dir);
+    base::PathService::Get(base::DIR_USER_DATA, &dict_dir);
     base::FilePath fallback_file_path =
         dict_dir.Append(path.BaseName());
     bytes_written =
@@ -355,7 +357,7 @@ SpellcheckHunspellDictionary::OpenDictionaryFile(base::TaskRunner* task_runner,
   // Check if the dictionary exists in the fallback location. If so, use it
   // rather than downloading anew.
   base::FilePath user_dir;
-  base::PathService::Get(chrome::DIR_USER_DATA, &user_dir);
+  base::PathService::Get(base::DIR_USER_DATA, &user_dir);
   base::FilePath fallback = user_dir.Append(path.BaseName());
   if (!base::PathExists(path) && base::PathExists(fallback))
     dictionary.path = fallback;
@@ -402,7 +404,7 @@ SpellcheckHunspellDictionary::InitializeDictionaryLocation(
   // sequence because it checks if there is a "Dictionaries" directory and
   // create it.
   base::FilePath dict_dir;
-  base::PathService::Get(chrome::DIR_APP_DICTIONARIES, &dict_dir);
+  base::PathService::Get(base::DIR_APP_DICTIONARIES, &dict_dir);
   base::FilePath dict_path =
       spellcheck::GetVersionedFileName(language, dict_dir);
 
