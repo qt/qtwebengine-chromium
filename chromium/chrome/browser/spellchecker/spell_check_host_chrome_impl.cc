@@ -15,7 +15,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 
-#if !defined(OS_MACOSX)
+#if !(defined(OS_MACOSX) && BUILDFLAG(USE_BROWSER_SPELLCHECKER))
 // Mac needs different constructor and destructor for Mac-only members.
 
 SpellCheckHostChromeImpl::SpellCheckHostChromeImpl(

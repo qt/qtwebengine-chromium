@@ -55,7 +55,7 @@ class SpellCheckHostChromeImpl : public SpellCheckHostImpl {
       const std::vector<SpellCheckResult>& service_results);
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Non-Mac (i.e., Android) implementations of the following APIs are in the
   // base class SpellCheckHostImpl.
   void CheckSpelling(const base::string16& word,
