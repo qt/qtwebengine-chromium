@@ -6,7 +6,9 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
+#ifndef TOOLKIT_QT
 #include "chrome/grit/locale_settings.h"
+#endif
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/spellcheck/browser/pref_names.h"
@@ -54,9 +56,11 @@ void SpellcheckServiceFactory::RegisterProfilePrefs(
       spellcheck::prefs::kSpellCheckBlocklistedDictionaries);
   // Continue registering kSpellCheckDictionary for preference migration.
   // TODO(estade): remove: crbug.com/751275
+#ifndef TOOLKIT_QT
   user_prefs->RegisterStringPref(
       spellcheck::prefs::kSpellCheckDictionary,
       l10n_util::GetStringUTF8(IDS_SPELLCHECK_DICTIONARY));
+#endif
   user_prefs->RegisterBooleanPref(
       spellcheck::prefs::kSpellCheckUseSpellingService, false);
 #if BUILDFLAG(IS_ANDROID)

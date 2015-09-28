@@ -79,7 +79,8 @@ enum BasePathKey {
                            // DIR_SRC_TEST_DATA_ROOT + "/base/test/data".
 
   DIR_QT_LIBRARY_DATA,
-
+  DIR_APP_DICTIONARIES,
+  DIR_USER_DATA,
   PATH_END
 };
 
