@@ -31,8 +31,10 @@
 #ifndef V8DOMWrapper_h
 #define V8DOMWrapper_h
 
+#include "bindings/core/v8/BindingSecurity.h"
 #include "bindings/core/v8/DOMDataStore.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RawPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -106,19 +108,27 @@ inline v8::Local<v8::Object> V8DOMWrapper::associateObjectWithWrapper(v8::Isolat
 
 class V8WrapperInstantiationScope {
 public:
-    V8WrapperInstantiationScope(v8::Local<v8::Object> creationContext, v8::Isolate* isolate)
+    V8WrapperInstantiationScope(v8::Local<v8::Object> creationContext, v8::Isolate* isolate, bool withSecurityCheck = true)
         : m_didEnterContext(false)
         , m_context(isolate->GetCurrentContext())
+        , m_tryCatch(isolate)
+        , m_convertExceptions(false)
     {
         // creationContext should not be empty. Because if we have an
         // empty creationContext, we will end up creating
         // a new object in the context currently entered. This is wrong.
         RELEASE_ASSERT(!creationContext.IsEmpty());
         v8::Local<v8::Context> contextForWrapper = creationContext->CreationContext();
+
         // For performance, we enter the context only if the currently running context
         // is different from the context that we are about to enter.
         if (contextForWrapper == m_context)
             return;
+        if (withSecurityCheck) {
+            securityCheck(isolate, contextForWrapper);
+        } else {
+            m_convertExceptions = true;
+        }
         m_context = v8::Local<v8::Context>::New(isolate, contextForWrapper);
         m_didEnterContext = true;
         m_context->Enter();
@@ -126,16 +136,31 @@ public:
 
     ~V8WrapperInstantiationScope()
     {
-        if (!m_didEnterContext)
+        if (!m_didEnterContext) {
+            m_tryCatch.ReThrow();
             return;
+        }
         m_context->Exit();
+        // Rethrow any cross-context exceptions as security error.
+        if (m_tryCatch.HasCaught()) {
+            if (m_convertExceptions) {
+                m_tryCatch.Reset();
+                convertException();
+            }
+            m_tryCatch.ReThrow();
+        }
     }
 
     v8::Local<v8::Context> context() const { return m_context; }
 
 private:
+    void securityCheck(v8::Isolate*, v8::Local<v8::Context> contextForWrapper);
+    void convertException();
+
     bool m_didEnterContext;
     v8::Local<v8::Context> m_context;
+    v8::TryCatch m_tryCatch;
+    bool m_convertExceptions;
 };
 
 } // namespace blink

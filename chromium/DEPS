@@ -4,7 +4,7 @@ vars = {
   'boringssl_revision':
     'de24aadc5bc01130b6a9d25582203bb5308fabe1',
   'buildspec_platforms':
-    'android,',
+    'all',
   'buildtools_revision':
     'ecc8e253abac3b6186a97573871a084f4c0ca3ae',
   'chromium_git':
@@ -34,9 +34,7 @@ vars = {
   'swarming_revision':
     'b39a448d8522392389b28f6997126a6ab04bfe87',
   'v8_revision':
-    '7f211533faba9dd85708b1394186c7fe99b88392',
-  'webkit_revision':
-    'abaaf1d0b6b6483140b5dca34e80fc259833ddf7'
+    '7f211533faba9dd85708b1394186c7fe99b88392'
 }
 
 allowed_hosts = [
@@ -65,8 +63,6 @@ deps = {
     (Var("chromium_git")) + '/external/googlemock.git@29763965ab52f24565299976b936d1265cb6a271',
   'src/testing/gtest':
     (Var("chromium_git")) + '/external/googletest.git@23574bf2333f834ff665f894c97bef8a5b33a0a9',
-  'src/third_party/WebKit':
-    (Var("chromium_git")) + '/chromium/blink.git@4a6bcd0338160a0d9a8750dc71e1c8332b1fd6f3',
   'src/third_party/angle':
     (Var("chromium_git")) + '/angle/angle.git@6f0fd8c5457f9dcffc9fa9fab3852417311be0a9',
   'src/third_party/bidichecker':
@@ -120,7 +116,7 @@ deps = {
   'src/third_party/opus/src':
     (Var("chromium_git")) + '/chromium/deps/opus.git@cae696156f1e60006e39821e79a1811ae1933c69',
   'src/third_party/pdfium':
-    'https://pdfium.googlesource.com/pdfium.git@f81f724838983add18125f41292e98ef94e1bb39',
+    'https://pdfium.googlesource.com/pdfium.git@860a3eb0f3c18853f95df5a70dc50a95a29aafb1',
   'src/third_party/py_trace_event/src':
     (Var("chromium_git")) + '/external/py_trace_event.git@dd463ea9e2c430de2b9e53dea57a77b4c3ac9b30',
   'src/third_party/pyftpdlib/src':
@@ -164,7 +160,7 @@ deps = {
   'src/tools/swarming_client':
     (Var("chromium_git")) + '/external/swarming.client.git@b39a448d8522392389b28f6997126a6ab04bfe87',
   'src/v8':
-    (Var("chromium_git")) + '/v8/v8.git@d2356f267b8ee81447223bf7b22d1829eac3e608'
+    (Var("chromium_git")) + '/v8/v8.git@96dddb455daff3d8626bc4e5d7b2898fbab55991'
 }
 
 deps_os = {
@@ -388,6 +384,7 @@ hooks = [
     'action': [
       'python',
       'src/build/util/lastchange.py',
+      '--git-hash-only',
       '-s',
       'src/third_party/WebKit',
       '-o',

@@ -4073,6 +4073,9 @@ String Document::lastModified() const
 
 const KURL& Document::firstPartyForCookies() const
 {
+    if (SchemeRegistry::shouldTreatURLSchemeAsFirstPartyWhenTopLevel(topDocument().url().protocol()))
+        return topDocument().url();
+
     // We're intentionally using the URL of each document rather than the document's SecurityOrigin.
     // Sandboxing a document into a unique origin shouldn't effect first-/third-party status for
     // cookies and site data.
@@ -5377,10 +5380,10 @@ void Document::updateHoverActiveState(const HitTestRequest& request, Element* in
     if (oldActiveElement && !request.active()) {
         // The oldActiveElement layoutObject is null, dropped on :active by setting display: none,
         // for instance. We still need to clear the ActiveChain as the mouse is released.
-        for (Node* node = oldActiveElement; node; node = ComposedTreeTraversal::parent(*node)) {
+        for (RefPtrWillBeRawPtr<Node> node = oldActiveElement; node; node = ComposedTreeTraversal::parent(*node)) {
             ASSERT(!node->isTextNode());
             node->setActive(false);
-            m_userActionElements.setInActiveChain(node, false);
+            m_userActionElements.setInActiveChain(node.get(), false);
         }
         setActiveHoverElement(nullptr);
     } else {
