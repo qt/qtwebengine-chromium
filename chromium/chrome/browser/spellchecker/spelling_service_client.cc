@@ -19,7 +19,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
+#ifndef TOOLKIT_QT
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
 #include "components/prefs/pref_service.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
@@ -109,8 +111,10 @@ bool SpellingServiceClient::RequestTextCheck(
 
   GURL url = GURL(kSpellingServiceURL);
   net::URLFetcher* fetcher = CreateURLFetcher(url).release();
+#ifndef TOOLKIT_QT
   data_use_measurement::DataUseUserData::AttachToFetcher(
       fetcher, data_use_measurement::DataUseUserData::SPELL_CHECKER);
+#endif
   fetcher->SetRequestContext(
       content::BrowserContext::GetDefaultStoragePartition(context)->
           GetURLRequestContext());

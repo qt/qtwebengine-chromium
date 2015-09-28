@@ -49,7 +49,9 @@
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
+#ifndef TOOLKIT_QT
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
 #include "content/public/browser/render_process_host.h"
 #include "crypto/random.h"
 #include "crypto/secure_hash.h"
@@ -447,8 +449,10 @@ void FeedbackSender::SendFeedback(const std::vector<Misspelling>& feedback_data,
   net::URLFetcher* sender =
       net::URLFetcher::Create(kUrlFetcherId, feedback_service_url_,
                               net::URLFetcher::POST, this).release();
+#ifndef TOOLKIT_QT
   data_use_measurement::DataUseUserData::AttachToFetcher(
       sender, data_use_measurement::DataUseUserData::SPELL_CHECKER);
+#endif
   sender->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                        net::LOAD_DO_NOT_SAVE_COOKIES);
   sender->SetUploadData("application/json", feedback);
