@@ -7,6 +7,7 @@ import("//components/spellcheck/spellcheck_build_features.gni")
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
+import("//build/config/features.gni")
 
 source_set("browser") {
   sources = [
