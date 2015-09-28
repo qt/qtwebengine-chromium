@@ -7,6 +7,7 @@ import("//components/spellcheck/spellcheck_build_features.gni")
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
+import("//build/config/features.gni")
 
 # This file depends on the legacy global sources assignment filter. It should
 # be converted to check target platform before assigning source files to the
@@ -61,6 +62,11 @@ source_set("browser") {
     "//net",
     "//services/network/public/cpp",
   ]
+  if (use_qt) {
+    deps -= [
+      "//components/data_use_measurement/core",
+    ]
+  }
 
   if (is_android) {
     deps += [ "android:jni_headers" ]
