@@ -17,7 +17,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#ifndef TOOLKIT_QT
 #include "components/data_use_measurement/core/data_use_user_data.h"
+#endif
 #include "components/prefs/pref_service.h"
 #include "components/spellcheck/browser/pref_names.h"
 #include "components/spellcheck/common/spellcheck_common.h"
@@ -101,6 +103,7 @@ bool SpellingServiceClient::RequestTextCheck(
       kSpellingRequest, type, encoded_text.c_str(), language_code.c_str(),
       country_code.c_str(), api_key.c_str());
 
+#ifndef TOOLKIT_QT
   GURL url = GURL(kSpellingServiceURL);
 
   // Create traffic annotation tag.
@@ -150,6 +153,7 @@ bool SpellingServiceClient::RequestTextCheck(
   spellcheck_fetchers_[fetcher] = base::MakeUnique<TextCheckCallbackData>(
       base::WrapUnique(fetcher), std::move(callback), text);
   fetcher->Start();
+#endif
   return true;
 }
 
