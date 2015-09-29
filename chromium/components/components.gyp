@@ -17,6 +17,7 @@
       'devtools_http_handler.gypi',
       'error_page.gypi',
       'visitedlink.gypi',
+      'web_cache.gypi',
     ],
   }, {
   'includes': [
