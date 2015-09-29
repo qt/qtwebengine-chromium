@@ -459,7 +459,7 @@ void LayoutBlockFlow::determineLogicalLeftPositionForChild(LayoutBox& child)
     LayoutUnit newPosition = startPosition + childMarginStart;
 
     LayoutUnit positionToAvoidFloats;
-    if (child.avoidsFloats() && containsFloats() && !flowThreadContainingBlock())
+    if (child.avoidsFloats() && containsFloats())
         positionToAvoidFloats = startOffsetForLine(logicalTopForChild(child), false, logicalHeightForChild(child));
 
     // If the child has an offset from the content edge to avoid floats then use that, otherwise let any negative
@@ -808,7 +808,9 @@ LayoutUnit LayoutBlockFlow::adjustForUnsplittableChild(LayoutBox& child, LayoutU
     if (!pageLogicalHeight)
         return logicalOffset;
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
-    if (remainingLogicalHeight < childLogicalHeight)
+    // Break if there's not enough space left for us, but only as long as we're not already at the
+    // top of a page. No point in leaving a page completely blank.
+    if (remainingLogicalHeight < childLogicalHeight && remainingLogicalHeight < pageLogicalHeight)
         return logicalOffset + remainingLogicalHeight;
     return logicalOffset;
 }
