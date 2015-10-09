@@ -193,6 +193,7 @@ class InterfaceInfoCollector(object):
     def collect_info(self, idl_filename):
         """Reads an idl file and collects information which is required by the
         binding code generation."""
+        idl_filename = abs(idl_filename)
         definitions = self.reader.read_idl_file(idl_filename)
         if definitions.interfaces:
             definition = next(definitions.interfaces.itervalues())

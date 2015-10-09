@@ -102,6 +102,7 @@ class IdlCompiler(object):
         self.cache_directory = cache_directory
         self.code_generator = code_generator
         if interfaces_info_filename:
+            interfaces_info_filename = abs(interfaces_info_filename)
             with open(interfaces_info_filename) as interfaces_info_file:
                 interfaces_info = pickle.load(interfaces_info_file)
         self.interfaces_info = interfaces_info
@@ -172,6 +173,9 @@ def generate_union_type_containers(options):
     if not (options.interfaces_info_file and options.component_info_file):
         raise Exception('Interfaces info is required to generate '
                         'union types containers')
+    options.interfaces_info_file = abs(options.interfaces_info_file)
+    options.component_info_file = abs(options.component_info_file)
+
     with open(options.interfaces_info_file) as interfaces_info_file:
         interfaces_info = pickle.load(interfaces_info_file)
     with open(options.component_info_file) as component_info_file:
