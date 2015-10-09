@@ -453,6 +453,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void GetManifest(const GetManifestCallback& callback) override;
   bool IsFullscreenForCurrentTab() const override;
   void ExitFullscreen(bool will_cause_resize) override;
+  void NotifyFullscreenChanged(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void OnPasswordInputShownOnHttp() override;
   void OnAllPasswordInputsHiddenOnHttp() override;
