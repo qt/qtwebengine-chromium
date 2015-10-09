@@ -485,6 +485,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool ShouldShowStaleContentOnEviction() override;
   void ExitFullscreen(bool will_cause_resize) override;
   void ForSecurityDropFullscreen() override;
+  void NotifyFullscreenChanged(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void SetIsOverlayContent(bool is_overlay_content) override;
   bool IsFocusedElementEditable() override;
