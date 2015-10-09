@@ -412,6 +412,7 @@ class CONTENT_EXPORT WebContentsImpl
   bool WasRecentlyAudible() override;
   void GetManifest(const GetManifestCallback& callback) override;
   void ExitFullscreen(bool will_cause_resize) override;
+  void NotifyFullscreenChanged(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void OnPasswordInputShownOnHttp() override;
   void OnAllPasswordInputsHiddenOnHttp() override;

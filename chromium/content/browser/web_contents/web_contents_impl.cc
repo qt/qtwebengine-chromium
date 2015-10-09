@@ -1823,6 +1823,26 @@ RenderWidgetHostInputEventRouter* WebContentsImpl::GetInputEventRouter() {
   return rwh_input_event_router_.get();
 }
 
+void WebContentsImpl::NotifyFullscreenChanged(bool will_cause_resize) {
+  // The fullscreen state is communicated to the renderer through a resize
+  // message. If the change in fullscreen state doesn't cause a view resize
+  // then we must ensure web contents exit the fullscreen state by explicitly
+  // sending a resize message. This is required for the situation of the browser
+  // moving the view into a "browser fullscreen" state and then the contents
+  // entering "tab fullscreen". Exiting the contents "tab fullscreen" then won't
+  // have the side effect of the view resizing, hence the explicit call here is
+  // required.
+  if (!will_cause_resize) {
+    if (RenderWidgetHostView* rwh_view = GetRenderWidgetHostView()) {
+      if (RenderWidgetHost* render_widget_host = rwh_view->GetRenderWidgetHost())
+        render_widget_host->WasResized();
+    }
+  }
+
+  for (auto& observer : observers_)
+    observer.DidToggleFullscreenModeForTab(IsFullscreenForCurrentTab(), will_cause_resize);
+}
+
 void WebContentsImpl::ReplicatePageFocus(bool is_focused) {
   // Focus loss may occur while this WebContents is being destroyed.  Don't
   // send the message in this case, as the main frame's RenderFrameHost and
@@ -1875,8 +1895,8 @@ void WebContentsImpl::EnterFullscreenMode(const GURL& origin) {
   if (delegate_)
     delegate_->EnterFullscreenModeForTab(this, origin);
 
-  for (auto& observer : observers_)
-    observer.DidToggleFullscreenModeForTab(IsFullscreenForCurrentTab(), false);
+  if (IsFullscreenForCurrentTab())
+      NotifyFullscreenChanged(false);
 }
 
 void WebContentsImpl::ExitFullscreenMode(bool will_cause_resize) {
@@ -1897,25 +1917,8 @@ void WebContentsImpl::ExitFullscreenMode(bool will_cause_resize) {
   if (delegate_)
     delegate_->ExitFullscreenModeForTab(this);
 
-  // The fullscreen state is communicated to the renderer through a resize
-  // message. If the change in fullscreen state doesn't cause a view resize
-  // then we must ensure web contents exit the fullscreen state by explicitly
-  // sending a resize message. This is required for the situation of the browser
-  // moving the view into a "browser fullscreen" state and then the contents
-  // entering "tab fullscreen". Exiting the contents "tab fullscreen" then won't
-  // have the side effect of the view resizing, hence the explicit call here is
-  // required.
-  if (!will_cause_resize) {
-    if (RenderWidgetHostView* rwhv = GetRenderWidgetHostView()) {
-        if (RenderWidgetHost* render_widget_host = rwhv->GetRenderWidgetHost())
-          render_widget_host->WasResized();
-    }
-  }
-
-  for (auto& observer : observers_) {
-    observer.DidToggleFullscreenModeForTab(IsFullscreenForCurrentTab(),
-                                           will_cause_resize);
-  }
+  if (!IsFullscreenForCurrentTab())
+      NotifyFullscreenChanged(will_cause_resize);
 }
 
 bool WebContentsImpl::IsFullscreenForCurrentTab() const {
