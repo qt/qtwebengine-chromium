@@ -511,6 +511,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void ExitFullscreen(bool will_cause_resize) override;
   base::ScopedClosureRunner ForSecurityDropFullscreen() override
       WARN_UNUSED_RESULT;
+  void NotifyFullscreenChanged(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void SetIsOverlayContent(bool is_overlay_content) override;
   bool IsFocusedElementEditable() override;
