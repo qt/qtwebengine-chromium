@@ -49,6 +49,7 @@ def CamelCaseToAllCaps(camel_case):
 
 def WriteFile(contents, full_path):
   # Make sure the containing directory exists.
+  full_path = os.path.normpath(os.path.join(os.getcwd(), full_path))
   full_dir = os.path.dirname(full_path)
   if not os.path.exists(full_dir):
     os.makedirs(full_dir)
