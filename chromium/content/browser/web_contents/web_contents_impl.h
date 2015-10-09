@@ -537,6 +537,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void ExitFullscreen(bool will_cause_resize) override;
   [[nodiscard]] base::ScopedClosureRunner ForSecurityDropFullscreen(
       int64_t display_id = display::kInvalidDisplayId) override;
+  void NotifyFullscreenChanged(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void SetIsOverlayContent(bool is_overlay_content) override;
   bool IsFocusedElementEditable() override;
