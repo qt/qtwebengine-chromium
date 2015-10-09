@@ -361,6 +361,7 @@ class CONTENT_EXPORT WebContentsImpl
   bool WasRecentlyAudible() override;
   void GetManifest(const GetManifestCallback&) override;
   void ExitFullscreen() override;
+  void NotifyFullscreenChanged() override;
   void ResumeLoadingCreatedWebContents() override;
 #if defined(OS_ANDROID)
   void OnMediaSessionStateChanged();

@@ -659,6 +659,7 @@ class WebContents : public PageNavigator,
 
   // Requests the renderer to exit fullscreen.
   virtual void ExitFullscreen() = 0;
+  virtual void NotifyFullscreenChanged() = 0;
 
   // Unblocks requests from renderer for a newly created window. This is
   // used in showCreatedWindow() or sometimes later in cases where
