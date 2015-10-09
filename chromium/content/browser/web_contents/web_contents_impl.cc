@@ -3140,6 +3140,38 @@ RenderWidgetHostInputEventRouter* WebContentsImpl::GetInputEventRouter() {
   return rwh_input_event_router_.get();
 }
 
+void WebContentsImpl::NotifyFullscreenChanged(bool will_cause_resize) {
+  // The fullscreen state is communicated to the renderer through a resize
+  // message. If the change in fullscreen state doesn't cause a view resize
+  // then we must ensure web contents exit the fullscreen state by explicitly
+  // sending a resize message. This is required for the situation of the browser
+  // moving the view into a "browser fullscreen" state and then the contents
+  // entering "tab fullscreen". Exiting the contents "tab fullscreen" then won't
+  // have the side effect of the view resizing, hence the explicit call here is
+  // required.
+  if (!will_cause_resize) {
+    if (RenderWidgetHostView* rwh_view = GetRenderWidgetHostView()) {
+      if (RenderWidgetHost* render_widget_host = rwh_view->GetRenderWidgetHost())
+        render_widget_host->SynchronizeVisualProperties();
+    }
+  }
+
+  bool exitedFullscreen = !IsFullscreen();
+  if (exitedFullscreen)
+    current_fullscreen_frame_ = nullptr;
+
+  observers_.ForEachObserver([&](WebContentsObserver* observer) {
+    observer->DidToggleFullscreenModeForTab(!exitedFullscreen, will_cause_resize);
+  });
+  if (exitedFullscreen)
+    FullscreenContentsSet(GetBrowserContext())->erase(this);
+  else
+    FullscreenContentsSet(GetBrowserContext())->insert(this);
+
+  if (display_cutout_host_impl_ && exitedFullscreen)
+    display_cutout_host_impl_->DidExitFullscreen();
+}
+
 void WebContentsImpl::ReplicatePageFocus(bool is_focused) {
   OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::ReplicatePageFocus",
                         "is_focused", is_focused);
@@ -3216,10 +3248,8 @@ void WebContentsImpl::EnterFullscreenMode(
       delegate_->RequestKeyboardLock(this, esc_key_locked_);
   }
 
-  observers_.ForEachObserver([&](WebContentsObserver* observer) {
-    observer->DidToggleFullscreenModeForTab(IsFullscreen(), false);
-  });
-  FullscreenContentsSet(GetBrowserContext())->insert(this);
+  if (IsFullscreen())
+      NotifyFullscreenChanged(false);
 }
 
 void WebContentsImpl::ExitFullscreenMode(bool will_cause_resize) {
@@ -3240,31 +3270,8 @@ void WebContentsImpl::ExitFullscreenMode(bool will_cause_resize) {
       delegate_->CancelKeyboardLockRequest(this);
   }
 
-  // The fullscreen state is communicated to the renderer through a resize
-  // message. If the change in fullscreen state doesn't cause a view resize
-  // then we must ensure web contents exit the fullscreen state by explicitly
-  // sending a resize message. This is required for the situation of the browser
-  // moving the view into a "browser fullscreen" state and then the contents
-  // entering "tab fullscreen". Exiting the contents "tab fullscreen" then won't
-  // have the side effect of the view resizing, hence the explicit call here is
-  // required.
-  if (!will_cause_resize) {
-    if (RenderWidgetHostView* rwhv = GetRenderWidgetHostView()) {
-        if (RenderWidgetHost* render_widget_host = rwhv->GetRenderWidgetHost())
-          render_widget_host->SynchronizeVisualProperties();
-    }
-  }
-
-  current_fullscreen_frame_ = nullptr;
-
-  observers_.ForEachObserver([&](WebContentsObserver* observer) {
-    observer->DidToggleFullscreenModeForTab(IsFullscreen(), will_cause_resize);
-  });
-
-  if (display_cutout_host_impl_)
-    display_cutout_host_impl_->DidExitFullscreen();
-
-  FullscreenContentsSet(GetBrowserContext())->erase(this);
+  if (!IsFullscreen())
+    NotifyFullscreenChanged(will_cause_resize);
 }
 
 void WebContentsImpl::FullscreenStateChanged(RenderFrameHost* rfh,
