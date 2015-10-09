@@ -2671,17 +2671,7 @@ void RenderFrameHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
   if (enter_fullscreen)
     delegate_->EnterFullscreenMode(GetLastCommittedURL().GetOrigin());
   else
-    delegate_->ExitFullscreenMode(/* will_cause_resize */ true);
-
-  // The previous call might change the fullscreen state. We need to make sure
-  // the renderer is aware of that, which is done via the resize message.
-  // Typically, this will be sent as part of the call on the |delegate_| above
-  // when resizing the native windows, but sometimes fullscreen can be entered
-  // without causing a resize, so we need to ensure that the resize message is
-  // sent in that case. We always send this to the main frame's widget, and if
-  // there are any OOPIF widgets, this will also trigger them to resize via
-  // frameRectsChanged.
-  render_view_host_->GetWidget()->WasResized();
+    delegate_->ExitFullscreenMode(/* will_cause_resize */ false);
 }
 
 // TODO(clamy): Remove this IPC now that it is only used for same-document
