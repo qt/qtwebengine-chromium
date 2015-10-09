@@ -844,6 +844,7 @@ class WebContents : public PageNavigator,
   // view resize. e.g. This will be false when going from tab fullscreen to
   // browser fullscreen.
   virtual void ExitFullscreen(bool will_cause_resize) = 0;
+  virtual void NotifyFullscreenChanged(bool will_cause_resize) = 0;
 
   // Unblocks requests from renderer for a newly created window. This is
   // used in showCreatedWindow() or sometimes later in cases where
