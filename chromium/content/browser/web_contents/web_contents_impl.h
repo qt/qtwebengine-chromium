@@ -378,6 +378,7 @@ class CONTENT_EXPORT WebContentsImpl
   void GetManifest(const GetManifestCallback& callback) override;
   void HasManifest(const HasManifestCallback& callback) override;
   void ExitFullscreen() override;
+  void NotifyFullscreenChanged() override;
   void ResumeLoadingCreatedWebContents() override;
 #if defined(OS_ANDROID)
   void OnMediaSessionStateChanged();
