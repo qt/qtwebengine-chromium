@@ -24,6 +24,8 @@ if (not options.destination or not options.source):
   sys.exit(1)
 
 for src in options.source:
+  src = os.path.normpath(os.path.join(os.getcwd(), src))
+  options.destination = os.path.normpath(os.path.join(os.getcwd(), options.destination))
   if os.path.exists(src):
     shutil.copyfile(src, options.destination)
     sys.exit(0)

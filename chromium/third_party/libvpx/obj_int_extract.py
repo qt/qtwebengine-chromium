@@ -7,6 +7,7 @@
 "This script is used to run obj_int_extract and output the result to a file."
 
 import optparse
+import os
 import subprocess
 import sys
 
@@ -25,6 +26,8 @@ if (not options.executable or not options.format or not options.binary or
   sys.exit(1)
 
 with open(options.output, 'w') as fh:
+  options.executable = os.path.normpath(os.path.join(os.getcwd(), options.executable))
+  options.binary = os.path.normpath(os.path.join(os.getcwd(), options.binary))
   subprocess.check_call([options.executable, options.format, options.binary],
                         stdout=fh)
 
